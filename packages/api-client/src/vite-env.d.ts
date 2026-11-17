@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE?: string
+  readonly VITE_API_TIMEOUT_MS?: string
+  readonly VITE_API_UNAUTHORIZED_REDIRECT?: string
 }
 
 interface ImportMeta {

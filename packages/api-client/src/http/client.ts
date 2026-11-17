@@ -26,6 +26,48 @@ export function resolveBaseUrl(explicit?: string): string {
 }
 
 /**
+ * Resolve the request timeout. Explicit options win, then
+ * VITE_API_TIMEOUT_MS (milliseconds), then 30s. Invalid or non-positive
+ * values fall back to the default instead of disabling the timeout.
+ */
+export function resolveTimeoutMs(explicit?: number): number {
+  if (typeof explicit === 'number' && Number.isFinite(explicit) && explicit > 0) {
+    return explicit
+  }
+  const raw = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_API_TIMEOUT_MS : undefined
+  if (raw) {
+    const parsed = Number(raw)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed
+    }
+  }
+  return DEFAULT_TIMEOUT_MS
+}
+
+/**
+ * Resolve the 401 handler. A callback cannot come from an env file, so
+ * VITE_API_UNAUTHORIZED_REDIRECT supplies the behaviour: on 401 the browser
+ * navigates to that path. An explicit callback always wins.
+ */
+export function resolveUnauthorizedHandler(explicit?: () => void): (() => void) | undefined {
+  if (explicit) {
+    return explicit
+  }
+  const redirect =
+    typeof import.meta !== 'undefined'
+      ? import.meta.env?.VITE_API_UNAUTHORIZED_REDIRECT
+      : undefined
+  if (!redirect) {
+    return undefined
+  }
+  return () => {
+    if (typeof window !== 'undefined') {
+      window.location.assign(redirect)
+    }
+  }
+}
+
+/**
  * Shared axios instance and request helpers. Modules call `HttpClient.request`
  * with a full config so `responseType` stays a per-request decision.
  * Calling any method without prior configuration initializes lazily from
@@ -38,11 +80,12 @@ export class HttpClient {
   static configure(options: string | HttpClientOptions = {}): AxiosInstance {
     const resolved: HttpClientOptions =
       typeof options === 'string' ? { baseUrl: options } : options
+    const onUnauthorized = resolveUnauthorizedHandler(resolved.onUnauthorized)
 
     HttpClient.baseUrl = resolveBaseUrl(resolved.baseUrl)
     HttpClient.instance = axios.create({
       baseURL: HttpClient.baseUrl,
-      timeout: resolved.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      timeout: resolveTimeoutMs(resolved.timeoutMs),
       headers: { 'Content-Type': 'application/json' },
     })
 
@@ -52,7 +95,7 @@ export class HttpClient {
         const status = error.response?.status ?? 0
         const body = normalizeBody(error.response?.data)
         if (status === 401) {
-          resolved.onUnauthorized?.()
+          onUnauthorized?.()
         }
         const message = body || error.message || (status ? `HTTP ${status}` : 'network error')
         return Promise.reject(new ApiError(message, status, body))
