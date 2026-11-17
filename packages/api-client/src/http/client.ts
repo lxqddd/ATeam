@@ -8,20 +8,38 @@ export interface HttpClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000
+const FALLBACK_BASE_URL = '/api'
+
+/**
+ * Resolve the API base URL. Explicit options win, then VITE_API_BASE, then
+ * the same-origin default. Vite statically replaces `import.meta.env`, so
+ * this is inlined at build time rather than read at runtime.
+ */
+export function resolveBaseUrl(explicit?: string): string {
+  if (explicit) {
+    return explicit
+  }
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE) {
+    return import.meta.env.VITE_API_BASE
+  }
+  return FALLBACK_BASE_URL
+}
 
 /**
  * Shared axios instance and request helpers. Modules call `HttpClient.request`
  * with a full config so `responseType` stays a per-request decision.
+ * Calling any method without prior configuration initializes lazily from
+ * VITE_API_BASE.
  */
 export class HttpClient {
   private static instance: AxiosInstance | null = null
-  private static baseUrl = '/api'
+  private static baseUrl = FALLBACK_BASE_URL
 
-  static configure(options: string | HttpClientOptions = '/api'): AxiosInstance {
+  static configure(options: string | HttpClientOptions = {}): AxiosInstance {
     const resolved: HttpClientOptions =
       typeof options === 'string' ? { baseUrl: options } : options
 
-    HttpClient.baseUrl = resolved.baseUrl ?? '/api'
+    HttpClient.baseUrl = resolveBaseUrl(resolved.baseUrl)
     HttpClient.instance = axios.create({
       baseURL: HttpClient.baseUrl,
       timeout: resolved.timeoutMs ?? DEFAULT_TIMEOUT_MS,
