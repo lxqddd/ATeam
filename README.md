@@ -59,6 +59,14 @@ make dev-web
 
 Open <http://127.0.0.1:5173>. The Vite dev server proxies `/api` and the WebSocket to the Go server.
 
+Web settings come from `apps/web/.env` (Vite reads env files from the Vite project root, not the repository root). Copy `apps/web/.env.example` to `apps/web/.env` to override `VITE_API_BASE`, `VITE_API_TIMEOUT_MS`, or `VITE_API_UNAUTHORIZED_REDIRECT`. These values are inlined at build time.
+
+The Go server is configured with flags, not environment variables:
+
+```bash
+./bin/ateam serve --addr 127.0.0.1:8787 --db .data/ateam.db --web apps/web/dist
+```
+
 ### Desktop shell
 
 ```bash
