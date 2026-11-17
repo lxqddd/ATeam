@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { Health } from '@ateam/shared'
-import { HealthApi } from '@ateam/api-client'
+import { HealthApi } from '../api'
 
 const health = ref<Health | null>(null)
 const error = ref('')

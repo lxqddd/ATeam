@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Task } from '@ateam/shared'
-import { TaskApi, type CreateTaskInput } from '@ateam/api-client'
+import { TaskApi, type CreateTaskInput } from '../api'
 
 export const useTasksStore = defineStore('tasks', () => {
   const items = ref<Task[]>([])

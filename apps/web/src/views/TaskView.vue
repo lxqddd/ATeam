@@ -9,7 +9,7 @@ import {
   type Task,
   type TaskStatus,
 } from '@ateam/shared'
-import { RunApi, TaskApi } from '@ateam/api-client'
+import { RunApi, TaskApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import { useTasksStore } from '../stores/tasks'
 import StatusBadge from '../components/StatusBadge.vue'

@@ -1,5 +1,5 @@
 import { onUnmounted } from 'vue'
-import { EventApi, type SseHandle } from '@ateam/api-client'
+import { EventApi, type SseHandle } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import { useRunsStore } from '../stores/runs'
 import { useTasksStore } from '../stores/tasks'

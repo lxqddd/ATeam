@@ -33,9 +33,9 @@ ATeam/
 │   └── workspace/          # workspace provisioning (M0: per-run directory)
 ├── apps/
 │   ├── web/                # Vue 3 + TypeScript + Vite + Pinia + UnoCSS
+│   │   └── src/api/        # axios client: http/ helpers + per-module APIs
 │   └── desktop/            # Wails v3 shell
 ├── packages/
-│   ├── api-client/         # typed API client (axios)
 │   └── shared/             # shared TypeScript types
 ├── Makefile
 ├── pnpm-workspace.yaml

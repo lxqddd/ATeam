@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Run } from '@ateam/shared'
-import { RunApi } from '@ateam/api-client'
+import { RunApi } from '../api'
 
 export const useRunsStore = defineStore('runs', () => {
   const items = ref<Run[]>([])
