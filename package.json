@@ -1,0 +1,12 @@
+{
+  "name": "ateam",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @ateam/web dev",
+    "build:web": "pnpm --filter @ateam/web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}
