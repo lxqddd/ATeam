@@ -17,14 +17,16 @@ type Event struct {
 }
 
 type Hub struct {
-	mu       sync.Mutex
-	clients  map[*client]struct{}
-	upgrader websocket.Upgrader
+	mu         sync.Mutex
+	clients    map[*client]struct{}
+	sseClients map[chan []byte]struct{}
+	upgrader   websocket.Upgrader
 }
 
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[*client]struct{}),
+		clients:    make(map[*client]struct{}),
+		sseClients: make(map[chan []byte]struct{}),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -49,6 +51,69 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	connection.readPump()
 }
 
+// ServeSSE streams events as Server-Sent Events. It is the browser-friendly
+// alternative to the WebSocket endpoint and shares the same event payloads.
+func (h *Hub) ServeSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	headers := w.Header()
+	headers.Set("Content-Type", "text/event-stream")
+	headers.Set("Cache-Control", "no-cache")
+	headers.Set("Connection", "keep-alive")
+	headers.Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	stream := make(chan []byte, 64)
+	done := make(chan struct{})
+
+	h.mu.Lock()
+	h.sseClients[stream] = struct{}{}
+	h.mu.Unlock()
+
+	defer func() {
+		h.mu.Lock()
+		delete(h.sseClients, stream)
+		h.mu.Unlock()
+		close(done)
+	}()
+
+	heartbeat := time.NewTicker(25 * time.Second)
+	defer heartbeat.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-done:
+			return
+		case <-heartbeat.C:
+			if _, err := w.Write([]byte(": ping\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		case payload, ok := <-stream:
+			if !ok {
+				return
+			}
+			if _, err := w.Write([]byte("event: message\ndata: ")); err != nil {
+				return
+			}
+			if _, err := w.Write(payload); err != nil {
+				return
+			}
+			if _, err := w.Write([]byte("\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
 func (h *Hub) Broadcast(event Event) {
 	if event.At.IsZero() {
 		event.At = time.Now().UTC()
@@ -68,6 +133,13 @@ func (h *Hub) Broadcast(event Event) {
 			close(connection.send)
 			delete(h.clients, connection)
 			_ = connection.conn.Close()
+		}
+	}
+	for stream := range h.sseClients {
+		select {
+		case stream <- data:
+		default:
+			// Slow SSE consumer: drop this event rather than blocking the hub.
 		}
 	}
 }

@@ -55,6 +55,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/runs/{id}/cancel", a.cancelRun)
 
 	mux.HandleFunc("GET /api/ws", a.hub.ServeWS)
+	mux.HandleFunc("GET /api/events", a.hub.ServeSSE)
 	mux.Handle("/", a.webHandler())
 
 	return withCORS(mux)

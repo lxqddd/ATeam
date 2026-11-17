@@ -1,53 +1,65 @@
 import { onUnmounted } from 'vue'
+import { EventApi, type SseHandle } from '@ateam/api-client'
 import { useAgentsStore } from '../stores/agents'
 import { useRunsStore } from '../stores/runs'
 import { useTasksStore } from '../stores/tasks'
 
-let socket: WebSocket | null = null
 let active = false
+let handle: SseHandle | null = null
+let retryTimer: number | null = null
+
+function handleEvent(raw: string) {
+  const tasks = useTasksStore()
+  const agents = useAgentsStore()
+  const runs = useRunsStore()
+
+  try {
+    const event = JSON.parse(raw) as { type?: string }
+    if (event.type?.startsWith('task.')) {
+      void tasks.fetchAll()
+    }
+    if (event.type?.startsWith('agent.')) {
+      void agents.fetchAll()
+    }
+    if (event.type?.startsWith('run.')) {
+      void runs.fetchAll()
+      void tasks.fetchAll()
+    }
+  } catch {
+    // Ignore malformed events.
+  }
+}
 
 function connect() {
   if (!active) return
 
-  const tasks = useTasksStore()
-  const agents = useAgentsStore()
-  const runs = useRunsStore()
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
+  handle = EventApi.subscribe({
+    onMessage: (message) => handleEvent(message.data),
+    onError: () => scheduleReconnect(),
+    onClose: () => scheduleReconnect(),
+  })
+}
 
-  socket = new WebSocket(`${protocol}://${location.host}/api/ws`)
-  socket.addEventListener('message', (message) => {
-    try {
-      const event = JSON.parse(message.data) as { type?: string }
-      if (event.type?.startsWith('task.')) {
-        void tasks.fetchAll()
-      }
-      if (event.type?.startsWith('agent.')) {
-        void agents.fetchAll()
-      }
-      if (event.type?.startsWith('run.')) {
-        void runs.fetchAll()
-        void tasks.fetchAll()
-      }
-    } catch {
-      // Ignore malformed events.
-    }
-  })
-  socket.addEventListener('close', () => {
-    socket = null
-    if (active) {
-      window.setTimeout(connect, 2000)
-    }
-  })
+function scheduleReconnect() {
+  if (!active || retryTimer !== null) return
+  retryTimer = window.setTimeout(() => {
+    retryTimer = null
+    connect()
+  }, 2000)
 }
 
 export function useEventStream() {
   active = true
-  if (!socket) {
+  if (!handle) {
     connect()
   }
   onUnmounted(() => {
     active = false
-    socket?.close()
-    socket = null
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+    }
+    handle?.close()
+    handle = null
   })
 }

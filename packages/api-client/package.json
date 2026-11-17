@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ateam/shared": "workspace:*"
+    "@ateam/shared": "workspace:*",
+    "axios": "^1.21.1"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

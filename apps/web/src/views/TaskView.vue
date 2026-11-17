@@ -9,7 +9,7 @@ import {
   type Task,
   type TaskStatus,
 } from '@ateam/shared'
-import { api } from '../api'
+import { RunApi, TaskApi } from '@ateam/api-client'
 import { useAgentsStore } from '../stores/agents'
 import { useTasksStore } from '../stores/tasks'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -35,8 +35,8 @@ const canRun = computed(
 async function load() {
   loading.value = true
   try {
-    task.value = await api.getTask(taskId.value)
-    runs.value = await api.listRunsByTask(taskId.value)
+    task.value = await TaskApi.get(taskId.value)
+    runs.value = await RunApi.listByTask(taskId.value)
     if (agents.items.length === 0) {
       await agents.fetchAll()
     }
@@ -55,16 +55,16 @@ async function load() {
 
 async function selectRun(run: Run) {
   selectedRun.value = run
-  events.value = await api.listRunEvents(run.id)
+  events.value = await RunApi.listEvents(run.id)
 }
 
 async function refreshRuns() {
-  runs.value = await api.listRunsByTask(taskId.value)
+  runs.value = await RunApi.listByTask(taskId.value)
   if (selectedRun.value) {
     const updated = runs.value.find((run) => run.id === selectedRun.value?.id)
     if (updated) {
       selectedRun.value = updated
-      events.value = await api.listRunEvents(updated.id)
+      events.value = await RunApi.listEvents(updated.id)
     }
   }
 }
@@ -73,10 +73,10 @@ async function startRun() {
   if (!task.value || !selectedAgentId.value) {
     return
   }
-  const run = await api.createRun(task.value.id, { agentId: selectedAgentId.value })
+  const run = await RunApi.start(task.value.id, { agentId: selectedAgentId.value })
   runs.value = [run, ...runs.value]
   await selectRun(run)
-  task.value = await api.getTask(task.value.id)
+  task.value = await TaskApi.get(task.value.id)
   await tasks.fetchAll()
 }
 
@@ -84,7 +84,7 @@ async function updateStatus(status: TaskStatus) {
   if (!task.value) {
     return
   }
-  task.value = await api.updateTask(task.value.id, { status })
+  task.value = await TaskApi.update(task.value.id, { status })
   await tasks.fetchAll()
 }
 
@@ -94,7 +94,7 @@ function onStatusChange(event: Event) {
 }
 
 async function cancelRun(run: Run) {
-  await api.cancelRun(run.id)
+  await RunApi.cancel(run.id)
   await refreshRuns()
 }
 

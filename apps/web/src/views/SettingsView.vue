@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import type { Health } from '@ateam/shared'
-import { api } from '../api'
+import { HealthApi } from '@ateam/api-client'
 
 const health = ref<Health | null>(null)
 const error = ref('')
 
 async function check() {
   try {
-    health.value = await api.health()
+    health.value = await HealthApi.get()
     error.value = ''
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)

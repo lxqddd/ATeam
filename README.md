@@ -35,7 +35,7 @@ ATeam/
 │   ├── web/                # Vue 3 + TypeScript + Vite + Pinia + UnoCSS
 │   └── desktop/            # Wails v3 shell
 ├── packages/
-│   ├── api-client/         # typed API client
+│   ├── api-client/         # typed API client (axios)
 │   └── shared/             # shared TypeScript types
 ├── Makefile
 ├── pnpm-workspace.yaml
@@ -91,6 +91,7 @@ make build
 | GET | `/api/runs/{id}/events` | Run event log |
 | POST | `/api/runs/{id}/cancel` | Request cancellation |
 | GET | `/api/ws` | WebSocket event stream |
+| GET | `/api/events` | Server-Sent Events stream (same payloads as WebSocket) |
 
 ## Runtime adapters
 

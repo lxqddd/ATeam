@@ -1,8 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Agent } from '@ateam/shared'
-import type { CreateAgentInput } from '@ateam/api-client'
-import { api } from '../api'
+import { AgentApi, type CreateAgentInput } from '@ateam/api-client'
 
 export const useAgentsStore = defineStore('agents', () => {
   const items = ref<Agent[]>([])
@@ -12,7 +11,7 @@ export const useAgentsStore = defineStore('agents', () => {
   async function fetchAll() {
     loading.value = true
     try {
-      items.value = await api.listAgents()
+      items.value = await AgentApi.list()
       error.value = ''
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
@@ -22,13 +21,13 @@ export const useAgentsStore = defineStore('agents', () => {
   }
 
   async function create(input: CreateAgentInput) {
-    const agent = await api.createAgent(input)
+    const agent = await AgentApi.create(input)
     items.value = [agent, ...items.value]
     return agent
   }
 
   async function remove(id: string) {
-    await api.deleteAgent(id)
+    await AgentApi.delete(id)
     items.value = items.value.filter((item) => item.id !== id)
   }
 

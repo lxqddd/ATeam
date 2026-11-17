@@ -1,3 +1,3 @@
-import { createClient } from '@ateam/api-client'
+import { configureApi } from '@ateam/api-client'
 
-export const api = createClient(import.meta.env.VITE_API_BASE ?? '/api')
+configureApi(import.meta.env.VITE_API_BASE ?? '/api')

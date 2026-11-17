@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Run } from '@ateam/shared'
-import { api } from '../api'
+import { RunApi } from '@ateam/api-client'
 
 export const useRunsStore = defineStore('runs', () => {
   const items = ref<Run[]>([])
@@ -11,7 +11,7 @@ export const useRunsStore = defineStore('runs', () => {
   async function fetchAll() {
     loading.value = true
     try {
-      items.value = await api.listRuns()
+      items.value = await RunApi.list()
       error.value = ''
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err)
