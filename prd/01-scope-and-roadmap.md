@@ -267,7 +267,7 @@ M0 的目标是验证产品骨架和核心闭环的形状，而不是交付可�
 - Workspace：每次 Run 在数据目录下创建一个以 Run ID 命名的普通目录，默认位于 `~/.ateam/workspaces/runs` 下；尚未使用 git worktree，Run 的 branch 字段不会被填充。
 - Vue 看板：Board 五列（Backlog、Todo、In Progress、In Review、Done）、任务详情、Run 日志 1.5 秒轮询、Agent 列表与创建、Run 列表、设置页健康检查；blocked 与 cancelled 任务不在看板中显示。
 - 桌面壳：Wails v3 在本机随机端口启动 Go 服务并加载页面；当前验证到编译通过，GUI 未在无头环境启动（D-M0-02）；未做打包。
-- 工程与 CI：Go 1.27、Vue 3、TypeScript、Vite、Pinia、UnoCSS、pnpm monorepo；CI 在 Ubuntu 上运行 Go 测试与 vet、pnpm 安装、类型检查和 Web 构建，不构建桌面壳。
+- 工程与 CI：Go 1.27、Vue 3、TypeScript、Vite、Pinia、Tailwind CSS、Element Plus、AI Elements Vue、pnpm monorepo；CI 在 Ubuntu 上运行 Go 测试与 vet、pnpm 安装、类型检查和 Web 构建，不构建桌面壳。
 
 #### 4.2.3 M0 已知缺口
 

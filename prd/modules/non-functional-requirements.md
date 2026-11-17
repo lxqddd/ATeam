@@ -289,7 +289,7 @@ Then 审批自动过期并默认拒绝，通知请求者；不得默认通过，
 | 调度 | 进程内队列容量 256，默认 2 个 worker，可配置并发；Run 状态 queued、preparing、running、completed、failed、cancelled；支持按 Agent 超时与内存态取消 | 队列不持久化；进程重启后排队 Run 丢失；running Run 停留非终态；排队 Run 取消存在竞态（取消后 worker 仍可能执行并覆盖终态）；运行中取消存在状态回写竞态；超时被归类为 failed；无按 Agent 并发限制 |
 | Runtime | mock 与 claude 两个适配器；claude 通过本机 CLI 执行；未知 Runtime 静默回退 mock | 静默回退会掩盖配置错误；无 token 统计；无流式 JSON 解析；无进程树终止 |
 | API | REST 加 WebSocket；请求体上限 1 MiB；无分页；无请求超时；CORS 反射任意 Origin；WebSocket 允许任意 Origin；无认证 | 本机其他网页可调用本地 API；大列表响应不可控；慢请求可长期占用连接 |
-| 前端 | Vue 3、Pinia、UnoCSS、深色主题；界面文案为英文；HTML lang 为 zh-CN；WebSocket 事件触发全量列表刷新；Task 详情页在 Run 活跃时每 1.5 秒轮询 | 文案与语言属性不一致；事件洪峰导致请求放大；无 i18n 基础设施；可访问性语义不足 |
+| 前端 | Vue 3、Pinia、Tailwind CSS、Element Plus、AI Elements Vue、深色主题；界面文案为英文；HTML lang 为 zh-CN；WebSocket 事件触发全量列表刷新；Task 详情页在 Run 活跃时每 1.5 秒轮询 | 文案与语言属性不一致；事件洪峰导致请求放大；无 i18n 基础设施；可访问性语义不足 |
 | 日志与诊断 | 使用 log/slog，默认文本输出到标准错误；健康检查仅返回状态、版本和时间 | 无日志文件、轮转、级别配置、请求 ID；无指标、时间线 API、诊断包 |
 | 资源 | 无内存、CPU、磁盘、文件描述符的目标与测量 | 多 Run 场景下资源不可预估 |
 | 成本 | 无 token 统计、无预算、无用量看板；Agent 的 model 字段未被适配器使用 | 用户无法知道花了多少，也无法阻止失控消耗 |

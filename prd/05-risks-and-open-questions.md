@@ -1148,7 +1148,7 @@ ATeam 的产品命题建立在以下假设上。每条假设都必须在本章�
 | 编号 | 决策 | 理由 | 影响 | 复审触发条件 |
 |---|---|---|---|---|
 | DEC-001 | 本地优先，自带 Runtime 与 Key，不转售模型，代码默认不出本机 | 隐私与信任是差异化基础；避免模型托管成本与合规负担 | 决定架构、计费、远程 Runner 与遥测设计 | 目标用户中本地优先重要性显著下降 |
-| DEC-002 | 技术栈采用 Go 1.27、Wails v3、SQLite；前端 Vue 3、TypeScript、Vite、Pinia、UnoCSS；pnpm monorepo | 与团队能力匹配；单二进制与本地桌面友好；前端生态成熟 | 决定构建、打包、跨平台与招聘 | Wails v3 无法满足稳定性或打包要求 |
+| DEC-002 | 技术栈采用 Go 1.27、Wails v3、SQLite；前端 Vue 3、TypeScript、Vite、Pinia、Tailwind CSS、Element Plus、AI Elements Vue；pnpm monorepo | 与团队能力匹配；单二进制与本地桌面友好；前端生态成熟 | 决定构建、打包、跨平台与招聘 | Wails v3 无法满足稳定性或打包要求 |
 | DEC-003 | 核心模型为 Task 上下文容器、Agent 持久配置、Run 一次执行、Workspace 隔离，加上 Runtime、Artifact、Evidence、Human Review | 概念边界清晰，便于审计与复现 | 决定数据模型与 API 结构 | 用户研究显示概念负担不可接受 |
 | DEC-004 | 角色 Agent 通过任务 DAG 与交付物契约协作，不做多 Agent 自由聊天 | 可审计、可复现、可治理；自由聊天难以保证质量 | 决定 M2.1 协作模型与 UI | 契约场景无法覆盖真实协作 |
 | DEC-005 | 先做并行任务；同任务 Crew 与队长模式后置到 M2.2 | 降低 M2.1 复杂度，先验证独立任务并行价值；与 `01-scope-and-roadmap.md` 的 M2.1/M2.2 拆分一致 | 决定 M2 范围与排期 | 用户强烈要求同任务协作且 DAG 已稳定 |

@@ -478,7 +478,7 @@ make dev-desktop
 | Vue | 3.5.x | Web UI | 使用 Composition API 与 TypeScript |
 | Vite | 8.x | 开发服务器与构建 | 代理 `/api` 与 WebSocket 到 Go 服务 |
 | Pinia | 3.x | 前端状态 | 当前收到事件后全量刷新，M1 增量更新 |
-| UnoCSS | 66.x | 原子化样式 | 主题 Token 在 `uno.config.ts` |
+| Tailwind CSS + Element Plus + AI Elements Vue | Tailwind 4.x / Element Plus 2.x / AI Elements Vue 1.x | 原子化样式、通用组件与 AI 对话组件 | 主题 Token 在 `src/styles/main.css`；AI 组件在 `src/components/ai-elements` |
 | TypeScript | 5.9.x | 类型检查 | `pnpm -r typecheck` 是质量门 |
 | Git 与本地文件系统 | 本机 | M1 之前的 Workspace 只是目录；M1 才需要 Git | M0 不要求演示仓库是 Git 仓库 |
 | Claude Code CLI | 用户自装 | claude 适配器 | 仅最小 `claude -p`；认证、模型与权限参数属于 M1 |

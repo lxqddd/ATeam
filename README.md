@@ -32,7 +32,7 @@ ATeam/
 │   ├── version/
 │   └── workspace/          # workspace provisioning (M0: per-run directory)
 ├── apps/
-│   ├── web/                # Vue 3 + TypeScript + Vite + Pinia + UnoCSS
+│   ├── web/                # Vue 3 + TypeScript + Vite + Pinia + Tailwind CSS + Element Plus
 │   │   └── src/api/        # axios client: http/ helpers + per-module APIs
 │   └── desktop/            # Wails v3 shell
 ├── packages/

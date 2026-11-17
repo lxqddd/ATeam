@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ArrowLeft, VideoPlay } from '@element-plus/icons-vue'
 import {
   TASK_STATUSES,
   TASK_STATUS_LABELS,
@@ -13,6 +14,13 @@ import { RunApi, TaskApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import { useTasksStore } from '../stores/tasks'
 import StatusBadge from '../components/StatusBadge.vue'
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+} from '@/components/ai-elements/conversation'
+import { Message, MessageContent } from '@/components/ai-elements/message'
+import { Loader } from '@/components/ai-elements/loader'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +38,9 @@ let timer: number | undefined
 const taskId = computed(() => String(route.params.id))
 const canRun = computed(
   () => !!task.value && ['todo', 'in_progress', 'in_review'].includes(task.value.status),
+)
+const isRunActive = computed(
+  () => !!selectedRun.value && ['queued', 'preparing', 'running'].includes(selectedRun.value.status),
 )
 
 async function load() {
@@ -88,12 +99,14 @@ async function updateStatus(status: TaskStatus) {
   await tasks.fetchAll()
 }
 
-function onStatusChange(event: Event) {
-  const value = (event.target as HTMLSelectElement).value as TaskStatus
+function onStatusChange(value: TaskStatus) {
   void updateStatus(value)
 }
 
-async function cancelRun(run: Run) {
+async function cancelRun(run: Run | null) {
+  if (!run) {
+    return
+  }
   await RunApi.cancel(run.id)
   await refreshRuns()
 }
@@ -123,107 +136,152 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="loading" class="p-6 text-sm text-zinc-500">Loading task...</div>
+  <div v-if="loading" class="p-6">
+    <el-skeleton :rows="4" animated />
+  </div>
 
   <div v-else-if="!task" class="p-6">
-    <p class="text-sm text-zinc-400">Task not found.</p>
-    <button class="btn-ghost mt-3" @click="router.push('/')">Back to board</button>
+    <el-empty description="Task not found">
+      <el-button @click="router.push('/')">Back to board</el-button>
+    </el-empty>
   </div>
 
   <div v-else class="flex flex-col h-full">
-    <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span class="text-[10px] text-zinc-500">{{ task.id }}</span>
-          <StatusBadge :status="task.status" />
+    <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5 gap-3">
+      <div class="min-w-0 flex-1 flex items-center gap-3">
+        <el-button :icon="ArrowLeft" text @click="router.push('/')">Back</el-button>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[10px] text-zinc-500">{{ task.id }}</span>
+            <StatusBadge :status="task.status" />
+          </div>
+          <h1 class="text-sm font-semibold truncate">{{ task.title }}</h1>
         </div>
-        <h1 class="text-sm font-600 truncate">{{ task.title }}</h1>
       </div>
-      <div class="flex items-center gap-2">
-        <select class="input w-36" :value="task.status" @change="onStatusChange">
-          <option v-for="status in TASK_STATUSES" :key="status.value" :value="status.value">
-            {{ TASK_STATUS_LABELS[status.value] }}
-          </option>
-        </select>
-        <button class="btn-ghost" @click="router.push('/')">Back</button>
-      </div>
+      <el-select :model-value="task.status" style="width: 144px" @change="onStatusChange">
+        <el-option
+          v-for="status in TASK_STATUSES"
+          :key="status.value"
+          :label="TASK_STATUS_LABELS[status.value]"
+          :value="status.value"
+        />
+      </el-select>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-5 space-y-5">
-      <section class="card p-4">
-        <h2 class="text-xs font-600 text-zinc-400 mb-2">DESCRIPTION</h2>
+    <div class="flex-1 overflow-y-auto p-5 space-y-4">
+      <el-card shadow="never">
+        <template #header>
+          <span class="text-xs font-semibold text-zinc-400">DESCRIPTION</span>
+        </template>
         <p class="text-sm text-zinc-300 whitespace-pre-wrap">
           {{ task.description || 'No description yet.' }}
         </p>
-      </section>
+      </el-card>
 
-      <section class="card p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-600 text-zinc-400">RUNS</h2>
-          <div class="flex items-center gap-2">
-            <select v-model="selectedAgentId" class="input w-44">
-              <option value="" disabled>Select an agent</option>
-              <option v-for="agent in agents.items" :key="agent.id" :value="agent.id">
-                {{ agent.name }} · {{ agent.runtime }}
-              </option>
-            </select>
-            <button class="btn-primary" :disabled="!canRun || !selectedAgentId" @click="startRun">
-              Run
-            </button>
+      <el-card shadow="never">
+        <template #header>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs font-semibold text-zinc-400">RUNS</span>
+            <div class="flex items-center gap-2">
+              <el-select v-model="selectedAgentId" style="width: 220px" placeholder="Select an agent">
+                <el-option
+                  v-for="agent in agents.items"
+                  :key="agent.id"
+                  :label="`${agent.name} · ${agent.runtime}`"
+                  :value="agent.id"
+                />
+              </el-select>
+              <el-button
+                type="primary"
+                :icon="VideoPlay"
+                :disabled="!canRun || !selectedAgentId"
+                @click="startRun"
+              >
+                Run
+              </el-button>
+            </div>
           </div>
-        </div>
+        </template>
 
-        <p v-if="!canRun" class="text-[11px] text-amber-300/80 mb-3">
-          Move the task to Todo or In Progress before starting a run.
-        </p>
+        <el-alert
+          v-if="!canRun"
+          title="Move the task to Todo or In Progress before starting a run."
+          type="warning"
+          :closable="false"
+          show-icon
+          class="mb-3"
+        />
 
-        <div v-if="runs.length === 0" class="text-xs text-zinc-500">No runs yet.</div>
+        <el-empty v-if="runs.length === 0" description="No runs yet" :image-size="48" />
 
         <div v-else class="space-y-2">
-          <button
+          <el-card
             v-for="run in runs"
             :key="run.id"
-            class="w-full text-left card p-3 hover:border-zinc-600"
-            :class="{ '!border-accent2/50': selectedRun?.id === run.id }"
+            shadow="hover"
+            :body-style="{ padding: '10px' }"
+            class="cursor-pointer"
+            :class="{ 'ring-1 ring-indigo-500/50': selectedRun?.id === run.id }"
             @click="selectRun(run)"
           >
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2">
                 <StatusBadge :status="run.status" kind="run" />
-                <span class="text-[10px] text-zinc-500">{{ run.trigger }}</span>
+                <el-tag size="small" effect="plain" type="info">{{ run.trigger }}</el-tag>
               </div>
               <span class="text-[10px] text-zinc-500">
                 {{ new Date(run.createdAt).toLocaleString() }}
               </span>
             </div>
-            <div v-if="run.summary" class="text-[11px] text-zinc-400 mt-1">{{ run.summary }}</div>
+            <div v-if="run.summary" class="text-[11px] text-zinc-400 mt-1">
+              {{ run.summary }}
+            </div>
             <div v-if="run.error" class="text-[11px] text-rose-300 mt-1">{{ run.error }}</div>
-          </button>
+          </el-card>
         </div>
-      </section>
+      </el-card>
 
-      <section v-if="selectedRun" class="card p-4">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xs font-600 text-zinc-400">
-            RUN LOG · {{ selectedRun.id.slice(0, 8) }}
-          </h2>
-          <button
-            v-if="['queued', 'preparing', 'running'].includes(selectedRun.status)"
-            class="btn-ghost"
-            @click="cancelRun(selectedRun)"
-          >
-            Cancel
-          </button>
-        </div>
-        <pre
-          class="bg-black/40 border border-border rounded-md p-3 text-[11px] leading-relaxed text-zinc-300 max-h-80 overflow-y-auto whitespace-pre-wrap"
-          >{{
-            events.length
-              ? events.map((event) => `[${event.type}] ${event.message}`).join('\n')
-              : 'Waiting for events...'
-          }}</pre
-        >
-      </section>
+      <el-card v-if="selectedRun" shadow="never">
+        <template #header>
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-zinc-400">
+              RUN LOG · {{ selectedRun.id.slice(0, 8) }}
+            </span>
+            <el-button
+              v-if="isRunActive"
+              type="danger"
+              plain
+              size="small"
+              @click="cancelRun(selectedRun)"
+            >
+              Cancel
+            </el-button>
+          </div>
+        </template>
+
+        <Conversation class="h-[360px] rounded-md border border-border bg-black/30">
+          <ConversationContent class="gap-2 p-3">
+            <ConversationEmptyState
+              v-if="events.length === 0 && !isRunActive"
+              title="No events yet"
+              description="Run events will appear here."
+            />
+            <Message v-for="event in events" :key="`${event.runId}-${event.seq}`" from="assistant">
+              <MessageContent>
+                <div class="text-[10px] uppercase tracking-wide text-zinc-500">
+                  {{ event.type }}
+                </div>
+                <pre class="whitespace-pre-wrap text-xs text-zinc-300">{{ event.message }}</pre>
+              </MessageContent>
+            </Message>
+            <Message v-if="isRunActive" from="assistant">
+              <MessageContent>
+                <Loader :size="14" />
+              </MessageContent>
+            </Message>
+          </ConversationContent>
+        </Conversation>
+      </el-card>
     </div>
   </div>
 </template>

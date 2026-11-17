@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { Plus } from '@element-plus/icons-vue'
 import { RUNTIMES } from '@ateam/shared'
 import { useAgentsStore } from '../stores/agents'
 import Modal from '../components/Modal.vue'
@@ -53,10 +54,10 @@ async function createAgent() {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
       <div>
-        <h1 class="text-sm font-600">Agents</h1>
+        <h1 class="text-sm font-semibold">Agents</h1>
         <p class="text-[11px] text-zinc-500">Reusable work profiles for tasks</p>
       </div>
-      <button class="btn-primary" @click="showCreate = true">+ New agent</button>
+      <el-button type="primary" :icon="Plus" @click="showCreate = true">New agent</el-button>
     </header>
 
     <div class="flex-1 overflow-y-auto p-5">
@@ -67,21 +68,19 @@ async function createAgent() {
       />
 
       <div v-else class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <article v-for="agent in agents.items" :key="agent.id" class="card p-4">
-          <div class="flex items-start justify-between gap-2">
-            <div>
-              <h2 class="text-sm font-600">{{ agent.name }}</h2>
-              <p class="text-[11px] text-zinc-500 mt-0.5">
-                {{ agent.description || 'No description' }}
-              </p>
+        <el-card v-for="agent in agents.items" :key="agent.id" shadow="hover">
+          <template #header>
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <h2 class="text-sm font-semibold">{{ agent.name }}</h2>
+                <p class="text-[11px] text-zinc-500 mt-0.5">
+                  {{ agent.description || 'No description' }}
+                </p>
+              </div>
+              <el-tag size="small" effect="dark">{{ agent.runtime }}</el-tag>
             </div>
-            <span
-              class="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/20"
-            >
-              {{ agent.runtime }}
-            </span>
-          </div>
-          <p class="mt-3 text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
+          </template>
+          <p class="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
             {{ agent.instructions || 'No instructions yet.' }}
           </p>
           <div class="mt-3 flex items-center gap-3 text-[10px] text-zinc-500">
@@ -89,60 +88,56 @@ async function createAgent() {
             <span>timeout {{ agent.timeoutMinutes }}m</span>
             <span>{{ agent.workspaceMode }}</span>
           </div>
-        </article>
+        </el-card>
       </div>
     </div>
 
     <Modal :open="showCreate" title="New agent" @close="showCreate = false">
-      <div class="space-y-3">
-        <div>
-          <label class="label">Name</label>
-          <input v-model="form.name" class="input" placeholder="Frontend Agent" />
-        </div>
-        <div>
-          <label class="label">Description</label>
-          <input v-model="form.description" class="input" placeholder="Implements UI from a design spec" />
-        </div>
-        <div>
-          <label class="label">Instructions</label>
-          <textarea
+      <el-form label-position="top">
+        <el-form-item label="Name">
+          <el-input v-model="form.name" placeholder="Frontend Agent" />
+        </el-form-item>
+        <el-form-item label="Description">
+          <el-input v-model="form.description" placeholder="Implements UI from a design spec" />
+        </el-form-item>
+        <el-form-item label="Instructions">
+          <el-input
             v-model="form.instructions"
-            class="input min-h-28 resize-y"
+            type="textarea"
+            :rows="4"
             placeholder="Responsibilities, boundaries, checks, reporting format..."
           />
+        </el-form-item>
+        <div class="grid grid-cols-2 gap-3">
+          <el-form-item label="Runtime">
+            <el-select v-model="form.runtime" style="width: 100%">
+              <el-option
+                v-for="runtime in RUNTIMES"
+                :key="runtime.value"
+                :label="runtime.label"
+                :value="runtime.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="Model (optional)">
+            <el-input v-model="form.model" placeholder="default" />
+          </el-form-item>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="label">Runtime</label>
-            <select v-model="form.runtime" class="input">
-              <option v-for="runtime in RUNTIMES" :key="runtime.value" :value="runtime.value">
-                {{ runtime.label }}
-              </option>
-            </select>
-          </div>
-          <div>
-            <label class="label">Model (optional)</label>
-            <input v-model="form.model" class="input" placeholder="default" />
-          </div>
+          <el-form-item label="Max concurrency">
+            <el-input-number v-model="form.maxConcurrency" :min="1" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="Timeout (minutes)">
+            <el-input-number v-model="form.timeoutMinutes" :min="1" style="width: 100%" />
+          </el-form-item>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="label">Max concurrency</label>
-            <input v-model.number="form.maxConcurrency" type="number" min="1" class="input" />
-          </div>
-          <div>
-            <label class="label">Timeout (minutes)</label>
-            <input v-model.number="form.timeoutMinutes" type="number" min="1" class="input" />
-          </div>
-        </div>
-        <div>
-          <label class="label">Allowed paths (comma separated)</label>
-          <input v-model="form.allowedPaths" class="input" placeholder="web/, packages/ui/" />
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
-          <button class="btn-ghost" @click="showCreate = false">Cancel</button>
-          <button class="btn-primary" @click="createAgent">Create</button>
-        </div>
+        <el-form-item label="Allowed paths (comma separated)">
+          <el-input v-model="form.allowedPaths" placeholder="web/, packages/ui/" />
+        </el-form-item>
+      </el-form>
+      <div class="flex justify-end gap-2">
+        <el-button @click="showCreate = false">Cancel</el-button>
+        <el-button type="primary" @click="createAgent">Create</el-button>
       </div>
     </Modal>
   </div>
