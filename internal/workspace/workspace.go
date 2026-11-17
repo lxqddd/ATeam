@@ -15,7 +15,7 @@ func New(root string) *Manager {
 	return &Manager{Root: root}
 }
 
-func (m *Manager) Prepare(ctx context.Context, runID, mode string) (string, error) {
+func (m *Manager) Prepare(ctx context.Context, runID string) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()

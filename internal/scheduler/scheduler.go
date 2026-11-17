@@ -104,7 +104,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	run.StartedAt = &started
 	s.saveRun(ctx, run, "run.preparing")
 
-	workdir, err := s.workspaces.Prepare(ctx, run.ID, agent.WorkspaceMode)
+	workdir, err := s.workspaces.Prepare(ctx, run.ID)
 	if err != nil {
 		s.fail(ctx, run, err)
 		return
@@ -153,9 +153,6 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	})
 
 	err = adapter.Run(runCtx, runtime.Request{
-		RunID:   run.ID,
-		TaskID:  task.ID,
-		AgentID: agent.ID,
 		Prompt:  buildPrompt(task, agent),
 		Workdir: workdir,
 	}, emit)

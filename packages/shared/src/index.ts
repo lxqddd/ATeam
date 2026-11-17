@@ -7,7 +7,7 @@ export type TaskStatus =
   | 'blocked'
   | 'cancelled'
 
-export type AssigneeType = '' | 'human' | 'agent' | 'crew'
+type AssigneeType = '' | 'human' | 'agent' | 'crew'
 
 export type RunStatus =
   | 'queued'

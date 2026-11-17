@@ -29,12 +29,7 @@ func (s TaskStatus) Executable() bool {
 
 type AssigneeType string
 
-const (
-	AssigneeNone  AssigneeType = ""
-	AssigneeHuman AssigneeType = "human"
-	AssigneeAgent AssigneeType = "agent"
-	AssigneeCrew  AssigneeType = "crew"
-)
+const AssigneeAgent AssigneeType = "agent"
 
 type Task struct {
 	ID           string       `json:"id"`

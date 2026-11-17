@@ -73,17 +73,6 @@ export class HttpClient {
     return HttpClient.request<T>({ ...config, url, method: 'DELETE' })
   }
 
-  /**
-   * Download a file or binary body. `responseType` is overridden per call so
-   * JSON stays the default for everything else.
-   */
-  static download<T = Blob>(
-    url: string,
-    responseType: AxiosRequestConfig['responseType'] = 'blob',
-  ): Promise<T> {
-    return HttpClient.request<T>({ url, method: 'GET', responseType })
-  }
-
   static resolveUrl(path: string): string {
     if (/^https?:\/\//.test(path)) {
       return path

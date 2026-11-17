@@ -13,9 +13,7 @@ export default defineConfig({
     colors: {
       bg: '#09090b',
       panel: '#111113',
-      panel2: '#17171a',
       border: '#27272a',
-      muted: '#a1a1aa',
       accent: '#818cf8',
       accent2: '#6366f1',
     },

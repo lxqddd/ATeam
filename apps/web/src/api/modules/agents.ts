@@ -19,16 +19,8 @@ export class AgentApi {
     return HttpClient.get<Agent[]>('/agents')
   }
 
-  static get(id: string): Promise<Agent> {
-    return HttpClient.get<Agent>(`/agents/${id}`)
-  }
-
   static create(input: CreateAgentInput): Promise<Agent> {
     return HttpClient.post<Agent>('/agents', input)
-  }
-
-  static update(id: string, patch: Partial<Agent>): Promise<Agent> {
-    return HttpClient.patch<Agent>(`/agents/${id}`, patch)
   }
 
   static delete(id: string): Promise<void> {

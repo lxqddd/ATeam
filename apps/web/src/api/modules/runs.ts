@@ -15,10 +15,6 @@ export class RunApi {
     return HttpClient.get<Run[]>(`/tasks/${taskId}/runs`)
   }
 
-  static get(id: string): Promise<Run> {
-    return HttpClient.get<Run>(`/runs/${id}`)
-  }
-
   static start(taskId: string, input: StartRunInput): Promise<Run> {
     return HttpClient.post<Run>(`/tasks/${taskId}/runs`, input)
   }

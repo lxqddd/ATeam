@@ -5,18 +5,12 @@ import { TaskApi, type CreateTaskInput } from '../api'
 
 export const useTasksStore = defineStore('tasks', () => {
   const items = ref<Task[]>([])
-  const loading = ref(false)
-  const error = ref('')
 
   async function fetchAll() {
-    loading.value = true
     try {
       items.value = await TaskApi.list()
-      error.value = ''
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err)
-    } finally {
-      loading.value = false
+    } catch {
+      // Keep the last known list; the next SSE event or manual refresh retries.
     }
   }
 
@@ -35,10 +29,5 @@ export const useTasksStore = defineStore('tasks', () => {
     return task
   }
 
-  async function remove(id: string) {
-    await TaskApi.delete(id)
-    items.value = items.value.filter((item) => item.id !== id)
-  }
-
-  return { items, loading, error, fetchAll, create, update, remove }
+  return { items, fetchAll, create, update }
 })

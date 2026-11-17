@@ -9,9 +9,6 @@ type Event struct {
 }
 
 type Request struct {
-	RunID   string
-	TaskID  string
-	AgentID string
 	Prompt  string
 	Workdir string
 }
@@ -27,12 +24,12 @@ type Registry struct {
 
 func NewRegistry() *Registry {
 	registry := &Registry{adapters: make(map[string]Adapter)}
-	registry.Register(&MockAdapter{})
-	registry.Register(&ClaudeAdapter{})
+	registry.register(&MockAdapter{})
+	registry.register(&ClaudeAdapter{})
 	return registry
 }
 
-func (r *Registry) Register(adapter Adapter) {
+func (r *Registry) register(adapter Adapter) {
 	r.adapters[adapter.Name()] = adapter
 }
 
