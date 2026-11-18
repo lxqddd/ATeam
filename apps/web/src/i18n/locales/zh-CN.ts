@@ -270,6 +270,7 @@ const zhCN: typeof enUS = {
   settings: {
     title: '设置',
     subtitle: '运行时与工作区配置',
+    appearance: '外观',
     apiConnection: 'API 连接',
     checkHealth: '检查健康状态',
     apiNote: 'Web 界面调用 /api，开发模式下由 Vite 代理到 Go 服务。',

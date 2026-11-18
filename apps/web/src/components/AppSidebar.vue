@@ -28,8 +28,8 @@ const settingsSections = [
   { id: 'settings-appearance', labelKey: 'settings.appearance' },
   { id: 'settings-language', labelKey: 'settings.language' },
   { id: 'settings-api', labelKey: 'settings.apiConnection' },
-  { id: 'settings-runtime-models', labelKey: 'settings.models.title' },
   { id: 'settings-workspace', labelKey: 'settings.workspace' },
+  { id: 'settings-runtime-models', labelKey: 'settings.models.title' },
   { id: 'settings-about', labelKey: 'settings.about' },
 ]
 
@@ -104,20 +104,37 @@ function openTask(id: string) {
   void router.push(`/tasks/${id}`)
 }
 
+const RAIL_ITEM_LIMIT = 8
+
 const collapsedItems = computed(() => {
   if (section.value === 'agents') {
-    return agents.items.slice(0, 8).map((agent) => ({
-      id: agent.id, title: agent.name, status: '', path: '/agents',
+    return agents.items.slice(0, RAIL_ITEM_LIMIT).map((agent) => ({
+      id: agent.id,
+      title: agent.name,
+      kind: 'agent' as const,
+      status: '' as const,
+      statusLabel: '',
+      path: `/agents/${agent.id}/work`,
     }))
   }
   if (section.value === 'runs') {
-    return runs.items.slice(0, 8).map((run) => ({
-      id: run.id, title: taskTitle(run.taskId), status: run.status, path: `/runs/${run.id}`,
+    return runs.items.slice(0, RAIL_ITEM_LIMIT).map((run) => ({
+      id: run.id,
+      title: taskTitle(run.taskId),
+      kind: 'run' as const,
+      status: run.status,
+      statusLabel: t(`common.status.run.${run.status}`),
+      path: `/runs/${run.id}`,
     }))
   }
   if (section.value === 'tasks') {
-    return tasks.items.slice(0, 8).map((task) => ({
-      id: task.id, title: task.title, status: task.status, path: `/tasks/${task.id}`,
+    return tasks.items.slice(0, RAIL_ITEM_LIMIT).map((task) => ({
+      id: task.id,
+      title: task.title,
+      kind: 'task' as const,
+      status: task.status,
+      statusLabel: t(`common.status.task.${task.status}`),
+      path: `/tasks/${task.id}`,
     }))
   }
   return []
@@ -137,7 +154,7 @@ const isTaskRoute = computed(() => route.name === 'task')
 
 <template>
   <aside class="shrink-0 flex min-h-0">
-    <nav class="w-[52px] shrink-0 flex flex-col items-center gap-1 px-2 py-[10px]">
+    <nav class="w-[52px] shrink-0 flex flex-col items-center gap-1 px-2 py-[10px] min-h-0 overflow-y-auto">
       <div class="flex flex-col items-center gap-0.5 w-full mt-1">
         <button
           v-for="item in navItems"
@@ -163,15 +180,22 @@ const isTaskRoute = computed(() => route.name === 'task')
           v-for="entry in collapsedItems"
           :key="entry.id"
           :to="entry.path"
-          class="group relative size-8 rounded-[10px] bg-[var(--cd-color-surface-raised)] flex items-center justify-center text-caption text-fg-muted hover:bg-[var(--cd-color-hover)] hover:text-foreground"
+          class="group relative size-8 rounded-[10px] flex items-center justify-center text-caption"
+          :class="
+            route.path === entry.path
+              ? 'bg-[var(--cd-color-selected-bg)] text-foreground'
+              : 'bg-[var(--cd-color-surface-raised)] text-fg-muted hover:bg-[var(--cd-color-hover)] hover:text-foreground'
+          "
           :title="entry.title"
+          :aria-label="entry.title"
+          :aria-current="route.path === entry.path ? 'page' : undefined"
         >
           {{ entry.title.slice(0, 1) }}
           <span class="absolute left-[44px] top-0 z-50 hidden group-hover:block group-focus-visible:block w-56 rounded-[10px] border border-border bg-[var(--cd-color-surface-raised)] px-3 py-2 shadow-[var(--cd-shadow-md)]">
             <span class="block text-caption text-foreground truncate">{{ entry.title }}</span>
             <span class="mt-1 flex items-center gap-1.5 text-caption text-fg-subtle">
               <span class="size-1.5 rounded-full" :class="toneClass(entry.status)" />
-              {{ entry.status || '—' }}
+              {{ entry.statusLabel || '—' }}
             </span>
           </span>
         </router-link>
@@ -179,6 +203,7 @@ const isTaskRoute = computed(() => route.name === 'task')
           v-if="overflowCount > 0"
           type="button"
           class="size-8 rounded-[10px] text-caption text-fg-subtle hover:bg-[var(--cd-color-hover)]"
+          :aria-label="$t('sidebar.expand')"
           @click="ui.setSidebarCollapsed(false)"
         >
           +{{ overflowCount }}
@@ -186,7 +211,7 @@ const isTaskRoute = computed(() => route.name === 'task')
       </div>
     </nav>
 
-    <div v-if="!ui.sidebarCollapsed" class="panel w-[260px] shrink-0 flex flex-col gap-1 px-2 min-h-0">
+    <div v-if="!ui.sidebarCollapsed" class="panel w-[260px] shrink-0 flex flex-col gap-1 min-h-0">
       <div class="h-11 flex items-center gap-2.5 px-1">
         <div class="size-8 shrink-0 rounded-lg bg-[var(--cd-color-accent-soft)] flex items-center justify-center">
           <el-icon :size="17" color="var(--cd-color-accent-2)"><Monitor /></el-icon>
@@ -208,7 +233,12 @@ const isTaskRoute = computed(() => route.name === 'task')
         <span class="ml-auto tabular-nums">{{ panelCount }}</span>
       </button>
 
-      <div v-if="sectionOpen" class="flex-1 min-h-0 overflow-y-auto space-y-0.5">
+      <div
+        v-if="sectionOpen"
+        class="flex-1 min-h-0 overflow-y-auto space-y-0.5"
+        role="region"
+        :aria-label="$t(sectionTitleKey)"
+      >
         <template v-if="section === 'tasks'">
           <button
             v-for="task in tasks.items"
@@ -233,7 +263,7 @@ const isTaskRoute = computed(() => route.name === 'task')
             :key="agent.id"
             type="button"
             class="w-full h-8 flex items-center gap-2 rounded-[10px] px-2.5 text-left text-fg-muted transition-colors hover:bg-[var(--cd-color-nav-bg)] hover:text-foreground"
-            @click="router.push('/agents')"
+            @click="router.push(`/agents/${agent.id}/work`)"
           >
             <span class="size-1.5 shrink-0 rounded-full bg-brand" />
             <span class="text-label truncate">{{ agent.name }}</span>
@@ -267,7 +297,11 @@ const isTaskRoute = computed(() => route.name === 'task')
         </template>
 
         <p
-          v-if="(section === 'tasks' && tasks.items.length === 0) || (section === 'agents' && agents.items.length === 0) || (section === 'runs' && runs.items.length === 0)"
+          v-if="
+            (section === 'tasks' && tasks.items.length === 0) ||
+            (section === 'agents' && agents.items.length === 0) ||
+            (section === 'runs' && runs.items.length === 0)
+          "
           class="px-2.5 py-2 text-caption text-fg-subtle"
         >
           {{ $t('common.empty') }}

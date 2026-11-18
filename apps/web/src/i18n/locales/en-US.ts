@@ -268,6 +268,7 @@ const enUS = {
   settings: {
     title: 'Settings',
     subtitle: 'Runtime and workspace configuration',
+    appearance: 'Appearance',
     apiConnection: 'API connection',
     checkHealth: 'Check health',
     apiNote: 'The web UI calls /api, and Vite proxies it to the Go server in development.',

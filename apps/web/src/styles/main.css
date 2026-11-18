@@ -178,11 +178,18 @@ code, pre { font-family: var(--cd-font-mono); }
   align-items: center;
   gap: var(--cd-space-2);
   padding: 0 var(--cd-space-2) 0 var(--cd-space-3);
+  user-select: none;
   -webkit-app-region: drag;
   app-region: drag;
   --wails-draggable: drag;
 }
 .app-titlebar button { -webkit-app-region: no-drag; app-region: no-drag; --wails-draggable: no-drag; }
+#titlebar-actions,
+#titlebar-actions * {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  --wails-draggable: no-drag;
+}
 .app-titlebar__title {
   font: var(--cd-text-label);
   font-weight: 600;
