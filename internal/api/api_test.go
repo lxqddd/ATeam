@@ -30,8 +30,9 @@ func newTestHandler(t *testing.T) (http.Handler, store.Store) {
 	}
 
 	hub := events.NewHub(guard)
-	sched := scheduler.New(st, hub, runtime.NewRegistry(), workspace.New(t.TempDir()), 1)
-	return New(st, hub, sched, "test", "", guard).Handler(), st
+	registry := runtime.NewRegistry()
+	sched := scheduler.New(st, hub, registry, workspace.New(t.TempDir()), 1)
+	return New(st, hub, sched, registry, "test", "", guard).Handler(), st
 }
 
 func call(handler http.Handler, method, path, origin string) *httptest.ResponseRecorder {

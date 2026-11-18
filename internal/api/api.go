@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/lxqddd/ATeam/internal/events"
+	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
 	"github.com/lxqddd/ATeam/internal/security"
 	"github.com/lxqddd/ATeam/internal/store"
@@ -17,16 +18,18 @@ type API struct {
 	store     store.Store
 	hub       *events.Hub
 	scheduler *scheduler.Scheduler
+	registry  *runtime.Registry
 	version   string
 	webDir    string
 	guard     *security.Guard
 }
 
-func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, version, webDir string, guard *security.Guard) *API {
+func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, registry *runtime.Registry, version, webDir string, guard *security.Guard) *API {
 	return &API{
 		store:     st,
 		hub:       hub,
 		scheduler: scheduler,
+		registry:  registry,
 		version:   version,
 		webDir:    webDir,
 		guard:     guard,
@@ -47,6 +50,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/projects", a.createWorkspace)
 	mux.HandleFunc("GET /api/v1/projects/{id}", a.getWorkspace)
 	mux.HandleFunc("PATCH /api/v1/projects/{id}", a.updateWorkspace)
+	mux.HandleFunc("GET /api/v1/runs/{id}/workspace", a.getRunWorkspace)
 
 	mux.HandleFunc("GET /api/tasks", a.listTasks)
 	mux.HandleFunc("POST /api/tasks", a.createTask)

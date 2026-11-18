@@ -209,3 +209,99 @@ func TestWorkspacePatchGuardsActiveRuns(t *testing.T) {
 		t.Fatalf("unexpected patched workspace: %#v", updated)
 	}
 }
+
+func TestAgentRuntimeValidation(t *testing.T) {
+	handler, _ := newTestHandler(t)
+
+	recorder := callJSON(t, handler, http.MethodPost, "/api/agents", map[string]any{
+		"name":    "Ghost agent",
+		"runtime": "ghost",
+	})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unknown runtime = %d, want 400 (body %s)", recorder.Code, recorder.Body.String())
+	}
+	if body := recorder.Body.String(); !bytes.Contains([]byte(body), []byte("available runtimes")) {
+		t.Fatalf("error should list available runtimes: %s", body)
+	}
+
+	recorder = callJSON(t, handler, http.MethodPost, "/api/agents", map[string]any{
+		"name":    "Claude agent",
+		"runtime": "claude",
+	})
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("claude agent = %d (body %s)", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestRunWorkspaceEndpoint(t *testing.T) {
+	handler, st := newTestHandler(t)
+	ctx := context.Background()
+
+	task := &domain.Task{Title: "Workspace run", Status: domain.TaskTodo}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	agent := &domain.Agent{Name: "Mock"}
+	if err := st.CreateAgent(ctx, agent); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	ended := domain.Now()
+	run := &domain.Run{
+		TaskID:     task.ID,
+		AgentID:    agent.ID,
+		Status:     domain.RunCompleted,
+		Trigger:    "manual",
+		Branch:     "ateam/task1234/fix-run123",
+		Worktree:   "/tmp/worktrees/demo/run123",
+		BaseCommit: "base123",
+		HeadCommit: "head456",
+		EndedAt:    &ended,
+	}
+	if err := st.CreateRun(ctx, run); err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+
+	recorder := callJSON(t, handler, http.MethodGet, "/api/v1/runs/"+run.ID+"/workspace", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("run workspace = %d (body %s)", recorder.Code, recorder.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload["branch"] != run.Branch || payload["baseCommit"] != "base123" || payload["headCommit"] != "head456" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if payload["state"] != "review" || payload["cleanupState"] != "kept" {
+		t.Fatalf("unexpected state: %#v", payload)
+	}
+
+	recorder = callJSON(t, handler, http.MethodGet, "/api/v1/runs/missing/workspace", nil)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("missing run = %d, want 404", recorder.Code)
+	}
+	if body := decodeM1Error(t, recorder); body.Code != "RUN_NOT_FOUND" {
+		t.Fatalf("unexpected code: %#v", body)
+	}
+}
+
+func TestCreateRunRequiresBoundWorkspaceForRealRuntime(t *testing.T) {
+	handler, st := newTestHandler(t)
+	ctx := context.Background()
+
+	task := &domain.Task{Title: "Real runtime", Status: domain.TaskTodo}
+	if err := st.CreateTask(ctx, task); err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	agent := &domain.Agent{Name: "Claude", Runtime: "claude"}
+	if err := st.CreateAgent(ctx, agent); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+
+	recorder := callJSON(t, handler, http.MethodPost, "/api/tasks/"+task.ID+"/runs", map[string]any{
+		"agentId": agent.ID,
+	})
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("unbound workspace run = %d, want 409 (body %s)", recorder.Code, recorder.Body.String())
+	}
+}

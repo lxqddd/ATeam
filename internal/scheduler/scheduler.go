@@ -111,16 +111,16 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 
 	task, err := s.store.GetTask(ctx, run.TaskID)
 	if err != nil {
-		s.fail(ctx, run, fmt.Errorf("load task: %w", err))
+		s.finishFailed(ctx, run, "internal_error", "failed to load the task")
 		return
 	}
 	agent, err := s.store.GetAgent(ctx, run.AgentID)
 	if err != nil {
-		s.fail(ctx, run, fmt.Errorf("load agent: %w", err))
+		s.finishFailed(ctx, run, "internal_error", "failed to load the agent")
 		return
 	}
 	if !task.Status.Executable() {
-		s.fail(ctx, run, fmt.Errorf("task %s is %s; move it to todo or in_progress before running", task.ID, task.Status))
+		s.finishFailed(ctx, run, "task_not_executable", fmt.Sprintf("task is %s; move it to todo or in_progress before running", task.Status))
 		return
 	}
 
@@ -150,17 +150,6 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		return
 	}
 
-	workdir, err := s.workspaces.Prepare(runCtx, run.ID)
-	if err != nil {
-		s.fail(ctx, run, err)
-		return
-	}
-	run.Worktree = workdir
-	run.Status = domain.RunRunning
-	if !s.writeActiveRun(ctx, run, "run.running") {
-		return
-	}
-
 	sequence := 0
 	emit := func(event runtime.Event) {
 		sequence++
@@ -179,7 +168,87 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		s.hub.Broadcast(events.Event{Type: "run.event", Data: runEvent})
 	}
 
-	adapter := s.registry.Get(agent.Runtime)
+	adapter, registered := s.registry.Get(agent.Runtime)
+	if !registered {
+		// Unknown runtimes fail explicitly; they never fall back to mock (MILE-009).
+		emit(runtime.Event{Type: "error", Message: fmt.Sprintf("runtime %q is not registered", agent.Runtime), Data: map[string]any{"errorCode": "runtime_error"}})
+		s.finishFailed(ctx, run, "runtime_error", fmt.Sprintf("runtime %q is not registered", agent.Runtime))
+		return
+	}
+
+	// Code changing runs get an isolated git worktree; mock (non-code) runs
+	// only get a plain directory (PRD runtime-and-workspace §8.2).
+	codeChange := adapter.Name() != "mock"
+	workdir := ""
+	if codeChange {
+		workspaceRecord, err := s.store.GetWorkspace(ctx, run.WorkspaceID)
+		if err != nil || !workspaceRecord.Bound() {
+			emit(runtime.Event{Type: "error", Message: "workspace is not bound to a local repository", Data: map[string]any{"errorCode": "workspace_error"}})
+			s.finishFailed(ctx, run, "workspace_error", "workspace is not bound to a local repository")
+			return
+		}
+		settings := workspaceRecord.Settings.WithDefaults()
+		emit(runtime.Event{
+			Type:    "run.workspace.provisioning",
+			Message: "Provisioning run workspace",
+			Data:    map[string]any{"runId": run.ID},
+		})
+		worktree, err := s.workspaces.CreateWorktree(runCtx, workspace.WorktreeOptions{
+			RepoPath:       workspaceRecord.RepoPath,
+			DefaultBranch:  workspaceRecord.DefaultBranch,
+			Remote:         settings.Remote,
+			WorktreeRoot:   settings.WorktreeRoot,
+			BranchTemplate: settings.BranchTemplate,
+			TaskID:         task.ID,
+			TaskTitle:      task.Title,
+			RunID:          run.ID,
+		})
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				s.finishCancelled(ctx, run)
+				return
+			}
+			emit(runtime.Event{
+				Type:    "run.workspace.failed",
+				Message: "Failed to provision run workspace",
+				Data:    map[string]any{"runId": run.ID, "errorCode": "workspace_error"},
+			})
+			s.finishFailed(ctx, run, "workspace_error", "failed to provision the run workspace")
+			return
+		}
+		run.Branch = worktree.Branch
+		run.BaseCommit = worktree.BaseCommit
+		run.Worktree = worktree.Path
+		emit(runtime.Event{
+			Type:    "run.workspace.ready",
+			Message: "Run workspace ready",
+			Data: map[string]any{
+				"runId":      run.ID,
+				"branch":     worktree.Branch,
+				"baseCommit": worktree.BaseCommit,
+				"path":       worktree.Path,
+			},
+		})
+		workdir = worktree.Path
+	} else {
+		dir, err := s.workspaces.Prepare(runCtx, run.ID)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				s.finishCancelled(ctx, run)
+				return
+			}
+			s.finishFailed(ctx, run, "workspace_error", "failed to prepare the run directory")
+			return
+		}
+		run.Worktree = dir
+		workdir = dir
+	}
+
+	run.Status = domain.RunRunning
+	if !s.writeActiveRun(ctx, run, "run.running") {
+		return
+	}
+
 	emit(runtime.Event{
 		Type:    "log",
 		Message: fmt.Sprintf("Starting %s runtime for agent %s", adapter.Name(), agent.Name),
@@ -190,15 +259,29 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		Workdir: workdir,
 	}, emit)
 
+	if codeChange && workdir != "" {
+		if head, headErr := s.workspaces.HeadCommit(ctx, workdir); headErr == nil && head != "" {
+			run.HeadCommit = head
+		}
+	}
+
 	ended := domain.Now()
 	run.EndedAt = &ended
 	switch {
 	case errors.Is(err, context.Canceled):
 		run.Status = domain.RunCancelled
 		run.Error = "run cancelled"
+		run.ErrorCode = "cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		run.Status = domain.RunFailed
+		run.Error = "run timed out"
+		run.ErrorCode = "timeout"
+		run.FailureDetail = "run timed out"
 	case err != nil:
 		run.Status = domain.RunFailed
 		run.Error = err.Error()
+		run.ErrorCode = "runtime_error"
+		run.FailureDetail = err.Error()
 	default:
 		run.Status = domain.RunCompleted
 		run.Summary = fmt.Sprintf("Completed with %s runtime", adapter.Name())
@@ -206,6 +289,25 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	if !s.writeActiveRun(ctx, run, "run.updated") {
 		slog.Info("run already terminal; keeping stored state", "run", run.ID)
 	}
+}
+
+func (s *Scheduler) finishCancelled(ctx context.Context, run *domain.Run) {
+	ended := domain.Now()
+	run.Status = domain.RunCancelled
+	run.Error = "run cancelled"
+	run.ErrorCode = "cancelled"
+	run.EndedAt = &ended
+	s.writeActiveRun(ctx, run, "run.updated")
+}
+
+func (s *Scheduler) finishFailed(ctx context.Context, run *domain.Run, code, message string) {
+	ended := domain.Now()
+	run.Status = domain.RunFailed
+	run.Error = message
+	run.ErrorCode = code
+	run.FailureDetail = message
+	run.EndedAt = &ended
+	s.writeActiveRun(ctx, run, "run.updated")
 }
 
 // writeActiveRun persists a run only while its stored status is still active.
@@ -222,14 +324,6 @@ func (s *Scheduler) writeActiveRun(ctx context.Context, run *domain.Run, eventTy
 	}
 	s.hub.Broadcast(events.Event{Type: eventType, Data: run})
 	return true
-}
-
-func (s *Scheduler) fail(ctx context.Context, run *domain.Run, err error) {
-	ended := domain.Now()
-	run.Status = domain.RunFailed
-	run.Error = err.Error()
-	run.EndedAt = &ended
-	s.writeActiveRun(ctx, run, "run.updated")
 }
 
 func buildPrompt(task *domain.Task, agent *domain.Agent) string {

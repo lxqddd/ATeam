@@ -19,11 +19,13 @@ import (
 // are never called by these tests.
 type fakeStore struct {
 	store.Store
-	mu     sync.Mutex
-	runs   map[string]domain.Run
-	tasks  map[string]domain.Task
-	agents map[string]domain.Agent
-	events int
+	mu         sync.Mutex
+	runs       map[string]domain.Run
+	tasks      map[string]domain.Task
+	agents     map[string]domain.Agent
+	workspaces map[string]domain.Workspace
+	events     int
+	eventTypes []string
 }
 
 func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain.Run) {
@@ -46,18 +48,47 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 		UpdatedAt:      domain.Now(),
 	}
 	run := domain.Run{
-		ID:        "run-1",
-		TaskID:    task.ID,
-		AgentID:   agent.ID,
-		Status:    runStatus,
-		Trigger:   "manual",
-		CreatedAt: domain.Now(),
+		ID:          "run-1",
+		WorkspaceID: domain.DefaultWorkspaceID,
+		TaskID:      task.ID,
+		AgentID:     agent.ID,
+		Status:      runStatus,
+		Trigger:     "manual",
+		CreatedAt:   domain.Now(),
 	}
 	return &fakeStore{
 		runs:   map[string]domain.Run{run.ID: run},
 		tasks:  map[string]domain.Task{task.ID: task},
 		agents: map[string]domain.Agent{agent.ID: agent},
+		workspaces: map[string]domain.Workspace{
+			domain.DefaultWorkspaceID: {ID: domain.DefaultWorkspaceID, Name: "Default", DefaultBranch: "main", Status: domain.WorkspaceActive},
+		},
 	}, &run
+}
+
+func (f *fakeStore) GetWorkspace(_ context.Context, id string) (*domain.Workspace, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	workspace, ok := f.workspaces[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &workspace, nil
+}
+
+func (f *fakeStore) setWorkspace(workspace domain.Workspace) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.workspaces[workspace.ID] = workspace
+}
+
+func (f *fakeStore) setAgentRuntime(runtimeName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, agent := range f.agents {
+		agent.Runtime = runtimeName
+		f.agents[id] = agent
+	}
 }
 
 func (f *fakeStore) GetRun(_ context.Context, id string) (*domain.Run, error) {
@@ -108,11 +139,23 @@ func (f *fakeStore) UpdateRunIfActive(_ context.Context, run *domain.Run) (bool,
 	return true, nil
 }
 
-func (f *fakeStore) AppendRunEvent(context.Context, *domain.RunEvent) error {
+func (f *fakeStore) AppendRunEvent(_ context.Context, event *domain.RunEvent) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.events++
+	f.eventTypes = append(f.eventTypes, event.Type)
 	return nil
+}
+
+func (f *fakeStore) hasEventType(eventType string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, recorded := range f.eventTypes {
+		if recorded == eventType {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeStore) runStatus(id string) domain.RunStatus {
@@ -125,6 +168,12 @@ func (f *fakeStore) runError(id string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.runs[id].Error
+}
+
+func (f *fakeStore) run(id string) domain.Run {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.runs[id]
 }
 
 func (f *fakeStore) eventCount() int {

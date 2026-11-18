@@ -193,6 +193,12 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
+	if input.Runtime != "" {
+		if _, ok := a.registry.Get(input.Runtime); !ok {
+			a.writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown runtime %q; available runtimes: %s", input.Runtime, strings.Join(a.registry.Names(), ", ")))
+			return
+		}
+	}
 	agent := &domain.Agent{
 		Name:            strings.TrimSpace(input.Name),
 		Description:     input.Description,
@@ -260,6 +266,10 @@ func (a *API) updateAgent(w http.ResponseWriter, r *http.Request) {
 		agent.Instructions = *patch.Instructions
 	}
 	if patch.Runtime != nil {
+		if _, ok := a.registry.Get(*patch.Runtime); !ok {
+			a.writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown runtime %q; available runtimes: %s", *patch.Runtime, strings.Join(a.registry.Names(), ", ")))
+			return
+		}
 		agent.Runtime = *patch.Runtime
 	}
 	if patch.Model != nil {

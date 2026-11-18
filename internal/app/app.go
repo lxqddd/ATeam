@@ -78,10 +78,10 @@ func New(cfg Config) (*App, error) {
 	}
 
 	hub := events.NewHub(guard)
-	workspaces := workspace.New(filepath.Join(cfg.DataDir, "workspaces"))
+	workspaces := workspace.New(cfg.DataDir)
 	registry := runtime.NewRegistry()
 	sched := scheduler.New(st, hub, registry, workspaces, cfg.Concurrency)
-	handler := api.New(st, hub, sched, cfg.Version, cfg.WebDir, guard)
+	handler := api.New(st, hub, sched, registry, cfg.Version, cfg.WebDir, guard)
 
 	return &App{
 		cfg:       cfg,

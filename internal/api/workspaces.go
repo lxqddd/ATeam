@@ -202,3 +202,44 @@ func (a *API) writeWorkspaceStoreError(w http.ResponseWriter, err error) {
 	}
 	a.writeM1Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "workspace operation failed", nil, "")
 }
+
+// getRunWorkspace returns the derived Run Workspace metadata (PRD §5.4):
+// path, branch, base/head commit, lifecycle state and cleanup state. Nothing
+// is stored separately; the state derives from the Run and its worktree.
+func (a *API) getRunWorkspace(w http.ResponseWriter, r *http.Request) {
+	run, err := a.store.GetRun(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			a.writeM1Error(w, http.StatusNotFound, "RUN_NOT_FOUND", "run not found", nil, "")
+			return
+		}
+		a.writeM1Error(w, http.StatusInternalServerError, "INTERNAL_ERROR", "failed to load run", nil, "")
+		return
+	}
+
+	state := "none"
+	cleanupState := "none"
+	if run.Worktree != "" {
+		cleanupState = "kept"
+		switch {
+		case run.Status == domain.RunPreparing:
+			state = "provisioning"
+		case run.Status == domain.RunRunning:
+			state = "active"
+		case run.Status == domain.RunQueued:
+			state = "provisioning"
+		default:
+			state = "review"
+		}
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]any{
+		"runId":        run.ID,
+		"path":         run.Worktree,
+		"branch":       run.Branch,
+		"baseCommit":   run.BaseCommit,
+		"headCommit":   run.HeadCommit,
+		"state":        state,
+		"cleanupState": cleanupState,
+	})
+}
