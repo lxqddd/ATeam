@@ -193,6 +193,8 @@ Claude Code、Codex 等编码 Agent CLI 已经证明：在真实仓库中读代�
 | JTBD-06 | 一个功能需要多角色协作 | 按依赖与交付物契约推进，而不是自由聊天 | 人工拆任务、口头交接、反复对齐 | 任务 DAG、交付物契约、角色模板；Crew 在 M2.2 后置 | 上游交付物一次验收通过率上升，跨角色返工下降 |
 | JTBD-07 | 团队扩大、成员增多 | 共享 Agent、模板与机器，同时不泄露代码 | 各自维护配置，靠文档同步 | 共享 Agent、模板、远程 Runner、权限 | 新成员上手时间下降，配置漂移减少 |
 | JTBD-08 | Run 失败或卡住 | 快速定位是任务描述、环境、权限还是 Runtime 的问题 | 翻日志、猜原因、重跑 | RunEvent 事件流、错误分类、取消与超时 | 失败平均定位时间下降，重复失败减少 |
+| JTBD-09 | 需求尚未成形，需要先与不同角色讨论 | 把多个角色 Agent 组成小组，在一个会话中得到合适角色的意见，并把结论转成任务 | 在多个聊天窗口间复制粘贴，结论散落 | Agent Team、小组会话、自动路由与 `@` 定向、一键转任务（M2.3） | 任务创建前的澄清轮次下降，讨论到执行的追溯率上升 |
+| JTBD-10 | 同时管理多个 Agent | 一眼判断每个 Agent 是否在工作、刚完成了什么，并查看其工作上下文与过程 | 逐个打开 Run 列表或 Task 详情，靠记忆判断 | Agent 工作状态看板、Agent 工作页、工作上下文与完成过程（M2.4） | 判断 Agent 状态的时间下降，复盘单个 Agent 工作的步骤减少 |
 
 ### 5.2 情感与社会性 Job
 
@@ -206,7 +208,7 @@ Claude Code、Codex 等编码 Agent CLI 已经证明：在真实仓库中读代�
 
 ### 5.3 JTBD 优先级
 
-M0-M1 优先满足 JTBD-01、JTBD-02、JTBD-03、JTBD-04、JTBD-08，即「一个人能安全地并行并把结果接下来」。M1 先交付 JTBD-05 的合并审批，M2 扩展为完整高风险治理；M2 优先满足 JTBD-06，即「多角色协作」，其中 Crew 在 M2.2 后置。M3 优先满足 JTBD-07，即「团队规模化」。优先级依据是：没有隔离与证据，并行越多风险越大；没有角色契约，多 Agent 协作会退化为自由聊天；没有团队共享，产品停留在个人工具。
+M0-M1 优先满足 JTBD-01、JTBD-02、JTBD-03、JTBD-04、JTBD-08，即「一个人能安全地并行并把结果接下来」。M1 先交付 JTBD-05 的合并审批，M2 扩展为完整高风险治理；M2 优先满足 JTBD-06，即「多角色协作」，其中 Crew 在 M2.2 后置；M2.3 满足 JTBD-09，即「执行前的跨角色讨论」，它不替代 JTBD-06 的结构化协作，而是为其提供任务成形前的讨论层；M2.4 满足 JTBD-10，即「多个 Agent 的状态观察与工作复盘」。M3 优先满足 JTBD-07，即「团队规模化」。优先级依据是：没有隔离与证据，并行越多风险越大；没有角色契约，多 Agent 协作会退化为自由聊天；没有团队共享，产品停留在个人工具。
 
 ## 6. 核心价值主张
 
@@ -324,7 +326,9 @@ Runtime 通过 Adapter 接口接入，领域模型不依赖任何具体 CLI。�
 
 ### 8.6 显式协作而非自由聊天
 
-多 Agent 协作通过任务依赖 DAG、交付物契约、审批门与证据交接完成，而不是让多个 Agent 在同一会话中自由对话。自由聊天适合探索，不适合可复现的交付。显式协作的代价是前期建模成本，收益是确定性、可审计性与可优化性。
+多 Agent 的**执行协作**通过任务依赖 DAG、交付物契约、审批门与证据交接完成，而不是让多个 Agent 在同一会话中自由对话。自由聊天适合探索，不适合可复现的交付。显式协作的代价是前期建模成本，收益是确定性、可审计性与可优化性。
+
+M2.3 增加的是**人类发起、只读、可追溯的讨论层**（Agent Team 会话）：用户可以把多个角色 Agent 组成小组，由系统按消息内容路由或由用户 `@` 定向；讨论中的 Agent 不得写仓库、不得创建 Run、不得修改 Task，Agent 与 Agent 之间也不得自动对话。讨论结果必须通过「一键转任务」进入 Task → Run → 证据 → 评审 → 合并链路。该讨论层不削弱本原则对执行层的约束。
 
 ### 8.7 本地优先与最小数据暴露
 
@@ -446,6 +450,9 @@ Run 失败、取消或超时后，Task 的下一步必须可解释。M0 只更�
 | PROD-017 | 删除保护 | 删除 Task/Agent 前检查活跃与排队 Run，存在时阻止并提示先取消或完成；M1 的删除是确认 + 阻止 + 归档；M2.1 起进入 30 天恢复窗口；删除 Workspace 需要 Approval（M3） | M1 归档保护；M2.1 恢复窗口；M3 Workspace 删除审批 |
 | PROD-018 | 权限不足与越权可观测 | 越界路径、未授权命令与越权高风险动作被服务端拒绝，产生 permission_denied 事件；Run 按策略失败或继续，UI 给出原因与申请审批入口；Agent 不得自行扩大权限 | M2.1 |
 | PROD-019 | 本地接口安全基线 | 默认只绑定 127.0.0.1；CORS 使用允许列表；WebSocket 校验 Origin；桌面壳使用会话令牌；非本地访问必须显式配置并启用认证 | M1 Origin/Host/CORS 收紧；M2.1 会话令牌（SEC-003） |
+| PROD-020 | Agent Team 讨论层 | 用户可创建 Agent 小组并在小组会话中讨论；用户消息自动路由到小组内合适 Agent，`@` 可覆盖；每条用户消息的路由决策持久化且可解释；会话 Agent 只读运行，不写仓库、不创建 Run/Artifact、不修改 Task；Agent 消息不触发其他 Agent；任意消息可幂等转为 Task 并保留来源追溯 | M2.3 |
+| PROD-021 | Agent 状态与工作台 | Agent 看板显示派生工作状态（空闲、工作中、已完成、失败待处理），状态与 Run 列表一致；点击工作中或已完成的 Agent 进入工作页，查看所选 Run 的 Task 上下文、配置快照摘要、Workspace/commit 与完成过程时间线；工作页只读且不暴露明文密钥、凭据值或完整拼装 prompt | M2.4 |
+| PROD-022 | Runtime 模型选择 | Agent 创建/编辑时模型为下拉选择，选项来自所选 Runtime 的本地模型目录（Runtime 探测 + 本地配置）；空值表示 Runtime 默认；非空模型必须是目录中的 ID，未知模型返回 400 `MODEL_NOT_AVAILABLE`；切换 Runtime 时重新校验；目录为空时只允许默认模型并提供本地配置入口 | M2.1（Agent 编辑器子项） |
 
 PROD-009 的拆分与 `prd/01-scope-and-roadmap.md` 的 US-005（M1 合并，M2 扩展）一致：M1 的合并必须产生人工评审/审批记录，绑定 Run、diff/head SHA、目标分支、操作者与时间；M2 再扩展到推送、部署、删除与通用 Approval Gate。
 
@@ -474,6 +481,9 @@ PROD 需求不单独存在，必须由模块级功能需求承接。下表给出
 | PROD-017 | TASK-012、SEC-023 | task-management、security-and-permissions |
 | PROD-018 | SEC-010、SEC-011、SEC-018、AGENT-021、AGENT-022 | security-and-permissions、agent-system |
 | PROD-019 | SEC-001、SEC-002、SEC-003、SEC-004、NFR-NET-* | security-and-permissions、non-functional-requirements |
+| PROD-020 | AGTEAM-001、AGTEAM-002、CONV-001 至 CONV-006、ROUTE-001 至 ROUTE-004；API-1400 至 API-1415 | agent-teams-and-conversations、api-and-data、ui-ux、security-and-permissions |
+| PROD-021 | AGENT-074 至 AGENT-078、UI-153 至 UI-160、API-1416 至 API-1425 | agent-system、ui-ux、api-and-data、02-domain-model |
+| PROD-022 | AGENT-079 至 AGENT-082、UI-161 至 UI-164、API-1426 至 API-1429 | agent-system、ui-ux、api-and-data、runtime-and-workspace |
 
 截至本次修订，部分模块文档尚未在需求行反向引用 PROD 编号；这属于跨文档追踪债务，应在各模块下一次修订时补齐，并在 `prd/04-acceptance-and-test-plan.md` 的追踪链检查中核对，而不是在本章重复模块细节。
 
@@ -538,6 +548,21 @@ Then 服务端拒绝该动作并产生 permission_denied 事件，Run 按 Agent 
 Given 一个 Task 或 Agent 仍有 queued、preparing 或 running 的 Run；
 When 用户请求删除；
 Then 系统阻止删除并提示先取消或完成 Run；M2 起删除需要审批并记录影响范围，归档优先于硬删除。
+
+**US-PROD-13 小组讨论与转任务（独立开发者，M2.3）**
+Given 用户创建了一个由 Frontend、Backend、DevOps 组成的 Agent 小组，并在小组会话中发送「支付接口的分页参数怎么设计？」；
+When 系统完成路由；
+Then 消息被交给最合适的 Backend Agent，回复旁显示路由依据，路由决策被持久化；用户可用 `@Frontend` 定向覆盖路由；对任一回复点击「转为任务」后生成带来源字段的 backlog Task，后续执行仍走 Task → Run → 证据 → 评审 → 合并链路；会话中的 Agent 不写仓库、不创建 Run。
+
+**US-PROD-14 Agent 状态看板与工作页（独立开发者，M2.4）**
+Given Agents 看板上有多个 Agent，其中一个正在运行、一个刚完成、一个空闲；
+When 用户查看看板并点击工作中的 Agent；
+Then 看板分别显示「工作中」「已完成」「空闲」；进入 `/agents/{id}/work` 后可以看到当前 Run 的任务、阶段、工作区与最近事件，以及该 Run 的配置快照摘要和完成过程时间线；已完成的 Agent 默认展示刚结束的 Run，空闲 Agent 显示明确空态。
+
+**US-PROD-15 选择本地可用模型（独立开发者，M2.1）**
+Given 用户创建 Agent 并选择了一个已安装的 Runtime；
+When 用户打开模型下拉；
+Then 选项来自该 Runtime 的本地模型目录，首项为「默认（由 Runtime 决定）」；用户不能输入任意模型 ID；若目录为空，只显示默认项与「去设置添加模型」入口；切换 Runtime 后旧模型若不可用会被重置或阻止保存。
 
 ## 12. 成功指标
 
@@ -692,6 +717,8 @@ M0 缺口的权威清单见 `prd/01-scope-and-roadmap.md` 第 4.2.3 节，共 14
 | M0 | 骨架跑通 | 领域模型、SQLite、REST/WS、mock Runtime、Vue 看板、Wails 壳 | 本地可创建 Task/Agent/Run 并看到事件；结论为「有条件通过」，已知缺口见 §14.2.1 | `prd/milestones/M0-scaffold.md` |
 | M1 | 本地闭环 | git worktree、分支、diff 评审、真实 Claude Code 适配、Artifact、取消/超时、本地安全基线、合并 | 单用户可在隔离 worktree 完成一次从 Task 到合并的完整闭环；取消与超时语义达标；Evidence 实体从 M2 起 | `prd/milestones/M1-local-loop.md` |
 | M2 | 角色 Agent 协作 | 任务依赖 DAG、交付物契约、四类角色模板、路径/命令权限、审批门、收件箱、技能、模板、并行调度；Crew 在 M2.2 后置 | 多角色按 DAG 与契约完成一次功能交付，高风险动作均有审批（M2.1）；Crew 不阻塞 M2.1 退出 | `prd/milestones/M2-role-agents.md` |
+| M2.3 | Agent Team 与会话 | Agent 小组、小组会话、自动路由与 `@` 覆盖、只读讨论、流式回复与停止、一键转任务、会话页 | 一条「组建小组 → 讨论 → 路由 / @ → 转任务 → Run」的本地演示通过，讨论层无仓库副作用，负向用例全部被拒绝 | `prd/milestones/M2.3-agent-teams.md` |
+| M2.4 | Agent 状态看板与工作台 | Agent 工作状态、看板状态与筛选、Agent 工作页、工作上下文、完成过程时间线、历史工作、Run 快照查询 | 看板状态与 Run 列表一致；工作中/已完成 Agent 可进入工作页查看上下文与过程；快照脱敏负向用例通过 | `prd/milestones/M2.4-agent-workbench.md` |
 | M3 | 团队模式 | Postgres、登录/权限、远程 Runner、机器注册、共享 Agent、审计、GitHub PR | 2-10 人团队可共享任务、Agent 与机器，审计可追溯 | `prd/milestones/M3-team-mode.md` |
 | M4 | 自动化与分发 | 定时/Webhook 自动化、通知、DMG/NSIS/AppImage、自动更新、插件 API、遥测、文档 | 可安装分发的桌面应用，自动化与扩展可用 | `prd/milestones/M4-automation-and-packaging.md` |
 
@@ -802,5 +829,7 @@ M0 缺口的权威清单见 `prd/01-scope-and-roadmap.md` 第 4.2.3 节，共 14
 | Q13 | 评审 SLA 与升级策略 | 未定；审批超时后的提醒、转交或阻止策略 | 影响团队治理体验 | M2 |
 | Q14 | 每 Agent 并发与资源预算 | 字段已存在但未执行；需定义与全局并发的优先级 | 影响调度公平性与机器负载 | M2 |
 | Q15 | 工作区与日志的清理策略 | 未定；保留时长、手动清理、证据引用后的删除规则 | 影响磁盘占用与审计完整性 | M1 |
+| Q16 | Agent Team 路由策略 | 自动路由的首版实现（规则优先 + LLM 兜底）、多 Agent 并行回复、路由失败后的交互尚未定稿 | 影响路由准确率、成本与 M2.3 交互 | M2.3 开发前 |
+| Q17 | Agent 工作状态窗口 | 「已完成/失败」在无活跃 Run 后保留 24 小时是否合适、是否允许用户配置尚未验证 | 影响看板可读性与工作页默认选中 | M2.4 开发前 |
 
 这些事项将在对应模块文档或架构决策记录中关闭；关闭前，任何实现都应选择可逆方案，避免把未决假设固化到数据模型中。

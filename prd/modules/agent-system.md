@@ -225,6 +225,14 @@ M0 的目标是跑通 Task/Agent/Run 的最小闭环，Agent 能力只覆盖「�
 - **Then** 可以看到修改人、时间、版本差异、权限变化与受影响的后续 Run
 - **验收补充**：权限被拒绝的事件同样记录。
 
+### US-AGENT-15 查看 Agent 状态与工作过程（M2.4）
+
+- **Given** Agent 看板上有多个 Agent，部分正在运行、部分已结束、部分空闲
+- **When** 用户查看看板
+- **Then** 每个 Agent 显示空闲、工作中、已完成或失败待处理状态；工作中显示当前任务与阶段，已完成显示完成时间
+- **And** 用户点击工作中或已完成的 Agent，进入该 Agent 的工作页，看到当前/最近 Run 的工作上下文与完成任务的过程
+- **And** 空闲 Agent 进入工作页时显示明确的空态，不伪造上下文
+
 ## 4. Agent 概念模型
 
 ### 4.1 定义
@@ -304,7 +312,7 @@ Agent 有两个相关但不同的分类维度：
 | instructions | text | 空 | 不超过 64KB；M1 起估算 token 并提示 | 提示词组装 | 已实现（M0） |
 | role | enum | `general` | `general`、`ui_design`、`frontend`、`backend`、`devops`、`custom`；用于依赖校验与默认门禁；不直接授予权限 | 任务 DAG、模板匹配、UI 筛选 | 计划（M2；旧数据迁移默认 `general`） |
 | runtime | string | `mock` | 必须是已注册适配器：`mock`、`claude`，后续 `codex`（M2） | Run 启动时选择适配器 | 部分实现（M0 未知值静默回退 mock） |
-| model | string | 空 | 不超过 100 字符；空表示使用 Runtime 默认 | 传给 Runtime | 未生效（M0 仅存储） |
+| model | string | 空 | 为空表示使用 Runtime 默认模型；非空时必须是所选 Runtime 当前模型目录中的 `id`；目录来自 Runtime 探测与本地模型配置；切换 Runtime 时若原模型不在新目录中必须重置或拒绝保存 | 传给 Runtime | M0 仅存储；M2.1 下拉选择与校验 |
 | workspaceMode | string | `worktree` | `worktree`（M1）；`directory`（M2 直接目录模式，必须显式确认并警示，不等同隔离） | Run 工作区准备 | 未生效（M0 字段仅存储） |
 | permissionMode（Runtime 权限模式） | enum | `controlled_edit` | `read_only`、`controlled_edit`、`full_access`；`full_access` 必须显式开启并在 UI 警示；写入 Run 事件与快照 | Runtime 权限参数与快照 | 计划（M1） |
 | maxConcurrency | int | 1 | 1–16；M1 只受全局并发约束，M2 起按 Agent 生效 | 调度器准入 | 未生效（M0 字段仅存储） |
@@ -334,7 +342,7 @@ M1 起，保存 Agent 时按字段所属里程碑统一执行校验；M0 仅执�
 4. **指令**：允许为空但给出警告，因为空指令意味着 Agent 没有职责与边界；最长 64KB。
 5. **角色**：只接受 `general`、`ui_design`、`frontend`、`backend`、`devops`、`custom`；旧数据迁移时默认 `general`。角色只影响依赖校验与默认门禁，不改变权限信封。
 6. **Runtime**：必须属于已注册适配器集合；未注册值返回 400，不允许静默回退。
-7. **模型**：可空；非空时长度不超过 100，且不保证适配器支持，Run 时由适配器返回明确错误。
+7. **模型**：可空；非空时必须是所选 Runtime 当前模型目录中的 `id`，否则返回 `400 MODEL_NOT_AVAILABLE` 并在 details 中列出可选模型。模型目录由 Runtime 探测结果与本地模型配置合并去重；目录为空时只允许空模型（Runtime 默认）。切换 Runtime 时，若已有模型不在新目录中，UI 必须重置为空或阻止保存并提示。模型不作为权限或隔离依据。已有 Agent 的模型在目录变化后变为不可用时，服务端不得自动改写其配置；Agent 列表与编辑器标记 `unavailable`，启动 Run 前阻止并提示重新选择（模型目录不可探测时除外，由 Adapter 返回运行错误）。
 8. **工作区模式**：M1 只接受 `worktree`；M2 增加 `directory`（直接目录模式），必须显式确认并提示「不具备 worktree 隔离」；两者不能与 `shared` 之类未定义值混用。
 9. **Runtime 权限模式**：只接受 `read_only`、`controlled_edit`、`full_access`；默认 `controlled_edit`；`full_access` 必须在 UI 中显式开启并展示风险警示，保存与每次生效都要写入事件与 Run 快照。
 10. **并发**：整数 1–16；创建时缺失或小于 1 使用 1；PATCH 不允许小于 1。
@@ -348,6 +356,41 @@ M1 起，保存 Agent 时按字段所属里程碑统一执行校验；M0 仅执�
 18. **可见性**：本地模式只允许 `private`；M3 团队模式允许 `team`，且必须由服务端写入团队标识。
 
 默认值只在创建时补齐；PATCH 不重新应用默认值，避免用户以为「改回空值会恢复默认」。所有默认值与空数组语义应在 API、UI 文案与验收测试中一致展示；任何放宽权限的修改都需要二次确认（SEC-015）。
+
+### 4.6 Agent 工作状态与工作台（M2.4）
+
+Agent 有两个互不替代的状态维度：
+
+- **生命周期状态**（`status`）：`active` / `archived`，是持久化配置，决定 Agent 能否用于新 Run；
+- **工作状态**（`workStatus`）：`idle` / `working` / `completed` / `failed`，是**服务端派生的只读状态**，不写入 Agent 配置，也不接受客户端 PATCH。
+
+工作状态的判定（以服务端时间为准）：
+
+| 状态 | 判定规则 | 看板语义 |
+| --- | --- | --- |
+| `working` 工作中 | 存在至少一个 `queued`、`preparing` 或 `running` 的 Run | 显示当前阶段、当前任务与已运行时长；有多条活跃 Run 时显示数量 |
+| `completed` 已完成 | 无活跃 Run；最近一次 Run 为 `completed`，且 `endedAt` 在最近 24 小时内 | 显示完成时间与对应任务，可直接进入工作页复盘 |
+| `failed` 失败待处理 | 无活跃 Run；最近一次 Run 为 `failed`（含 `timeout`）或 `cancelled`，且 `endedAt` 在最近 24 小时内 | 显示失败分类与对应任务，提供重试或查看 Run |
+| `idle` 空闲 | 其余情况：从未运行，或最近一次 Run 已结束超过 24 小时 | 显示「空闲」；可查看历史工作 |
+
+规则：
+
+1. 生命周期为 `archived` 时，看板默认显示「已归档」并覆盖工作状态；归档不改变历史工作记录。
+2. 同一 Agent 有多条活跃 Run 时，`workStatus=working`；工作页按 `startedAt` 排序列出全部活跃 Run。
+3. 24 小时是 M2.4 的固定**状态展示窗口**（不是 §8.4 的工作时间调度窗口）；是否允许用户配置列入开放问题，首版不提供设置项。
+4. `workStatus` 只由 Run 生命周期驱动；Agent 配置编辑、指令修改、技能绑定不改变工作状态。
+5. 服务端在 `GET /api/v1/agents/{id}/work` 返回状态与判定依据；前端不得自行用本地时间重算，以免多端不一致。
+6. 看板状态必须与 Run 列表一致：任一页面显示 `working` 时，Run 列表必须存在对应活跃 Run。
+
+**Agent 工作页**（路由 `/agents/{id}/work`）是 Agent 视角的工作复盘入口，不等于 Run 详情页：
+
+- **当前工作**：活跃 Run 的阶段、任务、开始时间、工作区与分支、最近事件摘要；支持取消跳转；
+- **工作上下文**：所选 Run 的 Task 上下文、AgentVersion / RunConfigSnapshot（指令（脱敏，可折叠）、角色、Runtime、模型、权限模式与权限信封、提示词哈希）、Workspace 与 base/head commit、上游契约与证据引用（M2 起）；
+- **完成过程**：该 Run 的结构化时间线（生命周期、工具调用、文件变更、测试、Artifact、评审与合并），可按类型过滤并跳转 Run 详情；
+- **历史工作**：该 Agent 最近的 Run 列表（默认 20 条），显示状态、任务、耗时、用量与评审/合并结果；
+- **空态**：空闲 Agent 显示「尚无工作记录」与「查看可执行任务」入口，不显示伪造的上下文。
+
+工作页只读展示 Agent 的执行上下文，不提供修改 Agent 配置或直接启动 Run 的入口；编辑与启动仍走既有入口。
 
 ## 5. 指令编写规范
 
@@ -727,6 +770,10 @@ staging 审批的绑定对象是：`run_id` + 动作类型 + 目标环境 `stagi
 | AGENT-069 | Runtime adapter 必须声明能力矩阵：权限模式传递、路径策略、命令策略、优雅取消、流式事件、会话恢复；UI 显示隔离等级；能力不支持时不得静默声称已拦截 | P0 | 计划 | M2 |
 | AGENT-072 | 负向验收：`allowedPaths` 为空时，Agent 尝试写入任意路径必须被拒绝或标记为越界并进入人工复核；不得出现默认允许的路径 | P1 | 计划 | M2 |
 | AGENT-073 | 权限信封字段 `envAllowlist`、`credentialRefs`、`networkAccess` 可保存、校验并写入 RunConfigSnapshot；明文密钥与 prod 范围引用被拒绝 | P0 | 计划 | M2 |
+| AGENT-079 | Agent 的 `model` 只接受空值或所选 Runtime 模型目录中的 `id`；未知模型返回 `400 MODEL_NOT_AVAILABLE` 并列出可选模型 | P0 | 计划 | M2.1 |
+| AGENT-080 | 切换 Runtime 时重新解析模型目录；原模型不在新目录中时拒绝保存并返回字段级错误，或由 UI 重置为默认后保存 | P0 | 计划 | M2.1 |
+| AGENT-081 | Runtime 模型目录为空时只允许空模型（Runtime 默认）；UI 不得回退为自由文本输入，必须提供本地模型配置入口 | P1 | 计划 | M2.1 |
+| AGENT-082 | 模型目录由 Runtime 探测与本地模型配置合并去重；探测失败时返回可用性警告与 `modelsError`，不得把旧缓存当作实时结果 | P1 | 计划 | M2.1 |
 
 ### 10.3 指令与提示词
 
@@ -797,6 +844,16 @@ staging 审批的绑定对象是：`run_id` + 动作类型 + 目标环境 `stagi
 | AGENT-061 | 生产动作按 9.4.1 的清单硬性禁止：prod 命令、prod 凭据、prod 配置路径与 prod 数据/网络写入均不可由 Agent 执行；命中时产生 `permission_denied`（`prod_action_denied`）事件且无副作用；staging 执行需要人工审批，审批绑定 Run、动作、目标环境与计划哈希 | P0 | 计划 | M2 |
 | AGENT-070 | 负向验收覆盖 `deploy --env prod`、`kubectl --context prod apply`、prod 配置路径读取、`bash -c` 包装 prod 命令；全部被拒绝并产生事件；通过通用 shell 或技能脚本绕过同样被拦截 | P0 | 计划 | M2 |
 
+### 10.8 Agent 工作状态与工作台（M2.4）
+
+| 编号 | 需求（可测试） | 优先级 | 当前状态 | 里程碑 |
+| --- | --- | --- | --- | --- |
+| AGENT-074 | Agent 暴露派生 `workStatus`：idle/working/completed/failed；判定规则见 §4.6；`workStatus` 只读且不接受 PATCH | P0 | 计划 | M2.4 |
+| AGENT-075 | `GET /agents/{id}/work` 返回 workStatus、判定依据、活跃 Run、最近 Run 与最近 20 条 Run 摘要；数据与 Run 列表一致 | P0 | 计划 | M2.4 |
+| AGENT-076 | 工作页展示所选 Run 的 Task 上下文、AgentVersion/RunConfigSnapshot（含脱敏后的 instructions）、Workspace/base/head commit 与权限模式；不返回明文密钥与完整拼装 prompt | P0 | 计划 | M2.4 |
+| AGENT-077 | 工作页展示所选 Run 的结构化时间线（生命周期、工具、文件变更、测试、Artifact、评审/合并），支持过滤与跳转 Run 详情 | P0 | 计划 | M2.4 |
+| AGENT-078 | 归档 Agent 在看板显示「已归档」并覆盖工作状态；工作页保留历史只读；空闲 Agent 工作页显示空态 | P1 | 计划 | M2.4 |
+
 ## 11. 交互与规则
 
 ### 11.1 列表页
@@ -812,6 +869,9 @@ M2 起的列表增强如下；M1 不新增专用 Agent 管理页，仅保留 M0 
 | 排序：最近更新、名称、最近使用、Run 成功率 | UI-072 | M2 |
 | 卡片操作：编辑、克隆、归档、删除（按权限显示） | UI-061、UI-063、AGENT-043、AGENT-054 | M2 |
 | 状态标记：Runtime 不可用、配置不完整、并发已满、已归档 | AGENT-053、AGENT-056 | M1 标记 Runtime 不可用；其余 M2 |
+| 工作状态：卡片显示空闲、工作中、已完成、失败待处理；工作中显示当前任务与阶段，已完成显示完成时间 | AGENT-074、AGENT-075、UI-153 | M2.4 |
+| 点击行为：点击卡片正文进入 `/agents/{id}/work` 工作页；编辑配置使用独立入口，不进入工作页 | AGENT-075、UI-154 | M2.4 |
+| 分组与筛选：可按工作状态分组或筛选；默认按「工作中 → 已完成 → 空闲」排序 | AGENT-074、UI-153 | M2.4 |
 | 列表分页或虚拟滚动：本地 Agent 数量超过 100 时启用 | `prd/modules/non-functional-requirements.md` | M2 |
 
 ### 11.2 创建与编辑
@@ -825,6 +885,8 @@ M1 起的基础表单规则如下；M1 只复用创建弹窗做基础编辑（�
 | 分组展示：基本信息、指令、运行设置、权限边界；M2 增加技能面板与 role；M3 增加可见性与所有权 | UI-060、UI-066、AGENT-064 | M1 基础分组；M2 完整 |
 | 校验时机：字段失焦时做格式校验，提交时做完整校验；服务端错误按 field 映射到具体输入框 | AGENT-009 至 AGENT-020 | M1 |
 | Runtime 下拉只展示已注册适配器；每个选项展示可用状态；不可用选项允许查看但不可选 | AGENT-011、AGENT-053、UI-071 | M1 |
+| 模型使用下拉选择，选项来自所选 Runtime 的模型目录；首项为「默认（由 Runtime 决定）」（空值），其余按来源分组；不提供自由文本输入；目录为空时只显示默认项与「去设置添加模型」入口 | AGENT-079 至 AGENT-082、UI-161 至 UI-164 | M2.1 |
+| 切换 Runtime 时刷新模型目录；原模型不在新目录中时重置为默认并提示，或阻止保存；模型目录探测失败时显示警告与重试，不静默使用旧列表 | AGENT-080、AGENT-082、UI-163 | M2.1 |
 | Runtime 权限模式选择：只读、受控编辑、完全授权；默认受控编辑；选择完全授权时显示风险警示并要求二次确认 | AGENT-062 | M1 |
 | 允许路径使用多行编辑器或路径选择器，逐条添加；**必须展示「空表示不可写任何路径」**，不得显示「空表示整个工作区」 | AGENT-023、AGENT-072、UI-067 | M1 输入与文案；M2 影响预览 |
 | 允许命令使用标签编辑器，逐条添加；**必须展示「空表示不额外授权任何命令」**；高风险命令红色标识、默认不勾选 | AGENT-023、UI-068 | M1 输入与文案；M2 风险分级 |
@@ -1149,7 +1211,8 @@ M3 的审计事件至少包括：创建、修改、克隆、归档、恢复、�
 | --- | --- | --- |
 | M0（已完成骨架） | Agent CRUD、SQLite 持久化、REST 与 WebSocket、默认值、指令注入提示词、超时基础行为、Vue 列表与创建弹窗、mock 与最小 claude 适配器 | 可通过 UI 创建 Agent；可通过 API 更新与删除；Run 能读取 Agent 指令并执行；重启后数据仍在 |
 | M1（本地闭环） | 配置校验（Runtime、workspaceMode、并发、超时、路径/命令语法）、`workspaceId=default`、`revision` 乐观并发、`permissionMode`、RunConfigSnapshot（创建时写入，含 Runtime 版本/权限模式/权限信封/提示词哈希）、编辑不改变历史 Run、Runtime 健康检查与无 mock 回退、超时映射为 failed + `errorCode=timeout`、取消终态守卫（引用 RUN-004/RUN-005）、基础编辑表单（次要项，不进入退出标准） | Agent 保存有完整校验；未知 Runtime 返回 400 且不回退 mock；Run 创建时生成完整快照，排队期间修改 Agent 不改变该 Run；超时 Run 为 failed 且 `errorCode=timeout`；取消后状态不被回写 |
-| M2（角色 Agent 协作） | `role` 与旧数据迁移、AgentVersion 表与版本历史/差异、克隆（UI-063）、归档/恢复/删除引用检查（UI-062）、完整 Agent 管理 UI、内置角色模板与版本化变量 schema、技能（解析/导入/绑定/启停/解绑/删除保护/证据）、权限信封执行（路径、命令、环境变量、凭据、网络意图）、每 Agent 并发与持久队列、Runtime 能力矩阵与隔离等级、生产动作硬拦截、审批门与 DevOps Agent staging 限制 | role 可用于依赖校验；版本与技能版本可追溯；空 allowedPaths 时写入被拒绝或标记；不支持实时拦截的 Runtime 明确降级并进入人工复核；生产动作被拒绝并产生事件；归档保留历史；staging 需审批 |
+| M2（角色 Agent 协作） | `role` 与旧数据迁移、AgentVersion 表与版本历史/差异、克隆（UI-063）、归档/恢复/删除引用检查（UI-062）、完整 Agent 管理 UI（含 Runtime 模型下拉与本地模型配置）、内置角色模板与版本化变量 schema、技能（解析/导入/绑定/启停/解绑/删除保护/证据）、权限信封执行（路径、命令、环境变量、凭据、网络意图）、每 Agent 并发与持久队列、Runtime 能力矩阵与隔离等级、生产动作硬拦截、审批门与 DevOps Agent staging 限制 | role 可用于依赖校验；版本与技能版本可追溯；空 allowedPaths 时写入被拒绝或标记；不支持实时拦截的 Runtime 明确降级并进入人工复核；生产动作被拒绝并产生事件；归档保留历史；staging 需审批；模型只能从 Runtime 目录选择 |
+| M2.4（Agent 状态看板与工作台，附加） | 派生 `workStatus`、`GET /agents/{id}/work`、`GET /runs/{id}/snapshot`、看板状态与筛选、工作页（当前工作、上下文、完成过程、历史工作）、状态与 Run 列表一致性、快照脱敏 | 看板状态与 Run 列表一致；工作中/已完成 Agent 可进入工作页；工作页不暴露明文密钥与完整拼装 prompt；空闲与归档态正确 |
 | M3（团队模式） | 登录与角色、Agent 可见性与所有权、共享 Agent、团队审计、Postgres 兼容、Remote Runner 下的 Agent 执行、GitHub PR 相关审批 | 团队成员可见共享 Agent；无权限编辑返回 403 并审计；不可见 Agent 返回 404；审计可查完整变更；远程执行不改变 Agent 配置语义 |
 | M4（自动化与分发） | Agent 包导出/导入、模板市场、工作时间窗口、Webhook/定时触发的 Agent 选择、插件 API 中的 Agent 扩展点、通知与打包 | 模板包导入有权限预览与扫描；工作时间窗口按规则生效；自动化触发的 Run 记录 Agent 配置快照与来源 |
 

@@ -55,7 +55,7 @@
 - 不做通用工作流引擎。Task、Run、Review、Approval、Crew 的状态集合是产品内置的固定集合，不支持用户自定义状态机。
 - 不做完整事件溯源（Event Sourcing）。事件用于通知、审计和调试，聚合根当前状态仍以关系表为准。
 - 不做跨 Workspace 的任务依赖或 Agent 共享。M3 之前所有实体严格限定在单一 Workspace 内；M3 的共享仍受成员权限约束。
-- 不做多 Agent 在同一会话中自由聊天的协作模型。角色 Agent 的协作必须经过任务 DAG、交付物契约、证据与人工评审。
+- 不做多 Agent 在同一会话中自由聊天的协作模型。角色 Agent 的执行协作必须经过任务 DAG、交付物契约、证据与人工评审。M2.3 允许人类发起、只读、可追溯的 AgentTeam 讨论，但讨论不是执行协作原语，且 Agent 之间不得自动对话。
 - 不做模型托管、模型转售或密钥代管。Runtime 与模型密钥均由用户自带（BYO Runtime/Key）。
 - 不在 M1/M2 引入多租户 SaaS 模型。M3 的团队模式仍以单组织、多成员、可多 Workspace 为边界。
 - 不在本章重复定义性能、安全与 UI 的阈值。相关条目引用 `modules/non-functional-requirements.md`、`modules/security-and-permissions.md` 与 `modules/ui-ux.md` 的权威编号。
@@ -87,6 +87,10 @@
 | Approval | 针对某个具体高风险动作的一次性人工审批（M2） |
 | Deliverable | 交付物契约及其冻结版本（M2）；旧概念名 TaskContractVersion，数据层统一为 `deliverables` + `contract_versions` |
 | Crew | 任务级的角色编排方案，M2 后段交付，不等于自由聊天 |
+| AgentTeam | 多个 Agent 的讨论小组（M2.3），属于一个 Workspace，不是 M3 的人类 Team Workspace |
+| Conversation | AgentTeam 内的人类发起会话（M2.3），只读讨论，不承载执行 |
+| ConversationMessage | 会话中的不可变消息，含路由决策与转任务引用（M2.3） |
+| RoutingDecision | 一条用户消息选择回复 Agent 的持久化决策（M2.3） |
 | Machine | 物理或虚拟执行机器 |
 | Runner | 运行在 Machine 上、代表某个 Workspace 接收 Run 的执行代理 |
 
@@ -128,6 +132,9 @@ Workspace（项目）
   │                    └── * CrewStep (M2 后段)
   ├── * Approval (M2)
   ├── * MergeRecord (M1，合并审计)
+  ├── * AgentTeam ─── * AgentTeamMember
+  │                    └── * Conversation ─── * ConversationMessage
+  │                                          └── * RoutingDecision (M2.3)
   ├── * Skill
   └── * Runner ─── 1 Machine (M3)
 
@@ -142,7 +149,9 @@ Agent ─── * AgentSkill ─── Skill
 - Run 对 Artifact、RunEvent 为一对多；Artifact 不可脱离 Run 存在。
 - Review 与 Run 为多对多（M2 起一次评审可聚合多个角色 Run，通过 ReviewRun 关联）；M1 简化为一次 Review 绑定一个 Run。
 - TaskDependency 是 Task 的自关联，只表达完成先后，不表达父子层级；父子层级用 `parentId`。
-- Crew 是 Task 级编排方案，成员引用 Agent 与角色，不拥有独立会话。
+- Crew 是 Task 级编排方案，成员引用 Agent 与角色，不拥有独立会话。M2.3 的 AgentTeam/Conversation 是独立实体，不复用 Crew，也不作为执行协作原语。
+- AgentTeam 对 AgentTeamMember 为一对多，AgentTeamMember 引用 Agent；一个 Agent 可属于多个 AgentTeam，组内唯一。Conversation 属于唯一 AgentTeam；ConversationMessage 属于唯一 Conversation，`(conversationId, seq)` 唯一。
+- RoutingDecision 绑定一条用户消息与一个被选中的 Agent；消息不可变，决策只追加。转任务在 Task 上记录 `originConversationId`/`originMessageId`，不建立反向强外键，避免归档会话阻断 Task。
 - Runner 属于 Machine，同时绑定 Workspace；M0 只有隐式本地 Runner。
 - `EvidenceItem` 是旧稿名称，统一改称 Evidence；`environment` 不是实体，部署环境通过 Approval 的 `actionParams.environment` 表达。
 
@@ -181,6 +190,7 @@ Agent ─── * AgentSkill ─── Skill
 | TaskDependency | 未实现 | 无 | M2 |
 | Agent | 已实现 | `agents` 表、`domain.Agent` | M0 |
 | AgentVersion | 未实现 | 无，Run 不固定版本 | M1 |
+| Agent 工作状态（派生） | 未实现 | 无，Agent 只有 active/archived | M2.4 |
 | Run | 已实现 | `runs` 表、`domain.Run` | M0 |
 | RunEvent | 已实现 | `run_events` 表、`domain.RunEvent` | M0 |
 | Run Workspace | 部分实现 | 每次 Run 一个普通目录 | M1 升级 worktree |
@@ -195,6 +205,9 @@ Agent ─── * AgentSkill ─── Skill
 | Skill | 未实现 | 无 | M2 |
 | Crew | 未实现 | 无 | M2 后段 |
 | CrewMember / CrewStep | 未实现 | 无 | M2 后段 |
+| AgentTeam / AgentTeamMember | 未实现 | 无 | M2.3 |
+| Conversation / ConversationMessage | 未实现 | 无 | M2.3 |
+| RoutingDecision | 未实现 | 无 | M2.3 |
 | Machine | 隐式本地机 | 无 | M3 |
 | Runner | 隐式本地执行 | 调度器内 worker | M3 |
 
@@ -301,13 +314,14 @@ Agent ─── * AgentSkill ─── Skill
 | instructions | string | 否 | 空 | Markdown 工作指令，进入 Run prompt；M1 起最长 64 KiB | M0 |
 | role | enum | 是 | `general` | `general`、`ui_design`、`frontend`、`backend`、`devops`、`custom` | M2 |
 | runtime | string | 是 | `mock` | `mock`、`claude`、`codex`（M2）；M0 未注册值回退 mock | M0 字段；M1 校验 |
-| model | string | 否 | 空 | Runtime 可识别的模型标识；M0 不传给适配器 | M0 字段；M1 生效 |
+| model | string | 否 | 空 | 空表示 Runtime 默认；非空必须是所选 Runtime 模型目录中的 `id`；目录来自 Runtime 探测与本地模型配置（M2.1） | M0 字段；M1 生效；M2.1 校验 |
 | workspaceMode | enum | 是 | `worktree` | `worktree`、`directory`；M0 存而不用 | M0 字段；M1 worktree |
 | maxConcurrency | integer | 是 | `1` | 该 Agent 同时活跃 Run 上限；M0 不强制执行 | M0 字段；M2 执行 |
 | timeoutMinutes | integer | 是 | `60` | 单次 Run 超时；M0 由调度器执行，M1 起 1-1440 校验 | M0 |
 | allowedPaths | string[] | 是 | `[]` | 允许修改的路径，相对仓库根；M2 起空表示不可写任何路径（默认拒绝） | M0 存储，M2 执行 |
 | allowedCommands | string[] | 是 | `[]` | 允许执行的命令模式；M2 起空表示仅只读检查 | M0 存储，M2 执行 |
 | status | enum | 是 | `active` | `active`、`archived` | M2 |
+| workStatus | enum（派生） | 是 | `idle` | `idle`、`working`、`completed`、`failed`；由 Run 派生，只读，不持久化为 Agent 配置；规则见 4.10 | M2.4 |
 | currentVersionId | string | 否 | 空 | 当前发布版本 | M1 |
 | visibility | enum | 是 | `private` | `private`、`team`，M3 生效 | M3 |
 | createdBy | string | 否 | 空 | 创建者 | M3 |
@@ -318,6 +332,8 @@ Agent ─── * AgentSkill ─── Skill
 **生命周期**：创建时补默认值；被 Task 选中后用于创建 Run；归档后不能创建新 Run，但历史 Run 仍引用其旧版本；M2 起，角色模板可以实例化为 Agent，但实例与模板解耦，后续模板升级不自动改动已有 Agent。
 
 **归属与删除**：Agent 在 M1-M2 是安装级可复用配置，不强制 `workspaceId`；M3 起，团队共享 Agent 必须带 `workspaceId` 与 `visibility`，只有 owner 或具备 `agent:write` 权限的成员可以编辑，且必须留下审计事件。M0 允许硬删除且不检查引用，可能留下指向不存在 Agent 的 Run；M1 起，删除前必须没有活跃 Run 或未关闭 Review，否则返回 409；通过校验后执行归档（写 `archivedAt`），M2.1 起提供 30 天恢复窗口，不提供硬删除。
+
+**模型目录约束（M2.1）**：`model` 的取值不是自由字符串，而是当前 Runtime 模型目录中的 `id`。目录由 Runtime 探测条目与本地模型配置合并去重；空值表示 Runtime 默认。Agent 保存时校验目录，目录为空时只允许空值。模型目录不改变权限、隔离或审批语义，也不作为 Run 快照之外的持久实体。
 
 **M0 行为说明**：当前 `internal/scheduler/scheduler.go` 只使用 `runtime`、`timeoutMinutes` 与 `instructions`；`model`、`maxConcurrency`、`allowedPaths`、`allowedCommands`、`workspaceMode` 均未实际生效。`runtime` 未注册时回退到 mock。这是 M0 的已知简化，M1 起逐步落地版本固定与权限执行。
 
@@ -730,6 +746,88 @@ Agent ─── * AgentSkill ─── Skill
 
 ---
 
+### 3.17 AgentTeam（M2.3，Agent 讨论小组）
+
+**职责**：把同一 Workspace 内的多个 Agent 组织成一个讨论小组。AgentTeam 只承载讨论，不承载执行；与 M3 的人类 Team Workspace 不是同一实体。
+
+**字段**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 | 里程碑 |
+|---|---|---|---|---|---|
+| id | string(24 hex) | 是 | 服务端生成 | 主键 | M2.3 |
+| workspaceId | string | 是 | 无 | 归属 Workspace | M2.3 |
+| name | string | 是 | 无 | 小组名称，进入路由上下文 | M2.3 |
+| description | string | 否 | 空 | 用途说明，进入路由上下文 | M2.3 |
+| status | enum | 是 | `active` | `active`、`archived` | M2.3 |
+| revision | integer | 是 | 从 1 递增 | 乐观并发 | M2.3 |
+| createdAt / updatedAt | timestamp | 是 | 创建/更新时 | UTC 毫秒 | M2.3 |
+
+**AgentTeamMember**（表 `agent_team_members`）：`teamId`、`agentId`、`roleOverride`、`position`、`joinedAt`；`(teamId, agentId)` 唯一；Agent 必须存在、未归档且与小组同 Workspace。
+
+**规则**：归档单向；归档后小组与会话只读；成员变更不改写历史消息。
+
+---
+
+### 3.18 Conversation 与 ConversationMessage（M2.3）
+
+**Conversation（会话）**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 | 里程碑 |
+|---|---|---|---|---|---|
+| id | string(24 hex) | 是 | 服务端生成 | 主键 | M2.3 |
+| workspaceId | string | 是 | 无 | 归属 Workspace | M2.3 |
+| teamId | string | 是 | 无 | 归属 AgentTeam | M2.3 |
+| title | string | 是 | 首条消息前 60 字符 | 可重命名 | M2.3 |
+| status | enum | 是 | `active` | `active`、`archived` | M2.3 |
+| createdBy | string | 是 | `local` | M2.3 固定本地用户 | M2.3 |
+| lastMessageAt | timestamp | 否 | 空 | 列表排序 | M2.3 |
+| messageCount | integer | 是 | 0 | 派生维护字段 | M2.3 |
+| revision | integer | 是 | 从 1 递增 | 乐观并发 | M2.3 |
+| createdAt | timestamp | 是 | 创建时 | UTC 毫秒 | M2.3 |
+
+**ConversationMessage（消息）**
+
+| 字段 | 类型 | 必填 | 默认 | 说明 | 里程碑 |
+|---|---|---|---|---|---|
+| id | string(24 hex) | 是 | 服务端生成 | 主键 | M2.3 |
+| conversationId | string | 是 | 无 | 所属会话 | M2.3 |
+| seq | integer | 是 | 会话内递增 | `(conversationId, seq)` 唯一 | M2.3 |
+| senderType | enum | 是 | 无 | `user`、`agent`、`system` | M2.3 |
+| senderAgentId | string | 条件 | 空 | `senderType=agent` 时必填 | M2.3 |
+| content | text | 是 | 无 | Markdown；上限 32 KiB | M2.3 |
+| mentions | JSON | 否 | 空 | 用户消息中的 `@` Agent ID 数组 | M2.3 |
+| routingDecisionId | string | 否 | 空 | Agent 消息对应的路由决策 | M2.3 |
+| replyToMessageId | string | 否 | 空 | 回复的用户消息 | M2.3 |
+| status | enum | 是 | `completed` | `agent` 消息：`pending`、`streaming`、`completed`、`failed`、`cancelled`；`user`/`system` 恒为 `completed` | M2.3 |
+| usage | JSON | 否 | 空 | token/费用摘要 | M2.3 |
+| taskId | string | 否 | 空 | 转任务后回填；一条消息最多一个 Task | M2.3 |
+| truncated | boolean | 是 | false | 正文超限截断标记 | M2.3 |
+| createdAt | timestamp | 是 | 创建时 | UTC 毫秒 | M2.3 |
+
+**规则**：消息创建后不可修改；`seq` 单调递增；系统消息仅服务端追加且不参与路由；会话归档后拒绝新消息；会话不提供硬删除。
+
+---
+
+### 3.19 RoutingDecision（M2.3，路由决策）
+
+**职责**：记录一条用户消息选择回复 Agent 的依据，保证讨论可解释、可审计。
+
+| 字段 | 类型 | 必填 | 默认 | 说明 | 里程碑 |
+|---|---|---|---|---|---|
+| id | string(24 hex) | 是 | 服务端生成 | 主键 | M2.3 |
+| conversationId | string | 是 | 无 | 所属会话 | M2.3 |
+| messageId | string | 是 | 无 | 被路由的用户消息 | M2.3 |
+| mode | enum | 是 | 无 | `auto`、`mention` | M2.3 |
+| source | enum | 是 | 无 | `router_rules`、`router_llm`、`mention` | M2.3 |
+| candidates | JSON | 是 | 无 | 参与选择的成员快照（agentId、name、role） | M2.3 |
+| selectedAgentId | string | 是 | 无 | 选中的 Agent | M2.3 |
+| rationale | text | 否 | 空 | 人类可读依据 | M2.3 |
+| createdAt | timestamp | 是 | 创建时 | UTC 毫秒 | M2.3 |
+
+**规则**：决策只追加；一条用户消息最多一个决策；决策必须引用同会话成员；`selectedAgentId` 必须属于当前小组（成员在路由后被移除不改变历史决策）。
+
+---
+
 ## 4. 状态机
 
 ### 4.1 状态机建模约定
@@ -945,6 +1043,70 @@ Agent ─── * AgentSkill ─── Skill
 
 ---
 
+### 4.9 Conversation 与消息状态机（M2.3）
+
+**Conversation 状态**
+
+| 状态 | 含义 | 允许动作 | 终态 |
+|---|---|---|---|
+| active | 可发送消息、可路由、可转任务 | 发送消息、重命名、归档 | 否 |
+| archived | 只读 | 查看历史、复制链接 | 是 |
+
+转换：`active → archived`（用户或系统在小组归档时触发）。归档后发送消息返回 409 `CONVERSATION_ARCHIVED`，进行中的 Agent 回复允许完成或被取消，但不再接受新消息。
+
+**ConversationMessage 状态（仅 `senderType=agent`）**
+
+| 状态 | 含义 | 允许动作 | 终态 |
+|---|---|---|---|
+| pending | 已创建占位，等待 Runtime | 开始生成、取消 | 否 |
+| streaming | 正在接收 delta | 追加 delta、完成、失败、取消 | 否 |
+| completed | 正常结束 | 只读、转任务 | 是 |
+| failed | Runtime 失败或超时 | 只读；重试创建新消息 | 是 |
+| cancelled | 用户停止 | 只读；保留已生成内容 | 是 |
+
+转换表：
+
+| 编号 | 从 | 到 | 触发者 | 守卫条件 | 副作用 |
+|---|---|---|---|---|---|
+| CM-01 | pending | streaming | 系统 | 会话 active；无其他进行中回复 | 发布 `conversation.reply.started` |
+| CM-02 | streaming | completed | 系统 | 收到终止事件 | 持久化完整正文与 usage；发布 `completed` |
+| CM-03 | streaming | failed | 系统 | Runtime 错误、超时或进程异常 | 记录错误摘要；发布 `failed`；追加系统消息 |
+| CM-04 | pending/streaming | cancelled | 用户 | — | 终止进程组；保留部分正文；发布 `cancelled` |
+| CM-05 | pending | failed | 系统 | 无法启动 Runtime | 发布 `failed` |
+
+**并发规则**：同一会话同一时间最多一个非终态 Agent 消息；新用户消息在存在非终态回复时返回 409 `CONVERSATION_BUSY`。`user` 与 `system` 消息创建即 `completed`。
+
+---
+
+### 4.10 Agent 工作状态（M2.4，派生）
+
+Agent 的 `workStatus` 不是持久化生命周期状态，而是由 Run 与当前时间派生的只读视图。生命周期状态 `status=archived` 始终覆盖工作状态。
+
+| 状态 | 判定 | 允许动作 | 终态 |
+|---|---|---|---|
+| idle | 无活跃 Run，且无 24 小时内结束的 Run | 查看历史、启动新 Run | 否 |
+| working | 存在至少一个 queued/preparing/running 的 Run | 查看当前工作、取消 Run | 否 |
+| completed | 无活跃 Run；最近 Run 为 completed 且 endedAt 在 24 小时内 | 查看完成过程、创建新 Run | 否 |
+| failed | 无活跃 Run；最近 Run 为 failed/timeout/cancelled 且 endedAt 在 24 小时内 | 查看失败原因、重试、创建新 Run | 否 |
+
+转换规则：
+
+| 编号 | 从 | 到 | 触发 | 守卫 |
+|---|---|---|---|---|
+| AW-01 | idle/completed/failed | working | Run 进入 queued/preparing/running | Run 与 Agent 同 Workspace |
+| AW-02 | working | completed | 最后一个活跃 Run 进入 completed | 无其他活跃 Run |
+| AW-03 | working | failed | 最后一个活跃 Run 进入 failed/timeout/cancelled | 无其他活跃 Run |
+| AW-04 | completed/failed | idle | 最近 Run 的 endedAt 超过 24 小时 | 无活跃 Run |
+| AW-05 | 任意 | archived | Agent 归档 | 归档成功后工作状态不再作为看板主状态 |
+
+规则：
+
+- 转换由服务端在 Run 生命周期变化或查询时计算；不新增派生 WebSocket 事件。
+- 同一 Agent 多条活跃 Run 时保持 `working`，不因一条 Run 完成而提前变为 completed/failed。
+- 工作状态不改变 Agent 的权限、版本或可调度性；`idle` 不等于不可用。
+
+---
+
 ## 5. 角色 Agent 协作规则
 
 ### 5.1 任务 DAG
@@ -995,6 +1157,16 @@ DevOps Agent 在 M2 的权限边界：可以修改 CI 配置、Dockerfile、部�
 
 Crew 是把上述 DAG、契约、证据与审批门封装成任务级模板的编排层。它不创建共享聊天室，不让多个 Agent 在同一会话里互相对话；它为每个角色创建子 Task 或关联 Run，由 DAG 决定顺序，由契约决定交接内容，由 Review 决定是否通过。队长模式（captain）属于后续实验能力，即使启用，队长也只能编排、分派与汇总，不能代替人类评审或审批。
 
+### 5.6 AgentTeam 讨论层与执行层的关系（M2.3）
+
+AgentTeam 会话是执行链路之前的讨论层，不是 Crew 的替代品，也不是新的执行原语：
+
+- 讨论层只处理用户消息；每条用户消息最多路由给一个成员，路由决策持久化；
+- 会话 Agent 以 `read_only` 运行，不写仓库、不创建 Run/Artifact、不修改 Task；
+- Agent 消息不参与路由，不触发其他 Agent；
+- 讨论结果通过「一键转任务」生成 backlog Task，之后仍由第 5.1-5.4 节的 DAG、契约、证据与审批门约束；
+- 转换保留 `originConversationId`/`originMessageId`，但执行正确性不依赖会话内容，Task 描述必须自包含。
+
 ---
 
 ## 6. 关键不变量
@@ -1031,6 +1203,15 @@ Crew 是把上述 DAG、契约、证据与审批门封装成任务级模板的�
 | INV-026 | Run 的 contractVersionId 必须指向创建时冻结的契约版本 | 保证契约可复现 | 服务层校验 | M2 |
 | INV-027 | Crew 状态只能按 4.8 的转换表变化，`done` 不自动完成父 Task | 防止编排越权 | 领域服务 | M2 后段 |
 | INV-028 | 只有人类可以创建 Review 决策、MergeRecord 与 Approval 决策；Agent 身份不得批准 | 保证人工在回路 | API 403 | M1/M2 |
+| INV-029 | AgentTeam、Conversation、ConversationMessage 必须同 Workspace；成员 Agent 必须与小组同 Workspace | 禁止跨 Workspace 讨论 | 服务层校验 + 复合约束 | M2.3 |
+| INV-030 | ConversationMessage 创建后不可修改；`(conversationId, seq)` 唯一且单调递增 | 保证讨论可追溯 | DB 唯一约束 + 只追加服务 | M2.3 |
+| INV-031 | 每条用户消息最多一个 RoutingDecision；被选 Agent 必须是路由时的组成员 | 保证路由可解释 | 服务层校验 + 唯一约束 | M2.3 |
+| INV-032 | 同一会话同一时间最多一个非终态 Agent 消息 | 防止并发回复交错 | 部分唯一索引或服务层锁 | M2.3 |
+| INV-033 | 会话 Agent 不得写仓库、创建 Run/Artifact 或修改 Task；Agent 消息不得触发其他 Agent | 讨论层不产生执行副作用 | Runtime `read_only` + 路由只处理用户消息 + 负向测试 | M2.3 |
+| INV-034 | 一条消息最多转为一个 Task；Task 的 `originConversationId`/`originMessageId` 创建后不可改写（归档会话除外） | 保证讨论到执行的追溯 | 服务层幂等 + 唯一约束 | M2.3 |
+| INV-035 | Agent 的 `workStatus` 必须由 Run 派生，不得作为可写配置持久化；判定以服务端时间为准 | 防止客户端伪造工作状态 | 服务端派生 + PATCH 拒绝 | M2.4 |
+| INV-036 | 同一 Agent 存在活跃 Run 时 `workStatus` 必须为 `working`；无活跃 Run 时不得为 `working` | 保证看板与 Run 列表一致 | 查询服务一致性测试 | M2.4 |
+| INV-037 | 工作摘要与 Run 快照不得暴露明文密钥、凭据值或完整 prompt | 防止工作页成为泄漏面 | 服务端脱敏 + 负向测试 | M2.4 |
 
 ---
 
@@ -1565,8 +1746,9 @@ Then 系统返回 403；团队成员 B 具备审批权限时可以批准，并�
 | Workspace | 隐式 | 显式表与默认回填 | 设置完善 | 多 Workspace 与权限 | 稳定 |
 | Task | CRUD 与状态枚举 | 受控状态机、revision、acceptanceCriteria、归档 | 契约、key 评估、角色模板 | 团队权限 | 自动化触发 |
 | TaskDependency | — | — | DAG 与自动解锁 | 团队可见性 | 稳定 |
-| Agent | CRUD 与默认值 | 版本固定、删除保护 | 权限执行、角色模板、并发上限、归档 | 共享、workspaceId 与审计 | 插件化 |
+| Agent | CRUD 与默认值 | 版本固定、删除保护 | 权限执行、角色模板、并发上限、归档、Runtime 模型目录 | 共享、workspaceId 与审计 | 插件化 |
 | AgentVersion | — | 自动快照 | 草稿/发布体验 | 团队审计 | 稳定 |
+| Agent 工作状态 / 工作台 | — | — | M2.4：派生 workStatus、工作页、Run 快照查询 | 团队视图复用工作页 | 稳定 |
 | Run | queued 到终态、超时、取消接口 | worktree、分支、状态守卫、attempt、重启恢复 | 并发上限、Crew 关联、契约版本 | 远程 Runner | 定时/Webhook |
 | RunEvent | 持久化与 WS | seq 唯一、类型枚举、source、截断、增量拉取 | 指标与事件表 | 远程聚合 | 稳定 |
 | Run Workspace | 普通目录 | git worktree、分支、workspaceState、清理 | Crew 并行隔离 | 远程机器路径 | 稳定 |
@@ -1578,6 +1760,9 @@ Then 系统返回 403；团队成员 B 具备审批权限时可以批准，并�
 | Deliverable | — | — | 契约冻结与版本 | 团队模板 | 稳定 |
 | Skill | — | — | 本地技能与版本固定 | 团队共享 | 稳定 |
 | Crew | — | — | 后段实验（十字段状态机） | 队长模式完善 | 稳定 |
+| AgentTeam | — | — | M2.3 小组成员与归档 | 团队讨论复用 UI，数据模型独立 | 稳定 |
+| Conversation / ConversationMessage | — | — | M2.3 会话、消息与转任务 | 团队讨论复用 UI，数据模型独立 | 稳定 |
+| RoutingDecision | — | — | M2.3 路由决策持久化 | 团队讨论复用 UI，数据模型独立 | 稳定 |
 | Machine/Runner | 隐式本地 worker | 本地 Runner 语义 | 本地并发 | 远程注册与调度 | 稳定 |
 | 领域事件 | WS 尽力送达 | 稳定命名、增量同步 | 本地事件表 | 审计与远程通知 | 插件订阅 |
 
@@ -1599,6 +1784,8 @@ Then 系统返回 403；团队成员 B 具备审批权限时可以批准，并�
 
 M3 迁移到 Postgres 时保持 ID 值不变，按同一语义重建约束；`agents` 增加 `workspace_id`、`visibility`、`owner_id`，`workspaces` 增加团队归属。
 
+**M2.3 迁移**：新增 `agent_teams`、`agent_team_members`、`conversations`、`conversation_messages`、`conversation_routing_decisions` 五张表；`tasks` 增加可空的 `origin_conversation_id`、`origin_message_id`。全部为只追加迁移，不修改既有列语义；M2.3 不引入 `workspace_id` 以外的权限边界。
+
 ---
 
 ## 15. 与其他文档的关系
@@ -1614,6 +1801,7 @@ M3 迁移到 Postgres 时保持 ID 值不变，按同一语义重建约束；`ag
 | `prd/modules/agent-system.md` | Agent 配置、instructions、Runtime、模型、并发、超时、路径与命令权限 | Agent 字段与版本以本章为准；该文档可保留模块级 UI 细节；`workspaceId` 在 M3 增加，M1-M2 明确为安装级共享 |
 | `prd/modules/runtime-and-workspace.md` | Run 生命周期、调度、Runtime adapter、事件流、取消、超时、worktree、Artifact/Evidence | Run/RunEvent/Run Workspace 语义以本章为准；该文档 §8.7 的「M1 采用产品级 Workspace、不引入 Workspace」应改为「M1 采用 Workspace 表」；心跳与失联处置按本章 3.14 |
 | `prd/modules/collaboration-and-review.md` | 任务 DAG、交付物契约、角色模板、审批门、Crew、收件箱、技能与模板、评审 | 契约、Review、Approval、Crew 状态以本章为准；Crew 状态机与其 §7.2 一致；其 §8.2 的 `revoked` 作为本章 `cancelled` 的别名，不另立状态 |
+| `prd/modules/agent-teams-and-conversations.md` | Agent Team、会话、消息、路由与一键转任务（M2.3） | AgentTeam、Conversation、ConversationMessage、RoutingDecision 字段与状态以本章 3.17-3.19、4.9 为准；该模块只定义讨论层，不改变 Task/Run 语义 |
 | `prd/modules/security-and-permissions.md` | 权限模型、路径与命令策略、风险分级、审批、审计、密钥管理 | `SEC-*` 是安全权威；本章只引用，不重复定义 CORS、远程模式等 |
 | `prd/modules/non-functional-requirements.md` | 性能、可靠性、可移植性、可访问性、可观测性、数据保留、成本 | `NFR-*` 是 NFR 权威；本章不维护第二套阈值 |
 | `prd/modules/api-and-data.md` | REST 与 WebSocket 契约、错误模型、事件类型、版本策略、数据模型 | 错误码与实体字段以本章为准；`SERVER_RESTART`、`RUN_INTERRUPTED` 等应映射为 `interrupted/app_restart`；规范路径为 `/api/v1/workspaces`，`/api/v1/projects` 仅为兼容别名 |
@@ -1621,6 +1809,8 @@ M3 迁移到 Postgres 时保持 ID 值不变，按同一语义重建约束；`ag
 | `prd/milestones/M0-scaffold.md` | M0 已完成骨架与已知缺口 | 本章 M0 盘点与其一致；发现差异以代码为准并回写两者 |
 | `prd/milestones/M1-local-loop.md` | M1 目标、范围、交付物、验收 | M1 使用 Workspace/workspaceId、Review + MergeRecord、无 Approval；本章据此修订 |
 | `prd/milestones/M2-role-agents.md` | M2 角色协作、契约、审批、Crew | Approval、Evidence、Deliverable 从 M2 开始；本章与其保持一致 |
+| `prd/milestones/M2.3-agent-teams.md` | M2.3 Agent Team 讨论层 | AgentTeam、Conversation、ConversationMessage、RoutingDecision 的里程碑范围与退出标准；本章为其领域事实源 |
+| `prd/milestones/M2.4-agent-workbench.md` | M2.4 Agent 状态看板与工作台 | Agent `workStatus` 的派生规则、Agent 工作页与 Run 快照查询；本章 4.10 为其状态机事实源 |
 | `prd/milestones/M3-team-mode.md` | 团队模式、Postgres、远程 Runner、机器注册 | Machine/Runner 状态与心跳以本章 3.14 为准；`disabled` 替代 `revoked` 状态，`interrupted` 替代顶层 `runner_lost` |
 | `prd/milestones/M4-automation-and-packaging.md` | 自动化、通知、打包、插件、遥测 | 只引用本章实体；不新增领域实体 |
 

@@ -129,6 +129,7 @@
 | US-TASK-015 Run 失败、超时与取消 | M1 | TASK-036、TASK-125、TASK-074 |
 | US-TASK-016 权限不足 | M3 | TASK-075、TASK-131 |
 | US-TASK-017 Webhook 自动创建任务 | M4 | TASK-140、TASK-141 |
+| US-TASK-018 从小组会话转为任务 | M2.3 | TASK-145、TASK-146 |
 
 ### US-TASK-001 快速捕捉任务（M0）
 
@@ -257,6 +258,13 @@
 - Then ATeam 返回 202 与 delivery ID，按模板创建一个 Backlog 任务，记录 `trigger=webhook` 与去重键
 - And 自动创建的任务不会自动启动 Run、不会自动评审或合并；重复 delivery 只创建一次任务
 
+### US-TASK-018 从小组会话转为任务（M2.3）
+
+- Given 用户在 Agent Team 会话中得到一条可执行的结论
+- When 用户点击「转为任务」并确认标题与描述
+- Then 系统创建一个 `backlog` 任务，写入 `originConversationId` 与 `originMessageId`
+- And 同一消息重复转换返回同一任务；任务不会自动启动 Run，后续执行仍走既有 Run → 证据 → 评审 → 合并链路
+
 ## 4. 任务对象模型
 
 ### 4.1 设计原则
@@ -296,6 +304,8 @@ Task 是上下文容器，不是聊天记录。任务描述应说明目标、背
 | templateVersionSnapshot | object | 否 | 模板版本快照，包含模板版本号与关键字段副本 | 未实现 | M2 |
 | deliverableContract | object | 否 | 交付物契约，含必需产物、证据类型、审批门与执行范围 | 未实现 | M2 |
 | boardOrder | integer | 否 | 看板列内手动排序值，仅影响展示 | 未实现 | M2 |
+| originConversationId | string | 否 | 由 Agent Team 会话转换而来时的来源会话 ID；创建后不可改写 | 未实现 | M2.3 |
+| originMessageId | string | 否 | 来源会话消息 ID；与 `originConversationId` 同时写入；一条消息最多对应一个 Task | 未实现 | M2.3 |
 
 补充约定：
 
@@ -304,6 +314,7 @@ Task 是上下文容器，不是聊天记录。任务描述应说明目标、背
 - `revision` 是唯一版本字段；`version` 只是请求输入的兼容别名，响应只返回 `revision`。M1 起按 `If-Match`/`expectedRevision` 启用，冲突返回 409 `STALE_REVISION`；412 仅用于动作前置条件（审批指纹、内容哈希、评审快照）。
 - `workspaceId` 在 M1 对应 `prd/milestones/M1-local-loop.md` 的 Workspace 绑定；领域模型文档中的 Workspace 是同一归属概念的上位名称。M0 无 Workspace，任务事实上位于隐式默认项目。
 - 模板删除或升级后，任务继续读取 `templateVersionSnapshot`，不因模板变化改变历史任务；模板快照缺失时按空契约处理并提示重建。
+- `originConversationId` 与 `originMessageId` 仅由「会话转任务」服务写入，客户端不可指定；它们只用于追溯，不参与权限、依赖或完成判定。会话归档不影响 Task 的读取与执行。
 - M0 的 `Task` JSON 中 `parentId` 带 `omitempty`，空字符串时可能不出现在响应里；前端类型将其视为可选。M1 起统一返回空字符串或空数组，减少客户端分支。`labels` 在 M0 以 JSON 文本存入 SQLite，读取时解析失败会回退为空数组，这一容错行为应保留。
 
 ### 4.3 关联关系
@@ -1008,6 +1019,8 @@ M0 没有版本字段，更新采用最后写入覆盖，两个窗口同时编�
 | TASK-142 | 插件只能读取任务与订阅事件，不能绕过审批门、不能替人批准 | P1 | M4 | 插件调用合并、审批或删除端点返回 403；停用后不再收到事件 |
 | TASK-143 | 任务与证据可导入导出，导出前进行敏感信息检查 | P2 | M4 | 导出包含任务、评审、Artifact 索引与 Evidence；密钥与完整环境变量被排除 |
 | TASK-144 | 遥测默认关闭且必须 opt-in，不采集任务标题、描述、评论、代码或路径 | P1 | M4 | 关闭时无上报；开启后可查看、导出并删除本地遥测记录 |
+| TASK-145 | Task 支持 `originConversationId`、`originMessageId` 来源字段，仅由会话转任务服务写入 | P0 | M2.3 | 字段可查询；客户端 PATCH 不能改写；会话归档后仍可追溯 |
+| TASK-146 | 会话转任务幂等：同一消息最多一个 Task；重复转换返回既有 Task；转换不自动启动 Run | P0 | M2.3 | 重复调用返回同一 Task；Run 数量为 0；标题与描述可预填并编辑 |
 
 ## 15. 数据与 API 影响
 

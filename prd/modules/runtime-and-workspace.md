@@ -67,6 +67,7 @@ ATeam 的核心闭环是 Task（上下文容器）→ Agent（可复用工作配
 7. **不替用户管理 Git 凭据**：M1 只使用本机已有的 Git 配置与凭据；M3 的 PR 集成使用用户显式授权的凭据引用。
 8. **不把 mock 运行当作真实交付**：mock 仅用于演示、联调与自动化测试，不产生可合并的代码。
 9. **不承诺对所有语言与构建系统开箱即用**：证据采集依赖 Agent 声明与可配置命令，ATeam 不内置每种技术栈的测试矩阵。
+10. **不把 Agent Team 会话回合当作 Run**：M2.3 的会话回复以 `read_only` 调用 Runtime，但不创建 Run、不产生 Artifact、不写仓库；会话用量只记录在消息上。执行与证据仍以 Run 为唯一载体。
 
 ## 3. 角色与场景
 
@@ -323,6 +324,22 @@ M0 的 Registry 在找不到指定名称时返回 mock adapter，这会让配置
 4. 只有 Agent 显式选择 mock 时才允许 mock 运行；UI 在 Run 详情与列表上显示明显的 mock 标识。
 5. 自动重试不得把失败的 claude Run 降级为 mock 重跑。
 
+### 6.4.1 模型目录与本地模型配置（M2.1）
+
+Agent 的模型选择不再是自由文本，而是所选 Runtime 的**模型目录**。目录由两部分合并去重：
+
+1. **Runtime 探测**：Adapter 的 `Probe()` 返回本机该 Runtime 可用的模型标识。不同 CLI 能力不同：能枚举的返回真实列表；不能枚举的返回空列表并给出 `modelsError`，不得伪造模型名。
+2. **本地模型配置**：用户在 ATeam 设置中为某个 Runtime 维护的模型 ID 列表，存储在本机配置中，不包含密钥。用于补足 CLI 无法枚举或用户使用自定义模型 ID 的场景。
+
+模型条目至少包含：`id`、`label`、`source`（`runtime`/`settings`）、`default`（是否 Runtime 默认）、`status`（`available`/`unverified`/`unavailable`）、`deprecated`。规则：
+
+- `id` 是不透明字符串；ATeam 不解释其语义，只做精确匹配与展示；`label` 缺失时展示 `id`。
+- 合并时按 `id` 去重；同一 `id` 以 Runtime 探测条目的状态为准，本地配置只补充缺失项。
+- 空模型值表示「使用 Runtime 默认」，始终是下拉首项；目录为空时只允许空模型。
+- 目录按 Runtime 缓存，TTL 60 秒；用户可手动刷新。探测失败时返回本地配置列表与 `modelsError`，不得把过期缓存当作实时结果。
+- 模型目录只用于选择与校验，不改变权限、隔离或审批；模型不可用不自动降级到其他模型。
+- Agent 保存时按目录校验；Run 启动时若目录可用则再次校验，不可用时交由 Adapter 返回 `runtime_error`，不得静默改用默认模型。
+
 ### 6.5 Claude Code Adapter
 
 M0 的最小实现行为：在 PATH 中查找 `claude`；以 `claude -p` 加完整 prompt 启动；设置 `Workdir`；逐行扫描 stdout 与 stderr；扫描缓冲上限 1 MB；进程退出后返回错误或发出 summary。该实现足以验证端到端链路，但不满足真实使用要求。
@@ -330,7 +347,7 @@ M0 的最小实现行为：在 PATH 中查找 `claude`；以 `claude -p` 加完�
 M1 的完整适配要求：
 
 1. **结构化输出**：使用 CLI 支持的机器可读输出模式，把文本、工具调用、工具结果、用量与错误解析为对应事件，而不是把所有内容压成 log。
-2. **模型映射**：Agent.Model 为空时使用 CLI 默认模型；非空时校验是否为该 CLI 支持的标识，并把选择结果写入 Run 事件。
+2. **模型映射**：Agent.Model 为空时使用 CLI 默认模型；非空时必须是 §6.4.1 模型目录中的 `id`，保存时校验，Run 启动时目录可用则复检；选择结果写入 Run 事件与配置快照。不得静默改用默认模型。
 3. **权限模式**：根据 Agent 的路径与命令配置选择只读、受控编辑或完全授权模式；完全授权必须由用户在 Agent 配置中显式开启并在 UI 警示。
 4. **会话与上下文**：一次 Run 默认无历史会话；需要延续时使用明确的会话标识并记录在 Run 元数据中，禁止隐式复用上一次会话。
 5. **预算与限额**：支持最大轮次或费用上限参数（若 CLI 提供）；达到上限时产生 `usage` 事件并以可分类原因结束。
@@ -803,7 +820,7 @@ Run 详情需要展示：当前阶段、已运行时长、最后事件时间、�
 | RUN-013 | Claude Code adapter 支持 Agent.Model 映射、权限模式、结构化输出与用量事件。 | P0 | M1 | 未实现 |
 | RUN-014 | Claude Code adapter 的取消先优雅终止、宽限 10 秒后强制终止进程树。 | P0 | M1 | 部分实现（直接 kill） |
 | RUN-015 | Codex adapter 提供与 Claude adapter 等价的事件、取消与超时契约，并声明能力差异。 | P0 | M2 | 未实现 |
-| RUN-016 | `GET /api/v1/runtimes` 返回每个 Runtime 的可用性、版本、能力与所需凭据状态；该端点需在 `api-and-data.md` 的端点表中登记（当前仅 `/api/v1/meta` 有概要）。 | P1 | M1 | 未实现 |
+| RUN-016 | `GET /api/v1/runtimes` 返回每个 Runtime 的可用性、版本、能力、模型目录与所需凭据状态；模型目录包含 `id`、`label`、`source`、`default`、`status`、`deprecated`；探测失败返回 `modelsError` 与本地配置列表 | P1 | M1 基础探测；M2.1 模型目录 | 未实现 |
 | RUN-017 | Adapter 不得把 API Key、Token 或完整父进程环境写入事件、日志或数据库。 | P0 | M1 | 未实现 |
 | RUN-018 | Adapter 异常 panic 时由调度器恢复，Run 进入 failed，`errorCode=runtime_error`、`failureDetail=adapter_crash`，worker 不退出。 | P0 | M1 | 未实现 |
 | RUN-095 | Run 创建时固定 `agentVersionId`（见 `02-domain-model.md` §3.5）；执行期只读快照，排队期间修改 Agent 不影响该 Run。 | P0 | M1 | 未实现（调度时现取 Agent） |

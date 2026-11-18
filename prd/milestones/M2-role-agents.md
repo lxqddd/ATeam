@@ -73,7 +73,7 @@ M2 按 `prd/01-scope-and-roadmap.md` 的约定拆成两个子阶段。M2.1 是�
 | 任务模板 | M2.1 | UI Design、Frontend、Backend、DevOps Staging、Bugfix、Feature 六类模板；预填 DAG、角色、契约、证据要求 | `prd/modules/task-management.md` |
 | Crew 与队长 | M2.2 | 父任务拆解、角色分派、计划审批、成员执行、汇总、预算、死锁检测、Crew 视图 | `prd/modules/collaboration-and-review.md` |
 | 本地 API 信任边界 | M2.1 | 随机会话令牌、一次性 bootstrap、WS ticket、CORS/Host/Origin 白名单、无令牌请求拒绝；M1 的 Origin/Host 校验作为回归项 | `prd/modules/security-and-permissions.md` |
-| 界面与交互 | M2.1、M2.2 | Task 详情标签页（Overview、Runs、DAG、Contracts、Gates、Evidence、Timeline；Run 详情内嵌 Timeline、Logs、Diff、Artifacts、Review、Approval）、Inbox、角色模板创建、权限编辑器、Crew 只读视图 | `prd/modules/ui-ux.md` |
+| 界面与交互 | M2.1、M2.2 | Task 详情标签页（Overview、Runs、DAG、Contracts、Gates、Evidence、Timeline；Run 详情内嵌 Timeline、Logs、Diff、Artifacts、Review、Approval）、Inbox、角色模板创建、权限编辑器、Runtime 模型下拉与本地模型配置、Crew 只读视图 | `prd/modules/ui-ux.md` |
 | 数据与 API | M2.1、M2.2 | 依赖、契约、审批、证据、Crew、收件箱、技能、模板的存储与接口；只追加迁移；规范路径 `/api/v1` | `prd/modules/api-and-data.md`、`prd/modules/collaboration-and-review.md` |
 | 安全与审计 | M2.1 | 权限执行、审批记录、拒绝事件、本地审计、日志脱敏、提示注入防护、本地 API 认证 | `prd/modules/security-and-permissions.md` |
 | Codex Runtime（可选） | M2.1 可选 | 适配器契约稳定后可进入，不作为 M2.1 退出条件；是否进入由 OQ-M2-14 决定 | `prd/modules/runtime-and-workspace.md` |
@@ -220,7 +220,7 @@ M2 的完成定义由证据组成：
 | Workspace | `internal/workspace/workspace.go` 为每个 Run 创建 `Root/runs/{runID}` 普通目录，忽略 `WorkspaceMode` | M2 依赖 M1 的 git worktree；M2 在其上增加路径权限校验 |
 | Runtime | Registry 注册 mock 与 claude；mock 产生确定性事件；claude 调用本地 `claude -p` 并逐行转发 stdout/stderr | M2 需要真实 adapter 能力声明、命令/路径策略挂接、Codex 可选 |
 | Task 视图 | `apps/web/src/views/TaskView.vue` 可选择 Agent 启动 Run、轮询日志、取消、修改状态 | M2 增加 Runs、DAG、Contracts、Gates、Evidence、Timeline 标签页与 readiness 原因 |
-| Agent 视图 | `apps/web/src/views/AgentsView.vue` 创建与列出 Agent；表单包含名称、描述、指令、Runtime、模型、并发、超时、允许路径 | M2 增加角色模板、技能、允许命令、权限风险分级与影响预览 |
+| Agent 视图 | `apps/web/src/views/AgentsView.vue` 创建与列出 Agent；表单包含名称、描述、指令、Runtime、模型、并发、超时、允许路径 | M2 增加角色模板、技能、允许命令、权限风险分级与影响预览；M2.1 模型子项把模型改为 Runtime 目录下拉并增加本地模型配置 |
 | 桌面壳 | Wails v3 启动随机端口服务并加载 Web UI；未打包 | M2 不涉及打包；打包属于 M4 |
 | 本地 API 安全 | 无认证；CORS 反射任意 `Origin`；WebSocket `CheckOrigin` 恒为 `true`；`--addr` 无回环守卫 | M1 交付 Origin/CORS/Host 校验（SEC-004）；M2.1 交付会话令牌、bootstrap 与 WS ticket（SEC-003），审批接口纳入认证范围 |
 
@@ -540,6 +540,7 @@ M2 的 role 枚举以 `prd/02-domain-model.md` 第 3.4 节为准：`general`（�
 | COLLAB-004、COLLAB-006、AGENT-044、AGENT-045 | 角色子任务、custom 角色、模板变量 | P1 | M2.1 新增 | 可从父任务创建带 role 的子任务并默认绑定同角色 Agent；custom 角色不获得门禁豁免；未解析变量阻止实例化 | `prd/modules/agent-system.md` 第 7.3 节 |
 | TASK-083、TASK-084、TASK-085、TASK-086、TASK-089 | 任务模板、预填 DAG/契约/证据、Agent 草稿 | P1（TASK-083/084 保持模块 P2，可选） | M2.1 必须交付 TASK-085/086/089（退出标准第 10 项依赖 TASK-089）；TASK-083/084 不阻塞退出 | 至少六类模板可创建；模板可实例化预置 DAG；Agent 生成的任务默认 `backlog` 且不自动启动 Run | `prd/modules/task-management.md` 第 8 节 |
 | AGENT-028、UI-064 | 六段式指令模板与 Markdown 预览 | P2 | M2.1 可选 | 模板包含职责、边界、输入、输出、检查、汇报；预览与源文切换不丢内容 | `prd/modules/agent-system.md` 第 5 节 |
+| AGENT-079～082、UI-161～164、API-1426～1429 | Runtime 模型目录与 Agent 模型下拉；本地模型配置 | P0 | M2.1 模型子项，可随 Agent 编辑器提前交付，不依赖 DAG/契约 | 模型下拉只列所选 Runtime 目录；空值表示默认；非目录 ID 返回 `MODEL_NOT_AVAILABLE`；切换 Runtime 重新校验；目录为空只显示默认项与配置入口 | `prd/modules/agent-system.md` §4.4/§10.2、`prd/modules/runtime-and-workspace.md` §6.4.1、`prd/modules/api-and-data.md` §5.17 |
 
 ### 7.5 路径与命令权限
 

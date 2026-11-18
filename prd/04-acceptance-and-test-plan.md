@@ -335,6 +335,41 @@ M1 不引入 Approval 实体，合并门由 Review approved + 显式确认 + Mer
 | AC-AUTO-05 | TASK-142、SEC-080、M4-PLUG-001～M4-PLUG-009 | 插件只能读取任务与订阅事件，不能绕过审批门、不能替人批准；停用后不再收到事件；恶意插件不能读取未授权文件；插件 API 有版本兼容策略与失败隔离；越权调用返回 403 并写审计 | 插件权限负向测试 | M4 |
 | AC-AUTO-06 | TASK-144、NFR-SEC-011、SEC-080、M4-TEL-001～M4-TEL-009 | 遥测默认关闭且必须 opt-in，可查看、导出与删除本地记录；不采集任务标题、描述、评论、代码、diff、文件路径与用量明细；关闭后立即停止上报并清空队列 | 抓包、设置检查与字段审查 | M4 |
 
+### 3.14 M2.3 Agent Team 与会话验收
+
+| 验收编号 | 引用 FR | 验收标准（可判定） | 证据 | 阶段 |
+|---|---|---|---|---|
+| AC-AGTEAM-01 | AGTEAM-001、AGTEAM-002、API-1400、UI-144 | 创建/重命名/归档 Agent Team；成员增删；成员必须同 Workspace、未归档、组内唯一；跨 Workspace 或重复成员返回 409 | CRUD 测试与错误码 | M2.3 |
+| AC-CONV-01 | CONV-001、CONV-002、API-1401、API-1402 | 创建/重命名/归档会话；归档后发送返回 409 `CONVERSATION_ARCHIVED`；消息不可变，`(conversationId, seq)` 唯一，`afterSeq` 增量无遗漏无重复 | 生命周期与并发测试 | M2.3 |
+| AC-CONV-02 | CONV-003、ROUTE-001、API-1403、API-1404 | 每条用户消息产生唯一路由决策并持久化；POST 返回用户消息、`replyMessageId` 与 `routing`；Agent 回复通过事件流式返回 | 响应夹具与决策查询 | M2.3 |
+| AC-CONV-03 | CONV-004、ROUTE-004、SEC-081、SEC-082 | 会话 Agent 以 `read_only` 运行；写文件/执行命令被拒绝；不创建 Run/Artifact、不修改 Task、仓库无变化 | 负向用例与仓库状态检查 | M2.3 |
+| AC-CONV-04 | CONV-005、API-1409、UI-149 | Agent 回复流式事件序列完整；停止后 5 秒内不再产生 delta，消息标记 `cancelled` 并保留部分正文 | 事件序列与停止实测 | M2.3 |
+| AC-CONV-05 | CONV-006、API-1410、TASK-145、TASK-146 | 任意消息转 Task 幂等；Task 写入 `originConversationId`/`originMessageId`；重复调用 `created=false`；不自动启动 Run；会话追加系统回执 | 转换测试与数据库检查 | M2.3 |
+| AC-ROUTE-01 | ROUTE-001、API-1406 | 自动路由选中唯一成员并记录 rationale；无匹配返回 `ROUTING_NO_MATCH`；歧义返回 `ROUTING_AMBIGUOUS` 与候选 | 路由夹具（单候选/多候选/歧义/无匹配） | M2.3 |
+| AC-ROUTE-02 | ROUTE-002、API-1405、UI-148 | `@` 覆盖自动路由且仅目标 Agent 回复；非成员 `@` 返回 409 `AGENT_NOT_IN_TEAM` 且消息不落库；正文与 `mentions` 不一致返回 400 | 定向与负向用例 | M2.3 |
+| AC-ROUTE-03 | ROUTE-003、SEC-083 | Agent 消息不参与路由、不触发其他 Agent；观察 300 秒无自动连锁回复 | 观察记录与事件计数 | M2.3 |
+| AC-CONV-06 | UI-147、UI-150、UI-151、UI-152 | 路由标签、候选展开、`@` 选择器、成员忙碌状态、转任务入口与空/错/断线/归档态可用；zh-CN/en-US 文案完整 | UI 走查与 i18n 扫描 | M2.3 |
+| AC-CONV-07 | NFR-PERF-019～021、NFR-RES-012 | 首 delta p95 ≤4 秒；delta 到 UI p95 ≤1 秒；消息分页与 5,000 条滚动达标；单会话 5,000 条/20 MB 上限生效 | 性能采样与上限测试 | M2.3 |
+
+### 3.15 M2.4 Agent 状态看板与工作台验收
+
+| 验收编号 | 引用 FR | 验收标准（可判定） | 证据 | 阶段 |
+|---|---|---|---|---|
+| AC-AGWORK-01 | AGENT-074、API-1416、API-1417、UI-153 | 看板显示 `idle`/`working`/`completed`/`failed`；有活跃 Run 必为 working，无活跃 Run 不得为 working；归档显示已归档并覆盖工作状态 | 四种状态夹具与一致性检查 | M2.4 |
+| AC-AGWORK-02 | AGENT-075、API-1418、API-1422、UI-154、UI-155 | `GET /agents?include=workStatus` 与 `GET /agents/{id}/work` 返回状态、活跃 Run、最近 Run 与 counts；数据与 `GET /agents/{id}/runs` 一致；卡片点击进入 `/agents/{id}/work` | 接口对比与点击走查 | M2.4 |
+| AC-AGWORK-03 | AGENT-076、AGENT-077、API-1419、API-1420、UI-156～158 | 工作页展示当前工作、Task 上下文、配置快照（含脱敏后的 instructions）、Workspace/commit、权限模式与提示词哈希，以及结构化完成过程；快照不含明文密钥、凭据值或完整拼装 prompt | 页面走查与脱敏负向用例 | M2.4 |
+| AC-AGWORK-04 | AGENT-078、API-1424、UI-159 | 空闲 Agent 工作页显示空态；归档 Agent 历史只读；历史工作列出最近 20 条 Run 及结果 | 空态与归档走查 | M2.4 |
+| AC-AGWORK-05 | UI-160、API-1425、NFR-PERF-022 | 工作状态随 `run.*` 事件更新；`?runId=` 刷新后保持选中；10 万条 Run 下摘要 p95 ≤200 毫秒 | 事件驱动测试、深链与基准 | M2.4 |
+
+### 3.16 M2.1 Runtime 模型目录与 Agent 模型选择验收
+
+| 验收编号 | 引用 FR | 验收标准（可判定） | 证据 | 阶段 |
+|---|---|---|---|---|
+| AC-AGMODEL-01 | AGENT-079、AGENT-082、API-1426、API-1429 | `/runtimes` 的 `models[]` 合并 Runtime 探测与本地配置并按 ID 去重；条目含 source/default/status/deprecated；探测失败返回本地配置与 `modelsError`，不返回过期缓存 | 契约夹具与探测失败测试 | M2.1 |
+| AC-AGMODEL-02 | AGENT-079、API-1427、UI-161 | Agent 创建/编辑的模型为下拉；空值表示 Runtime 默认；非目录 ID 返回 `400 MODEL_NOT_AVAILABLE` 并列出可选模型；无自由文本输入 | 正负用例与 UI 走查 | M2.1 |
+| AC-AGMODEL-03 | AGENT-080、AGENT-081、UI-162、UI-163 | 切换 Runtime 刷新目录；原模型不可用时重置或阻止保存；目录为空时只显示默认项与配置入口；不静默回退旧列表 | 切换与空目录走查 | M2.1 |
+| AC-AGMODEL-04 | API-1428、UI-164 | Settings 可添加/移除本地模型 ID 与展示名并持久化；保存后表单立即生效；只存本地、无密钥；删除被使用模型时提示影响 | 配置读写与 UI 联动测试 | M2.1 |
+
 ## 4. 按里程碑的验收标准与演示脚本
 
 ### 4.1 M0：本地骨架
@@ -473,6 +508,81 @@ curl -s http://127.0.0.1:8787/api/v1/tasks/$FE/readiness | jq '{ready,reasons}'
 预期结果与失败判定：DAG 允许无依赖下游提前执行、越界写入未被拒绝、未审批 staging 被执行、Agent 获得 prod 凭据、契约缺失仍可完成、收件箱遗漏审批事项，任一发生即 M2 不通过。
 
 证据采集：保存 readiness 响应、`permission_denied` 事件、deploy_plan 与 Approval 记录、staging 执行日志、收件箱截图与审计导出；存放于 `prd/evidence/M2/<date>/`。演示结束撤销临时 Agent 的权限并清理测试部署。
+
+#### 4.3.1 M2.3 演示脚本：Agent Team 讨论与转任务
+
+验收标准：
+
+1. 创建小组并加入 Frontend、Backend、DevOps；成员校验与组内唯一生效。
+2. 发送消息自动路由到合适成员，路由决策可在消息响应与事件中查询，UI 显示 rationale。
+3. `@Frontend` 跳过自动路由；`@` 非成员返回 409 `AGENT_NOT_IN_TEAM`。
+4. 歧义消息返回 `ROUTING_AMBIGUOUS` 与候选；用户选择或 `@` 后重发成功。
+5. 会话 Agent 只读运行；尝试写文件被拒，仓库无变化，无 Run/Artifact 产生。
+6. 对 Agent 回复转任务：创建 backlog Task，来源字段正确，重复转换幂等，追加系统回执。
+7. 归档会话后发送返回 409；既有 Task 不受影响。
+
+演示脚本（计划 10 分钟）：
+
+```bash
+BASE=http://127.0.0.1:8787/api/v1
+# 1. 创建小组并加入三个 Agent（AGENT_FE/BE/OPS 由 /agents 创建）
+TEAM=$(curl -s -X POST "$BASE/agent-teams" -H 'Content-Type: application/json' \
+  -d "{\"name\":\"支付重构小组\",\"memberAgentIds\":[\"$AGENT_FE\",\"$AGENT_BE\",\"$AGENT_OPS\"]}" | jq -r .id)
+# 2. 创建会话并发送可自动路由的消息
+CONV=$(curl -s -X POST "$BASE/agent-teams/$TEAM/conversations" -H 'Content-Type: application/json' \
+  -d '{"title":"支付页改造讨论"}' | jq -r .id)
+curl -s -X POST "$BASE/conversations/$CONV/messages" -H 'Content-Type: application/json' \
+  -d '{"content":"支付接口的分页参数怎么设计？"}' | jq '{messageId:.message.id, replyMessageId, routing}'
+# 预期：routing.selectedAgentId 为 Backend Agent，mode=auto，rationale 非空
+# 3. @ 定向
+curl -s -X POST "$BASE/conversations/$CONV/messages" -H 'Content-Type: application/json' \
+  -d "{\"content\":\"@Frontend 支付页移动端怎么布局？\",\"mentions\":[\"$AGENT_FE\"]}" | jq '.routing'
+# 预期：mode=mention，selectedAgentId=AGENT_FE
+# 4. 转任务
+MSG=$(curl -s "$BASE/conversations/$CONV/messages" | jq -r '.items[-1].id')
+curl -s -X POST "$BASE/messages/$MSG/convert-to-task" -H 'Content-Type: application/json' \
+  -d '{"title":"实现支付页移动端布局"}' | jq '{taskId:.task.id, created}'
+# 再次调用预期 created=false 且 taskId 相同
+```
+
+预期结果与失败判定：路由未命中正确角色、`@` 未覆盖、会话产生仓库写入或 Run/Artifact、转任务重复创建、归档后仍可发送，任一发生即 M2.3 不通过。
+
+证据采集：保存 `routing` 响应、`conversation.reply.*` 事件序列、会话前后 `git status` 与 Run/Artifact 计数、Task 来源字段与重复转换响应；存放于 `prd/evidence/M2.3/<date>/`。
+
+#### 4.3.2 M2.4 演示脚本：Agent 状态看板与工作页
+
+验收标准：
+
+1. 看板区分工作中、已完成、失败待处理与空闲；归档显示「已归档」。
+2. 点击工作中的 Agent 进入 `/agents/{id}/work`，看到当前任务、阶段、工作区与最近事件。
+3. Run 完成后看板变为「已完成」，工作页默认展示刚结束的 Run。
+4. 工作上下文展示 Task、配置快照摘要、Workspace/commit、权限模式与提示词哈希。
+5. 完成过程时间线可按类型过滤，普通日志不进入时间线。
+6. 空闲 Agent 工作页显示空态；归档 Agent 历史只读。
+7. PATCH Agent 携带 `workStatus` 返回 400；快照响应不含明文密钥与完整拼装 prompt。
+
+演示脚本（计划 8 分钟）：
+
+```bash
+BASE=http://127.0.0.1:8787/api/v1
+# 1. 启动一个 Run 后查询 Agent 工作摘要
+curl -s "$BASE/agents/$AGENT_A/work" | jq '{workStatus, activeRuns: (.activeRuns|length), lastRun: .lastRun.status}'
+# 预期：workStatus=working，activeRuns>=1
+# 2. 查询 Run 快照（确认无敏感字段）
+curl -s "$BASE/runs/$RUN_ID/snapshot" | jq '{agentVersionId, permissionMode, promptHash, legacy}'
+# 预期：返回配置摘要；无完整拼装 prompt、无明文密钥
+# 3. PATCH workStatus 应被拒绝
+curl -s -o /dev/null -w '%{http_code}\n' -X PATCH "$BASE/agents/$AGENT_A" \
+  -H 'Content-Type: application/json' -d '{"workStatus":"idle"}'
+# 预期：400
+# 4. Run 结束后再次查询
+curl -s "$BASE/agents/$AGENT_A/work" | jq '{workStatus, lastRun: {id: .lastRun.id, status: .lastRun.status}}'
+# 预期：workStatus=completed
+```
+
+预期结果与失败判定：看板状态与 Run 列表不一致、工作页无法进入、上下文缺少关键字段、时间线混入普通日志、快照泄漏敏感信息、空态显示伪造数据，任一发生即 M2.4 不通过。
+
+证据采集：保存工作摘要响应、快照响应、PATCH 400 响应、看板与工作页截图、时间线过滤结果；存放于 `prd/evidence/M2.4/<date>/`。
 
 ### 4.4 M3：团队模式
 
@@ -631,7 +741,7 @@ M0 与 M1 的 AC→TC 映射如下；「自动化位置」中的路径为计划�
 | AC-NFR-04/05/07 | TC-NFR-104/105/107 | 手工 + 日志检查 | `prd/evidence/` 报告 | 工程负责人 |
 | AC-NFR-09/10 | TC-NFR-109/110 | 手工抓包 + 长跑脚本 | `scripts/verify/offline_check.sh`、`soak_check.sh`（计划） | 性能/安全负责人 |
 
-M2-M4 的 TC 规划：M2 使用 `TC-COLLAB-*`、`TC-AGENT-2xx`、`TC-UI-2xx`、`TC-SEC-2xx`、`TC-NFR-2xx`，覆盖 AC-COLLAB-01～10、AC-AGENT-05～07、AC-UI-06～08、AC-SEC-02/03/05/06/10、AC-NFR-06；M3 使用 `TC-TEAM-001～020` 覆盖 AC-TEAM-01～06 与 AC-SEC-07；M4 使用 `TC-AUTO-001～015` 覆盖 AC-AUTO-01～06 与 AC-SEC-09/AC-NFR-08。每个里程碑开工时把上述 TC 落到独立测试文档 `prd/testcases/<milestone>.md`，字段与上表相同；本表是 M0/M1 的规范映射，也是后续 TC 文档的模板。未建立 TC 的 AC 不得在验收记录中标记「通过」，只能标记「阻塞」或「有条件通过」并说明原因。
+M2-M4 的 TC 规划：M2 使用 `TC-COLLAB-*`、`TC-AGENT-2xx`、`TC-UI-2xx`、`TC-SEC-2xx`、`TC-NFR-2xx`，覆盖 AC-COLLAB-01～10、AC-AGENT-05～07、AC-UI-06～08、AC-SEC-02/03/05/06/10、AC-NFR-06；M2.1 模型子项使用 `TC-AGMODEL-001～008` 覆盖 AC-AGMODEL-01～04；M2.3 使用 `TC-CONV-*` 覆盖 AC-AGTEAM-01、AC-CONV-01～07、AC-ROUTE-01～03；M2.4 使用 `TC-AGWORK-001～010` 覆盖 AC-AGWORK-01～05；M3 使用 `TC-TEAM-001～020` 覆盖 AC-TEAM-01～06 与 AC-SEC-07；M4 使用 `TC-AUTO-001～015` 覆盖 AC-AUTO-01～06 与 AC-SEC-09/AC-NFR-08。每个里程碑开工时把上述 TC 落到独立测试文档 `prd/testcases/<milestone>.md`，字段与上表相同；本表是 M0/M1 的规范映射，也是后续 TC 文档的模板。未建立 TC 的 AC 不得在验收记录中标记「通过」，只能标记「阻塞」或「有条件通过」并说明原因。
 
 追踪要求：
 
@@ -931,8 +1041,8 @@ D-M0-01 是唯一在本轮验证中实际复现的 S1 状态错误，必须在 M
 - `prd/02-domain-model.md` 定义领域对象、状态机、快照与权限默认值；本章的状态验收、快照验收与审批验收必须与该文档一致。该文档自 2026-11 修订起使用 `DM-` 需求前缀，本章引用时写全「02-domain-model DM-xxx」。
 - `prd/03-user-flows.md` 定义主流程、角色协作流程、团队流程与通用规则；本章第 4 节的里程碑演示脚本以这些流程为蓝本，引用其需求时使用 FLOW- 编号。
 - `prd/05-risks-and-open-questions.md` 定义风险、假设与开放问题；本章的缺陷分级、未验证项与待确认清单应与风险登记保持一致，风险缓解措施要能映射到验收用例。
-- `prd/modules/task-management.md`、`prd/modules/agent-system.md`、`prd/modules/runtime-and-workspace.md`、`prd/modules/collaboration-and-review.md`、`prd/modules/ui-ux.md`、`prd/modules/security-and-permissions.md`、`prd/modules/api-and-data.md`、`prd/modules/non-functional-requirements.md` 定义各模块的 FR、交互、数据与边界；本章只引用 FR 编号与验收口径，不重复模块细节。模块 FR 变更时，必须同步更新本章的引用与验收用例。
-- `prd/milestones/M0-scaffold.md`、`prd/milestones/M1-local-loop.md`、`prd/milestones/M2-role-agents.md`、`prd/milestones/M3-team-mode.md`、`prd/milestones/M4-automation-and-packaging.md` 定义各里程碑的目标、范围与交付物；本章第 4 节给出对应的验收标准与演示脚本，里程碑文档应以本章作为退出依据。M0 文档已经引用本章第 4.1、9 节作为证据来源；M1 文档已把本章列为验收用例来源，其 Workspace 命名已与本章 §11 第 17 项统一；M2 文档引用本章第 4.3 节；M3/M4 文档引用本章第 4.4/4.5 节。
+- `prd/modules/task-management.md`、`prd/modules/agent-system.md`、`prd/modules/runtime-and-workspace.md`、`prd/modules/collaboration-and-review.md`、`prd/modules/agent-teams-and-conversations.md`、`prd/modules/ui-ux.md`、`prd/modules/security-and-permissions.md`、`prd/modules/api-and-data.md`、`prd/modules/non-functional-requirements.md` 定义各模块的 FR、交互、数据与边界；本章只引用 FR 编号与验收口径，不重复模块细节。模块 FR 变更时，必须同步更新本章的引用与验收用例。
+- `prd/milestones/M0-scaffold.md`、`prd/milestones/M1-local-loop.md`、`prd/milestones/M2-role-agents.md`、`prd/milestones/M2.3-agent-teams.md`、`prd/milestones/M2.4-agent-workbench.md`、`prd/milestones/M3-team-mode.md`、`prd/milestones/M4-automation-and-packaging.md` 定义各里程碑的目标、范围与交付物；本章第 4 节给出对应的验收标准与演示脚本，里程碑文档应以本章作为退出依据。M0 文档已经引用本章第 4.1、9 节作为证据来源；M1 文档已把本章列为验收用例来源，其 Workspace 命名已与本章 §11 第 17 项统一；M2 文档引用本章第 4.3 节；M2.3 文档引用本章第 3.14 节与第 4.3.1 节；M2.4 文档引用本章第 3.15 节与第 4.3.2 节；M3/M4 文档引用本章第 4.4/4.5 节。
 - 安全文档（`prd/modules/security-and-permissions.md`）定义威胁模型与权限矩阵；本章第 3.8 节与第 7.2 节把安全要求转成负向测试与质量门。
 - 设计文档与设计系统定义界面规范；本章 UI 验收只判断可用性与一致性，不替代设计评审。
 

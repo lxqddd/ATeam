@@ -367,7 +367,7 @@ M0 没有独立 Run 详情页，日志嵌在 Task 详情中，以纯文本拼接
 - 页头：标题、副标题「Reusable work profiles for tasks」、主按钮「+ New agent」。
 - 空状态：提示可创建 UI Design、Frontend、Backend、DevOps 角色 Agent。
 - 卡片网格：宽屏三列、中屏两列；卡片显示名称、描述、Runtime 标签、指令前三行、并发数、超时、Workspace 模式。
-- 创建模态框：Name、Description、Instructions、Runtime、Model、Max concurrency、Timeout、Allowed paths。
+- 创建模态框：Name、Description、Instructions、Runtime、Model（下拉，选项来自所选 Runtime 的模型目录）、Max concurrency、Timeout、Allowed paths。
 
 **M1 至 M2 计划**
 
@@ -376,6 +376,43 @@ M0 没有独立 Run 详情页，日志嵌在 Task 详情中，以纯文本拼接
 - 提供角色模板：UI Design、Frontend、Backend、DevOps，每个模板预置指令骨架、默认权限与交付物说明。
 - 提供搜索、按 Runtime 与角色筛选、按最近使用排序。
 - 显示 Runtime 可用性：已安装、未安装、版本不兼容。不可用时卡片置灰并给出修复链接。
+
+**M2.4 工作状态与工作页**
+
+- Agent 卡片展示工作状态：空闲、工作中、已完成、失败待处理；已归档 Agent 显示「已归档」并覆盖工作状态。
+- 工作中卡片显示当前任务、执行阶段（排队 / 准备 / 运行）与已运行时长；已完成显示完成时间与对应任务。
+- 看板支持按工作状态分组或筛选，默认排序为「工作中 → 已完成 → 空闲」。
+- 点击卡片正文进入 `/agents/{id}/work` 工作页；编辑配置使用独立的「编辑」入口，避免误入编辑。
+- 工作页展示当前/最近 Run 的工作上下文与完成过程，详见 §5.5.1。
+
+### 5.5.1 Agent 工作页（M2.4）
+
+**目标**：以 Agent 为视角回答两个问题——「它现在在做什么」与「它是如何完成上一个任务的」，并让用户能从看板一步进入可追溯的执行上下文。
+
+**路由与入口**
+
+- `/agents/{id}/work`；支持 `?runId=` 选中某次 Run；无 `runId` 时优先选中活跃 Run，其次最近一次 Run。
+- 从 Agent 卡片正文、看板状态行、Run 列表中的 Agent 名称进入。
+- 工作页只读；编辑 Agent、启动 Run、取消 Run 仍使用既有入口或跳转 Run 详情。
+
+**页面结构**
+
+| 区域 | 内容 | 空态/边界 |
+|---|---|---|
+| 页头 | Agent 名称、角色、工作状态、生命周期状态、Runtime 可用性、活跃 Run 数量 | Agent 不存在显示 404；归档显示只读标识 |
+| 当前工作 | 活跃 Run 的阶段、任务、开始时间、已运行时长、Workspace 与分支、最近事件摘要；跳转 Run 详情 | 无活跃 Run 时隐藏或显示「当前没有进行中的工作」 |
+| 工作上下文 | 所选 Run 的 Task 标题/描述/验收标准/标签/优先级；AgentVersion 与 RunConfigSnapshot（指令（脱敏、可折叠）、角色、Runtime、模型、权限模式、权限信封、提示词哈希）；Workspace、base/head commit；上游契约与证据引用（M2 起） | 快照缺失显示「历史 Run 无完整快照」并说明原因；不展示明文密钥与完整拼装 prompt |
+| 完成过程 | 所选 Run 的结构化时间线：生命周期、工具调用、文件变更、测试、Artifact、评审与合并；支持按类型过滤、按时间排序、跳转 Run 详情 | 无事件显示加载中/空态；失败 Run 显示 errorCode 与 failureDetail |
+| 历史工作 | 最近 20 条 Run：状态、任务、开始/结束时间、耗时、用量、评审/合并结果 | 空闲 Agent 显示「尚无工作记录」与查看可执行任务入口 |
+
+**交互规则**
+
+- 工作状态与 Run 事件实时同步：收到 `run.queued/preparing/running/completed/failed/cancelled/timeout` 时刷新页头与当前工作区；不得只依赖轮询。
+- 时间线默认按时间正序展示「过程」，可切换为倒序查看最近事件；过滤条件写入 URL query，刷新后保持。
+- 时间线只展示结构化事件；普通日志仍在 Run 详情的 Logs 标签查看，避免工作页被日志淹没。
+- 「完成过程」中的 Artifact 可预览；评审与合并只显示结果与链接，不在工作页内执行审批或合并。
+- 多个活跃 Run 时以标签页或列表切换，URL 使用 `runId` 保持可分享。
+- 工作页必须完成 zh-CN / en-US 文案，并满足键盘可达与 1280px / 768px 断点要求。
 
 ### 5.6 Agent 编辑器
 
@@ -386,7 +423,7 @@ M0 没有独立 Run 详情页，日志嵌在 Task 详情中，以纯文本拼接
 | 分区 | 字段 | 规则 | 阶段 |
 |---|---|---|---|
 | 基本信息 | 名称、描述、角色 | 名称必填；M0-M2 为本地唯一（冲突返回 409），M3 起为团队内唯一；角色来自固定枚举或自定义标签 | M0 部分，M2 角色 |
-| Runtime | Runtime、模型、版本约束 | 只允许选择本机已安装的 Runtime；模型留空表示使用 Runtime 默认；M1 提供 mock 与 Claude Code，Codex 为 M2 | M0 基础，M1 可用性检查 |
+| Runtime | Runtime、模型、版本约束 | 只允许选择本机已安装的 Runtime；模型必须从所选 Runtime 的模型目录下拉选择，首项为「默认（由 Runtime 决定）」；目录为空时只显示默认项与「去设置添加模型」入口，不提供自由文本；切换 Runtime 时刷新目录并校验原模型 | M0 基础，M1 可用性检查，M2.1 模型下拉 |
 | 指令 | 职责、边界、检查项、汇报格式 | Markdown 源文编辑；提供预览；长度上限与敏感信息提示 | M0 纯文本，M2 预览与模板 |
 | 技能 | 附加技能列表 | 每个技能显示来源、版本、启用状态；仅 M2 技能模型可用后开放 | M2 |
 | 权限 | 允许路径、允许命令、禁止命令 | 默认拒绝；路径必须为仓库相对路径；命令使用前缀或精确匹配规则 | M0 仅允许路径，M2 完整 |
@@ -791,6 +828,23 @@ M0 的 Cancel 直接执行，没有确认框；确认交互与防重复提交属
 | UI-070 | 支持预览组合后的 Runtime prompt | 预览包含 Task 上下文与 Agent 指令；不展示密钥 | M1 |
 | UI-071 | 显示 Runtime 可用性 | 未安装时卡片置灰；设置页提供检测入口 | M1 |
 | UI-072 | Agent 卡片展示最近使用与运行统计 | 统计口径与 Runs 页面一致；无数据时显示未知而非零误导 | M2 |
+| UI-161 | Agent 创建/编辑表单的模型字段为下拉选择，选项来自所选 Runtime 的模型目录 | 首项为「默认（由 Runtime 决定）」；选项按来源分组并显示状态；无自由文本输入；未选 Runtime 时禁用 | M2.1 |
+| UI-162 | 切换 Runtime 时刷新模型目录；原模型不在新目录时重置为默认并提示，或阻止保存并定位字段 | 切换后无残留旧模型；重置提示可理解；保存请求不携带无效模型；已有 Agent 模型变为不可用时卡片显示警示 | M2.1 |
+| UI-163 | 模型目录为空或探测失败时显示明确状态与重试/配置入口 | 空目录只显示默认项与「去设置添加模型」；`modelsError` 显示警告；重试后刷新；不静默回退旧列表 | M2.1 |
+| UI-164 | Settings 提供按 Runtime 的本地模型配置，可添加/移除模型 ID 与展示名 | 只存本地，不要求密钥；保存后 Agent 表单立即看到新选项；删除仍被 Agent 使用的模型时提示影响 | M2.1 |
+
+### 7.5.1 Agent 工作状态与工作页（M2.4）
+
+| 编号 | 需求描述 | 可测试的验收要点 | 阶段 |
+|---|---|---|---|
+| UI-153 | Agent 看板展示工作状态：空闲、工作中、已完成、失败待处理；已归档显示「已归档」并覆盖工作状态 | 四种状态均可见且有文字标签；状态与 Run 列表一致；归档 Agent 不显示工作中 | M2.4 |
+| UI-154 | 点击 Agent 卡片正文进入 `/agents/{id}/work`；编辑配置使用独立入口 | 点击卡片进入工作页；点击「编辑」进入编辑器；无 Agent 时显示 404 | M2.4 |
+| UI-155 | 工作页页头展示 Agent 名称、角色、工作状态、生命周期、Runtime 可用性与活跃 Run 数量 | 字段与 API 一致；多个活跃 Run 显示数量；归档显示只读标识 | M2.4 |
+| UI-156 | 工作页「当前工作」区展示活跃 Run 的阶段、任务、开始时间、已运行时长、工作区/分支与最近事件摘要 | 工作中 Agent 必须至少展示一条活跃 Run；无活跃 Run 显示明确空态；可跳转 Run 详情 | M2.4 |
+| UI-157 | 工作页「工作上下文」展示 Task 上下文、Run 配置快照（含脱敏后的 instructions）、Workspace 与 base/head commit、权限模式与提示词哈希 | 不展示明文密钥与完整拼装 prompt；快照缺失显示说明；所选 Run 与上下文一致 | M2.4 |
+| UI-158 | 工作页「完成过程」按结构化时间线展示生命周期、工具、文件变更、测试、Artifact、评审与合并，支持过滤与跳转 Run 详情 | 普通日志不进入时间线；过滤条件写入 URL；失败 Run 显示 errorCode 与 failureDetail | M2.4 |
+| UI-159 | 工作页「历史工作」列出最近 20 条 Run，显示状态、任务、耗时、用量与评审/合并结果 | 默认按最近时间排序；空闲 Agent 显示「尚无工作记录」；归档 Agent 历史只读 | M2.4 |
+| UI-160 | 工作状态随 Run 生命周期事件实时更新，工作页支持多活跃 Run 切换与 URL `runId` 还原 | 收到 run 事件后 2 秒内更新；刷新后仍选中同一 Run；多 Run 切换不串数据 | M2.4 |
 
 ### 7.6 Inbox
 
@@ -988,6 +1042,22 @@ M0 的 Cancel 直接执行，没有确认框；确认交互与防重复提交属
 | UI-142 | Evidence 面板展示校验状态 | Artifact 显示 checksum、来源与校验结果；校验不一致时高亮并提供重新校验或填写忽略理由 | M2 |
 | UI-143 | mock Run 必须显式标识 | mock Run 在列表、详情与证据面板显示显著标识；mock 证据不能触发完成或合并 | M1 |
 
+### 7.12 Agent Team 与会话（M2.3）
+
+会话页参考 nomi-ai 最新会话页（commit `a65cf86`；`packages/ai-chat/src/components/Conversation/*`、`MessageInput/*`、`Fleet/*`；截图 `docs/screenshots/coding-agent.webp`）的布局与交互，但只实现 ATeam 的讨论层语义，不复制其品牌、文案与资产。
+
+| 编号 | 需求描述 | 可测试的验收要点 | 阶段 |
+|---|---|---|---|
+| UI-144 | 提供 Agent 小组列表与创建/重命名/归档；成员增删在同页完成 | 成员只能选同 Workspace 且未归档的 Agent；重复添加显示冲突；归档后入口只读 | M2.3 |
+| UI-145 | 小组内提供会话列表与创建/重命名/归档 | 按最近消息排序；空列表有创建引导；归档会话显示只读标识 | M2.3 |
+| UI-146 | 会话主区为居中最大宽度消息流：用户消息右对齐气泡（最大 640px/82%），Agent 消息左对齐并显示头像、角色名与时间；Markdown 渲染且禁止原始 HTML | 长消息不溢出；代码块可滚动；危险 HTML 被转义；1280px 与 360px 下均可读 | M2.3 |
+| UI-147 | 每条 Agent 回复显示「路由至 X · 依据」标签，可展开候选成员与理由 | 自动路由与 `@` 路由显示不同来源；点击标签展示候选与 rationale；歧义时可直接选择候选 | M2.3 |
+| UI-148 | 输入框支持 `@` 弹出小组成员选择器，支持多选与键盘导航；选中后以 chip 展示 | 非成员不出现在选择器；`@` 与正文不一致时阻止发送并提示；Esc 关闭选择器 | M2.3 |
+| UI-149 | Agent 回复流式输出，提供停止按钮；停止后保留已生成内容并标记停止 | 生成中可见活动指示与停止按钮；停止后 5 秒内不再更新；失败显示原因与重试入口 | M2.3 |
+| UI-150 | 用户消息与 Agent 回复提供「转为任务」入口；转换弹窗可编辑标题与描述；转换后显示任务链接 | 重复点击不重复创建；转换成功后显示来源会话；不自动启动 Run | M2.3 |
+| UI-151 | 成员侧栏展示小组成员、角色与工作状态，并标识当前回复的成员 | 工作状态复用 M2.4 的 `workStatus`；对话回复进行中额外显示临时「回复中」标记，不改变 `workStatus`；无成员时显示添加引导；状态不阻塞发送 | M2.3 |
+| UI-152 | 会话页具备空态、加载、错误、断线与归档只读态，并完成 zh-CN/en-US 文案 | 空会话给出「提需求或 @ 一位成员」引导；断线重连后按 `afterSeq` 补齐消息；归档后输入框禁用并说明 | M2.3 |
+
 ## 8. 交互与规则
 
 ### 8.1 拖拽规则
@@ -1099,6 +1169,14 @@ toast 不承载需要用户做决定的审批内容；审批进入 Inbox 与页�
 | 搜索 | 当前 API 模块未定义跨实体搜索端点；M2 先做已加载数据的本地过滤，若需服务端搜索必须先补 `GET /api/v1/search` | M2 本地，服务端待定 | 命令面板 |
 | 用户偏好 | M1 存 localStorage；API 模块没有 `preferences` 端点，跨设备偏好需在 M3 后单独定义 | M1 | 侧边栏、日志、通知偏好 |
 | 本地会话认证 | `POST /api/v1/auth/bootstrap` 换取会话令牌；`POST /api/v1/auth/ws-ticket` 获取短期 WebSocket 票据（security-and-permissions.md §3.2） | M2.1 | 令牌注入与 WebSocket 连接 |
+| Agent 小组 | `GET/POST /api/v1/agent-teams`、`/agent-teams/{id}`、`/archive`、`/members` | M2.3 | 小组列表、成员管理 |
+| 小组会话 | `GET/POST /api/v1/agent-teams/{id}/conversations`、`GET/PATCH /api/v1/conversations/{id}` | M2.3 | 会话列表、创建、重命名、归档 |
+| 会话消息 | `GET /api/v1/conversations/{id}/messages?afterSeq=`、`POST /api/v1/conversations/{id}/messages`、`/messages/{messageId}/cancel` | M2.3 | 消息流、发送、流式回复与停止 |
+| 一键转任务 | `POST /api/v1/messages/{id}/convert-to-task` | M2.3 | 转任务弹窗与回执 |
+| Agent 工作状态 | `GET /api/v1/agents?include=workStatus` 为列表附加 `workStatus`、`activeRunCount` 与 `lastRun` 摘要；`GET /api/v1/agents/{id}/work` 返回工作页详情 | M2.4 | 看板状态、工作页页头与历史 |
+| Run 配置快照 | `GET /api/v1/runs/{id}/snapshot` 返回配置快照、提示词哈希、权限模式与信封（已脱敏） | M2.4 | 工作页「工作上下文」 |
+| Agent 的历史 Run | `GET /api/v1/agents/{id}/runs?sort=createdAt&limit=20` | M1 端点，M2.4 页面 | 工作页「历史工作」 |
+| Runtime 模型目录 | `GET /api/v1/runtimes` 取 `models[]` 与 `modelsError`；`PUT /api/v1/runtimes/{name}/models` 保存本地模型配置 | M1 基础探测，M2.1 模型目录 | Agent 表单模型下拉、Settings 模型配置 |
 
 上表不是 API 合约；任何字段、错误码与分页语义以 api-and-data.md 与 collaboration-and-review.md 为准。界面不得自行发明端点或事件名。
 
@@ -1122,6 +1200,13 @@ M1 起界面订阅的事件与消费方式：
 | `crew.updated` / `crew.plan_submitted` | M2 | Crew 视图 |
 | `skill.created` / `skill.updated` / `skill.deleted` | M2 | Skills 页面与 Agent 绑定 |
 | `inbox.updated` | M2 | 侧边栏未读徽标 |
+| `agent_team.created` / `agent_team.updated` / `agent_team.archived` | M2.3 | 小组列表与成员状态 |
+| `conversation.created` / `conversation.updated` / `conversation.archived` | M2.3 | 会话列表与只读态 |
+| `conversation.message.created` | M2.3 | 追加用户或系统消息 |
+| `conversation.routing.decided` | M2.3 | 路由标签与候选展开 |
+| `conversation.reply.started` / `conversation.reply.delta` / `conversation.reply.completed` / `conversation.reply.failed` / `conversation.reply.cancelled` | M2.3 | 流式渲染、停止与失败提示 |
+| `conversation.task_created` | M2.3 | 会话内任务回执与链接 |
+| `run.queued` / `run.preparing` / `run.running` / `run.completed` / `run.failed` / `run.cancelled` / `run.timeout` | M0/M1 | Agent 看板工作状态与工作页当前工作、历史工作；不新增派生事件 |
 | `evidence.added` / `comment.created` / `task.readiness_changed` | M2（collaboration §14.3） | 证据、时间线、Run 按钮 |
 | `machine.online` / `machine.offline` / `machine.updated` | M3 | Machines 页面 |
 | `run.unschedulable` | M3 | Run 详情排队原因 |
@@ -1325,6 +1410,7 @@ M0 的界面退出标准是「可以演示完整骨架」，不是「可以日�
 - Task 详情标签页：Overview、DAG、Contracts、Gates、Evidence、Timeline；DAG 局部视图与依赖编辑；交付物契约面板。
 - 十一类门禁的审批界面与证据快照查看；审批人为本地用户，不显示角色列。
 - Agent 角色模板、技能编辑器、路径与命令权限编辑器、风险分级；Skills 与 Templates 页面。
+- Agent 创建/编辑表单的 Runtime 模型下拉与 Settings 本地模型配置（M2.1 子项，可随 Agent 编辑器提前交付）。
 - Crew 与队长模式的只读编排视图，不提供多 Agent 自由聊天。
 - 保存视图、看板筛选、批量操作、命令面板、快捷键帮助。
 - Inbox 十类的排序、聚合、截止时间与去重；Evidence 校验状态展示。
@@ -1332,6 +1418,31 @@ M0 的界面退出标准是「可以演示完整骨架」，不是「可以日�
 - 更完整的响应式与 200% 缩放支持。
 
 退出标准：UI Design、Frontend、Backend、DevOps 四类 Agent 可以通过任务依赖与交付物契约协作；十类 Inbox 条目均可生成、找到入口并处理；所有合并与部署计划都经过显式审批；审批与 escalation 不积压，P0 待办在 24 小时内处理。
+
+### M2.3：Agent Team 与会话的界面
+
+交付内容：
+
+- Agent 小组列表、创建、重命名、归档与成员管理。
+- 小组会话列表与会话页：居中最大宽度消息流、用户右侧气泡、Agent 左侧消息与角色标识。
+- 路由标签与候选展开；`@` 成员选择器与 chip；流式回复与停止。
+- 成员侧栏与忙碌状态；一键转任务入口与回执。
+- 空态、加载、错误、断线补齐与归档只读态；zh-CN/en-US 文案。
+- 参考 nomi 最新会话页的布局节奏与输入栏交互，不使用其品牌资产或原始代码。
+
+退出标准：用户可以在小组会话中完成一次自动路由、一次 `@` 定向、一次歧义选择、一次停止与一次转任务；会话 Agent 不产生仓库副作用；所有 UI-144 至 UI-152 通过。
+
+### M2.4：Agent 状态看板与工作台
+
+交付内容：
+
+- Agent 看板工作状态：空闲、工作中、已完成、失败待处理；已归档覆盖状态。
+- 状态分组/筛选与默认排序；工作中卡片显示当前任务与阶段。
+- `/agents/{id}/work` 工作页：当前工作、工作上下文、完成过程时间线、历史工作。
+- 工作页与 Run 事件实时同步；多活跃 Run 切换与 `runId` 深链。
+- 空态、快照缺失、归档只读、i18n 与响应式。
+
+**退出标准**：工作中与已完成 Agent 可从看板一步进入工作页，看到与 API 一致的上下文与过程；看板状态与 Run 列表一致；空态与归档只读可用；UI-153 至 UI-160 通过。
 
 ### M3：团队模式的界面
 

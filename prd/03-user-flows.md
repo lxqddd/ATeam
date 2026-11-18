@@ -168,6 +168,8 @@ Run 状态机只有 queued、preparing、running、completed、failed、cancelle
 | S6 | 两名开发者共享任务与机器 | F | 远程 Runner 执行，权限与审计正确 | M3 |
 | S7 | 定时或 Webhook 触发任务 | 非本章主线 | 默认创建 Task 并进入 Backlog，只有显式 todo 才排队 Run；仍走人工合并门 | M4 |
 | S8 | Agent 越权修改路径 | B、D、E | Run 失败，证据保留，任务升级到人 | M2.1 |
+| S9 | 需求尚未成形，需要先与不同角色讨论 | G | 小组会话中完成路由或 `@` 讨论，结论一键转任务并可追溯 | M2.3 |
+| S10 | 需要判断多个 Agent 的工作状态并复盘某个 Agent 的工作 | H | 看板显示工作状态，点击进入工作页查看上下文与完成过程 | M2.4 |
 
 ## 3. 通用流程规则
 
@@ -241,6 +243,7 @@ M0 的现状是：prompt 中写了「Do not push, merge, or deploy without expli
 | FLOW-X-007 | 子任务全部完成且集成步骤通过后，父任务才可进入 done | 父任务验收门检查子任务状态与集成证据 | M2.1 | 计划（M2.1） |
 | FLOW-X-008 | 创建 Agent 时 runtime 默认 mock，workspaceMode 默认 worktree，maxConcurrency 默认 1，timeoutMinutes 默认 60 | 省略对应字段创建后，返回值符合默认值 | M0 | 已实现（M0） |
 | FLOW-X-009 | 未知 runtime 不得静默回退到 mock | 保存时校验 runtime 是否已注册；未知值返回 400 并提示 | M1 | 计划（M1） |
+| FLOW-X-047 | Agent 的 model 为空表示 Runtime 默认；非空必须命中所选 Runtime 的本地模型目录；表单使用下拉选择，不提供自由文本；未知模型返回 400 `MODEL_NOT_AVAILABLE`；切换 Runtime 时重新校验并重置或阻止保存 | 下拉选项与目录一致；空目录只显示默认项与配置入口；切换 Runtime 后无残留无效模型 | M2.1 | 计划（M2.1） |
 | FLOW-X-010 | 每个 Run 必须快照其 Agent 配置 | Run 详情可查看创建时的 instructions、runtime、model、timeout 与权限 | M1 | 计划（M1） |
 | FLOW-X-011 | 提供 UI Design、Frontend、Backend、DevOps 四个角色模板 | 模板可一键创建 Agent，含默认 instructions、路径与证据要求；不提供 API Contract 与 Integration 模板 | M2.1 | 计划（M2.1） |
 | FLOW-X-012 | Agent 的 allowedPaths 与 allowedCommands 必须被强制执行 | 越界写入或越界命令导致 Run 失败并保留违规证据 | M2.1 | 计划（M2.1） |
@@ -1337,9 +1340,233 @@ flowchart TD
 | 跨团队任务不可见 | 两个团队账号交叉查询 | M3 |
 | 审计覆盖合并与部署 | 检查审计记录完整性 | M3 |
 
-## 10. 跨流程交接与一致性
+## 10. 流程 G：Agent Team 讨论与转任务（M2.3）
 
-### 10.1 交接矩阵
+### 10.1 目的与定位
+
+流程 G 解决的是「需求尚未成形，需要先与不同角色讨论」的问题。用户把多个角色 Agent 组成一个 Agent Team（Agent 小组），在小组会话中发送消息；系统按消息内容把消息路由给最合适的成员，用户也可以用 `@` 定向。讨论结果可一键转为 Task，继续走流程 A/B 的执行与流程 D 的评审审批。
+
+流程 G 是**讨论层**，不是执行层：会话 Agent 只读运行，不写仓库、不创建 Run/Artifact、不修改 Task；Agent 消息不参与路由，Agent 之间不得自动对话。它与流程 C（Crew）的区别是：Crew 是任务级的结构化执行编排，流程 G 是任务成形前的人类发起讨论。
+
+### 10.2 前置条件
+
+| 条件 | 说明 |
+|---|---|
+| 已存在多个 Agent | 至少两个可用的角色 Agent，且与小组同 Workspace |
+| Runtime 支持只读模式 | Runtime 适配器支持 `read_only` 权限模式并禁用写工具 |
+| 默认 Workspace 已就绪 | M2.3 的 AgentTeam 与会话归属 Workspace |
+| 事件通道可用 | WS/SSE 可接收 `conversation.*` 事件 |
+
+### 10.3 主流程
+
+#### 10.3.1 时序图
+
+```mermaid
+sequenceDiagram
+    actor H as 人类
+    participant S as ATeam
+    participant R as 路由器
+    participant A as 角色 Agent
+    H->>S: 创建 Agent Team 并加入成员
+    H->>S: 创建小组会话
+    H->>S: 发送消息（可含 @）
+    alt 含 @
+        S->>S: 校验成员并直接选定目标
+    else 无 @
+        S->>R: 请求自动路由
+        R-->>S: 返回 selectedAgentId 与 rationale
+    end
+    S->>H: 返回消息与路由决策
+    S->>A: 以 read_only 调用 Runtime
+    A-->>S: 流式输出
+    S-->>H: conversation.reply.delta / completed
+    H->>S: 点击「转为任务」
+    S-->>H: 创建 backlog Task，回填来源并追加系统消息
+```
+
+#### 10.3.2 步骤说明
+
+| 步骤 | 操作者 | 动作 | 系统行为 | 输出/交付物 |
+|---|---|---|---|---|
+| G1 | 人类 | 创建 Agent Team 并加入成员 | 校验成员同 Workspace、未归档、组内唯一 | AgentTeam 与成员记录 |
+| G2 | 人类 | 创建小组会话 | 创建 `active` 会话，默认标题取首条消息前 60 字符 | Conversation |
+| G3 | 人类 | 发送消息 | 消息落库（`user`/`completed`）并解析 `@` | ConversationMessage |
+| G4 | 系统 | 路由 | `@` 时校验成员；否则调用路由器并持久化 RoutingDecision | RoutingDecision |
+| G5 | 系统 | 只读调用 Agent | `read_only` 权限、临时草稿目录、最近 20 条上下文 | 流式事件与 Agent 消息 |
+| G6 | 人类 | 停止回复（可选） | 终止进程组，消息标记 `cancelled`，保留部分正文 | 取消事件 |
+| G7 | 人类 | 一键转任务 | 幂等创建 backlog Task，回填来源，追加系统消息 | Task 与会话回执 |
+
+### 10.4 交互与规则
+
+1. 用户消息先落库再路由；路由失败时消息保留，返回稳定错误码，用户可 `@` 后重发。
+2. `@` 覆盖自动路由；`@` 非成员或未知 Agent 返回 409 `AGENT_NOT_IN_TEAM`，消息不落库。
+3. 自动路由单目标；无匹配返回 409 `ROUTING_NO_MATCH`，歧义返回 409 `ROUTING_AMBIGUOUS` 与候选。
+4. 每个 Agent 回复展示路由标签与 rationale；路由决策可通过 API 查询。
+5. 同一会话同一时间只允许一个非终态 Agent 回复；回复进行中再次发送返回 409 `CONVERSATION_BUSY`。
+6. Agent 消息不参与路由、不触发其他 Agent；会话上下文不注入其他小组或 Workspace 内容。
+7. 消息正文上限 32 KiB，超出截断并标记；会话上限 5,000 条或 20 MB。
+8. 归档会话只读；归档不影响已创建 Task；会话不提供硬删除。
+9. 转任务前可编辑标题与描述；同一消息重复转换返回同一 Task；转任务不自动启动 Run。
+
+### 10.5 交付物
+
+AgentTeam 与成员记录、Conversation 与消息时间线、RoutingDecision 记录、由消息转换的 Task（含 `originConversationId`/`originMessageId`）、会话事件流。
+
+### 10.6 用户故事
+
+| 编号 | Given/When/Then |
+|---|---|
+| US-G-01 | Given 我创建了包含 Frontend、Backend、DevOps 的小组，When 我发送「接口分页参数怎么设计？」，Then 消息被路由给 Backend Agent，回复上方显示路由依据。 |
+| US-G-02 | Given 小组中有多个成员，When 我输入 `@Frontend` 并发送，Then 自动路由被跳过，只有 Frontend Agent 回复。 |
+| US-G-03 | Given 消息无法明确归属，When 路由返回歧义，Then 我看到候选并可选择或 `@` 后重发，系统不随机选人。 |
+| US-G-04 | Given 一个 Agent 正在生成回复，When 我点击停止，Then 5 秒内不再产生 delta，消息标记 `cancelled` 并保留已生成内容。 |
+| US-G-05 | Given 我对一条 Agent 回复点击「转为任务」，When 我确认创建，Then 生成 backlog Task 并在会话中看到任务链接；再次点击不会重复创建。 |
+| US-G-06 | Given 会话中的 Agent 尝试写文件，When 系统拒绝，Then 仓库无变化、无 Run/Artifact 产生，我可以在事件中看到拒绝原因。 |
+
+### 10.7 异常与边界
+
+| 异常 | 系统行为 | 人工处置 |
+|---|---|---|
+| 小组无成员 | 拒绝发送并提示先添加成员（`TEAM_MEMBER_REQUIRED`） | 添加成员 |
+| `@` 非成员 | 409 `AGENT_NOT_IN_TEAM`，消息不落库 | 从选择器选择成员 |
+| 路由无匹配 | 409 `ROUTING_NO_MATCH`，消息保留 | `@` 指定或调整成员 |
+| 路由歧义 | 409 `ROUTING_AMBIGUOUS`，返回候选 | 选择候选或 `@` 重发 |
+| 回复进行中再次发送 | 409 `CONVERSATION_BUSY` | 等待或停止当前回复 |
+| 会话已归档 | 409 `CONVERSATION_ARCHIVED` | 新建会话 |
+| Runtime 不可用 | 消息 `failed`，系统消息展示原因 | 检查 CLI 后重试 |
+| 上下文超预算 | 截断最早消息并提示 | 新建会话或缩小问题 |
+| 会话超上限 | 409 `CONVERSATION_LIMIT_REACHED` | 归档并新建会话 |
+| 路由后成员被移除 | 历史决策保留；新消息不再路由到该成员 | 重新添加成员 |
+
+### 10.8 功能需求
+
+| 编号 | 需求 | 验收标准 | 里程碑 | 状态 |
+|---|---|---|---|---|
+| FLOW-G-001 | Agent Team 支持创建、重命名、归档与成员增删 | 成员同 Workspace 且组内唯一；重复返回 409 | M2.3 | 计划（M2.3） |
+| FLOW-G-002 | 会话支持创建、列表、重命名、归档 | 归档后发送返回 409 | M2.3 | 计划（M2.3） |
+| FLOW-G-003 | 消息不可变，`(conversationId, seq)` 唯一且可增量拉取 | 并发发送无重号；`afterSeq` 返回完整增量 | M2.3 | 计划（M2.3） |
+| FLOW-G-004 | 自动路由单目标并持久化决策与 rationale | 决策可查询；UI 展示路由标签 | M2.3 | 计划（M2.3） |
+| FLOW-G-005 | `@` 覆盖自动路由，非成员 `@` 被拒绝 | 定向消息仅目标 Agent 回复 | M2.3 | 计划（M2.3） |
+| FLOW-G-006 | 会话 Agent 只读运行，不写仓库、不创建 Run/Artifact、不修改 Task | 负向用例无仓库变化 | M2.3 | 计划（M2.3） |
+| FLOW-G-007 | Agent 消息不参与路由、不触发其他 Agent | 观察期无自动连锁回复 | M2.3 | 计划（M2.3） |
+| FLOW-G-008 | Agent 回复流式推送并可停止 | 停止后 5 秒内无新 delta | M2.3 | 计划（M2.3） |
+| FLOW-G-009 | 任意消息可幂等转为 Task 并回填来源 | 重复转换返回同一 Task | M2.3 | 计划（M2.3） |
+| FLOW-G-010 | 会话页展示路由标签、`@` 选择器、成员状态与转任务入口 | UI-144 至 UI-152 通过 | M2.3 | 计划（M2.3） |
+| FLOW-G-011 | 归档会话只读且不影响已创建 Task | 归档后消息拒绝，Task 可继续执行 | M2.3 | 计划（M2.3） |
+| FLOW-G-012 | 路由歧义与无匹配返回稳定错误码与候选 | API 与 UI 均展示候选 | M2.3 | 计划（M2.3） |
+
+### 10.9 验收点
+
+| 验收点 | 验证方式 | 里程碑 |
+|---|---|---|
+| 自动路由选中正确角色并记录依据 | 路由夹具 + UI 检查 | M2.3 |
+| `@` 覆盖自动路由且非成员被拒 | 定向与负向用例 | M2.3 |
+| 会话 Agent 无写工具、无仓库变化 | `read_only` 负向用例 | M2.3 |
+| Agent 不触发 Agent | 300 秒观察无连锁 | M2.3 |
+| 转任务幂等且来源字段正确 | 重复调用与数据库检查 | M2.3 |
+| 归档会话只读 | 归档后发送返回 409 | M2.3 |
+
+## 11. 流程 H：Agent 状态看板与工作复盘（M2.4）
+
+### 11.1 目的与定位
+
+流程 H 解决的是「多个 Agent 同时存在时，用户如何判断谁在工作、谁刚完成、谁空闲」以及「如何从一个 Agent 进入其工作上下文与完成过程」。它补充 Run 视角，不替代 Run 详情：Run 详情是执行操作入口，Agent 工作页是只读的工作复盘入口。
+
+流程 H 不引入新的执行实体，也不改变 Agent 生命周期；工作状态是 Run 的派生视图。
+
+### 11.2 前置条件
+
+| 条件 | 说明 |
+|---|---|
+| 已存在 Agent | 至少一个 Agent，且有或曾有 Run |
+| Run 事件与快照可用 | M1 的 `run.*` 事件与 `run_config_snapshots` |
+| 事件通道可用 | WS/SSE 可接收 Run 生命周期事件 |
+
+### 11.3 主流程
+
+```mermaid
+sequenceDiagram
+    actor H as 人类
+    participant S as ATeam
+    participant R as Run 服务
+    H->>S: 打开 Agents 看板
+    S->>R: 查询各 Agent 工作摘要
+    R-->>S: workStatus、活跃/最近 Run
+    S-->>H: 工作中 / 已完成 / 失败 / 空闲
+    H->>S: 点击工作中的 Agent
+    S-->>H: /agents/{id}/work 当前工作与上下文
+    H->>S: 选择历史 Run
+    S->>R: 读取 Run 快照与事件
+    R-->>S: 快照摘要 + 结构化时间线
+    S-->>H: 工作上下文与完成过程
+    H->>S: 跳转 Run 详情（可选）
+```
+
+### 11.4 交互与规则
+
+1. 看板状态由服务端派生：有活跃 Run 必为 `working`；无活跃 Run 不得为 `working`。
+2. `completed`/`failed` 只在最近 24 小时内展示；超时回到 `idle`。
+3. 归档 Agent 显示「已归档」并覆盖工作状态；历史工作只读。
+4. 点击卡片正文进入 `/agents/{id}/work`；编辑配置使用独立入口。
+5. 工作页默认选中活跃 Run，其次最近 Run；`?runId=` 保持选中。
+6. 工作上下文展示 Task、配置快照摘要、Workspace/commit、权限模式与提示词哈希；不展示明文密钥、凭据值或完整拼装 prompt。
+7. 完成过程只展示结构化事件，不混入普通日志；日志在 Run 详情查看。
+8. 工作页只读，不提供编辑、启动、取消、审批或合并。
+9. 状态随既有 `run.*` 事件更新；断线重连后重新拉取摘要。
+
+### 11.5 交付物
+
+Agent 工作摘要、工作页、工作上下文、完成过程时间线、历史工作列表、Run 快照查询端点与索引。
+
+### 11.6 用户故事
+
+| 编号 | Given/When/Then |
+|---|---|
+| US-H-01 | Given 看板上有多个 Agent，When 我查看，Then 我能区分工作中、已完成、失败待处理与空闲，并看到工作中 Agent 的当前任务与阶段。 |
+| US-H-02 | Given 一个 Agent 正在运行，When 我点击它，Then 我进入工作页并看到当前 Run 的任务、阶段、工作区、分支与最近事件。 |
+| US-H-03 | Given 一个 Agent 刚完成，When 我点击它，Then 默认展示刚结束的 Run，包含 Task 上下文、配置快照摘要与完成过程时间线。 |
+| US-H-04 | Given 一个 Agent 空闲，When 我进入工作页，Then 我看到「尚无工作记录」空态，而不是伪造的上下文。 |
+| US-H-05 | Given 一个 Agent 已归档，When 我进入工作页，Then 历史工作可查看且只读，没有编辑或启动入口。 |
+
+### 11.7 异常与边界
+
+| 异常 | 系统行为 | 人工处置 |
+|---|---|---|
+| Agent 不存在 | 404 `AGENT_NOT_FOUND` | 返回看板 |
+| Run 不存在 | 404 `RUN_NOT_FOUND` | 选择其他 Run |
+| 快照缺失 | 404 `RUN_SNAPSHOT_NOT_FOUND`；工作页显示「历史 Run 无完整快照」 | 查看 Run 事件或重新运行 |
+| 多个活跃 Run | 状态保持 `working`，工作页列出全部 | 选择 Run 查看 |
+| 状态竞态 | 以服务端查询为准；事件到达后刷新 | 重连或手动刷新 |
+| 归档 Agent | 工作状态显示「已归档」，历史只读 | 恢复 Agent 后继续 |
+| 快照含敏感字段 | 服务端脱敏；负向测试阻断发布 | 修复脱敏规则 |
+
+### 11.8 功能需求
+
+| 编号 | 需求 | 验收标准 | 里程碑 | 状态 |
+|---|---|---|---|---|
+| FLOW-H-001 | Agent 工作状态按 §11.4 派生并在看板展示 | 四种状态与归档态可见；与 Run 列表一致 | M2.4 | 计划（M2.4） |
+| FLOW-H-002 | 点击工作中/已完成 Agent 进入工作页 | `/agents/{id}/work` 可直达；编辑入口独立 | M2.4 | 计划（M2.4） |
+| FLOW-H-003 | 工作页展示当前工作与活跃 Run | 阶段、任务、时长、工作区/分支、最近事件可见 | M2.4 | 计划（M2.4） |
+| FLOW-H-004 | 工作页展示工作上下文 | Task、配置快照摘要、Workspace/commit、权限模式、提示词哈希可见 | M2.4 | 计划（M2.4） |
+| FLOW-H-005 | 工作页展示完成过程时间线 | 生命周期、工具、文件变更、测试、Artifact、评审/合并可过滤 | M2.4 | 计划（M2.4） |
+| FLOW-H-006 | 工作页展示历史工作 | 最近 20 条 Run 及结果；空闲空态；归档只读 | M2.4 | 计划（M2.4） |
+| FLOW-H-007 | 工作摘要与快照脱敏 | 无明文密钥、凭据值、完整拼装 prompt | M2.4 | 计划（M2.4） |
+| FLOW-H-008 | 状态随 Run 事件实时更新并支持 `runId` 深链 | 2 秒内更新；刷新保持选中 | M2.4 | 计划（M2.4） |
+
+### 11.9 验收点
+
+| 验收点 | 验证方式 | 里程碑 |
+|---|---|---|
+| 看板状态与 Run 列表一致 | 并发创建/结束 Run 后对比 | M2.4 |
+| 工作中/已完成 Agent 可进入工作页 | 点击走查 | M2.4 |
+| 工作上下文与快照一致 | 对比 `GET /runs/{id}/snapshot` | M2.4 |
+| 时间线不混入普通日志 | UI 检查与事件类型断言 | M2.4 |
+| 快照不含敏感信息 | 脱敏负向用例 | M2.4 |
+| 空闲与归档空态/只读 | 空态走查 | M2.4 |
+
+## 12. 跨流程交接与一致性
+
+### 12.1 交接矩阵
 
 | 交接物 | 生产流程 | 消费流程 | 不可变要求 | 失效条件 |
 |---|---|---|---|---|
@@ -1351,9 +1578,11 @@ flowchart TD
 | 评审与合并/审批记录 | D | 合并、部署 | 只追加；M1 MergeRecord 绑定 expectedHeadCommit 与证据快照，M2 Approval 绑定 actionFingerprint | M1：head/证据快照不匹配（412）；M2：指纹不匹配（412，不可消费）、超时 expired、撤回 cancelled、已消费 consumed |
 | 授权执行结果 | D | 任务、审计 | 绑定 reviewId/approvalId 与动作结果 | 执行失败可重试；M2 超时后审批 expired |
 | 阻塞/升级记录 | E | 收件箱、审计 | 可追溯 | 关闭后仍保留 |
+| 会话消息与来源 | G | Task、审计 | 消息不可变；Task 记录 `originConversationId`/`originMessageId`；路由决策只追加 | 会话归档（不阻断 Task） |
+| Agent 工作状态与快照 | H | 看板、工作页、审计 | `workStatus` 只读派生；快照不可补写、已脱敏 | 归档（历史只读） |
 | 审计日志 | F | 管理员、合规 | 只追加 | 无 |
 
-### 10.2 一致性规则
+### 12.2 一致性规则
 
 1. 所有交接物必须绑定 ID 与哈希；禁止只靠文件名或自然语言描述交接。
 2. 下游只能消费已冻结或已批准的版本；消费未批准版本必须显式标记为实验性。
@@ -1361,7 +1590,7 @@ flowchart TD
 4. 任何流程都不得修改历史 Run 的终态、事件或证据；修正通过新 Run 或新审批完成。
 5. 跨流程查询以服务端为准；前端缓存只用于展示，不作为审批依据。
 
-## 11. 指标
+## 13. 指标
 
 | 指标 | 定义 | 目标 | 适用流程 | 里程碑 |
 |---|---|---|---|---|
@@ -1377,7 +1606,7 @@ flowchart TD
 | Runner 利用率 | 忙碌时间 / 在线时间 | 50%-80% | F | M3 |
 | 审计完整率 | 有审计的高风险动作 / 全部高风险动作 | 100% | D/F | M3 |
 
-### 11.1 非功能需求
+### 13.1 非功能需求
 
 | 编号 | 需求 | 验收标准 | 里程碑 | 状态 |
 |---|---|---|---|---|
@@ -1390,7 +1619,7 @@ flowchart TD
 | FLOW-N-007 | 关键审批动作必须可键盘操作并可读屏 | 焦点顺序正确，按钮有可读标签 | M1/M2.1 | 计划（M1/M2.1） |
 | FLOW-N-008 | 团队模式关键查询 p95 不超过 1 秒 | 1 万任务、10 万事件规模下测量 | M3 | 计划（M3） |
 
-## 12. 依赖与风险
+## 14. 依赖与风险
 
 | 依赖/风险 | 影响 | 缓解措施 | 里程碑 |
 |---|---|---|---|
@@ -1405,8 +1634,10 @@ flowchart TD
 | Windows 路径与 worktree 兼容 | 跨平台体验不一致 | 统一路径抽象；打包前专项测试 | M4 |
 | Wails 打包与自动更新 | 分发体验与签名问题 | M4 专项里程碑；先保证本地 CLI | M4 |
 | 产品范围膨胀 | 流程变复杂、交付延期 | 坚持先并行任务、后 Crew；非目标不进入主线 | 全程 |
+| Agent 工作状态与 Run 列表不一致 | 看板失去信任 | 服务端唯一派生、一致性测试、复用 `run.*` 事件 | M2.4 |
+| 工作页集中展示上下文导致泄漏 | 凭据或提示词暴露 | 快照脱敏、字段白名单、只读页面与跨 Workspace 404 | M2.4 |
 
-## 13. 里程碑映射
+## 15. 里程碑映射
 
 | 流程 | M0 | M1 | M2 | M3 | M4 |
 |---|---|---|---|---|---|
@@ -1416,8 +1647,10 @@ flowchart TD
 | D 评审审批 | 无强制 | Review + MergeRecord、expectedHeadCommit/证据快照 412、本地确认 | M2.1：Approval、actionFingerprint、consumed、设计门、契约门、staging 门、prod 人工 | 四眼原则、审计导出、权限校验 | 通知与自动提醒 |
 | E 异常处理 | 基础失败、取消、超时 | 分类、重试链、可靠取消、恢复、timeout 错误码 | 阻塞收件箱、升级级别、stalled 检测、T-11/T-12 重开与恢复 | 远程失败处理 | 自动重试策略 |
 | F 团队模式 | 本地无登录 | 无 | 无 | Postgres、登录、两层角色权限、Runner、审计、PR、interrupted/runner_lost | 团队通知与报表 |
+| G Agent Team 讨论 | 无 | 无 | M2.3：小组、会话、路由、`@`、只读讨论、流式停止、一键转任务 | 团队讨论复用 UI，数据模型独立 | 不变 |
+| H Agent 状态复盘 | 无 | 无 | M2.4：工作状态、看板、工作页、上下文、完成过程、历史工作 | 团队视图复用工作页 | 不变 |
 
-## 14. 与其他文档的关系
+## 16. 与其他文档的关系
 
 本章是「时间线」视角，模块章节是「能力」视角，两者需要交叉阅读。以下为具体文件与本章的对应关系：
 
@@ -1425,24 +1658,25 @@ flowchart TD
 - `prd/01-scope-and-roadmap.md`：范围边界、M0-M4 目标与 M2.1/M2.2 拆分。本章的里程碑映射与角色模板数量以该文档为准。
 - `prd/02-domain-model.md`：Workspace（项目）、Task、Agent、Run、RunEvent、运行工作区、Artifact、Approval、Skill、Crew 的字段、状态机与不变量。本章 1.4、3.1、3.3、7.3、8.5.1 直接引用其 4.2、4.3、4.4、4.6、7.3。
 - `prd/04-acceptance-and-test-plan.md`：验收原则、AC 用例、测试矩阵与里程碑演示脚本。本章的 FLOW- 需求通过该文档 3.1 的 FR 前缀表登记，验收用例引用本章时使用 FLOW- 编号。
-- `prd/05-risks-and-open-questions.md`：跨章节风险与待确认事项。本章第 15 节只保留本章特有的未决问题，已决策项不再重复。
+- `prd/05-risks-and-open-questions.md`：跨章节风险与待确认事项。本章第 17 节只保留本章特有的未决问题，已决策项不再重复。
 - `prd/modules/task-management.md`：Task 状态、看板、DAG、删除保护与验收。流程 A、E 依赖该模块。
 - `prd/modules/agent-system.md`：Agent 配置、版本、技能、路径与命令字段、角色模板。流程 A、B 依赖该模块。
 - `prd/modules/runtime-and-workspace.md`：Run 生命周期、调度、取消、超时、worktree、Runtime adapter、Artifact/Evidence 采集。流程 A、E 依赖该模块。
 - `prd/modules/collaboration-and-review.md`：任务 DAG、交付物契约、审批门、Crew、证据化 DoD、Review。流程 B、C、D 依赖该模块。
-- `prd/modules/security-and-permissions.md`：路径/命令 allowlist、密钥脱敏、审批内容绑定、团队角色与权限矩阵、Runner 凭据与审计。本章 5.4、5.5、9.3 引用其角色与权限模型。
+- `prd/modules/agent-teams-and-conversations.md`：Agent Team、会话、消息、路由与一键转任务。流程 G 依赖该模块。
+- `prd/modules/security-and-permissions.md`：路径/命令 allowlist、密钥脱敏、审批内容绑定、团队角色与权限矩阵、Runner 凭据与审计。本章 5.4、5.5、9.3、10.4 引用其角色、权限模型与会话只读边界。
 - `prd/modules/ui-ux.md`：Board、Task 详情、Run 日志、diff 查看器、审批面板、收件箱与可访问性。本章的 FLOW-A/B/D 交互规则是它的输入。
 - `prd/modules/api-and-data.md`：REST/WS 端点、错误码、事件 schema、分页与迁移。本章 3.6 的资源与事件应与该模块契约一致。
 - `prd/modules/non-functional-requirements.md`：性能、可靠性、可移植性、可观测性、资源与打包等 NFR 的权威定义；本章的 FLOW-N 需求是流程视角的补充，不替代该模块。
-- `prd/milestones/M0-scaffold.md`、`M1-local-loop.md`、`M2-role-agents.md`、`M3-team-mode.md`、`M4-automation-and-packaging.md`：各里程碑的目标、范围、退出标准与演示脚本。本章第 13 节是流程视角的映射，具体验收以里程碑文档与 `prd/04-acceptance-and-test-plan.md` 为准。
+- `prd/milestones/M0-scaffold.md`、`M1-local-loop.md`、`M2-role-agents.md`、`M2.3-agent-teams.md`、`M2.4-agent-workbench.md`、`M3-team-mode.md`、`M4-automation-and-packaging.md`：各里程碑的目标、范围、退出标准与演示脚本。本章第 15 节是流程视角的映射，具体验收以里程碑文档与 `prd/04-acceptance-and-test-plan.md` 为准。
 
-## 15. 已决策与待确认
+## 17. 已决策与待确认
 
-### 15.1 已决策（不再列为待确认）
+### 17.1 已决策（不再列为待确认）
 
 1. **Run 完成后任务是否自动进入 in_review**：已决策。M1 采用 `02-domain-model.md` 4.4 的状态联动：Run 完成且证据齐备时，系统可创建 `pending` Review 并把 Task 置为 `in_review`；证据不齐时只提示提交评审；任何情况下不得自动置为 `done`。决策记录见 FLOW-X-005 与 02-domain-model 4.4。M0 现状是 Run completed 后 Task 仍停留在 in_progress，需要人工 PATCH，这是已知缺口。
 
-### 15.2 待确认/未文档化
+### 17.2 待确认/未文档化
 
 以下问题尚未形成最终决策，需要在对应模块设计前确认：
 

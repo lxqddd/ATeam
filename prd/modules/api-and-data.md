@@ -214,6 +214,9 @@
 | Runner / Lease | 无 | `/api/v1/runner` | 计划 M3 | 租约领取、续约、事件与证据上传 |
 | Event Log | 无 | `/api/v1/events` | 计划 M1 | 全局事件序号与重放来源 |
 | Inbox | 无 | `/api/v1/inbox` | 计划 M2 | 收件箱与审批待办 |
+| Agent Team | 无 | `/api/v1/agent-teams` | 计划 M2.3 | Agent 讨论小组与成员；与 M3 人类 Team Workspace 无关 |
+| Conversation | 无 | `/api/v1/conversations` | 计划 M2.3 | 小组会话、消息、路由与转任务 |
+| Agent Work | 无 | `/api/v1/agents/{id}/work` | 计划 M2.4 | Agent 派生工作状态、活跃/最近 Run 与工作页摘要 |
 | M4 自动化 | 无 | `/api/v1/schedules` 等 | 计划 M4 | 定时、Webhook、通知、插件、遥测、更新 |
 
 ### 5.2 M0 已实现端点
@@ -362,7 +365,7 @@
 
 | 方法 | 路径 | 里程碑 | 说明 |
 | --- | --- | --- | --- |
-| GET | `/api/v1/agents` | M1 | 分页；支持 `runtime`、`role`、`q`、`sort`、`includeArchived` |
+| GET | `/api/v1/agents` | M1 | 分页；支持 `runtime`、`role`、`q`、`sort`、`includeArchived`；M2.4 增加 `include=workStatus`，为每个 Agent 附加派生 `workStatus`、`activeRunCount` 与 `lastRun` 摘要 |
 | POST | `/api/v1/agents` | M1 | 创建；runtime 枚举校验；名称活跃唯一 |
 | GET | `/api/v1/agents/{id}` | M1 | 详情；返回 `currentVersionId` 与技能绑定摘要 |
 | PATCH | `/api/v1/agents/{id}` | M1 | 更新；执行语义变化时生成新 AgentVersion |
@@ -392,6 +395,7 @@
 | --- | --- | --- | --- |
 | GET | `/api/v1/runs` | M1 | 分页；支持 `taskId`、`agentId`、`status`、`trigger`、`since`、`until`、`q`、`sort` |
 | GET | `/api/v1/runs/{id}` | M1 | 详情；包含 `errorCode`、`failureDetail`、`exitCode`、`agentVersionId`、workspace 摘要、artifact/review 摘要 |
+| GET | `/api/v1/runs/{id}/snapshot` | M2.4 | Run 配置快照；返回 configSnapshot、promptHash、runtimeVersion、permissionMode、permissionEnvelope；已脱敏，不含明文密钥与完整拼装 prompt |
 | GET | `/api/v1/runs/{id}/events` | M1 | 游标分页；`afterSeq`、`limit`、`type`；父 Run 不存在返回 404 |
 | POST | `/api/v1/runs/{id}/cancel` | M1 | 幂等取消；排队中也能可靠取消（修复 G-01） |
 | POST | `/api/v1/runs/{id}/retry` | M1 | 基于原 Run 的 Task/Agent 创建新 Run；原 Run 必须为终态；`attempt` 递增 |
@@ -612,7 +616,8 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 | GET | `/api/v1/health` | M1 | 返回 `status`、`version`、`apiVersion`、`schemaVersion`、`database`、`dataDir`、`time` |
 | GET | `/api/v1/meta` | M1 | 支持的 Runtime、Artifact/契约类型、限制值、事件目录版本、错误码版本、权限模式；另含 `eventCatalogVersion` 与 `errorRegistryVersion` |
 | GET | `/api/v1/events` | M1 | 全局事件日志，支持 `afterSeq`、`limit`、`type`；用于重放与调试 |
-| GET | `/api/v1/runtimes` | M1 | Runtime 可用性、版本、模型与认证状态（运行时模块 RUN-016） |
+| GET | `/api/v1/runtimes` | M1 | Runtime 可用性、版本、模型目录与认证状态（运行时模块 RUN-016）；M2.1 模型条目含 `id`、`label`、`source`、`default`、`status`、`deprecated` 与 `modelsError` |
+| PUT | `/api/v1/runtimes/{name}/models` | M2.1 | 更新该 Runtime 的本地模型配置；`{models:[{id,label?}]}`；只存本地，不包含密钥 |
 | POST | `/api/v1/auth/bootstrap` | M2.1 | 一次性 bootstrap 令牌换取本地会话令牌 |
 | POST | `/api/v1/auth/ws-ticket` | M2.1 | 申请一次性 WebSocket ticket（≤60 秒） |
 | POST | `/api/v1/auth/login` / `logout` | M3 | 团队登录/登出 |
@@ -653,6 +658,8 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 | M0 | `GET /api/health`；`/api/tasks` CRUD 与 `/tasks/{id}/runs`；`/api/agents` CRUD；`/api/runs` 列表/详情/事件/取消；`/api/ws`；静态 SPA |
 | M1 | `/api/v1/health`、`/meta`、`/events`、`/runtimes`；`/workspaces` 与 `/workspaces/{id}`；`/projects` 别名；`/tasks` 增强与 `/archive`；`/agents` 增强与 `/versions`、`/archive`；`/runs` 增强、`/cancel`、`/retry`、`/merge`、`/workspace`、`/diff`、`/artifacts`、`/reviews`；`/artifacts/{id}` 与 `/content`；`/reviews/{id}`、`/decision`、`/comments`、`/review-comments/{id}/resolve`；`/security/status` |
 | M2 | `/tasks/{id}/dependencies`、`/readiness`、`/deliverables`、`/evidence`、`/reviews`、`/comments`、`/bulk`；`/unarchive` 与 `restore`；`/deliverables/{id}` 及 submit/validate/freeze/revise/withdraw/versions；`/approvals` 与 decision/consume/revoke；`/skills` 与 versions、`/agents/{id}/skills`；`/inbox`；`/crews`；`/task-views`、`/task-templates`；`/evidence/{id}`、`/verify`；`/diagnostics/metrics`、`/diagnostics/bundle`；`/auth/bootstrap`、`/auth/ws-ticket`、`/audit-events`、`/secrets`、`/permission-requests`（M2.1） |
+| M2.3 | `/agent-teams` 与 `/agent-teams/{id}`、`/archive`、`/members`；`/agent-teams/{id}/conversations`；`/conversations/{id}`、`/messages`、`/messages/{messageId}/cancel`；`/messages/{id}/convert-to-task` |
+| M2.4 | `/agents/{id}/work`；`/runs/{id}/snapshot` |
 | M3 | `/machines`、`/register-tokens`、`/revoke`；`/runner/*` 全组；`/auth/login`、`/logout`、`/me`、`/members`、`/tokens`；`/audit-events` 团队查询/export/verify；`/security/settings`；`/runs/{id}/pull-request`；`/workspaces/{id}/archive`、`/members` |
 | M4 | `/schedules`、`/webhooks`、`/api/hooks/{hookId}`、`/notifications`、`/notification-preferences`、`/plugins` 与 grants、`/telemetry`、`/updates/*` |
 
@@ -703,12 +710,15 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 | `name`、`description`、`instructions` | string | 名称 1-80 字符 |
 | `role` | string | `general`/`ui_design`/`frontend`/`backend`/`devops`/`custom`（M2，默认 `general`） |
 | `roleTemplateId`、`roleTemplateVersion`、`templateSnapshot`、`outputContractTypes` | string/object/string[] | 角色模板来源、版本、实例化快照与产出契约类型（M2）；旧名 `templateKey`/`templateVersion` 映射到此 |
-| `runtime`、`model` | string | Runtime 枚举与模型标识 |
+| `runtime`、`model` | string | Runtime 枚举与模型标识；`model` 为空表示 Runtime 默认，非空必须是该 Runtime 模型目录中的 `id`（M2.1） |
+| `modelStatus` | string | M2.1 派生：`available`/`unavailable`/`unknown`；`unavailable` 时 Agent 可读但启动 Run 前需重选模型 |
 | `permissionMode` | string | `read_only`/`controlled_edit`/`full_access`，默认 `controlled_edit`（M1） |
 | `workspaceMode` | string | `worktree`/`directory` |
 | `maxConcurrency`、`timeoutMinutes` | integer | 并发与超时 |
 | `allowedPaths`、`allowedCommands` | string[] | 权限边界 |
 | `status` | string | `active`、`archived` |
+| `workStatus` | string | M2.4 派生只读：`idle`/`working`/`completed`/`failed`；仅在 `include=workStatus` 或 `/work` 响应中返回 |
+| `activeRunCount`、`lastRun` | integer/object/null | M2.4 `include=workStatus` 时返回的派生摘要；`lastRun` 为 RunSummary 或 null |
 | `currentVersionId` | string/null | 当前 AgentVersion |
 | `revision` | integer | 乐观锁版本 |
 | `createdBy` | string/null | 创建者（M3） |
@@ -717,6 +727,19 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 | `versions[].snapshot` | object | 完整配置快照 |
 | `versions[].contentHash` | string | SHA-256 |
 | `versions[].changeNote`、`createdAt` | string | 变更说明与时间 |
+
+**Runtime 模型目录（M2.1）**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `runtime.name`、`available`、`version`、`authStatus`、`capabilities` | string/bool/object | Runtime 探测结果 |
+| `runtime.models[]` | object[] | 合并去重后的模型目录；空数组表示只能使用 Runtime 默认 |
+| `model.id`、`label` | string | 模型标识与展示名；`label` 缺失时展示 `id` |
+| `model.source` | string | `runtime`（CLI 探测）或 `settings`（本地配置） |
+| `model.default` | boolean | 是否为 Runtime 默认模型；至多一个 |
+| `model.status` | string | `available`、`unverified`、`unavailable` |
+| `model.deprecated` | boolean | 是否已弃用；仍可选择但显示警示 |
+| `runtime.modelsError` | string/null | 探测失败原因；存在时 `models` 只来自本地配置 |
 
 **Run**
 
@@ -812,7 +835,123 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 | `runner.id`、`machineId`、`workspaceId`、`mode`、`status`、`concurrency`、`activeRunCount`、`version`、`protocolVersion`、`lastHeartbeatAt` | string/int | Runner 状态 |
 | `lease.id`、`runId`、`runnerId`、`machineId`、`status`、`expiresAt`、`renewedAt`、`releasedAt` | string | 租约；`fencedToken` 只对 Runner 认证域返回 |
 
+**AgentTeam / Conversation**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `agentTeam.id`、`workspaceId`、`name`、`description`、`status`、`memberCount`、`revision` | string/int | 小组；`status` 为 `active`/`archived` |
+| `agentTeam.members[]` | object[] | `agentId`、`name`、`role`、`roleOverride`、`position`、`joinedAt` |
+| `conversation.id`、`workspaceId`、`teamId`、`title`、`status`、`createdBy`、`lastMessageAt`、`messageCount`、`revision` | string/int | 会话；`status` 为 `active`/`archived` |
+| `message.id`、`conversationId`、`seq`、`senderType`、`senderAgentId`、`content`、`mentions`、`replyToMessageId`、`status`、`usage`、`taskId`、`truncated`、`createdAt` | string/int/array/object | 消息；`senderType` 为 `user`/`agent`/`system` |
+| `message.routing` | object | `mode`（`auto`/`mention`）、`source`（`router_rules`/`router_llm`/`mention`）、`candidates[]`、`selectedAgentId`、`rationale`、`createdAt` |
+| `sendMessageResponse.message`、`replyMessageId`、`routing` | object/string | 发送用户消息的 201 响应；Agent 回复通过事件流式返回 |
+| `convertToTaskResponse.task`、`created` | object/boolean | 转任务响应；`created=false` 表示返回既有 Task（幂等） |
+
+**Agent Work**
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `workStatus` | string | `idle`/`working`/`completed`/`failed`；服务端派生，只读 |
+| `workStatusReason` | string | 判定依据：`active_run`、`recent_completed`、`recent_failed`、`no_recent_work`、`archived` |
+| `activeRuns[]` | object[] | 活跃 Run 摘要，按 `startedAt` 升序 |
+| `lastRun` | object/null | 最近一次 Run 摘要（不论状态） |
+| `recentRuns[]` | object[] | 最近 20 条 Run 摘要，按 `createdAt` 降序 |
+| `counts.active`、`completed24h`、`failed24h` | integer | 活跃数、24 小时内完成数、24 小时内失败/取消数 |
+| `runSummary.id`、`taskId`、`taskTitle`、`status`、`phase` | string | Run 标识与当前阶段 |
+| `runSummary.startedAt`、`endedAt`、`durationMs` | string/int | 时间与耗时；未结束的 `endedAt` 为 null |
+| `runSummary.workspace.branch`、`path`、`state` | object | 工作区摘要 |
+| `runSummary.reviewStatus`、`mergeCommit`、`artifactCount`、`usage` | string/int/object | 评审、合并、证据与用量摘要 |
+| `snapshot.runId`、`agentVersionId`、`createdAt`、`legacy` | string/bool | 快照归属与是否历史补写 |
+| `snapshot.configSnapshot`、`promptHash`、`runtimeVersion`、`permissionMode`、`permissionEnvelope` | object/string | 已脱敏配置；含脱敏后的 instructions；不含完整拼装 prompt、明文密钥与凭据值 |
+
 通用规则：可空字段返回 `null` 而不是省略（M1 起）；未知字段忽略；时间统一 RFC3339 UTC 毫秒；ID 不透明；`revision` 只在可写资源上出现；派生字段不参与写入。
+
+### 5.15 计划端点：Agent Teams 与 Conversations（M2.3）
+
+**Agent Teams**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/agent-teams` | 列表；支持 `status`、`workspaceId`、分页 |
+| POST | `/api/v1/agent-teams` | 创建；`{workspaceId?, name, description?, memberAgentIds?[]}`；同 Workspace 校验 |
+| GET | `/api/v1/agent-teams/{id}` | 详情，含成员快照 |
+| PATCH | `/api/v1/agent-teams/{id}` | 重命名/描述；`expectedRevision` 冲突返回 409 `STALE_REVISION` |
+| POST | `/api/v1/agent-teams/{id}/archive` | 归档；幂等 |
+| GET | `/api/v1/agent-teams/{id}/members` | 成员列表 |
+| POST | `/api/v1/agent-teams/{id}/members` | 添加成员；`{agentId, roleOverride?, position?}`；重复或跨 Workspace 返回 409 |
+| DELETE | `/api/v1/agent-teams/{id}/members/{agentId}` | 移除成员；不存在返回 404 |
+
+**Conversations 与 Messages**
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/agent-teams/{id}/conversations` | 小组会话列表；`status`、分页 |
+| POST | `/api/v1/agent-teams/{id}/conversations` | 创建会话；`{title?}`；小组归档时 409 |
+| GET | `/api/v1/conversations/{id}` | 会话详情 |
+| PATCH | `/api/v1/conversations/{id}` | 重命名或归档；`{title?, status?}` |
+| GET | `/api/v1/conversations/{id}/messages` | 消息列表；`afterSeq`、`limit`（默认 50，最大 200） |
+| POST | `/api/v1/conversations/{id}/messages` | 发送用户消息；`{content, mentions?[]}`；201 返回用户消息、`replyMessageId` 与 `routing`；Agent 回复通过 `conversation.reply.*` 事件流式返回 |
+| POST | `/api/v1/conversations/{id}/messages/{messageId}/cancel` | 取消进行中的 Agent 回复；非进行中返回 409 `REPLY_NOT_ACTIVE` |
+| POST | `/api/v1/messages/{id}/convert-to-task` | 转任务；`{title?, description?}`；200 返回 `{task, created}`；重复调用 `created=false` |
+
+**请求与响应约束**
+
+- 发送消息：`content` 必填，1-32768 字符；`mentions` 只能包含当前小组成员；`@` 文本与 `mentions` 必须一致，不一致返回 400 `VALIDATION_FAILED`。
+- 路由：`@` 存在时 `mode=mention` 且跳过自动路由；否则 `mode=auto`。路由失败时用户消息已落库，响应 409 并在 `details` 返回 `messageId` 与候选。
+- Agent 回复：不在 POST 响应中同步等待完成；服务端创建 `pending` Agent 消息并通过事件推送 delta，最终更新为 `completed`/`failed`/`cancelled`。
+- 转任务：Task 的 `originConversationId`、`originMessageId` 由服务端写入，客户端不可指定；转换后追加 `system` 消息并发布 `conversation.task_created`。
+- 列表：消息按 `seq` 升序；`afterSeq` 为增量游标；会话列表按 `lastMessageAt` 降序。
+- 归档：`PATCH` 会话为 `archived` 后，发送消息返回 409 `CONVERSATION_ARCHIVED`，进行中的回复允许完成或取消。
+
+### 5.16 计划端点：Agent Work 与 Run Snapshot（M2.4）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/agents/{id}/work` | Agent 工作摘要：`workStatus`、判定依据、`activeRuns`、`lastRun`、`recentRuns`（默认 20 条）、`counts`、`generatedAt` |
+| GET | `/api/v1/runs/{id}/snapshot` | Run 配置快照：`configSnapshot`、`promptHash`、`runtimeVersion`、`permissionMode`、`permissionEnvelope`、`legacy` |
+
+**工作状态派生规则（服务端唯一实现）**
+
+| 状态 | 判定 |
+| --- | --- |
+| `working` | 存在 `queued`/`preparing`/`running` 的 Run |
+| `completed` | 无活跃 Run；最近 Run 为 `completed` 且 `endedAt` 在 24 小时内 |
+| `failed` | 无活跃 Run；最近 Run 为 `failed`/`timeout`/`cancelled` 且 `endedAt` 在 24 小时内 |
+| `idle` | 其余情况；`workStatusReason=no_recent_work` |
+| 归档 | `lifecycleStatus=archived` 时 `workStatusReason=archived`，工作状态不参与看板主状态 |
+
+**约束**
+
+- `workStatus` 是派生只读字段；PATCH Agent 时携带 `workStatus` 返回 400 `VALIDATION_FAILED`。
+- 工作摘要必须与 `GET /agents/{id}/runs` 一致：同一时刻不得出现看板 `working` 但 Run 列表无活跃 Run。
+- `GET /agents?include=workStatus` 必须使用与 `GET /agents/{id}/work` 相同的派生实现；列表中的 `workStatus` 不得由客户端自行计算，看板不得对每个 Agent 逐一请求 `/work` 造成 N+1。
+- `activeRuns` 按 `startedAt` 升序；`recentRuns` 按 `createdAt` 降序；`lastRun` 可为 null。
+- 工作摘要不新增 WebSocket 事件；客户端订阅既有 `run.*` 事件并刷新摘要。避免派生事件与真实事件不一致。
+- `snapshot` 必须脱敏：instructions 允许返回但须按 SEC-071 脱敏；不返回完整拼装 prompt、明文密钥、凭据值、环境变量值；`credentialRefs` 只返回引用 ID；`legacy=true` 表示 M0 历史 Run 的补写快照。
+- 快照不存在返回 404 `RUN_SNAPSHOT_NOT_FOUND`；Run 不存在返回 404 `RUN_NOT_FOUND`。
+- 列表与摘要的默认上限：`recentRuns` 20 条，允许 1–50；不得一次返回该 Agent 的全部历史 Run。
+- 查询需要 `runs(agent_id, status, ended_at)` 与 `runs(agent_id, created_at)` 索引；10 万条 Run 下摘要 p95 不超过 200 毫秒。
+
+### 5.17 计划端点：Runtime 模型目录（M2.1）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/runtimes` | 每个 Runtime 返回 `models[]` 与 `modelsError`；模型目录由 Runtime 探测与本地模型配置合并去重 |
+| PUT | `/api/v1/runtimes/{name}/models` | 全量替换该 Runtime 的本地模型配置；`{models:[{id,label?}]}`；幂等；不包含密钥 |
+
+**模型目录规则**
+
+- 合并顺序：先 Runtime 探测条目，再本地配置条目；按 `id` 去重，同一 `id` 以 Runtime 条目为准。
+- `default` 至多一个；Runtime 默认始终是下拉首项（空模型值表示使用默认）。
+- `label` 可空；空时客户端展示 `id`；`id` 是不透明字符串，服务端只做精确匹配。
+- `source=settings` 的条目 `status` 为 `unverified`；`source=runtime` 的条目由 Adapter 给出 `available`/`unavailable`。
+- 目录缓存 TTL 60 秒；`PUT /runtimes/{name}/models` 后立即失效并重新合并；客户端可带 `refresh=true` 强制刷新。
+- 探测失败时返回本地配置条目与 `modelsError`；不得返回过期缓存并标记为实时。
+- Agent 创建或 PATCH 时，`model` 非空必须命中当前目录的 `id`，否则 `400 MODEL_NOT_AVAILABLE`，details 包含 `runtime` 与 `availableModels[]`。
+- 切换 Runtime 时按新目录重新校验；原模型不在新目录中返回 `400 MODEL_NOT_AVAILABLE`，客户端可将模型重置为空后重试。
+- 已有 Agent 的模型在目录变化后不可用时，服务端不自动改写；`GET /agents` 标记 `modelStatus=unavailable`，启动 Run 前拒绝并提示重新选择；目录探测失败时交由 Adapter 返回 `runtime_error`。
+- `PUT /runtimes/{name}/models` 只允许本地模式或具备管理权限的用户；写入本地配置，不触发模型调用、不保存凭据、不联网验证模型存在性。
+- M3 起模型目录以 Runner 能力上报为准，`runtime_model_configs` 只服务本地模式；团队共享模型策略需单独定义，不复用本表。
 
 ## 6. WebSocket 事件模型
 
@@ -918,6 +1057,12 @@ M1 起不再使用 `scope.workspace`；`workspaceId` 是顶层字段。计划阶
 | `inbox.item.created` / `inbox.item.updated` | M2 | 条目摘要 | `inbox.updated` → 保留为计数事件 `{unreadCount}`，不替代 item 事件 |
 | `skill.created` / `skill.updated` / `skill.version_published` / `skill.archived` / `skill.deleted` | M2 | Skill 摘要 | — |
 | `crew.created` / `crew.updated` / `crew.plan_submitted` / `crew.member_updated` / `crew.started` / `crew.paused` / `crew.completed` / `crew.cancelled` | M2 后段 | Crew 摘要 | — |
+| `agent_team.created` / `agent_team.updated` / `agent_team.archived` | M2.3 | 小组快照或 `{id, archivedAt}` | — |
+| `conversation.created` / `conversation.updated` / `conversation.archived` | M2.3 | 会话快照或 `{id, status}` | — |
+| `conversation.message.created` | M2.3 | 完整消息（含 `routing`） | — |
+| `conversation.routing.decided` | M2.3 | `{conversationId, messageId, mode, source, selectedAgentId, rationale}` | — |
+| `conversation.reply.started` / `conversation.reply.delta` / `conversation.reply.completed` / `conversation.reply.failed` / `conversation.reply.cancelled` | M2.3 | `{conversationId, messageId, agentId, delta?}`；`delta` 是流式增量，非终态快照 | `conversation.reply.updated` 不单独发送；增量统一用 `delta` |
+| `conversation.task_created` | M2.3 | `{conversationId, messageId, taskId}` | — |
 | `machine.online` / `machine.offline` / `machine.draining` / `machine.disabled` / `machine.revoked` / `machine.updated` | M3 | 机器摘要与 `lastSeenAt` | — |
 | `runner.registered` / `runner.heartbeat` / `runner.lease_granted` / `runner.lease_expired` / `runner.disconnected` / `runner.revoked` | M3 | `{runnerId, machineId, leaseId?, runId?, activeRunCount?}` | `runner.offline` → `machine.offline` |
 | `events.replay_reset` | M1 | `{reason: "retention" 或 "gap", lastSeq}`；客户端必须重新拉取快照 | — |
@@ -1063,13 +1208,14 @@ RunEvent 的 `type` 是 Runtime 输出被规范化后的结果。M0 只产生 `l
 | --- | --- | --- | --- | --- |
 | 400 | `INVALID_JSON` | 请求体不是合法 JSON 或类型不符 | 否 | M0 起（M1 结构化） |
 | 400 | `VALIDATION_FAILED` | 字段校验失败，details.fields 指出原因 | 否 | M1 |
+| 400 | `MODEL_NOT_AVAILABLE` | Agent 的 `model` 不在所选 Runtime 的模型目录中；details 返回 `runtime` 与 `availableModels[]` | 否 | M2.1 |
 | 400 | `INVALID_CURSOR` | 分页游标无法解析 | 否 | M1 |
 | 400 | `INVALID_SORT` | 排序列不在白名单 | 否 | M1 |
 | 400 | `INVALID_LIMIT` | limit 非正整数或超过最大值 | 否 | M1 |
 | 401 | `UNAUTHENTICATED` | 未登录、会话过期或令牌无效 | 否 | M2.1/M3 |
 | 403 | `FORBIDDEN` | 已认证但无权限 | 否 | M3 |
 | 403 | `POLICY_DENIED` | HTTP 层的路径/命令权限拒绝；Run 内使用 `permission_denied` | 否 | M2 |
-| 404 | `WORKSPACE_NOT_FOUND` / `TASK_NOT_FOUND` / `AGENT_NOT_FOUND` / `RUN_NOT_FOUND` / `RUN_EVENT_NOT_FOUND` / `ARTIFACT_NOT_FOUND` / `EVIDENCE_NOT_FOUND` / `REVIEW_NOT_FOUND` / `DELIVERABLE_NOT_FOUND` / `APPROVAL_NOT_FOUND` / `SKILL_NOT_FOUND` / `MACHINE_NOT_FOUND` / `RUNNER_NOT_FOUND` | 资源不存在 | 否 | M1 起逐步 |
+| 404 | `WORKSPACE_NOT_FOUND` / `TASK_NOT_FOUND` / `AGENT_NOT_FOUND` / `RUN_NOT_FOUND` / `RUN_EVENT_NOT_FOUND` / `RUN_SNAPSHOT_NOT_FOUND` / `ARTIFACT_NOT_FOUND` / `EVIDENCE_NOT_FOUND` / `REVIEW_NOT_FOUND` / `DELIVERABLE_NOT_FOUND` / `APPROVAL_NOT_FOUND` / `SKILL_NOT_FOUND` / `MACHINE_NOT_FOUND` / `RUNNER_NOT_FOUND` / `AGENT_TEAM_NOT_FOUND` / `CONVERSATION_NOT_FOUND` / `MESSAGE_NOT_FOUND` | 资源不存在 | 否 | M1 起逐步；M2.3/M2.4 增加对应项 |
 | 405 | `METHOD_NOT_ALLOWED` | 方法不支持 | 否 | M1 |
 | 409 | `TASK_NOT_EXECUTABLE` | Task 状态不允许启动 Run | 否 | M0 起（M1 结构化） |
 | 409 | `INVALID_STATUS_TRANSITION` | 状态机不允许的迁移 | 否 | M1 |
@@ -1086,6 +1232,17 @@ RunEvent 的 `type` 是 Runtime 输出被规范化后的结果。M0 只产生 `l
 | 409 | `WORKSPACE_LIMIT_REACHED` | M1 单 Workspace 模式下尝试创建第二个非归档 Workspace | 否 | M1 |
 | 409 | `WORKSPACE_PROTECTED` | 默认 Workspace 不允许删除；M1-M2 的 Project DELETE 返回此码 | 否 | M1 |
 | 409 | `IDEMPOTENCY_CONFLICT` | 同一幂等键对应不同请求 | 否 | M1 |
+| 409 | `TEAM_MEMBER_REQUIRED` | 小组没有可用于路由的成员 | 否 | M2.3 |
+| 409 | `AGENT_NOT_IN_TEAM` | `@` 或成员操作引用了非本小组成员 | 否 | M2.3 |
+| 409 | `AGENT_NOT_AVAILABLE` | 成员 Agent 已归档或不可用 | 否 | M2.3 |
+| 409 | `TEAM_MEMBER_CONFLICT` | 同一 Agent 重复加入同一小组 | 否 | M2.3 |
+| 409 | `ROUTING_NO_MATCH` | 没有成员适配该消息；`details.candidates` 可为空 | 否 | M2.3 |
+| 409 | `ROUTING_AMBIGUOUS` | 多个候选无法区分；`details.candidates` 返回候选成员 | 否 | M2.3 |
+| 409 | `TEAM_ARCHIVED` | 小组已归档，不允许创建会话或添加成员 | 否 | M2.3 |
+| 409 | `CONVERSATION_ARCHIVED` | 会话已归档，不允许追加消息或取消回复 | 否 | M2.3 |
+| 409 | `CONVERSATION_BUSY` | 会话存在进行中的 Agent 回复 | 否 | M2.3 |
+| 409 | `CONVERSATION_LIMIT_REACHED` | 会话达到 5,000 条消息或 20 MB 上限 | 否 | M2.3 |
+| 409 | `REPLY_NOT_ACTIVE` | 取消的 Agent 回复不在进行中 | 否 | M2.3 |
 | 409 | `REVIEW_REQUIRED` | 缺少已批准的 Review | 否 | M1 |
 | 412 | `STALE_EVIDENCE` | Review 的 `evidenceSnapshotHash` 与当前证据不一致；原 Review 置为 `superseded`，要求重新评审 | 否 | M1 |
 | 409 | `BASE_BRANCH_MOVED` | 目标分支已前进，不再等于 Run 的 base commit | 否 | M1 |
@@ -1340,6 +1497,18 @@ M2.1 表：
 | 表 | 关键列 | 说明 |
 | --- | --- | --- |
 | `secrets` | `id`、`workspace_id`、`name`、`backend`、`ref`、`created_at`、`updated_at` | 只存引用，不存明文 |
+| `runtime_model_configs` | `runtime`、`models`、`created_at`、`updated_at` | 本地模型配置；只存模型 ID 与展示名，不存密钥 |
+
+M2.3 表：
+
+| 表 | 关键列 | 说明 |
+| --- | --- | --- |
+| `agent_teams` | `id`、`workspace_id`、`name`、`description`、`status`、`revision`、`created_at`、`updated_at`、`archived_at` | `status` 为 active/archived；归档单向 |
+| `agent_team_members` | `team_id`、`agent_id`、`role_override`、`position`、`joined_at` | 复合主键 `(team_id, agent_id)`；外键 `team_id → agent_teams(id)`、`agent_id → agents(id)` |
+| `conversations` | `id`、`workspace_id`、`team_id`、`title`、`status`、`created_by`、`last_message_at`、`message_count`、`revision`、`created_at`、`archived_at` | `status` 为 active/archived；按 `last_message_at` 排序 |
+| `conversation_messages` | `id`、`conversation_id`、`seq`、`sender_type`、`sender_agent_id`、`content`、`mentions`、`routing_decision_id`、`reply_to_message_id`、`status`、`usage`、`task_id`、`truncated`、`created_at` | 唯一 `(conversation_id, seq)`；消息不可变；`seq` 单调递增 |
+| `conversation_routing_decisions` | `id`、`conversation_id`、`message_id`、`mode`、`source`、`candidates`、`selected_agent_id`、`rationale`、`created_at` | 每条用户消息最多一条；只追加 |
+| `tasks`（扩展） | `origin_conversation_id`、`origin_message_id` | 可空；转任务来源追溯，不建立级联删除 |
 
 M3 表：
 
@@ -1852,7 +2021,7 @@ Go 侧：M1 增加 `internal/apiclient` 包，供 CLI 使用。它与 TypeScript
 
 ### 14.0 编号注册表与本次重编号
 
-本章 FR 编号固定使用 `API-1xxx` 段。原稿 `API-001..250` 与新编号的映射规则为：**新编号 = 旧编号 + 1000**（例如旧 API-001 → API-1001，旧 API-168 → API-1168，旧 API-250 → API-1250）。新增需求使用未占用的 `API-1251..1299` 与 `API-1300..1399`（M4）。
+本章 FR 编号固定使用 `API-1xxx` 段。原稿 `API-001..250` 与新编号的映射规则为：**新编号 = 旧编号 + 1000**（例如旧 API-001 → API-1001，旧 API-168 → API-1168，旧 API-250 → API-1250）。新增需求使用未占用的 `API-1251..1299`、`API-1300..1399`（M4）与 `API-1400..1449`（M2.1/M2.3/M2.4）。
 
 全局 FR 前缀保留段：
 
@@ -2131,7 +2300,52 @@ CI 检查：同一文档内编号唯一；跨文档引用必须带文档前缀�
 | API-1288 | 插件安装需确认授权范围，停用/卸载立即撤权，不能绕过审批门 | 授权与撤权测试 | M4 |
 | API-1289 | 更新 API 只检查、下载与提示安装，不后台静默安装；安装需用户确认 | 更新流程测试 | M4 |
 
-### 14.14 M4 自动化与分发（API-1300 至 API-1315）
+### 14.14 M2.3 Agent Team 与会话（API-1400 至 API-1415）
+
+| 编号 | 需求 | 验收要点 | 里程碑 |
+| --- | --- | --- | --- |
+| API-1400 | 提供 AgentTeam 资源：列表、创建、详情、重命名、归档、成员增删；成员必须同 Workspace、未归档且组内唯一 | CRUD 契约夹具；跨 Workspace 或重复成员返回 409 | M2.3 |
+| API-1401 | 提供 Conversation 资源：小组下创建与列表、详情、重命名、归档；归档后拒绝新消息 | 归档后发送返回 409 `CONVERSATION_ARCHIVED` | M2.3 |
+| API-1402 | 消息不可变，`(conversationId, seq)` 唯一且单调递增；列表支持 `afterSeq` 增量拉取 | 并发发送 100 条无重号；`afterSeq` 无遗漏无重复 | M2.3 |
+| API-1403 | 发送用户消息返回 201，包含用户消息、`replyMessageId` 与路由决策；Agent 回复通过事件流式返回，不在 POST 内同步等待 | 响应契约夹具；事件序列 `started → delta* → completed` | M2.3 |
+| API-1404 | 每条用户消息最多一个 RoutingDecision；决策持久化并随消息返回 | 决策可查询；重复消息不产生第二个决策 | M2.3 |
+| API-1405 | `@` 提及跳过自动路由；`mentions` 只能包含当前成员，且与正文 `@` 一致 | 定向消息仅目标 Agent 回复；非成员或正文不一致返回 400/409 | M2.3 |
+| API-1406 | 自动路由无匹配返回 `ROUTING_NO_MATCH`，歧义返回 `ROUTING_AMBIGUOUS` 并在 `details.candidates` 返回候选 | 稳定错误码与候选列表；UI 可选择后重发 | M2.3 |
+| API-1407 | 会话 Agent 固定以 `read_only` 调用 Runtime；不创建 Run/Artifact、不修改 Task、不写仓库 | 负向用例：写文件被拒、仓库无变化、Run/Artifact 数量为 0 | M2.3 |
+| API-1408 | Agent 消息不参与路由、不触发其他 Agent；路由器不执行代码、不写仓库 | 观察 300 秒无自动连锁回复；路由器无副作用 | M2.3 |
+| API-1409 | Agent 回复支持流式事件与取消；取消后 5 秒内不再产生 delta | `conversation.reply.*` 事件序列完整；取消测试 | M2.3 |
+| API-1410 | 任意消息可转 Task，幂等；Task 记录 `originConversationId`/`originMessageId`，转换后追加系统消息 | 重复调用 `created=false`；来源字段不可由客户端指定 | M2.3 |
+| API-1411 | 消息正文上限 32 KiB；会话上限 5,000 条或 20 MB；超限返回稳定错误码 | 超限测试；截断标记 `truncated=true` | M2.3 |
+| API-1412 | 新增 `agent_team.*`、`conversation.*`、`conversation.reply.*` 事件并登记 6.3；提升 `meta.eventCatalogVersion` | 事件夹具覆盖全部新增类型；未知事件被忽略 | M2.3 |
+| API-1413 | 新增 `agent_teams`、`agent_team_members`、`conversations`、`conversation_messages`、`conversation_routing_decisions` 表与 `tasks` 来源字段；只追加迁移 | 迁移可回放；外键与唯一约束生效 | M2.3 |
+| API-1414 | 新增错误码登记 7.3：`AGENT_TEAM_NOT_FOUND`、`CONVERSATION_NOT_FOUND`、`MESSAGE_NOT_FOUND`、`TEAM_MEMBER_REQUIRED`、`AGENT_NOT_IN_TEAM`、`AGENT_NOT_AVAILABLE`、`TEAM_MEMBER_CONFLICT`、`ROUTING_NO_MATCH`、`ROUTING_AMBIGUOUS`、`TEAM_ARCHIVED`、`CONVERSATION_ARCHIVED`、`CONVERSATION_BUSY`、`CONVERSATION_LIMIT_REACHED`、`REPLY_NOT_ACTIVE` | 错误夹具覆盖全部码 | M2.3 |
+| API-1415 | 会话端点同时挂在 `/api/v1` 与 `/api` 别名下，行为一致并带弃用头；共享类型包含 AgentTeam、Conversation、ConversationMessage、RoutingDecision | 别名与 v1 响应 diff 为空；TypeScript 类型检查通过 | M2.3 |
+
+### 14.15 M2.4 Agent Work 与 Run Snapshot（API-1416 至 API-1425）
+
+| 编号 | 需求 | 验收要点 | 里程碑 |
+| --- | --- | --- | --- |
+| API-1416 | 提供 `GET /agents/{id}/work`，返回派生 `workStatus`（idle/working/completed/failed）、`workStatusReason`、`activeRuns`、`lastRun`、`recentRuns` 与 `counts` | 契约夹具；四种状态与归档状态均可复现 | M2.4 |
+| API-1417 | 工作状态按 §5.16 规则派生；`working` 以存在活跃 Run 为唯一条件；24 小时窗口以服务端时间为准；`GET /agents?include=workStatus` 使用同一派生实现 | 状态与 Run 列表一致；客户端无法通过 PATCH 写入 `workStatus`；看板无 N+1 请求 | M2.4 |
+| API-1418 | `recentRuns` 默认 20 条、最大 50；按 `createdAt` 降序；`activeRuns` 按 `startedAt` 升序 | 分页上限测试；顺序正确 | M2.4 |
+| API-1419 | 提供 `GET /runs/{id}/snapshot`，返回 configSnapshot、promptHash、runtimeVersion、permissionMode、permissionEnvelope、legacy | 快照与 Run 一致；Run 结束后不可补写 | M2.4 |
+| API-1420 | Run 快照响应必须脱敏：instructions 允许返回但须脱敏；不返回完整拼装 prompt、明文密钥、凭据值与环境变量值；credentialRefs 只返回引用 ID | 脱敏扫描与负向夹具 | M2.4 |
+| API-1421 | 快照不存在返回 404 `RUN_SNAPSHOT_NOT_FOUND`；Run 不存在返回 404 `RUN_NOT_FOUND` | 错误码夹具 | M2.4 |
+| API-1422 | 工作摘要、`GET /agents?include=workStatus` 与 Agent 的 Run 列表结果一致；不得出现看板 working 但列表无活跃 Run | 一致性测试与并发测试 | M2.4 |
+| API-1423 | 工作摘要不新增派生 WebSocket 事件；客户端使用既有 `run.*` 事件刷新 | 事件目录不含 `agent.work_status_changed`；事件计数测试 | M2.4 |
+| API-1424 | 归档 Agent 的 `workStatusReason=archived`，历史工作可读；空闲 Agent 返回空 `activeRuns`、空 `lastRun` 与空 `recentRuns` | 归档与空态测试 | M2.4 |
+| API-1425 | 工作摘要查询在 10 万条 Run 下 p95 不超过 200 毫秒，并具备 `runs(agent_id, status, ended_at)` 与 `runs(agent_id, created_at)` 索引 | 索引检查与基准测试 | M2.4 |
+
+### 14.16 M2.1 Runtime 模型目录（API-1426 至 API-1429）
+
+| 编号 | 需求 | 验收要点 | 里程碑 |
+| --- | --- | --- | --- |
+| API-1426 | `GET /runtimes` 的 `models[]` 合并 Runtime 探测与本地配置，按 `id` 去重；条目含 `id`、`label`、`source`、`default`、`status`、`deprecated`；空目录合法 | 契约夹具；同 ID 以 Runtime 条目为准；默认至多一个 | M2.1 |
+| API-1427 | Agent 创建/PATCH 时 `model` 为空或命中当前 Runtime 目录；否则 `400 MODEL_NOT_AVAILABLE`，details 含 `runtime` 与 `availableModels[]`；切换 Runtime 同样校验 | 正负用例；错误详情可驱动 UI | M2.1 |
+| API-1428 | `PUT /runtimes/{name}/models` 全量替换本地模型配置，幂等；只存模型 ID 与展示名，不保存密钥、不联网验证、不触发模型调用 | 写入与回读测试；配置表无敏感字段 | M2.1 |
+| API-1429 | 模型目录按 Runtime 缓存 60 秒；`PUT` 后立即失效；`modelsError` 存在时只返回本地配置条目，不得把过期缓存当作实时结果 | 缓存与探测失败测试 | M2.1 |
+
+### 14.17 M4 自动化与分发（API-1300 至 API-1315）
 
 | 编号 | 需求 | 验收要点 | 里程碑 |
 | --- | --- | --- | --- |
@@ -2409,6 +2623,9 @@ CI 检查：同一文档内编号唯一；跨文档引用必须带文档前缀�
 | Deliverable | 无 | 无 | 契约版本、冻结、required_contracts | 团队模板 | 稳定 |
 | Approval | 无 | 无（Review+confirm） | 通用审批、生产门禁 | 职责分离、审计 | 自动化审批策略 |
 | Skill | 无 | 无 | 稳定身份 + 版本、绑定 | 共享技能 | 市场（非目标，仅预留） |
+| Agent Team 与会话 | 无 | 无 | M2.3：小组、会话、消息、路由、转任务端点与事件 | 团队讨论复用 UI，数据模型独立 | 稳定 |
+| Agent Work 与快照 | 无 | 无 | M2.4：工作摘要、状态派生、Run 快照端点 | 团队视图复用 | 稳定 |
+| Runtime 模型目录 | 无 | 无 | M2.1：模型目录、Agent 模型校验、本地模型配置 | 团队共享配置策略 | 稳定 |
 | Machine/Runner | 隐式本地 worker | 无 | 无 | 注册、心跳、租约、远程执行 | 能力标签完善 |
 | WebSocket | 全量广播 | seq、重放、去重、Origin、actor | topics | 权限过滤 | 通知事件 |
 | 数据层 | SQLite 单文件 | workspaces、agent_versions、events、归档、证据 | 契约、审批、技能、依赖 | Postgres、组织、审计 | 自动化表 |
@@ -2420,6 +2637,9 @@ CI 检查：同一文档内编号唯一；跨文档引用必须带文档前缀�
 
 - **M1**：API-1001 至 API-1075、API-1080 至 API-1092、API-1120 至 API-1169、API-1180 至 API-1195、API-1200 至 API-1215、API-1220 至 API-1229、API-1240 至 API-1244、API-1260 至 API-1271、API-1278 至 API-1282 中标注 M1 的需求全部通过；M0 数据库可自动升级并保留全部历史；CLI 可在三步内完成一次 Run 并展示证据。
 - **M2**：审批、技能、依赖、交付物、证据与恢复端点可用；合并必须携带 `reviewId`、`expectedHeadCommit`，M2 起还可带 `approvalId`；角色 Agent 的路径/命令权限由服务端强制；事件 topics 与 OpenAPI 生成上线。
+- **M2.3**：API-1400 至 API-1415 全部通过；AgentTeam/Conversation/Message/RoutingDecision 端点、事件与错误码与 5.15、6.3、7.3、9.3 一致；`/api/v1` 与 `/api` 别名响应一致；会话 Agent 只读、不触发其他 Agent、转任务幂等。
+- **M2.4**：API-1416 至 API-1425 全部通过；工作状态派生与 Run 列表一致；快照脱敏且不可补写；工作摘要满足 10 万条 Run 的延迟目标。
+- **M2.1（模型目录子项）**：API-1426 至 API-1429 全部通过；Agent 的模型只能来自 Runtime 目录；本地模型配置只存 ID 与展示名；探测失败不返回过期缓存。
 - **M3**：认证、组织与两级角色、Machine 与远程 Runner 端到端可用；Postgres 迁移测试通过；`audit_events` 覆盖审批、合并、部署、删除与机器注册；Runner 使用机器密钥与租约，不使用 Bearer。
 - **M4**：自动化与 Webhook 使用签名、去重与审批；通知不丢不重；插件通过授权 scope 与稳定事件扩展且不能绕过审批门；回滚与升级验证通过；版本化策略冻结，破坏性变更需走 v2 流程。
 
