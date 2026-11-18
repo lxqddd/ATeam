@@ -218,30 +218,3 @@ html.dark .el-table th.el-table__cell {
   font-weight: 600;
   letter-spacing: var(--cd-tracking-wide);
 }
-
-/* ---------- 侧边导航 ---------- */
-.ateam-menu {
-  --el-menu-bg-color: transparent;
-  --el-menu-text-color: var(--cd-color-text-muted);
-  --el-menu-hover-bg-color: var(--cd-color-hover);
-  --el-menu-active-color: var(--cd-color-selected-text);
-  border-right: none;
-  padding: var(--cd-space-3);
-}
-
-.ateam-menu .el-menu-item {
-  height: 36px;
-  margin: 2px 0;
-  padding-left: var(--cd-space-2) !important;
-  gap: var(--cd-space-2);
-  border-radius: var(--cd-radius-sm);
-  font-size: var(--cd-font-size-sm);
-}
-
-.ateam-menu .el-menu-item:hover {
-  background: var(--cd-color-hover);
-}
-
-.ateam-menu .el-menu-item.is-active {
-  background: var(--cd-color-selected-bg);
-}

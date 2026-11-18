@@ -40,7 +40,7 @@ onMounted(() => {
 
     <div class="flex-1 overflow-y-auto px-6 pb-6">
       <div class="grid max-w-[960px] items-start gap-4 lg:grid-cols-2">
-      <el-card shadow="never">
+      <el-card id="settings-language" shadow="never">
         <template #header>
           <span class="text-label font-semibold">{{ $t('settings.language') }}</span>
         </template>
@@ -51,7 +51,7 @@ onMounted(() => {
         <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.languageHint') }}</p>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card id="settings-api" shadow="never">
         <template #header>
           <span class="text-label font-semibold">{{ $t('settings.apiConnection') }}</span>
         </template>
@@ -63,7 +63,7 @@ onMounted(() => {
         <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.apiNote') }}</p>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card id="settings-workspace" shadow="never">
         <template #header>
           <span class="text-label font-semibold">{{ $t('settings.workspace') }}</span>
         </template>
@@ -72,7 +72,7 @@ onMounted(() => {
         </p>
       </el-card>
 
-      <el-card shadow="never">
+      <el-card id="settings-about" shadow="never">
         <template #header>
           <span class="text-label font-semibold">{{ $t('settings.about') }}</span>
         </template>

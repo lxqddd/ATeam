@@ -28,6 +28,13 @@
   --cd-color-active: #292d49;
   --cd-color-selected-bg: #292d49;
   --cd-color-selected-text: #b7beff;
+  /* 导航：悬浮与选中共用浅底，按下只加深一档（nomi 规范） */
+  --cd-color-nav-bg: color-mix(in srgb, var(--cd-color-hover), var(--cd-color-selected-bg));
+  --cd-color-nav-pressed: color-mix(
+    in srgb,
+    var(--cd-color-selected-bg) 70%,
+    var(--cd-color-hover)
+  );
   --cd-color-user-msg: #282e38;
   --cd-color-text: #f0f2f6;
   --cd-color-text-muted: #c9cfd9;
@@ -306,4 +313,11 @@ pre {
     @apply bg-background text-foreground;
     @apply font-sans;
   }
+}
+
+/* 顶栏在桌面壳里是窗口拖动区（Wails 认 --wails-draggable） */
+.app-titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
+  --wails-draggable: drag;
 }

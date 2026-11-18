@@ -1,6 +1,7 @@
 // en-US 为基准键集：zh-CN 文件以 typeof enUS 约束结构，增删键必须同步两个文件。
 const enUS = {
   common: {
+    empty: 'Nothing here yet',
     cancel: 'Cancel',
     create: 'Create',
     refresh: 'Refresh',
@@ -71,6 +72,7 @@ const enUS = {
     description: 'Description',
     noDescription: 'No description yet.',
     runs: 'Runs',
+    pageTitle: 'Task',
     selectAgent: 'Select an agent',
     moveHint: 'Move the task to Todo or In Progress before starting a run.',
     noRuns: 'No runs yet',

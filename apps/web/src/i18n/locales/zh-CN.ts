@@ -3,6 +3,7 @@ import enUS from './en-US'
 // 结构与 en-US 严格一致（漏键/多键在类型检查期报错）
 const zhCN: typeof enUS = {
   common: {
+    empty: '暂无内容',
     cancel: '取消',
     create: '创建',
     refresh: '刷新',
@@ -73,6 +74,7 @@ const zhCN: typeof enUS = {
     description: '描述',
     noDescription: '暂无描述。',
     runs: '运行记录',
+    pageTitle: '任务',
     selectAgent: '选择 Agent',
     moveHint: '请先将任务移至「待办」或「执行中」，再启动运行。',
     noRuns: '暂无运行',
