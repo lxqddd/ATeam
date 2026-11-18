@@ -5,6 +5,13 @@ import { ElMessage } from 'element-plus'
 import type { Health, RuntimeInfo } from '@ateam/shared'
 import { HealthApi, RuntimeApi } from '../api'
 import { setAppLocale, type AppLocale } from '../i18n'
+import { useThemeStore } from '../stores/theme'
+import SectionCard from '../components/SectionCard.vue'
+import ThemeSwatch from '../components/ThemeSwatch.vue'
+import { Badge } from '../components/ui/badge'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Loader } from '../components/ai-elements/loader'
 
 interface ModelDraft {
   id: string
@@ -12,6 +19,7 @@ interface ModelDraft {
 }
 
 const { t, locale } = useI18n()
+const themeStore = useThemeStore()
 const health = ref<Health | null>(null)
 const error = ref('')
 const runtimes = ref<RuntimeInfo[]>([])
@@ -89,8 +97,8 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <header class="shrink-0 flex items-center px-6 pt-5 pb-4">
+  <div class="flex h-full flex-col">
+    <header class="flex shrink-0 items-center px-6 pb-4 pt-5">
       <div>
         <h1 class="text-title font-semibold tracking-tight">{{ $t('settings.title') }}</h1>
         <p class="text-caption text-fg-subtle">{{ $t('settings.subtitle') }}</p>
@@ -98,93 +106,100 @@ onMounted(() => {
     </header>
 
     <div class="flex-1 overflow-y-auto px-6 pb-6">
-      <div class="grid max-w-[960px] items-start gap-4 lg:grid-cols-2">
-      <el-card id="settings-language" shadow="never">
-        <template #header>
-          <span class="text-label font-semibold">{{ $t('settings.language') }}</span>
-        </template>
-        <el-radio-group v-model="locale">
-          <el-radio-button value="zh-CN">简体中文</el-radio-button>
-          <el-radio-button value="en-US">English</el-radio-button>
-        </el-radio-group>
-        <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.languageHint') }}</p>
-      </el-card>
+      <div class="mx-auto max-w-[880px] space-y-4">
+        <SectionCard
+          id="settings-appearance"
+          :title="$t('settings.appearance')"
+          :description="$t('settings.appearanceHint')"
+        >
+          <div
+            class="grid grid-cols-2 gap-3 md:grid-cols-4"
+            role="radiogroup"
+            :aria-label="$t('settings.appearance')"
+          >
+            <ThemeSwatch
+              v-for="item in themeStore.themes"
+              :key="item.id"
+              :theme="item"
+              :selected="themeStore.pref === item.id"
+              @select="themeStore.setTheme(item.id)"
+            />
+          </div>
+        </SectionCard>
 
-      <el-card id="settings-api" shadow="never">
-        <template #header>
-          <span class="text-label font-semibold">{{ $t('settings.apiConnection') }}</span>
-        </template>
-        <div class="flex items-center gap-3">
-          <el-button @click="check">{{ $t('settings.checkHealth') }}</el-button>
-          <el-tag v-if="health" type="success">OK · v{{ health.version }}</el-tag>
-          <el-tag v-if="error" type="danger">{{ error }}</el-tag>
-        </div>
-        <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.apiNote') }}</p>
-      </el-card>
+        <SectionCard id="settings-language" :title="$t('settings.language')">
+          <el-radio-group v-model="locale">
+            <el-radio-button value="zh-CN">简体中文</el-radio-button>
+            <el-radio-button value="en-US">English</el-radio-button>
+          </el-radio-group>
+          <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.languageHint') }}</p>
+        </SectionCard>
 
-      <el-card id="settings-workspace" shadow="never">
-        <template #header>
-          <span class="text-label font-semibold">{{ $t('settings.workspace') }}</span>
-        </template>
-        <p class="text-label text-fg-muted">
-          {{ $t('settings.workspaceNote', { path: '~/.ateam/workspaces/runs/<run-id>' }) }}
-        </p>
-      </el-card>
+        <SectionCard id="settings-api" :title="$t('settings.apiConnection')">
+          <div class="flex flex-wrap items-center gap-3">
+            <Button variant="outline" @click="check">{{ $t('settings.checkHealth') }}</Button>
+            <Badge v-if="health" tone="success">OK · v{{ health.version }}</Badge>
+          </div>
+          <p v-if="error" class="mt-2 text-caption text-danger">{{ error }}</p>
+          <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.apiNote') }}</p>
+        </SectionCard>
 
-      <el-card id="settings-runtime-models" shadow="never" class="lg:col-span-2">
-        <template #header>
-          <span class="text-label font-semibold">{{ $t('settings.models.title') }}</span>
-        </template>
-        <p class="text-caption text-fg-subtle">{{ $t('settings.models.hint') }}</p>
-        <div class="mt-4 flex flex-col gap-5">
-          <section v-for="runtime in supportedRuntimes" :key="runtime.name">
-            <div class="flex items-center gap-2">
-              <span class="text-label font-semibold">{{ runtime.name }}</span>
-              <el-tag v-if="runtime.version" size="small">{{ runtime.version }}</el-tag>
-              <el-tag v-if="!runtime.available" size="small" type="warning">
-                {{ $t('settings.models.unavailable') }}
-              </el-tag>
-            </div>
-            <p v-if="runtime.modelsError" class="mt-1 text-caption text-fg-subtle">
-              {{ runtime.modelsError }}
-            </p>
+        <SectionCard id="settings-workspace" :title="$t('settings.workspace')">
+          <p class="text-label text-fg-muted">
+            {{ $t('settings.workspaceNote', { path: '~/.ateam/workspaces/runs/<run-id>' }) }}
+          </p>
+        </SectionCard>
 
-            <div
-              v-for="(model, index) in modelDrafts[runtime.name] || []"
-              :key="`${runtime.name}-${index}`"
-              class="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2"
-            >
-              <el-input v-model="model.id" :placeholder="$t('settings.models.modelId')" />
-              <el-input v-model="model.label" :placeholder="$t('settings.models.modelLabel')" />
-              <el-button text type="danger" @click="removeModel(runtime.name, index)">
-                {{ $t('settings.models.remove') }}
-              </el-button>
-            </div>
+        <SectionCard id="settings-runtime-models" :title="$t('settings.models.title')">
+          <p class="text-caption text-fg-subtle">{{ $t('settings.models.hint') }}</p>
+          <div class="mt-4 flex flex-col gap-5">
+            <section v-for="runtime in supportedRuntimes" :key="runtime.name">
+              <div class="flex items-center gap-2">
+                <span class="text-label font-semibold">{{ runtime.name }}</span>
+                <Badge v-if="runtime.version">{{ runtime.version }}</Badge>
+                <Badge v-if="!runtime.available" tone="warning">
+                  {{ $t('settings.models.unavailable') }}
+                </Badge>
+              </div>
+              <p v-if="runtime.modelsError" class="mt-1 text-caption text-fg-subtle">
+                {{ runtime.modelsError }}
+              </p>
 
-            <div class="mt-2 flex items-center gap-2">
-              <el-button text @click="addModel(runtime.name)">{{ $t('settings.models.add') }}</el-button>
-              <el-button
-                type="primary"
-                size="small"
-                :loading="savingRuntime === runtime.name"
-                @click="saveModels(runtime.name)"
+              <div
+                v-for="(model, index) in modelDrafts[runtime.name] || []"
+                :key="`${runtime.name}-${index}`"
+                class="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2"
               >
-                {{ $t('settings.models.save') }}
-              </el-button>
-            </div>
-            <p v-if="modelErrors[runtime.name]" class="mt-1 text-caption text-danger">
-              {{ modelErrors[runtime.name] }}
-            </p>
-          </section>
-        </div>
-      </el-card>
+                <Input v-model="model.id" :placeholder="$t('settings.models.modelId')" />
+                <Input v-model="model.label" :placeholder="$t('settings.models.modelLabel')" />
+                <Button variant="destructive" size="sm" @click="removeModel(runtime.name, index)">
+                  {{ $t('settings.models.remove') }}
+                </Button>
+              </div>
 
-      <el-card id="settings-about" shadow="never">
-        <template #header>
-          <span class="text-label font-semibold">{{ $t('settings.about') }}</span>
-        </template>
-        <p class="text-label text-fg-muted">{{ $t('settings.aboutNote') }}</p>
-      </el-card>
+              <div class="mt-2 flex items-center gap-2">
+                <Button variant="ghost" size="sm" @click="addModel(runtime.name)">
+                  {{ $t('settings.models.add') }}
+                </Button>
+                <Button
+                  size="sm"
+                  :disabled="savingRuntime === runtime.name"
+                  @click="saveModels(runtime.name)"
+                >
+                  <Loader v-if="savingRuntime === runtime.name" :size="14" />
+                  {{ $t('settings.models.save') }}
+                </Button>
+              </div>
+              <p v-if="modelErrors[runtime.name]" class="mt-1 text-caption text-danger">
+                {{ modelErrors[runtime.name] }}
+              </p>
+            </section>
+          </div>
+        </SectionCard>
+
+        <SectionCard id="settings-about" :title="$t('settings.about')">
+          <p class="text-label text-fg-muted">{{ $t('settings.aboutNote') }}</p>
+        </SectionCard>
       </div>
     </div>
   </div>
