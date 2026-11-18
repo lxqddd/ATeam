@@ -1,10 +1,29 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light" />
     <title>ATeam</title>
+    <script>
+      ;(() => {
+        try {
+          const ids = ['light', 'dark', 'sunset', 'cream', 'mist', 'ink', 'graphite']
+          let pref = localStorage.getItem('ateam.theme') || 'system'
+          if (pref !== 'system' && ids.indexOf(pref) === -1) pref = 'system'
+          const dark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          const resolved = pref === 'system' ? (dark ? 'dark' : 'light') : pref
+          const isDark = ['dark', 'ink', 'graphite'].indexOf(resolved) !== -1
+          document.documentElement.dataset.theme = resolved
+          document.documentElement.dataset.themePref = pref
+          document.documentElement.classList.toggle('dark', isDark)
+          document.documentElement.style.colorScheme = isDark ? 'dark' : 'light'
+          document.querySelector('meta[name="color-scheme"]').content = isDark ? 'dark' : 'light'
+        } catch (error) {
+          /* ignore */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
