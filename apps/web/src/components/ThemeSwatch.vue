@@ -17,6 +17,7 @@ defineEmits<{ select: [] }>()
     "
     role="radio"
     :aria-checked="selected"
+    :title="$t(theme.descKey)"
     @click="$emit('select')"
   >
     <span
