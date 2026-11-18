@@ -47,6 +47,7 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 		MaxConcurrency: 1,
 		TimeoutMinutes: 1,
 		WorkspaceMode:  "worktree",
+		AllowedPaths:   []string{"agent-output.txt"},
 		CreatedAt:      domain.Now(),
 		UpdatedAt:      domain.Now(),
 	}
@@ -217,6 +218,24 @@ func (f *fakeStore) setAgentRuntime(runtimeName string) {
 	defer f.mu.Unlock()
 	for id, agent := range f.agents {
 		agent.Runtime = runtimeName
+		f.agents[id] = agent
+	}
+}
+
+func (f *fakeStore) setAgentPermissionMode(mode string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, agent := range f.agents {
+		agent.PermissionMode = mode
+		f.agents[id] = agent
+	}
+}
+
+func (f *fakeStore) setAgentAllowedPaths(paths []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, agent := range f.agents {
+		agent.AllowedPaths = paths
 		f.agents[id] = agent
 	}
 }

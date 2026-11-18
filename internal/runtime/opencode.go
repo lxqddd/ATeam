@@ -150,6 +150,15 @@ func (a *OpenCodeAdapter) Run(ctx context.Context, req Request, emit func(Event)
 		command.Stdin = strings.NewReader(req.Prompt)
 	}
 
+	runCtx := ctx
+	stopPolicy := func() {}
+	var guard *PolicyGuard
+	if req.Policy != nil {
+		runCtx, stopPolicy = context.WithCancel(ctx)
+		defer stopPolicy()
+		guard = NewPolicyGuard(req.Policy, req.Workdir, stopPolicy)
+	}
+
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return &Error{Detail: "adapter_crash", Message: "failed to open the runtime stdout pipe"}
@@ -162,13 +171,13 @@ func (a *OpenCodeAdapter) Run(ctx context.Context, req Request, emit func(Event)
 		return &Error{Detail: "runtime_missing", Message: "failed to start the opencode CLI"}
 	}
 
-	stopWatcher := watchCancellation(ctx, command)
+	stopWatcher := watchCancellation(runCtx, command)
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(2)
 	var stderrTail tailBuffer
 	go func() {
 		defer waitGroup.Done()
-		scanOpenCodeStdout(stdout, emit)
+		scanOpenCodeStdout(stdout, emit, guard)
 	}()
 	go func() {
 		defer waitGroup.Done()
@@ -178,6 +187,11 @@ func (a *OpenCodeAdapter) Run(ctx context.Context, req Request, emit func(Event)
 	waitErr := command.Wait()
 	stopWatcher()
 
+	if guard != nil {
+		if violated, detail := guard.Violated(); violated {
+			return &Error{Detail: PermissionFailureDetail(detail), Message: "permission denied: " + detail}
+		}
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -192,7 +206,7 @@ func (a *OpenCodeAdapter) Run(ctx context.Context, req Request, emit func(Event)
 	return nil
 }
 
-func scanOpenCodeStdout(reader io.Reader, emit func(Event)) {
+func scanOpenCodeStdout(reader io.Reader, emit func(Event), guard *PolicyGuard) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -205,7 +219,7 @@ func scanOpenCodeStdout(reader io.Reader, emit func(Event)) {
 			emit(Event{Type: "log", Message: truncateMessage(line), Source: "adapter"})
 			continue
 		}
-		emitOpenCodeEvent(envelope, emit)
+		emitOpenCodeEvent(envelope, emit, guard)
 	}
 }
 
@@ -222,7 +236,7 @@ func scanOpenCodeStderr(reader io.Reader, tail *tailBuffer, emit func(Event)) {
 	}
 }
 
-func emitOpenCodeEvent(envelope map[string]any, emit func(Event)) {
+func emitOpenCodeEvent(envelope map[string]any, emit func(Event), guard *PolicyGuard) {
 	eventType, _ := envelope["type"].(string)
 	part, _ := envelope["part"].(map[string]any)
 	switch eventType {
@@ -237,6 +251,14 @@ func emitOpenCodeEvent(envelope map[string]any, emit func(Event)) {
 			emit(Event{Type: "log", Message: truncateMessage(text), Source: "assistant"})
 		}
 	case "tool_use":
+		if guard != nil && !guard.CheckTool(stringField(part, "tool"), toolInput(part)) {
+			_, detail := guard.Violated()
+			emit(Event{
+				Type: "error", Message: "permission denied: " + detail, Source: "adapter", Level: "error",
+				Data: map[string]any{"errorCode": "permission_denied", "tool": stringField(part, "tool"), "detail": detail},
+			})
+			return
+		}
 		emitOpenCodeTool(part, emit)
 	case "step_finish":
 		emitOpenCodeUsage(part, emit)
@@ -253,6 +275,12 @@ func emitOpenCodeEvent(envelope map[string]any, emit func(Event)) {
 		raw, _ := json.Marshal(envelope)
 		emit(Event{Type: "log", Message: truncateMessage(string(raw)), Source: "adapter"})
 	}
+}
+
+func toolInput(part map[string]any) map[string]any {
+	state, _ := part["state"].(map[string]any)
+	input, _ := state["input"].(map[string]any)
+	return input
 }
 
 func emitOpenCodeTool(part map[string]any, emit func(Event)) {

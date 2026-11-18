@@ -29,9 +29,11 @@ const form = reactive({
   runtime: 'mock',
   model: DEFAULT_MODEL,
   role: 'general',
+  permissionMode: 'controlled_edit',
   maxConcurrency: 1,
   timeoutMinutes: 60,
   allowedPaths: '',
+  allowedCommands: '',
 })
 
 const selectedRuntime = computed(() => runtimes.value.find((runtime) => runtime.name === form.runtime))
@@ -66,9 +68,11 @@ function resetForm() {
   form.runtime = 'mock'
   form.model = DEFAULT_MODEL
   form.role = 'general'
+  form.permissionMode = 'controlled_edit'
   form.maxConcurrency = 1
   form.timeoutMinutes = 60
   form.allowedPaths = ''
+  form.allowedCommands = ''
   testState.value = { status: 'idle', message: '' }
 }
 
@@ -86,9 +90,11 @@ function openEdit(agent: Agent) {
   form.runtime = agent.runtime
   form.model = agent.model || DEFAULT_MODEL
   form.role = agent.role || 'general'
+  form.permissionMode = agent.permissionMode || 'controlled_edit'
   form.maxConcurrency = agent.maxConcurrency
   form.timeoutMinutes = agent.timeoutMinutes
   form.allowedPaths = agent.allowedPaths.join(', ')
+  form.allowedCommands = agent.allowedCommands.join(', ')
   testState.value = { status: 'idle', message: '' }
   showCreate.value = true
 }
@@ -159,9 +165,14 @@ async function submitAgent() {
     runtime: form.runtime,
     model: form.model === DEFAULT_MODEL ? '' : form.model,
     role: form.role,
+    permissionMode: form.permissionMode,
     maxConcurrency: form.maxConcurrency,
     timeoutMinutes: form.timeoutMinutes,
     allowedPaths: form.allowedPaths
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    allowedCommands: form.allowedCommands
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
@@ -392,8 +403,23 @@ async function deleteAgent(agent: Agent) {
             <el-input-number v-model="form.timeoutMinutes" :min="1" style="width: 100%" />
           </el-form-item>
         </div>
+        <el-form-item :label="$t('agents.form.permissionMode')">
+          <el-select v-model="form.permissionMode" style="width: 100%">
+            <el-option :label="$t('agents.form.permissionReadOnly')" value="read_only" />
+            <el-option :label="$t('agents.form.permissionControlled')" value="controlled_edit" />
+            <el-option :label="$t('agents.form.permissionFull')" value="full_access" />
+          </el-select>
+          <p v-if="form.permissionMode === 'full_access'" class="mt-1 text-caption text-danger">
+            {{ $t('agents.form.permissionFullWarning') }}
+          </p>
+        </el-form-item>
         <el-form-item :label="$t('agents.form.allowedPaths')">
           <el-input v-model="form.allowedPaths" :placeholder="$t('agents.form.allowedPathsPlaceholder')" />
+          <p class="mt-1 text-caption text-fg-subtle">{{ $t('agents.form.allowedPathsHint') }}</p>
+        </el-form-item>
+        <el-form-item :label="$t('agents.form.allowedCommands')">
+          <el-input v-model="form.allowedCommands" :placeholder="$t('agents.form.allowedCommandsPlaceholder')" />
+          <p class="mt-1 text-caption text-fg-subtle">{{ $t('agents.form.allowedCommandsHint') }}</p>
         </el-form-item>
       </el-form>
       <div class="flex justify-end gap-2">

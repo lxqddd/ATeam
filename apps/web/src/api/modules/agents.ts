@@ -7,6 +7,8 @@ export interface CreateAgentInput {
   instructions?: string
   runtime?: string
   model?: string
+  role?: string
+  permissionMode?: string
   workspaceMode?: string
   maxConcurrency?: number
   timeoutMinutes?: number

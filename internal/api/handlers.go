@@ -175,6 +175,7 @@ type agentInput struct {
 	Runtime         string   `json:"runtime"`
 	Model           string   `json:"model"`
 	Role            string   `json:"role"`
+	PermissionMode  string   `json:"permissionMode"`
 	WorkspaceMode   string   `json:"workspaceMode"`
 	MaxConcurrency  int      `json:"maxConcurrency"`
 	TimeoutMinutes  int      `json:"timeoutMinutes"`
@@ -206,6 +207,14 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if input.PermissionMode != "" && !validPermissionMode(input.PermissionMode) {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid permission mode", map[string]any{"permissionMode": input.PermissionMode})
+		return
+	}
+	if fields := append(validateAllowedPaths(input.AllowedPaths), validateAllowedCommands(input.AllowedCommands)...); len(fields) > 0 {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid agent policy", map[string]any{"fields": fields})
+		return
+	}
 	if details, message := a.validateAgentModel(r.Context(), effectiveRuntime, input.Model); message != "" {
 		a.writeAPIError(w, http.StatusBadRequest, "MODEL_NOT_AVAILABLE", message, details)
 		return
@@ -217,6 +226,7 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		Runtime:         effectiveRuntime,
 		Model:           strings.TrimSpace(input.Model),
 		Role:            input.Role,
+		PermissionMode:  input.PermissionMode,
 		WorkspaceMode:   input.WorkspaceMode,
 		MaxConcurrency:  input.MaxConcurrency,
 		TimeoutMinutes:  input.TimeoutMinutes,
@@ -249,6 +259,7 @@ type agentPatch struct {
 	Runtime         *string   `json:"runtime"`
 	Model           *string   `json:"model"`
 	Role            *string   `json:"role"`
+	PermissionMode  *string   `json:"permissionMode"`
 	WorkspaceMode   *string   `json:"workspaceMode"`
 	MaxConcurrency  *int      `json:"maxConcurrency"`
 	TimeoutMinutes  *int      `json:"timeoutMinutes"`
@@ -304,6 +315,14 @@ func (a *API) updateAgent(w http.ResponseWriter, r *http.Request) {
 		}
 		agent.Role = role
 	}
+	if patch.PermissionMode != nil {
+		mode := strings.TrimSpace(*patch.PermissionMode)
+		if mode != "" && !validPermissionMode(mode) {
+			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid permission mode", map[string]any{"permissionMode": mode})
+			return
+		}
+		agent.PermissionMode = mode
+	}
 	if runtimeChanged || modelChanged {
 		if details, message := a.validateAgentModel(r.Context(), agent.Runtime, agent.Model); message != "" {
 			a.writeAPIError(w, http.StatusBadRequest, "MODEL_NOT_AVAILABLE", message, details)
@@ -320,9 +339,17 @@ func (a *API) updateAgent(w http.ResponseWriter, r *http.Request) {
 		agent.TimeoutMinutes = *patch.TimeoutMinutes
 	}
 	if patch.AllowedPaths != nil {
+		if fields := validateAllowedPaths(*patch.AllowedPaths); len(fields) > 0 {
+			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid agent policy", map[string]any{"fields": fields})
+			return
+		}
 		agent.AllowedPaths = *patch.AllowedPaths
 	}
 	if patch.AllowedCommands != nil {
+		if fields := validateAllowedCommands(*patch.AllowedCommands); len(fields) > 0 {
+			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid agent policy", map[string]any{"fields": fields})
+			return
+		}
 		agent.AllowedCommands = *patch.AllowedCommands
 	}
 	if err := a.store.UpdateAgent(r.Context(), agent); err != nil {

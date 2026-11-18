@@ -20,6 +20,7 @@ type Request struct {
 	Model          string
 	PermissionMode string
 	MaxTurns       int
+	Policy         *Policy
 }
 
 // Adapter is the runtime boundary. Adapters map their CLI's output to Event.

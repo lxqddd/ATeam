@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -516,11 +517,19 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		Message: fmt.Sprintf("Starting %s runtime for agent %s", adapter.Name(), agent.Name),
 	})
 
+	var policy *runtime.Policy
+	if permissionMode != "full_access" {
+		policy = &runtime.Policy{
+			AllowedPaths:    agent.AllowedPaths,
+			AllowedCommands: agent.AllowedCommands,
+		}
+	}
 	err = adapter.Run(runCtx, runtime.Request{
 		Prompt:         prompt,
 		Workdir:        workdir,
 		Model:          agent.Model,
 		PermissionMode: permissionMode,
+		Policy:         policy,
 	}, emit)
 
 	if codeChange && workdir != "" {
@@ -535,6 +544,21 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		}
 		if head, headErr := s.workspaces.HeadCommit(ctx, workdir); headErr == nil && head != "" {
 			run.HeadCommit = head
+		}
+		// Post-run audit: even runtimes without tool-level policy enforcement
+		// must not leave changes outside allowedPaths (SEC-010, AGENT-021).
+		// full_access explicitly bypasses path checks.
+		if permissionMode != "full_access" {
+			if violations := s.auditChangedPaths(ctx, workdir, run.BaseCommit, agent.AllowedPaths); len(violations) > 0 {
+				detail := "path outside allowedPaths: " + strings.Join(violations, ", ")
+				emit(runtime.Event{
+					Type: "error", Message: "permission denied after run: " + detail, Source: "scheduler", Level: "error",
+					Data: map[string]any{"errorCode": "permission_denied", "failureDetail": "path_outside_workspace", "paths": violations},
+				})
+				if err == nil {
+					err = &runtime.Error{Detail: "path_outside_workspace", Message: detail}
+				}
+			}
 		}
 	}
 
@@ -559,6 +583,9 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		var runtimeErr *runtime.Error
 		if errors.As(err, &runtimeErr) && runtimeErr.Detail != "" {
 			run.FailureDetail = runtimeErr.Detail
+			if runtimeErr.Detail == "permission_denied" || runtimeErr.Detail == "path_outside_workspace" || runtimeErr.Detail == "command_not_allowed" {
+				run.ErrorCode = "permission_denied"
+			}
 			run.Error = runtimeErr.Message
 		}
 	default:
@@ -608,6 +635,23 @@ func isLogEvent(eventType string) bool {
 		return true
 	}
 	return false
+}
+
+// auditChangedPaths compares the run's changed files against the agent's
+// allowed repo-relative prefixes. An empty allowlist denies every write.
+func (s *Scheduler) auditChangedPaths(ctx context.Context, workdir, baseCommit string, allowed []string) []string {
+	paths, err := s.workspaces.ChangedPaths(ctx, workdir, baseCommit)
+	if err != nil {
+		slog.Warn("audit run changes", "workdir", workdir, "error", err)
+		return nil
+	}
+	violations := []string{}
+	for _, path := range paths {
+		if !runtime.PathAllowed(path, workdir, allowed) {
+			violations = append(violations, path)
+		}
+	}
+	return violations
 }
 
 // writeActiveRun persists a run only while its stored status is still active.

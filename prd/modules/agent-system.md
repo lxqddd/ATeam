@@ -769,9 +769,9 @@ staging 审批的绑定对象是：`run_id` + 动作类型 + 目标环境 `stagi
 | AGENT-018 | 队列持久化；队列满返回可读错误或阻塞准入并展示原因，不允许 Run 无提示地永久停留在 queued | P1 | 计划 | M2 |
 | AGENT-019 | AllowedPaths 保存时规范化为仓库相对 POSIX 前缀；拒绝绝对路径、`..`、空项；非法返回 400；空数组按 AGENT-023 的拒绝语义处理 | P1 | 计划 | M1 |
 | AGENT-020 | AllowedCommands 保存时拒绝 shell 元字符与超长条目；非法返回 400；空数组按 AGENT-023 的拒绝语义处理 | P1 | 计划 | M1 |
-| AGENT-021 | 对声明支持路径策略的 Runtime：启动前与运行中拒绝越界写入并产生事件；对不支持实时拦截的 Runtime：Run 结束后按变更清单审计，越界变更使 Run 进入人工复核。两种路径都必须有测试，不得承诺所有 Runtime 都能实时拦截 | P0 | 计划 | M2 |
-| AGENT-022 | 对声明支持命令策略的 Runtime：拒绝允许命令之外的命令并产生事件；对不支持的 Runtime：记录命令日志并事后标记，Run 进入人工复核。拒绝/标记事件进入 Run 事件流与证据 | P0 | 计划 | M2 |
-| AGENT-023 | **空 AllowedPaths 表示不可写任何路径；空 AllowedCommands 表示不额外授权任何命令**。该语义必须在 API、UI 与文档中一致说明；不得解释为整个工作区或继承 Runtime 默认策略 | P1 | 计划 | M2 |
+| AGENT-021 | 对声明支持路径策略的 Runtime：启动前与运行中拒绝越界写入并产生事件；对不支持实时拦截的 Runtime：Run 结束后按变更清单审计，越界变更使 Run 进入人工复核。两种路径都必须有测试，不得承诺所有 Runtime 都能实时拦截 | P0 | 已实现（M2.1：Claude/OpenCode 工具拦截 + 全 Runtime 事后 diff 审计） | M2.1 |
+| AGENT-022 | 对声明支持命令策略的 Runtime：拒绝允许命令之外的命令并产生事件；对不支持的 Runtime：记录命令日志并事后标记，Run 进入人工复核。拒绝/标记事件进入 Run 事件流与证据 | P0 | 已实现（M2.1：Claude/OpenCode Bash 工具拦截；argv 前缀匹配，拒绝 shell 元字符） | M2.1 |
+| AGENT-023 | **空 AllowedPaths 表示不可写任何路径；空 AllowedCommands 表示不额外授权任何命令**。该语义必须在 API、UI 与文档中一致说明；不得解释为整个工作区或继承 Runtime 默认策略 | P1 | 已实现（M2.1：执行与事后审计均按空=拒绝） | M2.1 |
 | AGENT-062 | Agent 支持 `permissionMode`：`read_only`、`controlled_edit`、`full_access`；默认 `controlled_edit`；`full_access` 必须显式开启并显示风险警示；生效模式写入 Run 事件与 RunConfigSnapshot | P0 | 计划 | M1 |
 | AGENT-063 | Agent 的 `workspaceId` 必填并引用存在的产品级 Workspace；创建的 Run 必须同 Workspace；跨 Workspace 使用返回 409；名称唯一性按 Workspace 隔离 | P0 | 计划 | M1 |
 | AGENT-064 | Agent 支持 `role` 枚举（general/ui_design/frontend/backend/devops/custom）；非法值返回 400；旧数据迁移默认 `general`；role 用于依赖校验与默认门禁，不直接改变权限信封 | P0 | 计划 | M2 |

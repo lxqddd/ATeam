@@ -63,6 +63,15 @@ func (a *ClaudeAdapter) Run(ctx context.Context, req Request, emit func(Event)) 
 		command.Stdin = strings.NewReader(stdinPrompt)
 	}
 
+	runCtx := ctx
+	stopPolicy := func() {}
+	var guard *PolicyGuard
+	if req.Policy != nil {
+		runCtx, stopPolicy = context.WithCancel(ctx)
+		defer stopPolicy()
+		guard = NewPolicyGuard(req.Policy, req.Workdir, stopPolicy)
+	}
+
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return &Error{Detail: "adapter_crash", Message: "failed to open the runtime stdout pipe"}
@@ -76,14 +85,14 @@ func (a *ClaudeAdapter) Run(ctx context.Context, req Request, emit func(Event)) 
 		return &Error{Detail: "runtime_missing", Message: "failed to start the claude CLI"}
 	}
 
-	stopWatcher := watchCancellation(ctx, command)
+	stopWatcher := watchCancellation(runCtx, command)
 
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(2)
 	var stderrTail tailBuffer
 	go func() {
 		defer waitGroup.Done()
-		scanClaudeStdout(stdout, emit)
+		scanClaudeStdout(stdout, emit, guard)
 	}()
 	go func() {
 		defer waitGroup.Done()
@@ -93,6 +102,11 @@ func (a *ClaudeAdapter) Run(ctx context.Context, req Request, emit func(Event)) 
 	waitErr := command.Wait()
 	stopWatcher()
 
+	if guard != nil {
+		if violated, detail := guard.Violated(); violated {
+			return &Error{Detail: PermissionFailureDetail(detail), Message: "permission denied: " + detail}
+		}
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -183,7 +197,7 @@ func watchCancellation(ctx context.Context, command *exec.Cmd) func() {
 	return func() { close(done) }
 }
 
-func scanClaudeStdout(reader io.Reader, emit func(Event)) {
+func scanClaudeStdout(reader io.Reader, emit func(Event), guard *PolicyGuard) {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -196,7 +210,7 @@ func scanClaudeStdout(reader io.Reader, emit func(Event)) {
 			emit(Event{Type: "log", Message: truncateMessage(line), Source: "adapter"})
 			continue
 		}
-		emitClaudeEvent(envelope, emit)
+		emitClaudeEvent(envelope, emit, guard)
 	}
 }
 
@@ -213,7 +227,7 @@ func scanClaudeStderr(reader io.Reader, tail *tailBuffer, emit func(Event)) {
 	}
 }
 
-func emitClaudeEvent(envelope map[string]any, emit func(Event)) {
+func emitClaudeEvent(envelope map[string]any, emit func(Event), guard *PolicyGuard) {
 	eventType, _ := envelope["type"].(string)
 	switch eventType {
 	case "system":
@@ -227,7 +241,7 @@ func emitClaudeEvent(envelope map[string]any, emit func(Event)) {
 			Source: "adapter",
 		})
 	case "assistant":
-		emitAssistantBlocks(envelope, emit)
+		emitAssistantBlocks(envelope, emit, guard)
 	case "user":
 		emitToolResults(envelope, emit)
 	case "result":
@@ -238,7 +252,7 @@ func emitClaudeEvent(envelope map[string]any, emit func(Event)) {
 	}
 }
 
-func emitAssistantBlocks(envelope map[string]any, emit func(Event)) {
+func emitAssistantBlocks(envelope map[string]any, emit func(Event), guard *PolicyGuard) {
 	blocks := contentBlocks(envelope)
 	for _, block := range blocks {
 		blockType, _ := block["type"].(string)
@@ -251,6 +265,14 @@ func emitAssistantBlocks(envelope map[string]any, emit func(Event)) {
 		case "tool_use":
 			name, _ := block["name"].(string)
 			input, _ := block["input"].(map[string]any)
+			if guard != nil && !guard.CheckTool(name, input) {
+				_, detail := guard.Violated()
+				emit(Event{
+					Type: "error", Message: "permission denied: " + detail, Source: "adapter", Level: "error",
+					Data: map[string]any{"errorCode": "permission_denied", "tool": name, "detail": detail},
+				})
+				return
+			}
 			emit(Event{
 				Type:    "tool_call",
 				Message: "tool " + name,

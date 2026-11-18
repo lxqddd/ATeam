@@ -433,3 +433,72 @@ func TestRunCommitsRemainingAgentChanges(t *testing.T) {
 		t.Fatalf("worktree should be clean: %q err=%v", status, err)
 	}
 }
+
+// TestRunAuditsPathPolicy covers SEC-010/AGENT-021 for runtimes without
+// tool-level enforcement: a file written outside allowedPaths fails the run
+// after evidence collection and records permission_denied.
+func TestRunAuditsPathPolicy(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	st.setAgentAllowedPaths([]string{"allowed/"})
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&fileWritingAdapter{fakeAdapter{name: "fake-claude"}})
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{ID: domain.DefaultWorkspaceID, Name: "Bound", RepoPath: repo, DefaultBranch: "main", Status: domain.WorkspaceActive})
+	st.setAgentRuntime("fake-claude")
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to fail on path audit", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunFailed
+	})
+	final := st.run(run.ID)
+	if final.ErrorCode != "permission_denied" || final.FailureDetail != "path_outside_workspace" {
+		t.Fatalf("run = %s/%s, want permission_denied/path_outside_workspace", final.ErrorCode, final.FailureDetail)
+	}
+	if !st.hasEventType("error") {
+		t.Fatal("expected an error event for the path violation")
+	}
+}
+
+// TestRunAllowsPathInsidePolicy verifies the same writer succeeds when the
+// path is covered by allowedPaths.
+func TestRunAllowsPathInsidePolicy(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	st.setAgentAllowedPaths([]string{"agent-output.txt"})
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&fileWritingAdapter{fakeAdapter{name: "fake-claude"}})
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{ID: domain.DefaultWorkspaceID, Name: "Bound", RepoPath: repo, DefaultBranch: "main", Status: domain.WorkspaceActive})
+	st.setAgentRuntime("fake-claude")
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+}
+
+// TestFullAccessBypassesPathPolicy verifies the explicit full_access escape
+// hatch: paths are not audited (permission checks are bypassed by design).
+func TestFullAccessBypassesPathPolicy(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	st.setAgentAllowedPaths([]string{"allowed/"})
+	st.setAgentPermissionMode("full_access")
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&fileWritingAdapter{fakeAdapter{name: "fake-claude"}})
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{ID: domain.DefaultWorkspaceID, Name: "Bound", RepoPath: repo, DefaultBranch: "main", Status: domain.WorkspaceActive})
+	st.setAgentRuntime("fake-claude")
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete with full access", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+}

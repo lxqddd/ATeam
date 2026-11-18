@@ -49,6 +49,49 @@ func (m *Manager) CollectDiff(ctx context.Context, worktreePath, baseCommit stri
 	return result, nil
 }
 
+// ChangedPaths returns the repo-relative files touched by the run: modified,
+// added, deleted and untracked paths from git status, plus committed changes
+// relative to baseCommit (the scheduler commits remaining work before audit
+// in some paths, so both sources are needed).
+func (m *Manager) ChangedPaths(ctx context.Context, worktreePath, baseCommit string) ([]string, error) {
+	if worktreePath == "" {
+		return nil, fmt.Errorf("run workspace is not available")
+	}
+	paths := map[string]bool{}
+	status, err := gitOutput(ctx, worktreePath, "status", "--porcelain")
+	if err != nil {
+		return nil, fmt.Errorf("collect changed paths: %w", err)
+	}
+	for _, line := range strings.Split(status, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) < 4 {
+			continue
+		}
+		path := strings.TrimSpace(line[3:])
+		if strings.Contains(path, " -> ") {
+			parts := strings.SplitN(path, " -> ", 2)
+			paths[parts[1]] = true
+			continue
+		}
+		paths[path] = true
+	}
+	if baseCommit != "" {
+		committed, err := gitOutput(ctx, worktreePath, "diff", "--name-only", baseCommit)
+		if err == nil {
+			for _, path := range strings.Split(committed, "\n") {
+				if strings.TrimSpace(path) != "" {
+					paths[strings.TrimSpace(path)] = true
+				}
+			}
+		}
+	}
+	result := make([]string, 0, len(paths))
+	for path := range paths {
+		result = append(result, path)
+	}
+	return result, nil
+}
+
 // Render formats a DiffResult as the diff artifact body with clear sections.
 func (result DiffResult) Render() string {
 	var builder strings.Builder
