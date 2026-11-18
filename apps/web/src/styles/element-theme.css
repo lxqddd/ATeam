@@ -39,7 +39,9 @@ html.dark {
   --el-border-color-dark: var(--cd-color-border-strong);
   --el-border-color-darker: var(--cd-color-border-strong);
   --el-fill-color: var(--cd-color-hover);
-  --el-fill-color-light: var(--cd-color-surface-raised);
+  /* 悬停底色必须区别于 --el-bg-color-overlay（surface-raised），否则下拉选项 /
+     文本按钮悬停无可见变化；bg-subtle 在 7 套主题里都与 surface-raised 不同 */
+  --el-fill-color-light: var(--cd-color-bg-subtle);
   --el-fill-color-lighter: var(--cd-color-surface);
   --el-fill-color-extra-light: var(--cd-color-bg-subtle);
   --el-fill-color-dark: var(--cd-color-hover);
@@ -115,9 +117,12 @@ html.dark {
 }
 .el-input__inner, .el-textarea__inner, .el-select__placeholder { font-size: var(--cd-font-size-sm); }
 
-/* 卡片（若仍有页面使用） */
-.el-card {
+/* 卡片（若仍有页面使用）。EP 自带 html.dark .el-card 覆盖 --el-card-bg-color，
+ * 这里用同级选择器夺回，否则深色主题卡片会回落到 surface-raised。 */
+.el-card,
+html.dark .el-card {
   --el-card-bg-color: var(--cd-color-surface);
+  --el-fill-color-blank: var(--cd-color-surface);
   border: 1px solid var(--cd-color-border-subtle);
   border-radius: var(--cd-radius-lg);
 }
