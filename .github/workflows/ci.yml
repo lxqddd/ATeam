@@ -30,4 +30,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r typecheck
+      - run: pnpm --filter @ateam/web check:i18n
       - run: pnpm --filter @ateam/web build
