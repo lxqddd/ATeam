@@ -2,44 +2,31 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { RunStatus, TaskStatus } from '@ateam/shared'
+import { Badge } from './ui/badge'
+import type { BadgeTone } from './ui/badge'
 
 const props = withDefaults(
-  defineProps<{
-    status: TaskStatus | RunStatus
-    kind?: 'task' | 'run'
-  }>(),
+  defineProps<{ status: TaskStatus | RunStatus; kind?: 'task' | 'run' }>(),
   { kind: 'task' },
 )
-
 const { t } = useI18n()
 
-type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
+const label = computed(() =>
+  props.kind === 'run'
+    ? t(`common.status.run.${props.status}`)
+    : t(`common.status.task.${props.status}`),
+)
 
-const label = computed(() => {
-  if (props.kind === 'run') {
-    return t(`common.status.run.${props.status}`)
-  }
-  return t(`common.status.task.${props.status}`)
-})
-
-const tagType = computed<TagType>(() => {
+const tone = computed<BadgeTone>(() => {
   const status = props.status
-  if (status === 'done' || status === 'completed') {
-    return 'success'
-  }
-  if (status === 'in_progress' || status === 'running') {
-    return 'primary'
-  }
-  if (status === 'failed') {
-    return 'danger'
-  }
-  if (status === 'blocked' || status === 'cancelled') {
-    return 'warning'
-  }
-  return 'info'
+  if (status === 'done' || status === 'completed') return 'success'
+  if (status === 'in_progress' || status === 'running' || status === 'preparing') return 'brand'
+  if (status === 'failed') return 'danger'
+  if (status === 'blocked' || status === 'cancelled' || status === 'in_review') return 'warning'
+  return 'neutral'
 })
 </script>
 
 <template>
-  <el-tag :type="tagType" effect="dark" size="small" round>{{ label }}</el-tag>
+  <Badge :tone="tone">{{ label }}</Badge>
 </template>

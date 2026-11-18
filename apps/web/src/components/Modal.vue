@@ -1,16 +1,13 @@
 <script setup lang="ts">
-defineProps<{ open: boolean; title: string }>()
+withDefaults(defineProps<{ open: boolean; title: string; width?: string }>(), { width: '640px' })
 defineEmits<{ close: [] }>()
 </script>
 
 <template>
-  <el-dialog
-    :model-value="open"
-    :title="title"
-    width="520px"
-    append-to-body
-    @close="$emit('close')"
-  >
+  <el-dialog :model-value="open" :title="title" :width="width" append-to-body @close="$emit('close')">
     <slot />
+    <template #footer>
+      <slot name="footer" />
+    </template>
   </el-dialog>
 </template>
