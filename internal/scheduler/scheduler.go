@@ -56,14 +56,34 @@ func (s *Scheduler) Enqueue(ctx context.Context, runID string) error {
 	}
 }
 
-func (s *Scheduler) Cancel(runID string) bool {
+// Cancel stops a run regardless of its phase (D-M0-01): a queued run is
+// marked cancelled so the worker skips it when dequeued, a preparing or
+// running run has its context cancelled and the worker persists the terminal
+// state. Cancellation never resurrects a finished run because every write
+// goes through UpdateRunIfActive.
+func (s *Scheduler) Cancel(ctx context.Context, runID string) bool {
 	s.mu.Lock()
-	cancel, ok := s.cancels[runID]
+	cancel, running := s.cancels[runID]
 	s.mu.Unlock()
-	if ok {
+	if running {
 		cancel()
+		return true
 	}
-	return ok
+
+	run, err := s.store.GetRun(ctx, runID)
+	if err != nil {
+		slog.Warn("cancel run: load", "run", runID, "error", err)
+		return false
+	}
+	if !run.Status.Active() {
+		return false
+	}
+	ended := domain.Now()
+	run.Status = domain.RunCancelled
+	run.Error = "run cancelled"
+	run.EndedAt = &ended
+	s.writeActiveRun(ctx, run, "run.updated")
+	return true
 }
 
 func (s *Scheduler) worker(ctx context.Context) {
@@ -83,6 +103,11 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		slog.Warn("load run", "run", runID, "error", err)
 		return
 	}
+	// A queued run cancelled before the worker picked it up must not execute.
+	if !run.Status.Active() {
+		slog.Info("skip run: no longer active", "run", run.ID, "status", run.Status)
+		return
+	}
 
 	task, err := s.store.GetTask(ctx, run.TaskID)
 	if err != nil {
@@ -99,24 +124,14 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		return
 	}
 
-	run.Status = domain.RunPreparing
-	started := domain.Now()
-	run.StartedAt = &started
-	s.saveRun(ctx, run, "run.preparing")
-
-	workdir, err := s.workspaces.Prepare(ctx, run.ID)
-	if err != nil {
-		s.fail(ctx, run, err)
-		return
-	}
-	run.Worktree = workdir
-	run.Status = domain.RunRunning
-	s.saveRun(ctx, run, "run.running")
-
+	// Register the cancel function before preparing so cancelling works in
+	// every phase, then keep the timeout from the agent configuration.
 	runCtx := ctx
 	cancelRun := func() {}
 	if agent.TimeoutMinutes > 0 {
 		runCtx, cancelRun = context.WithTimeout(ctx, time.Duration(agent.TimeoutMinutes)*time.Minute)
+	} else {
+		runCtx, cancelRun = context.WithCancel(ctx)
 	}
 	s.mu.Lock()
 	s.cancels[run.ID] = cancelRun
@@ -127,6 +142,24 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		delete(s.cancels, run.ID)
 		s.mu.Unlock()
 	}()
+
+	run.Status = domain.RunPreparing
+	started := domain.Now()
+	run.StartedAt = &started
+	if !s.writeActiveRun(ctx, run, "run.preparing") {
+		return
+	}
+
+	workdir, err := s.workspaces.Prepare(runCtx, run.ID)
+	if err != nil {
+		s.fail(ctx, run, err)
+		return
+	}
+	run.Worktree = workdir
+	run.Status = domain.RunRunning
+	if !s.writeActiveRun(ctx, run, "run.running") {
+		return
+	}
 
 	sequence := 0
 	emit := func(event runtime.Event) {
@@ -159,26 +192,36 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 
 	ended := domain.Now()
 	run.EndedAt = &ended
-	if err != nil {
+	switch {
+	case errors.Is(err, context.Canceled):
+		run.Status = domain.RunCancelled
+		run.Error = "run cancelled"
+	case err != nil:
 		run.Status = domain.RunFailed
 		run.Error = err.Error()
-		if errors.Is(err, context.Canceled) {
-			run.Status = domain.RunCancelled
-			run.Error = "run cancelled"
-		}
-	} else {
+	default:
 		run.Status = domain.RunCompleted
 		run.Summary = fmt.Sprintf("Completed with %s runtime", adapter.Name())
 	}
-	s.saveRun(ctx, run, "run.updated")
+	if !s.writeActiveRun(ctx, run, "run.updated") {
+		slog.Info("run already terminal; keeping stored state", "run", run.ID)
+	}
 }
 
-func (s *Scheduler) saveRun(ctx context.Context, run *domain.Run, eventType string) {
-	if err := s.store.UpdateRun(ctx, run); err != nil {
+// writeActiveRun persists a run only while its stored status is still active.
+// A concurrent cancel therefore always wins instead of being overwritten by
+// the worker (D-M0-01).
+func (s *Scheduler) writeActiveRun(ctx context.Context, run *domain.Run, eventType string) bool {
+	updated, err := s.store.UpdateRunIfActive(ctx, run)
+	if err != nil {
 		slog.Warn("update run", "run", run.ID, "error", err)
-		return
+		return false
+	}
+	if !updated {
+		return false
 	}
 	s.hub.Broadcast(events.Event{Type: eventType, Data: run})
+	return true
 }
 
 func (s *Scheduler) fail(ctx context.Context, run *domain.Run, err error) {
@@ -186,7 +229,7 @@ func (s *Scheduler) fail(ctx context.Context, run *domain.Run, err error) {
 	run.Status = domain.RunFailed
 	run.Error = err.Error()
 	run.EndedAt = &ended
-	s.saveRun(ctx, run, "run.updated")
+	s.writeActiveRun(ctx, run, "run.updated")
 }
 
 func buildPrompt(task *domain.Task, agent *domain.Agent) string {

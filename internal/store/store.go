@@ -27,6 +27,11 @@ type Store interface {
 	ListRunsByTask(context.Context, string) ([]domain.Run, error)
 	GetRun(context.Context, string) (*domain.Run, error)
 	UpdateRun(context.Context, *domain.Run) error
+	// UpdateRunIfActive writes the run only while the stored status is still
+	// queued/preparing/running. It reports false when the run already reached
+	// a terminal state (for example a concurrent cancel), so callers never
+	// resurrect a cancelled run.
+	UpdateRunIfActive(context.Context, *domain.Run) (bool, error)
 
 	AppendRunEvent(context.Context, *domain.RunEvent) error
 	ListRunEvents(context.Context, string) ([]domain.RunEvent, error)

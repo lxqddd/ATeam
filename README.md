@@ -67,6 +67,14 @@ The Go server is configured with flags, not environment variables:
 ./bin/ateam serve --addr 127.0.0.1:8787 --db .data/ateam.db --web apps/web/dist
 ```
 
+### Local security
+
+The server refuses to start on a non-loopback address, and every HTTP and WebSocket request must match the Host and Origin allowlist derived from the actual listen address (`127.0.0.1`, `localhost`, `[::1]` on that port). The Vite proxy and the Wails shell are covered by default. If the web UI is served from a different origin during development, add it explicitly — origins are never allowed implicitly:
+
+```bash
+ATEAM_DEV_ORIGINS=http://127.0.0.1:5173,http://localhost:5173 make dev-server
+```
+
 ### Desktop shell
 
 ```bash

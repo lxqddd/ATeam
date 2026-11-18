@@ -512,6 +512,30 @@ func (s *SQLite) UpdateRun(ctx context.Context, run *domain.Run) error {
 	return ensureAffected(result, "run", run.ID)
 }
 
+// UpdateRunIfActive updates a run only while its stored status is still
+// active. A concurrent cancel therefore wins: the second writer gets false
+// instead of overwriting a terminal status.
+func (s *SQLite) UpdateRunIfActive(ctx context.Context, run *domain.Run) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ?, branch = ?, worktree = ?, summary = ?, error = ?, started_at = ?, ended_at = ? WHERE id = ? AND status IN ('queued', 'preparing', 'running')`,
+		string(run.Status),
+		run.Branch,
+		run.Worktree,
+		run.Summary,
+		run.Error,
+		millisPtr(run.StartedAt),
+		millisPtr(run.EndedAt),
+		run.ID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("update run if active: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("update run if active: rows affected: %w", err)
+	}
+	return affected > 0, nil
+}
+
 func (s *SQLite) AppendRunEvent(ctx context.Context, event *domain.RunEvent) error {
 	if event.ID == "" {
 		event.ID = domain.NewID()

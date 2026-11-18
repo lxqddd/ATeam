@@ -8,10 +8,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
+
+	"github.com/lxqddd/ATeam/internal/security"
 )
 
 func TestServeSSEStreamsBroadcastEvents(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(security.NewGuard())
 	server := httptest.NewServer(http.HandlerFunc(hub.ServeSSE))
 	defer server.Close()
 
@@ -75,4 +79,29 @@ func TestServeSSEStreamsBroadcastEvents(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestServeWSRejectsForeignOrigin(t *testing.T) {
+	guard := security.NewGuard()
+	if err := guard.Bind("127.0.0.1:8787"); err != nil {
+		t.Fatalf("bind guard: %v", err)
+	}
+	hub := NewHub(guard)
+	server := httptest.NewServer(http.HandlerFunc(hub.ServeWS))
+	defer server.Close()
+	url := "ws" + strings.TrimPrefix(server.URL, "http")
+
+	_, resp, err := websocket.DefaultDialer.Dial(url, http.Header{"Origin": []string{"http://evil.example"}})
+	if err == nil {
+		t.Fatal("handshake succeeded for foreign origin")
+	}
+	if resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign origin status = %v, want 403", resp)
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(url, http.Header{"Origin": []string{"http://127.0.0.1:8787"}})
+	if err != nil {
+		t.Fatalf("allowed origin dial: %v", err)
+	}
+	_ = conn.Close()
 }

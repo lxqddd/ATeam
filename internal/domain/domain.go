@@ -72,6 +72,14 @@ const (
 	RunCancelled RunStatus = "cancelled"
 )
 
+// Active reports whether the run has not reached a terminal state yet.
+func (s RunStatus) Active() bool {
+	return s == RunQueued || s == RunPreparing || s == RunRunning
+}
+
+// Terminal reports whether no further transition may overwrite the status.
+func (s RunStatus) Terminal() bool { return !s.Active() }
+
 type Run struct {
 	ID        string     `json:"id"`
 	TaskID    string     `json:"taskId"`

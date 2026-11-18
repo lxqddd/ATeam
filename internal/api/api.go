@@ -9,6 +9,7 @@ import (
 
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/scheduler"
+	"github.com/lxqddd/ATeam/internal/security"
 	"github.com/lxqddd/ATeam/internal/store"
 )
 
@@ -18,15 +19,17 @@ type API struct {
 	scheduler *scheduler.Scheduler
 	version   string
 	webDir    string
+	guard     *security.Guard
 }
 
-func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, version, webDir string) *API {
+func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, version, webDir string, guard *security.Guard) *API {
 	return &API{
 		store:     st,
 		hub:       hub,
 		scheduler: scheduler,
 		version:   version,
 		webDir:    webDir,
+		guard:     guard,
 	}
 }
 
@@ -58,7 +61,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/events", a.hub.ServeSSE)
 	mux.Handle("/", a.webHandler())
 
-	return withCORS(mux)
+	return withCORS(a.guard, mux)
 }
 
 func (a *API) webHandler() http.Handler {
@@ -96,10 +99,25 @@ func (a *API) webPlaceholder(w http.ResponseWriter, r *http.Request) {
 </html>`)
 }
 
-func withCORS(next http.Handler) http.Handler {
+// withCORS closes the local browser attack surface (MILE-002):
+//   - only the Host derived from the actual listen address is accepted
+//     (DNS rebinding mitigation);
+//   - browser requests carrying an Origin outside the allowlist — including
+//     "null" — are rejected with 403 and receive no Access-Control-* headers;
+//   - requests without an Origin (same-origin navigation, CLI tools) pass,
+//     since they cannot be issued cross-origin by a web page.
+func withCORS(guard *security.Guard, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if guard == nil || !guard.HostAllowed(r.Host) {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
 		origin := r.Header.Get("Origin")
 		if origin != "" {
+			if !guard.OriginAllowed(origin) {
+				http.Error(w, "forbidden origin", http.StatusForbidden)
+				return
+			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")

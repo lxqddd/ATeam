@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/lxqddd/ATeam/internal/security"
 )
 
 type Event struct {
@@ -21,18 +23,32 @@ type Hub struct {
 	clients    map[*client]struct{}
 	sseClients map[chan []byte]struct{}
 	upgrader   websocket.Upgrader
+	guard      *security.Guard
 }
 
-func NewHub() *Hub {
-	return &Hub{
+func NewHub(guard *security.Guard) *Hub {
+	hub := &Hub{
 		clients:    make(map[*client]struct{}),
 		sseClients: make(map[chan []byte]struct{}),
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  1024,
-			WriteBufferSize: 1024,
-			CheckOrigin:     func(r *http.Request) bool { return true },
-		},
+		guard:      guard,
 	}
+	hub.upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin:     hub.checkOrigin,
+	}
+	return hub
+}
+
+// checkOrigin rejects WebSocket upgrades from browser origins outside the
+// allowlist (MILE-002). Requests without an Origin header are non-browser
+// clients; their Host is still validated by the API middleware.
+func (h *Hub) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	return h.guard != nil && h.guard.OriginAllowed(origin)
 }
 
 func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {

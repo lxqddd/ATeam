@@ -409,21 +409,19 @@ func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 		a.handleStoreError(w, err)
 		return
 	}
-	if run.Status == domain.RunCompleted || run.Status == domain.RunFailed || run.Status == domain.RunCancelled {
+	if run.Status.Terminal() {
 		a.writeJSON(w, http.StatusOK, run)
 		return
 	}
-	a.scheduler.Cancel(run.ID)
-	ended := domain.Now()
-	run.Status = domain.RunCancelled
-	run.EndedAt = &ended
-	run.Error = "run cancelled"
-	if err := a.store.UpdateRun(r.Context(), run); err != nil {
+	// Cancelling is owned by the scheduler: it signals a running adapter or
+	// marks a queued run cancelled so the worker skips it (D-M0-01).
+	a.scheduler.Cancel(r.Context(), run.ID)
+	updated, err := a.store.GetRun(r.Context(), run.ID)
+	if err != nil {
 		a.handleStoreError(w, err)
 		return
 	}
-	a.broadcast("run.updated", run)
-	a.writeJSON(w, http.StatusOK, run)
+	a.writeJSON(w, http.StatusOK, updated)
 }
 
 func (a *API) broadcast(eventType string, data any) {

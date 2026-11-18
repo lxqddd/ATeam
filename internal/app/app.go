@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lxqddd/ATeam/internal/api"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
+	"github.com/lxqddd/ATeam/internal/security"
 	"github.com/lxqddd/ATeam/internal/store"
 	"github.com/lxqddd/ATeam/internal/version"
 	"github.com/lxqddd/ATeam/internal/workspace"
@@ -50,6 +52,7 @@ type App struct {
 	store     *store.SQLite
 	hub       *events.Hub
 	scheduler *scheduler.Scheduler
+	guard     *security.Guard
 	api       *api.API
 	server    *http.Server
 }
@@ -67,17 +70,25 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("open store: %w", err)
 	}
 
-	hub := events.NewHub()
+	guard := security.NewGuard()
+	// Dev origins (for example the Vite dev server) must be enabled
+	// explicitly; they are never added implicitly.
+	if raw := strings.TrimSpace(os.Getenv("ATEAM_DEV_ORIGINS")); raw != "" {
+		guard.AllowOrigins(strings.Split(raw, ",")...)
+	}
+
+	hub := events.NewHub(guard)
 	workspaces := workspace.New(filepath.Join(cfg.DataDir, "workspaces"))
 	registry := runtime.NewRegistry()
 	sched := scheduler.New(st, hub, registry, workspaces, cfg.Concurrency)
-	handler := api.New(st, hub, sched, cfg.Version, cfg.WebDir)
+	handler := api.New(st, hub, sched, cfg.Version, cfg.WebDir, guard)
 
 	return &App{
 		cfg:       cfg,
 		store:     st,
 		hub:       hub,
 		scheduler: sched,
+		guard:     guard,
 		api:       handler,
 	}, nil
 }
@@ -89,13 +100,22 @@ func (a *App) Handler() http.Handler {
 func (a *App) Start(ctx context.Context) error {
 	go a.scheduler.Start(ctx)
 
-	server := &http.Server{Addr: a.cfg.Addr, Handler: a.Handler()}
+	listener, err := net.Listen("tcp", a.cfg.Addr)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	if err := a.guard.Bind(listener.Addr().String()); err != nil {
+		_ = listener.Close()
+		return err
+	}
+
+	server := &http.Server{Handler: a.Handler()}
 	a.server = server
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("ATeam server listening", "addr", a.cfg.Addr, "db", a.cfg.DBPath)
-		errCh <- server.ListenAndServe()
+		slog.Info("ATeam server listening", "addr", listener.Addr().String(), "db", a.cfg.DBPath)
+		errCh <- server.Serve(listener)
 	}()
 
 	select {
@@ -116,6 +136,10 @@ func (a *App) StartLocal(ctx context.Context) (string, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", fmt.Errorf("listen: %w", err)
+	}
+	if err := a.guard.Bind(listener.Addr().String()); err != nil {
+		_ = listener.Close()
+		return "", err
 	}
 
 	server := &http.Server{Handler: a.Handler()}
