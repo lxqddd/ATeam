@@ -44,13 +44,17 @@ for (const file of listVueFiles(SRC_ROOT)) {
     continue
   }
   const rel = file.slice(file.indexOf('src'))
+  // 文本节点的匹配索引是 template 内文相对偏移，需加回 template 起点；
+  // 静态属性的匹配索引是全文绝对偏移，直接换算行号。
+  const templateStart = match.index + match[0].indexOf(match[1])
   const lineAt = (index) => content.slice(0, index).split('\n').length
+  const lineAtTemplate = (index) => content.slice(0, templateStart + index).split('\n').length
 
   const stripped = stripInterpolations(match[1])
   for (const m of stripped.matchAll(TEXT_NODE)) {
     const text = m[1].trim()
     if (text && !isAllowed(text)) {
-      findings.push(`${rel}:${lineAt(m.index)} 文本节点疑似硬编码文案: "${text.slice(0, 60)}"`)
+      findings.push(`${rel}:${lineAtTemplate(m.index)} 文本节点疑似硬编码文案: "${text.slice(0, 60)}"`)
     }
   }
   for (const m of content.matchAll(STATIC_ATTR)) {
