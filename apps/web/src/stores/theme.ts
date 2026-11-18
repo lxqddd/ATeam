@@ -49,13 +49,15 @@ export function resolveTheme(pref: ThemePref, dark: boolean): ThemeId {
 
 function applyTheme(pref: ThemePref): ThemeId {
   const resolved = resolveTheme(pref, prefersDark())
+  const isDark = DARK_THEMES.includes(resolved)
   const root = document.documentElement
   root.dataset.theme = resolved
   root.dataset.themePref = pref
-  root.classList.toggle('dark', DARK_THEMES.includes(resolved))
+  root.classList.toggle('dark', isDark)
+  root.style.colorScheme = isDark ? 'dark' : 'light'
   const meta = document.querySelector('meta[name="color-scheme"]')
   if (meta) {
-    meta.setAttribute('content', DARK_THEMES.includes(resolved) ? 'dark' : 'light')
+    meta.setAttribute('content', isDark ? 'dark' : 'light')
   }
   try {
     localStorage.setItem(STORAGE_KEY, pref)
