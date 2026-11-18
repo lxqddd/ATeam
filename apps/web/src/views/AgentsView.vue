@@ -54,17 +54,17 @@ async function createAgent() {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
       <div>
-        <h1 class="text-sm font-semibold">Agents</h1>
-        <p class="text-[11px] text-zinc-500">Reusable work profiles for tasks</p>
+        <h1 class="text-sm font-semibold">{{ $t('agents.title') }}</h1>
+        <p class="text-[11px] text-zinc-500">{{ $t('agents.subtitle') }}</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="showCreate = true">New agent</el-button>
+      <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('agents.newAgent') }}</el-button>
     </header>
 
     <div class="flex-1 overflow-y-auto p-5">
       <EmptyState
         v-if="agents.items.length === 0"
-        title="No agents yet"
-        description="Create a role agent for UI design, frontend, backend, or DevOps work."
+        :title="$t('agents.emptyTitle')"
+        :description="$t('agents.emptyDesc')"
       />
 
       <div v-else class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -74,42 +74,42 @@ async function createAgent() {
               <div>
                 <h2 class="text-sm font-semibold">{{ agent.name }}</h2>
                 <p class="text-[11px] text-zinc-500 mt-0.5">
-                  {{ agent.description || 'No description' }}
+                  {{ agent.description || $t('agents.noDescription') }}
                 </p>
               </div>
               <el-tag size="small" effect="dark">{{ agent.runtime }}</el-tag>
             </div>
           </template>
           <p class="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
-            {{ agent.instructions || 'No instructions yet.' }}
+            {{ agent.instructions || $t('agents.noInstructions') }}
           </p>
           <div class="mt-3 flex items-center gap-3 text-[10px] text-zinc-500">
-            <span>concurrency {{ agent.maxConcurrency }}</span>
-            <span>timeout {{ agent.timeoutMinutes }}m</span>
+            <span>{{ $t('agents.card.concurrency', { n: agent.maxConcurrency }) }}</span>
+            <span>{{ $t('agents.card.timeout', { n: agent.timeoutMinutes }) }}</span>
             <span>{{ agent.workspaceMode }}</span>
           </div>
         </el-card>
       </div>
     </div>
 
-    <Modal :open="showCreate" title="New agent" @close="showCreate = false">
+    <Modal :open="showCreate" :title="$t('agents.newAgent')" @close="showCreate = false">
       <el-form label-position="top">
-        <el-form-item label="Name">
-          <el-input v-model="form.name" placeholder="Frontend Agent" />
+        <el-form-item :label="$t('agents.form.name')">
+          <el-input v-model="form.name" :placeholder="$t('agents.form.namePlaceholder')" />
         </el-form-item>
-        <el-form-item label="Description">
-          <el-input v-model="form.description" placeholder="Implements UI from a design spec" />
+        <el-form-item :label="$t('agents.form.description')">
+          <el-input v-model="form.description" :placeholder="$t('agents.form.descriptionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="Instructions">
+        <el-form-item :label="$t('agents.form.instructions')">
           <el-input
             v-model="form.instructions"
             type="textarea"
             :rows="4"
-            placeholder="Responsibilities, boundaries, checks, reporting format..."
+            :placeholder="$t('agents.form.instructionsPlaceholder')"
           />
         </el-form-item>
         <div class="grid grid-cols-2 gap-3">
-          <el-form-item label="Runtime">
+          <el-form-item :label="$t('agents.form.runtime')">
             <el-select v-model="form.runtime" style="width: 100%">
               <el-option
                 v-for="runtime in RUNTIMES"
@@ -119,25 +119,25 @@ async function createAgent() {
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="Model (optional)">
-            <el-input v-model="form.model" placeholder="default" />
+          <el-form-item :label="$t('agents.form.model')">
+            <el-input v-model="form.model" :placeholder="$t('agents.form.modelPlaceholder')" />
           </el-form-item>
         </div>
         <div class="grid grid-cols-2 gap-3">
-          <el-form-item label="Max concurrency">
+          <el-form-item :label="$t('agents.form.maxConcurrency')">
             <el-input-number v-model="form.maxConcurrency" :min="1" style="width: 100%" />
           </el-form-item>
-          <el-form-item label="Timeout (minutes)">
+          <el-form-item :label="$t('agents.form.timeoutMinutes')">
             <el-input-number v-model="form.timeoutMinutes" :min="1" style="width: 100%" />
           </el-form-item>
         </div>
-        <el-form-item label="Allowed paths (comma separated)">
-          <el-input v-model="form.allowedPaths" placeholder="web/, packages/ui/" />
+        <el-form-item :label="$t('agents.form.allowedPaths')">
+          <el-input v-model="form.allowedPaths" :placeholder="$t('agents.form.allowedPathsPlaceholder')" />
         </el-form-item>
       </el-form>
       <div class="flex justify-end gap-2">
-        <el-button @click="showCreate = false">Cancel</el-button>
-        <el-button type="primary" @click="createAgent">Create</el-button>
+        <el-button @click="showCreate = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="createAgent">{{ $t('common.create') }}</el-button>
       </div>
     </Modal>
   </div>
