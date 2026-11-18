@@ -1,0 +1,59 @@
+// ATeam 设计令牌（Sass 版）
+// 当 Tailwind 工具类不适用（如第三方组件深层覆盖、复杂选择器嵌套、动态生成的规则）时，
+// 用这些变量与 mixin 编写原生样式。
+//
+// 该文件通过 vite.config.ts 的 css.preprocessorOptions.scss.additionalData
+// 自动注入到每个 SCSS 编译单元（.scss 文件与 <style lang="scss"> 块），
+// 因此在组件样式中可直接使用变量与 mixin，无需手动 @use。
+
+// ---------- 颜色（与 main.css 主题保持一致） ----------
+$color-bg: #09090b;         // 页面背景（zinc-950）
+$color-panel: #111113;      // 面板背景
+$color-text: #e4e4e7;       // 主文本（zinc-200）
+$color-text-muted: #a1a1aa; // 次要文本（zinc-400）
+$color-border: #27272a;     // 边框 / 分隔线（zinc-800）
+$color-accent: #6366f1;     // 强调色（indigo-500）
+$color-destructive: #dc2626; // 危险操作（red-600）
+
+// ---------- 字体 ----------
+$font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+$font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+// ---------- 圆角与间距 ----------
+$radius-base: 0.625rem; // 与 --radius 保持一致
+$spacing-unit: 0.25rem; // 4px，工具类间距的最小刻度
+
+// ---------- 断点 ----------
+$breakpoint-sm: 640px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 1024px;
+$breakpoint-xl: 1280px;
+
+// ≥ 指定断点时应用样式
+@mixin respond-to($breakpoint) {
+  @media (min-width: $breakpoint) {
+    @content;
+  }
+}
+
+// 深色滚动条（与 main.css 全局样式一致），可用于嵌套滚动容器
+@mixin scrollbar-dark {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: $color-border;
+    border-radius: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+// 单行文本溢出省略
+@mixin text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
