@@ -32,18 +32,53 @@ type AssigneeType string
 const AssigneeAgent AssigneeType = "agent"
 
 type Task struct {
-	ID           string       `json:"id"`
-	WorkspaceID  string       `json:"workspaceId"`
-	Title        string       `json:"title"`
-	Description  string       `json:"description"`
-	Status       TaskStatus   `json:"status"`
-	Priority     int          `json:"priority"`
-	AssigneeType AssigneeType `json:"assigneeType"`
-	AssigneeID   string       `json:"assigneeId"`
-	ParentID     string       `json:"parentId,omitempty"`
-	Labels       []string     `json:"labels"`
-	CreatedAt    time.Time    `json:"createdAt"`
-	UpdatedAt    time.Time    `json:"updatedAt"`
+	ID            string       `json:"id"`
+	WorkspaceID   string       `json:"workspaceId"`
+	Title         string       `json:"title"`
+	Description   string       `json:"description"`
+	Status        TaskStatus   `json:"status"`
+	Priority      int          `json:"priority"`
+	AssigneeType  AssigneeType `json:"assigneeType"`
+	AssigneeID    string       `json:"assigneeId"`
+	ParentID      string       `json:"parentId,omitempty"`
+	Labels        []string     `json:"labels"`
+	BlockedReason string       `json:"blockedReason,omitempty"`
+	CreatedAt     time.Time    `json:"createdAt"`
+	UpdatedAt     time.Time    `json:"updatedAt"`
+}
+
+// TaskDependency is a finish_to_start edge: taskId may start only after
+// dependsOnTaskId reaches done (PRD 02-domain-model §3.3).
+type TaskDependency struct {
+	TaskID                string    `json:"taskId"`
+	DependsOnTaskID       string    `json:"dependsOnTaskId"`
+	Type                  string    `json:"type"`
+	RequiredArtifactKinds []string  `json:"requiredArtifactKinds"`
+	CreatedAt             time.Time `json:"createdAt"`
+}
+
+const DependencyFinishToStart = "finish_to_start"
+
+// Agent roles are the M2 vocabulary (PRD agent-system §4.4). The role drives
+// DAG validation and default gates, never permissions.
+const (
+	AgentRoleGeneral  = "general"
+	AgentRoleUIDesign = "ui_design"
+	AgentRoleFrontend = "frontend"
+	AgentRoleBackend  = "backend"
+	AgentRoleDevOps   = "devops"
+	AgentRoleCustom   = "custom"
+)
+
+var AgentRoles = []string{AgentRoleGeneral, AgentRoleUIDesign, AgentRoleFrontend, AgentRoleBackend, AgentRoleDevOps, AgentRoleCustom}
+
+func ValidAgentRole(role string) bool {
+	for _, candidate := range AgentRoles {
+		if role == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 type Agent struct {
@@ -55,6 +90,7 @@ type Agent struct {
 	Runtime          string    `json:"runtime"`
 	Model            string    `json:"model"`
 	ModelStatus      string    `json:"modelStatus,omitempty"`
+	Role             string    `json:"role,omitempty"`
 	WorkspaceMode    string    `json:"workspaceMode"`
 	PermissionMode   string    `json:"permissionMode"`
 	CurrentVersionID string    `json:"currentVersionId"`

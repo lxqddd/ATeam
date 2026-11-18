@@ -1,4 +1,4 @@
-import type { Task } from '@ateam/shared'
+import type { Task, TaskDependenciesResponse } from '@ateam/shared'
 import { HttpClient } from '../http/client'
 
 export interface CreateTaskInput {
@@ -12,6 +12,11 @@ export interface CreateTaskInput {
   labels?: string[]
 }
 
+export interface ReplaceDependenciesInput {
+  dependsOnTaskId: string
+  requiredArtifactKinds?: string[]
+}
+
 export class TaskApi {
   static list(): Promise<Task[]> {
     return HttpClient.get<Task[]>('/tasks')
@@ -19,6 +24,19 @@ export class TaskApi {
 
   static get(id: string): Promise<Task> {
     return HttpClient.get<Task>(`/tasks/${id}`)
+  }
+
+  static dependencies(id: string): Promise<TaskDependenciesResponse> {
+    return HttpClient.get<TaskDependenciesResponse>(`/tasks/${id}/dependencies`)
+  }
+
+  static replaceDependencies(
+    id: string,
+    dependencies: ReplaceDependenciesInput[],
+  ): Promise<TaskDependenciesResponse> {
+    return HttpClient.put<TaskDependenciesResponse>(`/tasks/${id}/dependencies`, {
+      dependencies,
+    })
   }
 
   static create(input: CreateTaskInput): Promise<Task> {

@@ -10,6 +10,7 @@ import {
   type RunEvent,
   type Task,
   type TaskArtifactsResponse,
+  type TaskDependenciesResponse,
   type TaskStatus,
 } from '@ateam/shared'
 import { ArtifactApi, ReviewApi, RunApi, TaskApi } from '../api'
@@ -33,12 +34,15 @@ const events = ref<RunEvent[]>([])
 const selectedAgentId = ref('')
 const taskEvidence = ref<TaskArtifactsResponse | null>(null)
 const latestReview = ref<Review | null>(null)
+const dependencies = ref<TaskDependenciesResponse | null>(null)
 const loading = ref(true)
 let timer: number | undefined
 
 const taskId = computed(() => String(route.params.id))
+const readiness = computed(() => dependencies.value?.readiness ?? null)
+const dependencyBlocked = computed(() => !!readiness.value && !readiness.value.ready)
 const canRun = computed(
-  () => !!task.value && ['todo', 'in_progress', 'in_review'].includes(task.value.status),
+  () => !!task.value && ['todo', 'in_progress', 'in_review'].includes(task.value.status) && !dependencyBlocked.value,
 )
 const isRunActive = computed(
   () => !!selectedRun.value && ['queued', 'preparing', 'running'].includes(selectedRun.value.status),
@@ -62,6 +66,10 @@ async function load() {
   try {
     task.value = await TaskApi.get(taskId.value)
     runs.value = await RunApi.listByTask(taskId.value)
+    dependencies.value = await TaskApi.dependencies(taskId.value).catch(() => null)
+    if (tasks.items.length === 0) {
+      await tasks.fetchAll()
+    }
     if (agents.items.length === 0) {
       await agents.fetchAll()
     }
@@ -125,6 +133,49 @@ async function cancelRun(run: Run | null) {
   }
   await RunApi.cancel(run.id)
   await refreshRuns()
+}
+
+const dependencyCandidate = ref('')
+const dependencyCandidates = computed(() =>
+  tasks.items.filter(
+    (candidate) =>
+      candidate.id !== taskId.value &&
+      !dependencies.value?.outgoing.some((dependency) => dependency.dependsOnTaskId === candidate.id),
+  ),
+)
+
+function taskTitle(id: string): string {
+  return tasks.items.find((task) => task.id === id)?.title ?? ''
+}
+
+function taskStatus(id: string): string {
+  return tasks.items.find((task) => task.id === id)?.status ?? ''
+}
+
+async function addDependency() {
+  if (!task.value || !dependencyCandidate.value) {
+    return
+  }
+  const current = (dependencies.value?.outgoing ?? []).map((dependency) => ({
+    dependsOnTaskId: dependency.dependsOnTaskId,
+  }))
+  dependencies.value = await TaskApi.replaceDependencies(task.value.id, [
+    ...current,
+    { dependsOnTaskId: dependencyCandidate.value },
+  ])
+  dependencyCandidate.value = ''
+  await tasks.fetchAll()
+}
+
+async function removeDependency(dependsOnTaskId: string) {
+  if (!task.value) {
+    return
+  }
+  const remaining = (dependencies.value?.outgoing ?? [])
+    .filter((dependency) => dependency.dependsOnTaskId !== dependsOnTaskId)
+    .map((dependency) => ({ dependsOnTaskId: dependency.dependsOnTaskId }))
+  dependencies.value = await TaskApi.replaceDependencies(task.value.id, remaining)
+  await tasks.fetchAll()
 }
 
 watch(
@@ -248,12 +299,21 @@ onUnmounted(() => {
             </template>
 
             <el-alert
-              v-if="!canRun"
+              v-if="!canRun && !dependencyBlocked"
               :title="$t('task.moveHint')"
               type="warning"
               :closable="false"
               show-icon
               class="mb-3"
+            />
+            <el-alert
+              v-if="dependencyBlocked && readiness"
+              :title="$t('task.dependenciesNotSatisfied')"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="mb-3"
+              :description="readiness.reasons.join('；')"
             />
 
             <el-empty v-if="runs.length === 0" :description="$t('task.noRuns')" :image-size="48" />
@@ -383,6 +443,73 @@ onUnmounted(() => {
               {{ $t('task.openRun') }}
             </el-button>
             <p v-else class="mt-3 text-caption text-fg-subtle">{{ $t('task.noRuns') }}</p>
+          </el-card>
+
+          <el-card shadow="never">
+            <template #header>
+              <div class="flex items-center justify-between">
+                <span class="text-label font-semibold">{{ $t('task.dependencies') }}</span>
+                <el-tag
+                  v-if="readiness"
+                  :type="readiness.ready ? 'success' : 'warning'"
+                  size="small"
+                >
+                  {{ readiness.ready ? $t('task.dependenciesReady') : $t('task.dependenciesWaiting') }}
+                </el-tag>
+              </div>
+            </template>
+
+            <p v-if="!dependencies || dependencies.outgoing.length === 0" class="text-caption text-fg-subtle">
+              {{ $t('task.noDependencies') }}
+            </p>
+            <div v-else class="space-y-2">
+              <div
+                v-for="dependency in dependencies.outgoing"
+                :key="dependency.dependsOnTaskId"
+                class="flex items-center gap-2"
+              >
+                <el-tag
+                  :type="taskStatus(dependency.dependsOnTaskId) === 'done' ? 'success' : 'warning'"
+                  size="small"
+                >
+                  {{ $t('common.status.task.' + taskStatus(dependency.dependsOnTaskId)) }}
+                </el-tag>
+                <span class="text-label truncate flex-1">
+                  {{ taskTitle(dependency.dependsOnTaskId) || dependency.dependsOnTaskId }}
+                </span>
+                <el-button text size="small" type="danger" @click="removeDependency(dependency.dependsOnTaskId)">
+                  {{ $t('common.delete') }}
+                </el-button>
+              </div>
+            </div>
+
+            <div class="mt-3 flex items-center gap-2">
+              <el-select
+                v-model="dependencyCandidate"
+                size="small"
+                style="width: 200px"
+                clearable
+                filterable
+                :placeholder="$t('task.addDependencyPlaceholder')"
+              >
+                <el-option
+                  v-for="candidate in dependencyCandidates"
+                  :key="candidate.id"
+                  :label="candidate.title"
+                  :value="candidate.id"
+                />
+              </el-select>
+              <el-button size="small" :disabled="!dependencyCandidate" @click="addDependency">
+                {{ $t('task.addDependency') }}
+              </el-button>
+            </div>
+
+            <template v-if="dependencies && dependencies.incoming.length > 0">
+              <p class="mt-3 text-caption text-fg-subtle">{{ $t('task.incomingDependencies') }}</p>
+              <p v-for="dependency in dependencies.incoming" :key="dependency.taskId" class="text-caption">
+                {{ taskTitle(dependency.taskId) || dependency.taskId }}
+              </p>
+            </template>
           </el-card>
         </section>
       </div>

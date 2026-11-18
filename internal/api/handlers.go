@@ -148,6 +148,13 @@ func (a *API) updateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.broadcast("task.updated", task)
+	if patch.Status != nil {
+		// A transition on this task may unblock (or keep blocked) its
+		// dependency-driven downstream tasks (PRD 02-domain-model §3.3), and
+		// a manual move must be re-checked against the task's own deps.
+		a.applyDependencyReadiness(r.Context(), task.ID, false)
+		a.onTaskMaybeDone(r.Context(), task.ID)
+	}
 	a.writeJSON(w, http.StatusOK, task)
 }
 
@@ -167,6 +174,7 @@ type agentInput struct {
 	Instructions    string   `json:"instructions"`
 	Runtime         string   `json:"runtime"`
 	Model           string   `json:"model"`
+	Role            string   `json:"role"`
 	WorkspaceMode   string   `json:"workspaceMode"`
 	MaxConcurrency  int      `json:"maxConcurrency"`
 	TimeoutMinutes  int      `json:"timeoutMinutes"`
@@ -192,6 +200,12 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown runtime %q; available runtimes: %s", effectiveRuntime, strings.Join(a.registry.Names(), ", ")))
 		return
 	}
+	if input.Role != "" && !domain.ValidAgentRole(input.Role) {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "unknown role", map[string]any{
+			"role": input.Role, "available": domain.AgentRoles,
+		})
+		return
+	}
 	if details, message := a.validateAgentModel(r.Context(), effectiveRuntime, input.Model); message != "" {
 		a.writeAPIError(w, http.StatusBadRequest, "MODEL_NOT_AVAILABLE", message, details)
 		return
@@ -202,6 +216,7 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		Instructions:    input.Instructions,
 		Runtime:         effectiveRuntime,
 		Model:           strings.TrimSpace(input.Model),
+		Role:            input.Role,
 		WorkspaceMode:   input.WorkspaceMode,
 		MaxConcurrency:  input.MaxConcurrency,
 		TimeoutMinutes:  input.TimeoutMinutes,
@@ -233,6 +248,7 @@ type agentPatch struct {
 	Instructions    *string   `json:"instructions"`
 	Runtime         *string   `json:"runtime"`
 	Model           *string   `json:"model"`
+	Role            *string   `json:"role"`
 	WorkspaceMode   *string   `json:"workspaceMode"`
 	MaxConcurrency  *int      `json:"maxConcurrency"`
 	TimeoutMinutes  *int      `json:"timeoutMinutes"`
@@ -277,6 +293,16 @@ func (a *API) updateAgent(w http.ResponseWriter, r *http.Request) {
 	if patch.Model != nil {
 		agent.Model = strings.TrimSpace(*patch.Model)
 		modelChanged = true
+	}
+	if patch.Role != nil {
+		role := strings.TrimSpace(*patch.Role)
+		if role != "" && !domain.ValidAgentRole(role) {
+			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "unknown role", map[string]any{
+				"role": role, "available": domain.AgentRoles,
+			})
+			return
+		}
+		agent.Role = role
 	}
 	if runtimeChanged || modelChanged {
 		if details, message := a.validateAgentModel(r.Context(), agent.Runtime, agent.Model); message != "" {
@@ -351,6 +377,16 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if !task.Status.Executable() {
 		a.writeError(w, http.StatusConflict, fmt.Sprintf("task is %s; move it to todo or in_progress before running", task.Status))
+		return
+	}
+	// Dependency gate (M2.1): finish_to_start upstreams must be done before
+	// a run may start, regardless of the task's own status.
+	if readiness, _ := a.computeTaskReadiness(r.Context(), task.ID); !readiness.Ready {
+		a.writeAPIError(w, http.StatusConflict, "TASK_NOT_EXECUTABLE",
+			"task dependencies are not satisfied", map[string]any{
+				"reasons":   readiness.Reasons,
+				"waitingOn": readiness.WaitingOn,
+			})
 		return
 	}
 

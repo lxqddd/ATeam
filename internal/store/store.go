@@ -25,6 +25,13 @@ type Store interface {
 	UpdateTask(context.Context, *domain.Task) error
 	DeleteTask(context.Context, string) error
 
+	// Task dependency DAG (M2.1): replace-all outgoing edges per task,
+	// plus lookups for readiness and cycle detection.
+	ReplaceTaskDependencies(context.Context, string, []domain.TaskDependency) error
+	ListOutgoingDependencies(context.Context, string) ([]domain.TaskDependency, error)
+	ListIncomingDependencies(context.Context, string) ([]domain.TaskDependency, error)
+	HasDependencyEdge(context.Context, string, string) (bool, error)
+
 	CreateAgent(context.Context, *domain.Agent) error
 	ListAgents(context.Context) ([]domain.Agent, error)
 	GetAgent(context.Context, string) (*domain.Agent, error)
@@ -43,7 +50,7 @@ type Store interface {
 	// capped at limit (work page history, PRD api-and-data §5.16).
 	ListRunsByAgent(context.Context, string, int) ([]domain.Run, error)
 	// CountActiveRunsByAgent reports queued/preparing/running runs for the
-	// agent; the work page working state keys off it.
+	// agent (work page "working" state includes queued).
 	CountActiveRunsByAgent(context.Context, string) (int, error)
 	GetRun(context.Context, string) (*domain.Run, error)
 	UpdateRun(context.Context, *domain.Run) error
@@ -55,6 +62,9 @@ type Store interface {
 	// MarkRunCancelRequested records cancel_requested_at for an active run
 	// without touching the other columns, so worker writes cannot clear it.
 	MarkRunCancelRequested(context.Context, string) (bool, error)
+	// SetRunQueueReason records why a queued run is waiting (per-agent
+	// concurrency) without changing its status.
+	SetRunQueueReason(context.Context, string, string) (bool, error)
 
 	CreateRunConfigSnapshot(context.Context, *domain.RunConfigSnapshot) error
 	GetRunConfigSnapshotByRun(context.Context, string) (*domain.RunConfigSnapshot, error)

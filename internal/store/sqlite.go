@@ -114,7 +114,7 @@ func (s *SQLite) Close() error {
 	return s.db.Close()
 }
 
-const taskColumns = `id, workspace_id, title, description, status, priority, assignee_type, assignee_id, parent_id, labels, created_at, updated_at`
+const taskColumns = `id, workspace_id, title, description, status, priority, assignee_type, assignee_id, parent_id, labels, blocked_reason, created_at, updated_at`
 
 func scanTask(s scanner) (*domain.Task, error) {
 	var (
@@ -136,6 +136,7 @@ func scanTask(s scanner) (*domain.Task, error) {
 		&task.AssigneeID,
 		&task.ParentID,
 		&labels,
+		&task.BlockedReason,
 		&created,
 		&updated,
 	); err != nil {
@@ -168,7 +169,7 @@ func (s *SQLite) CreateTask(ctx context.Context, task *domain.Task) error {
 	}
 	task.UpdatedAt = now
 
-	_, err := s.db.ExecContext(ctx, `INSERT INTO tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID,
 		task.WorkspaceID,
 		task.Title,
@@ -179,6 +180,7 @@ func (s *SQLite) CreateTask(ctx context.Context, task *domain.Task) error {
 		task.AssigneeID,
 		task.ParentID,
 		mustJSON(task.Labels),
+		task.BlockedReason,
 		millis(task.CreatedAt),
 		millis(task.UpdatedAt),
 	)
@@ -219,7 +221,7 @@ func (s *SQLite) GetTask(ctx context.Context, id string) (*domain.Task, error) {
 
 func (s *SQLite) UpdateTask(ctx context.Context, task *domain.Task) error {
 	task.UpdatedAt = domain.Now()
-	result, err := s.db.ExecContext(ctx, `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, assignee_type = ?, assignee_id = ?, parent_id = ?, labels = ?, updated_at = ? WHERE id = ?`,
+	result, err := s.db.ExecContext(ctx, `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, assignee_type = ?, assignee_id = ?, parent_id = ?, labels = ?, blocked_reason = ?, updated_at = ? WHERE id = ?`,
 		task.Title,
 		task.Description,
 		string(task.Status),
@@ -228,6 +230,7 @@ func (s *SQLite) UpdateTask(ctx context.Context, task *domain.Task) error {
 		task.AssigneeID,
 		task.ParentID,
 		mustJSON(task.Labels),
+		task.BlockedReason,
 		millis(task.UpdatedAt),
 		task.ID,
 	)
@@ -245,7 +248,7 @@ func (s *SQLite) DeleteTask(ctx context.Context, id string) error {
 	return ensureAffected(result, "task", id)
 }
 
-const agentColumns = `id, workspace_id, name, description, instructions, runtime, model, workspace_mode, permission_mode, current_version_id, max_concurrency, timeout_minutes, allowed_paths, allowed_commands, created_at, updated_at`
+const agentColumns = `id, workspace_id, name, description, instructions, runtime, model, role, workspace_mode, permission_mode, current_version_id, max_concurrency, timeout_minutes, allowed_paths, allowed_commands, created_at, updated_at`
 
 func scanAgent(s scanner) (*domain.Agent, error) {
 	var (
@@ -263,6 +266,7 @@ func scanAgent(s scanner) (*domain.Agent, error) {
 		&agent.Instructions,
 		&agent.Runtime,
 		&agent.Model,
+		&agent.Role,
 		&agent.WorkspaceMode,
 		&agent.PermissionMode,
 		&agent.CurrentVersionID,
@@ -291,6 +295,9 @@ func (s *SQLite) CreateAgent(ctx context.Context, agent *domain.Agent) error {
 	}
 	if agent.Runtime == "" {
 		agent.Runtime = "mock"
+	}
+	if agent.Role == "" {
+		agent.Role = domain.AgentRoleGeneral
 	}
 	if agent.WorkspaceMode == "" {
 		agent.WorkspaceMode = "worktree"
@@ -322,7 +329,7 @@ func (s *SQLite) CreateAgent(ctx context.Context, agent *domain.Agent) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.ExecContext(ctx, `INSERT INTO agents (`+agentColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO agents (`+agentColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		agent.ID,
 		agent.WorkspaceID,
 		agent.Name,
@@ -330,6 +337,7 @@ func (s *SQLite) CreateAgent(ctx context.Context, agent *domain.Agent) error {
 		agent.Instructions,
 		agent.Runtime,
 		agent.Model,
+		agent.Role,
 		agent.WorkspaceMode,
 		agent.PermissionMode,
 		agent.CurrentVersionID,
@@ -392,12 +400,13 @@ func (s *SQLite) UpdateAgent(ctx context.Context, agent *domain.Agent) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	result, err := tx.ExecContext(ctx, `UPDATE agents SET name = ?, description = ?, instructions = ?, runtime = ?, model = ?, workspace_mode = ?, permission_mode = ?, max_concurrency = ?, timeout_minutes = ?, allowed_paths = ?, allowed_commands = ?, updated_at = ? WHERE id = ?`,
+	result, err := tx.ExecContext(ctx, `UPDATE agents SET name = ?, description = ?, instructions = ?, runtime = ?, model = ?, role = ?, workspace_mode = ?, permission_mode = ?, max_concurrency = ?, timeout_minutes = ?, allowed_paths = ?, allowed_commands = ?, updated_at = ? WHERE id = ?`,
 		agent.Name,
 		agent.Description,
 		agent.Instructions,
 		agent.Runtime,
 		agent.Model,
+		agent.Role,
 		agent.WorkspaceMode,
 		agent.PermissionMode,
 		agent.MaxConcurrency,
@@ -836,6 +845,20 @@ func (s *SQLite) MarkRunCancelRequested(ctx context.Context, runID string) (bool
 	affected, err := result.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("mark run cancel requested: rows affected: %w", err)
+	}
+	return affected > 0, nil
+}
+
+// SetRunQueueReason records why a queued run is waiting without changing its
+// status (AGENT-017 per-agent concurrency admission).
+func (s *SQLite) SetRunQueueReason(ctx context.Context, runID, reason string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE runs SET queue_reason = ? WHERE id = ? AND status = 'queued'`, reason, runID)
+	if err != nil {
+		return false, fmt.Errorf("set run queue reason: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("set run queue reason: rows affected: %w", err)
 	}
 	return affected > 0, nil
 }

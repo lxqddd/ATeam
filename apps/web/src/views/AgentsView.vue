@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus } from '@element-plus/icons-vue'
-import type { Agent, RuntimeInfo } from '@ateam/shared'
+import { AGENT_ROLES, type Agent, type RuntimeInfo } from '@ateam/shared'
 import { RuntimeApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import Modal from '../components/Modal.vue'
@@ -28,6 +28,7 @@ const form = reactive({
   instructions: '',
   runtime: 'mock',
   model: DEFAULT_MODEL,
+  role: 'general',
   maxConcurrency: 1,
   timeoutMinutes: 60,
   allowedPaths: '',
@@ -64,6 +65,7 @@ function resetForm() {
   form.instructions = ''
   form.runtime = 'mock'
   form.model = DEFAULT_MODEL
+  form.role = 'general'
   form.maxConcurrency = 1
   form.timeoutMinutes = 60
   form.allowedPaths = ''
@@ -83,6 +85,7 @@ function openEdit(agent: Agent) {
   form.instructions = agent.instructions
   form.runtime = agent.runtime
   form.model = agent.model || DEFAULT_MODEL
+  form.role = agent.role || 'general'
   form.maxConcurrency = agent.maxConcurrency
   form.timeoutMinutes = agent.timeoutMinutes
   form.allowedPaths = agent.allowedPaths.join(', ')
@@ -155,6 +158,7 @@ async function submitAgent() {
     instructions: form.instructions,
     runtime: form.runtime,
     model: form.model === DEFAULT_MODEL ? '' : form.model,
+    role: form.role,
     maxConcurrency: form.maxConcurrency,
     timeoutMinutes: form.timeoutMinutes,
     allowedPaths: form.allowedPaths
@@ -309,7 +313,18 @@ async function deleteAgent(agent: Agent) {
               />
             </el-select>
           </el-form-item>
-          <el-form-item :label="$t('agents.form.model')">
+          <el-form-item :label="$t('agents.form.role')">
+            <el-select v-model="form.role" style="width: 100%">
+              <el-option
+                v-for="role in AGENT_ROLES"
+                :key="role.value"
+                :label="$t(role.labelKey)"
+                :value="role.value"
+              />
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-form-item :label="$t('agents.form.model')">
             <el-select
               v-model="form.model"
               :loading="runtimeLoading"
@@ -369,7 +384,6 @@ async function deleteAgent(agent: Agent) {
               <router-link class="underline" to="/settings">{{ $t('agents.form.configureModels') }}</router-link>
             </p>
           </el-form-item>
-        </div>
         <div class="grid grid-cols-2 gap-3">
           <el-form-item :label="$t('agents.form.maxConcurrency')">
             <el-input-number v-model="form.maxConcurrency" :min="1" style="width: 100%" />

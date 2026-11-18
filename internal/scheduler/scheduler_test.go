@@ -71,6 +71,30 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 	}, &run
 }
 
+func (f *fakeStore) CountActiveRunsByAgent(_ context.Context, agentID string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for _, run := range f.runs {
+		if run.AgentID == agentID && run.Status.Active() {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (f *fakeStore) SetRunQueueReason(_ context.Context, runID, reason string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[runID]
+	if !ok || run.Status != domain.RunQueued {
+		return false, nil
+	}
+	run.QueueReason = reason
+	f.runs[runID] = run
+	return true, nil
+}
+
 func (f *fakeStore) ListRunEvents(_ context.Context, runID string) ([]domain.RunEvent, error) {
 	return []domain.RunEvent{}, nil
 }
@@ -433,4 +457,52 @@ func (f *fakeStore) countEventsOfType(eventType string) int {
 		}
 	}
 	return count
+}
+
+// TestAgentConcurrencyHoldsSecondRun covers AGENT-017: with maxConcurrency 1
+// the second queued run of the same agent waits (with a structured queue
+// reason) until the first finishes, then executes.
+func TestAgentConcurrencyHoldsSecondRun(t *testing.T) {
+	st, first := newFakeStore(t, domain.RunQueued)
+	task := st.tasks[first.TaskID]
+	agent := st.agents[first.AgentID]
+	second := domain.Run{
+		ID: "run-2", WorkspaceID: first.WorkspaceID, TaskID: task.ID, AgentID: agent.ID,
+		Status: domain.RunQueued, Trigger: "manual", CreatedAt: domain.Now(),
+	}
+	st.setRun(second)
+
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	dataDir := t.TempDir()
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 2)
+
+	startCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if err := sched.Enqueue(startCtx, first.ID); err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	if err := sched.Enqueue(startCtx, second.ID); err != nil {
+		t.Fatalf("enqueue second: %v", err)
+	}
+	sched.Start(startCtx)
+
+	// Whichever run claims the single slot first, the other must be held
+	// with a structured reason.
+	waitFor(t, "one run active and the other held", 5*time.Second, func() bool {
+		one, other := st.run(first.ID), st.run(second.ID)
+		oneActive := one.Status == domain.RunPreparing || one.Status == domain.RunRunning
+		otherActive := other.Status == domain.RunPreparing || other.Status == domain.RunRunning
+		heldQueued := func(held, active domain.Run) bool {
+			return held.Status == domain.RunQueued && held.QueueReason == "agent_concurrency_limit"
+		}
+		return (oneActive && heldQueued(other, one)) || (otherActive && heldQueued(one, other))
+	})
+
+	waitFor(t, "both runs to complete", 15*time.Second, func() bool {
+		return st.runStatus(first.ID) == domain.RunCompleted && st.runStatus(second.ID) == domain.RunCompleted
+	})
+	if held := st.run(second.ID); held.QueueReason != "" {
+		t.Fatalf("queue reason should clear after execution, got %q", held.QueueReason)
+	}
 }

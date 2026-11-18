@@ -86,6 +86,8 @@ func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/tasks/{id}", a.getTask)
 	mux.HandleFunc("PATCH "+prefix+"/tasks/{id}", a.updateTask)
 	mux.HandleFunc("DELETE "+prefix+"/tasks/{id}", a.deleteTask)
+	mux.HandleFunc("GET "+prefix+"/tasks/{id}/dependencies", a.getTaskDependencies)
+	mux.HandleFunc("PUT "+prefix+"/tasks/{id}/dependencies", a.replaceTaskDependencies)
 	mux.HandleFunc("GET "+prefix+"/tasks/{id}/runs", a.listTaskRuns)
 	mux.HandleFunc("POST "+prefix+"/tasks/{id}/runs", a.createRun)
 

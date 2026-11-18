@@ -29,6 +29,10 @@ type Scheduler struct {
 	workers    int
 	mu         sync.Mutex
 	cancels    map[string]context.CancelFunc
+	// occupancy counts claimed per-agent slots (preparing/running). The
+	// mutex makes admission atomic across workers; the DB cannot serve this
+	// check because a queued run flips to preparing only after claiming.
+	occupancy map[string]int
 }
 
 func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces *workspace.Manager, artifacts *artifact.Writer, workers int) *Scheduler {
@@ -44,6 +48,7 @@ func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces
 		queue:      make(chan string, 256),
 		workers:    workers,
 		cancels:    make(map[string]context.CancelFunc),
+		occupancy:  make(map[string]int),
 	}
 }
 
@@ -153,6 +158,50 @@ func (s *Scheduler) worker(ctx context.Context) {
 	}
 }
 
+// claimAgentSlot atomically reserves one of the agent's maxConcurrency
+// slots. maxConcurrency <= 0 disables the limit.
+func (s *Scheduler) claimAgentSlot(agentID string, maxConcurrency int) bool {
+	if maxConcurrency <= 0 {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.occupancy[agentID] >= maxConcurrency {
+		return false
+	}
+	s.occupancy[agentID]++
+	return true
+}
+
+func (s *Scheduler) releaseAgentSlot(agentID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.occupancy[agentID]--
+	if s.occupancy[agentID] <= 0 {
+		delete(s.occupancy, agentID)
+	}
+}
+
+// holdRun keeps a run queued with a structured reason and re-queues it for
+// another admission attempt after a short delay.
+func (s *Scheduler) holdRun(ctx context.Context, run *domain.Run) {
+	if _, err := s.store.SetRunQueueReason(ctx, run.ID, "agent_concurrency_limit"); err != nil {
+		slog.Warn("record queue reason", "run", run.ID, "error", err)
+	}
+	slog.Info("run held: agent concurrency limit", "run", run.ID, "agent", run.AgentID)
+	go func() {
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+		case <-timer.C:
+			if err := s.Enqueue(context.WithoutCancel(ctx), run.ID); err != nil {
+				slog.Warn("requeue held run", "run", run.ID, "error", err)
+			}
+		}
+	}()
+}
+
 func (s *Scheduler) execute(ctx context.Context, runID string) {
 	run, err := s.store.GetRun(ctx, runID)
 	if err != nil {
@@ -165,14 +214,24 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		return
 	}
 
-	task, err := s.store.GetTask(ctx, run.TaskID)
-	if err != nil {
-		s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to load the task")
-		return
-	}
 	agent, err := s.store.GetAgent(ctx, run.AgentID)
 	if err != nil {
 		s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to load the agent")
+		return
+	}
+
+	// Per-agent concurrency admission (AGENT-017): claim one of the agent's
+	// maxConcurrency slots atomically; without a free slot the run stays
+	// queued with a structured reason and re-queues after a short delay.
+	if !s.claimAgentSlot(run.AgentID, agent.MaxConcurrency) {
+		s.holdRun(ctx, run)
+		return
+	}
+	defer s.releaseAgentSlot(run.AgentID)
+
+	task, err := s.store.GetTask(ctx, run.TaskID)
+	if err != nil {
+		s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to load the task")
 		return
 	}
 	if !task.Status.Executable() {
@@ -202,6 +261,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	run.Status = domain.RunPreparing
 	started := domain.Now()
 	run.StartedAt = &started
+	run.QueueReason = ""
 	if !s.writeActiveRun(ctx, run, "run.preparing") {
 		return
 	}

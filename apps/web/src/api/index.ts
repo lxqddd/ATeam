@@ -12,4 +12,5 @@ import type { SseHandle } from './http/sse'
 export { HealthApi, TaskApi, AgentApi, RunApi, RunDetailApi, EventApi, ArtifactApi, ReviewApi, WorkspaceApi, RuntimeApi }
 export type { SseHandle }
 export type { CreateTaskInput } from './modules/tasks'
+export type { ReplaceDependenciesInput } from './modules/tasks'
 export type { CreateAgentInput, UpdateAgentInput } from './modules/agents'

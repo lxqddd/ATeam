@@ -41,6 +41,7 @@ export interface Agent {
   runtime: string
   model: string
   modelStatus?: 'available' | 'unavailable' | 'unknown'
+  role?: string
   workspaceMode: string
   permissionMode?: string
   currentVersionId?: string
@@ -51,6 +52,15 @@ export interface Agent {
   createdAt: string
   updatedAt: string
 }
+
+export const AGENT_ROLES: { value: string; labelKey: string }[] = [
+  { value: 'general', labelKey: 'agents.form.roleGeneral' },
+  { value: 'ui_design', labelKey: 'agents.form.roleUiDesign' },
+  { value: 'frontend', labelKey: 'agents.form.roleFrontend' },
+  { value: 'backend', labelKey: 'agents.form.roleBackend' },
+  { value: 'devops', labelKey: 'agents.form.roleDevOps' },
+  { value: 'custom', labelKey: 'agents.form.roleCustom' },
+]
 
 export interface RuntimeModel {
   id: string
@@ -82,6 +92,27 @@ export interface ModelTestResult {
   message?: string
   error?: string
   errorCode?: string
+}
+
+export interface TaskDependency {
+  taskId: string
+  dependsOnTaskId: string
+  type: string
+  requiredArtifactKinds: string[]
+  createdAt: string
+}
+
+export interface TaskReadiness {
+  ready: boolean
+  reasons: string[]
+  waitingOn: string[]
+}
+
+export interface TaskDependenciesResponse {
+  taskId: string
+  outgoing: TaskDependency[]
+  incoming: TaskDependency[]
+  readiness: TaskReadiness
 }
 
 export type AgentWorkStatus = 'idle' | 'working' | 'completed' | 'failed'
@@ -198,7 +229,9 @@ export const TASK_STATUSES: { value: TaskStatus; label: string; hint: string }[]
   { value: 'todo', label: 'Todo', hint: 'Ready for an agent' },
   { value: 'in_progress', label: 'In Progress', hint: 'Agent is working' },
   { value: 'in_review', label: 'In Review', hint: 'Waiting for a human' },
+  { value: 'blocked', label: 'Blocked', hint: 'Waiting on dependencies or manual hold' },
   { value: 'done', label: 'Done', hint: 'Accepted' },
+  { value: 'cancelled', label: 'Cancelled', hint: 'No longer needed' },
 ]
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {

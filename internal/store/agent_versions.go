@@ -18,6 +18,7 @@ type agentSnapshot struct {
 	Instructions    string   `json:"instructions"`
 	Runtime         string   `json:"runtime"`
 	Model           string   `json:"model"`
+	Role            string   `json:"role,omitempty"`
 	WorkspaceMode   string   `json:"workspaceMode"`
 	PermissionMode  string   `json:"permissionMode"`
 	MaxConcurrency  int      `json:"maxConcurrency"`
@@ -36,6 +37,7 @@ func (s *SQLite) insertAgentVersion(ctx context.Context, tx *sql.Tx, agent *doma
 		Instructions:    agent.Instructions,
 		Runtime:         agent.Runtime,
 		Model:           agent.Model,
+		Role:            agent.Role,
 		WorkspaceMode:   agent.WorkspaceMode,
 		PermissionMode:  agent.PermissionMode,
 		MaxConcurrency:  agent.MaxConcurrency,
