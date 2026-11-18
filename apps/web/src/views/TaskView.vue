@@ -70,7 +70,7 @@ async function load() {
     task.value = await TaskApi.get(taskId.value)
     runs.value = await RunApi.listByTask(taskId.value)
     dependencies.value = await TaskApi.dependencies(taskId.value).catch(() => null)
-    if (tasks.items.length === 0) {
+    if (tasks.items.length === 0 || !tasks.items.some((item) => item.id === taskId.value)) {
       await tasks.fetchAll()
     }
     if (agents.items.length === 0) {
@@ -185,6 +185,7 @@ watch(
   () => route.params.id,
   () => {
     selectedRun.value = null
+    events.value = []
     void load()
   },
 )
@@ -208,8 +209,9 @@ onUnmounted(() => {
 <template>
   <Teleport to="#titlebar-actions">
     <el-select
-      v-if="task"
+      v-if="task && !loading"
       :model-value="task.status"
+      :aria-label="$t('runDetail.status')"
       style="width: 144px"
       @change="onStatusChange"
     >
@@ -308,9 +310,13 @@ onUnmounted(() => {
             <div
               v-for="run in runs"
               :key="run.id"
+              role="button"
+              tabindex="0"
               class="cursor-pointer rounded-[var(--cd-radius-md)] border border-border-subtle px-3 py-2 transition-colors hover:border-border-strong"
               :class="{ 'ring-1 ring-primary/40': selectedRun?.id === run.id }"
               @click="selectRun(run)"
+              @keydown.enter="selectRun(run)"
+              @keydown.space.prevent="selectRun(run)"
             >
               <div class="flex items-center justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-2">
@@ -391,7 +397,12 @@ onUnmounted(() => {
       <!-- 右栏：事件 + 评审 -->
       <section class="space-y-4">
         <SectionCard :title="$t('task.runLog')" :description="selectedRun ? selectedRun.id.slice(0, 8) : undefined">
-          <div class="h-[360px] overflow-y-auto rounded-[var(--cd-radius-md)] border border-border-subtle bg-sunken px-3 py-1">
+          <EmptyState
+            v-if="!selectedRun"
+            :title="$t('task.noEventsTitle')"
+            :description="$t('task.noEventsDesc')"
+          />
+          <div v-else class="h-[360px] overflow-y-auto rounded-[var(--cd-radius-md)] border border-border-subtle bg-sunken px-3 py-1">
             <div
               v-if="events.length === 0 && !isRunActive"
               class="flex size-full flex-col items-center justify-center gap-2 p-8 text-center"
@@ -406,7 +417,7 @@ onUnmounted(() => {
             >
               <span class="w-8 shrink-0 text-right font-mono text-caption text-fg-subtle tabular-nums">{{ event.seq }}</span>
               <span class="shrink-0"><Badge :tone="event.level === 'error' ? 'danger' : 'neutral'">{{ event.type }}</Badge></span>
-              <span class="min-w-0 flex-1 break-words text-caption text-fg-muted">{{ event.message }}</span>
+              <span class="min-w-0 flex-1 whitespace-pre-wrap break-words text-caption text-fg-muted">{{ event.message }}</span>
             </div>
             <div v-if="isRunActive" class="flex items-center gap-2 py-2">
               <Loader :size="14" />
