@@ -63,20 +63,20 @@ function openTask(task: Task) {
 
 <template>
   <div class="flex flex-col h-full">
-    <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
+    <header class="shrink-0 flex items-center justify-between px-6 pt-5 pb-4">
       <div>
-        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('board.title') }}</h1>
+        <h1 class="text-title font-semibold tracking-tight">{{ $t('board.title') }}</h1>
         <p class="text-caption text-fg-subtle">{{ $t('board.subtitle') }}</p>
       </div>
       <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('board.newTask') }}</el-button>
     </header>
 
-    <div class="flex-1 overflow-x-auto p-5">
+    <div class="flex-1 overflow-x-auto px-6 pb-6">
       <div class="flex gap-4 min-w-max h-full">
         <section
           v-for="column in columns"
           :key="column.value"
-          class="w-64 shrink-0 flex flex-col"
+          class="w-[280px] shrink-0 flex flex-col"
           @dragover.prevent
           @drop="drop(column.value)"
         >
@@ -89,7 +89,7 @@ function openTask(task: Task) {
           </div>
 
           <div
-            class="flex-1 space-y-2 overflow-y-auto rounded-lg border border-dashed border-border/70 p-2"
+            class="flex-1 space-y-2 overflow-y-auto rounded-lg border border-border-subtle bg-sunken/60 p-2"
           >
             <TaskCard
               v-for="task in column.tasks"

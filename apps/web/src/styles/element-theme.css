@@ -226,13 +226,14 @@ html.dark .el-table th.el-table__cell {
   --el-menu-hover-bg-color: var(--cd-color-hover);
   --el-menu-active-color: var(--cd-color-selected-text);
   border-right: none;
-  padding: var(--cd-space-2);
+  padding: var(--cd-space-3);
 }
 
 .ateam-menu .el-menu-item {
   height: 36px;
   margin: 2px 0;
-  padding-left: var(--cd-space-3) !important;
+  padding-left: var(--cd-space-2) !important;
+  gap: var(--cd-space-2);
   border-radius: var(--cd-radius-sm);
   font-size: var(--cd-font-size-sm);
 }

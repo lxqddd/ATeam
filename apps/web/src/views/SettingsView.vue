@@ -31,14 +31,15 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col h-full">
-    <header class="h-14 shrink-0 border-b border-border flex items-center px-5">
+    <header class="shrink-0 flex items-center px-6 pt-5 pb-4">
       <div>
-        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('settings.title') }}</h1>
+        <h1 class="text-title font-semibold tracking-tight">{{ $t('settings.title') }}</h1>
         <p class="text-caption text-fg-subtle">{{ $t('settings.subtitle') }}</p>
       </div>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-5 space-y-4 max-w-3xl">
+    <div class="flex-1 overflow-y-auto px-6 pb-6">
+      <div class="grid max-w-[960px] items-start gap-4 lg:grid-cols-2">
       <el-card shadow="never">
         <template #header>
           <span class="text-label font-semibold">{{ $t('settings.language') }}</span>
@@ -77,6 +78,7 @@ onMounted(() => {
         </template>
         <p class="text-label text-fg-muted">{{ $t('settings.aboutNote') }}</p>
       </el-card>
+      </div>
     </div>
   </div>
 </template>

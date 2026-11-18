@@ -29,15 +29,15 @@ function openTask(row: Run) {
 
 <template>
   <div class="flex flex-col h-full">
-    <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
+    <header class="shrink-0 flex items-center justify-between px-6 pt-5 pb-4">
       <div>
-        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('runs.title') }}</h1>
+        <h1 class="text-title font-semibold tracking-tight">{{ $t('runs.title') }}</h1>
         <p class="text-caption text-fg-subtle">{{ $t('runs.subtitle') }}</p>
       </div>
       <el-button :icon="Refresh" @click="runs.fetchAll()">{{ $t('common.refresh') }}</el-button>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-5">
+    <div class="flex-1 overflow-y-auto px-6 pb-6">
       <el-empty v-if="runs.items.length === 0" :description="$t('runs.empty')" />
 
       <el-table v-else :data="runs.items" style="width: 100%" @row-click="openTask">

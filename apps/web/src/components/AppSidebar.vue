@@ -6,12 +6,16 @@ const route = useRoute()
 </script>
 
 <template>
-  <aside class="w-60 shrink-0 border-r border-border bg-panel flex flex-col">
-    <div class="h-14 flex items-center gap-2.5 px-4 border-b border-border">
-      <el-icon :size="20" color="var(--cd-color-accent-2)"><Monitor /></el-icon>
-      <div class="leading-tight">
-        <div class="text-body font-semibold">ATeam</div>
-        <div class="text-caption text-fg-subtle">{{ $t('sidebar.tagline') }}</div>
+  <aside class="w-[260px] shrink-0 flex flex-col">
+    <div class="h-14 flex items-center gap-2.5 px-4">
+      <div
+        class="size-8 shrink-0 rounded-lg bg-[var(--cd-color-accent-soft)] flex items-center justify-center"
+      >
+        <el-icon :size="17" color="var(--cd-color-accent-2)"><Monitor /></el-icon>
+      </div>
+      <div class="leading-tight min-w-0">
+        <div class="text-body font-semibold truncate">ATeam</div>
+        <div class="text-caption text-fg-subtle truncate">{{ $t('sidebar.tagline') }}</div>
       </div>
     </div>
 
@@ -34,12 +38,14 @@ const route = useRoute()
       </el-menu-item>
     </el-menu>
 
-    <div class="p-3 border-t border-border text-caption text-fg-subtle">
-      <div class="flex items-center gap-2">
-        <span class="w-1.5 h-1.5 rounded-full bg-success" />
-        {{ $t('sidebar.localFirst') }}
+    <div class="p-3">
+      <div class="rounded-lg border border-border-subtle bg-surface-raised/60 px-3 py-2.5">
+        <div class="flex items-center gap-2 text-caption text-fg-muted">
+          <span class="size-1.5 rounded-full bg-success" />
+          {{ $t('sidebar.localFirst') }}
+        </div>
+        <div class="mt-0.5 text-caption text-fg-subtle">v0.1.0</div>
       </div>
-      <div class="mt-1">v0.1.0</div>
     </div>
   </aside>
 </template>

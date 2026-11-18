@@ -144,7 +144,7 @@ onUnmounted(() => {
   </div>
 
   <div v-else class="flex flex-col h-full">
-    <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5 gap-3">
+    <header class="shrink-0 flex items-center justify-between px-6 pt-4 pb-3 gap-3">
       <div class="min-w-0 flex-1 flex items-center gap-3">
         <el-button :icon="ArrowLeft" text @click="router.push('/')">{{ $t('task.back') }}</el-button>
         <div class="min-w-0">
@@ -165,7 +165,7 @@ onUnmounted(() => {
       </el-select>
     </header>
 
-    <div class="flex-1 overflow-y-auto p-5 space-y-4">
+    <div class="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
       <el-card shadow="never">
         <template #header>
           <span class="text-label font-semibold">{{ $t('task.description') }}</span>
