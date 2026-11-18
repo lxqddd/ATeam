@@ -14,12 +14,8 @@ import { RunApi, TaskApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import { useTasksStore } from '../stores/tasks'
 import StatusBadge from '../components/StatusBadge.vue'
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-} from '@/components/ai-elements/conversation'
-import { Message, MessageContent } from '@/components/ai-elements/message'
+import Message from '@/components/ai-elements/message/Message.vue'
+import MessageContent from '@/components/ai-elements/message/MessageContent.vue'
 import { Loader } from '@/components/ai-elements/loader'
 
 const route = useRoute()
@@ -259,28 +255,28 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <Conversation class="h-[360px] rounded-md border border-border bg-black/30">
-          <ConversationContent class="gap-2 p-3">
-            <ConversationEmptyState
-              v-if="events.length === 0 && !isRunActive"
-              title="No events yet"
-              description="Run events will appear here."
-            />
-            <Message v-for="event in events" :key="`${event.runId}-${event.seq}`" from="assistant">
-              <MessageContent>
-                <div class="text-[10px] uppercase tracking-wide text-zinc-500">
-                  {{ event.type }}
-                </div>
-                <pre class="whitespace-pre-wrap text-xs text-zinc-300">{{ event.message }}</pre>
-              </MessageContent>
-            </Message>
-            <Message v-if="isRunActive" from="assistant">
-              <MessageContent>
-                <Loader :size="14" />
-              </MessageContent>
-            </Message>
-          </ConversationContent>
-        </Conversation>
+        <div class="h-[360px] overflow-y-auto rounded-md border border-border bg-black/30 p-3 space-y-2">
+          <div
+            v-if="events.length === 0 && !isRunActive"
+            class="flex size-full flex-col items-center justify-center gap-3 p-8 text-center"
+          >
+            <h3 class="text-sm font-medium">No events yet</h3>
+            <p class="text-sm text-zinc-500">Run events will appear here.</p>
+          </div>
+          <Message v-for="event in events" :key="`${event.runId}-${event.seq}`" from="assistant">
+            <MessageContent>
+              <div class="text-[10px] uppercase tracking-wide text-zinc-500">
+                {{ event.type }}
+              </div>
+              <pre class="whitespace-pre-wrap text-xs text-zinc-300">{{ event.message }}</pre>
+            </MessageContent>
+          </Message>
+          <Message v-if="isRunActive" from="assistant">
+            <MessageContent>
+              <Loader :size="14" />
+            </MessageContent>
+          </Message>
+        </div>
       </el-card>
     </div>
   </div>
