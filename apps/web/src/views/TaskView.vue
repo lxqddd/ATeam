@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { ArrowLeft, VideoPlay } from '@element-plus/icons-vue'
+import { VideoPlay } from '@element-plus/icons-vue'
 import {
   TASK_STATUSES,
   type Review,
@@ -17,8 +17,11 @@ import { ArtifactApi, ReviewApi, RunApi, TaskApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import { useTasksStore } from '../stores/tasks'
 import StatusBadge from '../components/StatusBadge.vue'
-import Message from '@/components/ai-elements/message/Message.vue'
-import MessageContent from '@/components/ai-elements/message/MessageContent.vue'
+import SectionCard from '../components/SectionCard.vue'
+import EmptyState from '../components/EmptyState.vue'
+import { Skeleton } from '../components/ui/skeleton'
+import { Badge } from '../components/ui/badge'
+import { Button } from '../components/ui/button'
 import { Loader } from '@/components/ai-elements/loader'
 
 const route = useRoute()
@@ -203,316 +206,251 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <Teleport to="#titlebar-actions">
+    <el-select
+      v-if="task"
+      :model-value="task.status"
+      style="width: 144px"
+      @change="onStatusChange"
+    >
+      <el-option
+        v-for="status in TASK_STATUSES"
+        :key="status.value"
+        :label="$t(`common.status.task.${status.value}`)"
+        :value="status.value"
+      />
+    </el-select>
+  </Teleport>
+
   <div v-if="loading" class="p-6">
-    <el-skeleton :rows="4" animated />
+    <div class="flex flex-col gap-3">
+      <Skeleton class="h-6 w-64" />
+      <Skeleton class="h-40 w-full" />
+      <Skeleton class="h-40 w-full" />
+    </div>
   </div>
 
-  <div v-else-if="!task" class="p-6">
-    <el-empty :description="$t('task.notFound')">
-      <el-button @click="router.push('/')">{{ $t('task.backToBoard') }}</el-button>
-    </el-empty>
+  <div v-else-if="!task" class="flex flex-1 items-center justify-center p-6">
+    <EmptyState :title="$t('task.notFound')">
+      <Button size="lg" @click="router.push('/')">{{ $t('task.backToBoard') }}</Button>
+    </EmptyState>
   </div>
 
-  <div v-else class="flex flex-col h-full">
-    <header class="shrink-0 flex items-center justify-between px-6 pt-4 pb-3 gap-3">
-      <div class="min-w-0 flex-1 flex items-center gap-3">
-        <el-button :icon="ArrowLeft" text @click="router.push('/')">{{ $t('task.back') }}</el-button>
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <span class="text-caption text-fg-subtle">{{ task.id }}</span>
-            <StatusBadge :status="task.status" />
+  <div v-else class="flex-1 overflow-y-auto px-6 pb-6 pt-4">
+    <div class="grid max-w-[1440px] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,1fr)]">
+      <!-- 左栏：上下文 + 描述 -->
+      <section class="space-y-4">
+        <SectionCard :title="$t('task.context')">
+          <dl class="text-label">
+            <div class="flex h-8 items-center justify-between gap-3">
+              <dt class="text-fg-subtle">{{ $t('task.idLabel') }}</dt>
+              <dd class="truncate font-mono text-fg-muted">{{ task.id }}</dd>
+            </div>
+            <div class="flex h-8 items-center justify-between gap-3">
+              <dt class="text-fg-subtle">{{ $t('runDetail.status') }}</dt>
+              <dd><StatusBadge :status="task.status" /></dd>
+            </div>
+            <div class="flex h-8 items-center justify-between gap-3">
+              <dt class="text-fg-subtle">{{ $t('runDetail.created') }}</dt>
+              <dd class="text-fg-muted">{{ d(new Date(task.createdAt), 'long') }}</dd>
+            </div>
+            <div class="flex h-8 items-center justify-between gap-3">
+              <dt class="text-fg-subtle">{{ $t('task.assigneeLabel') }}</dt>
+              <dd class="truncate text-fg-muted">{{ task.assigneeId || '—' }}</dd>
+            </div>
+          </dl>
+        </SectionCard>
+
+        <SectionCard :title="$t('task.description')">
+          <p class="whitespace-pre-wrap text-body text-fg-muted">
+            {{ task.description || $t('task.noDescription') }}
+          </p>
+        </SectionCard>
+      </section>
+
+      <!-- 中栏：Run 启动器 + Run 列表 + 依赖 -->
+      <section class="space-y-4">
+        <SectionCard :title="$t('task.runs')">
+          <div class="flex flex-wrap items-center gap-2">
+            <el-select v-model="selectedAgentId" style="width: 220px" :placeholder="$t('task.selectAgent')">
+              <el-option
+                v-for="agent in agents.items"
+                :key="agent.id"
+                :label="`${agent.name} · ${agent.runtime}`"
+                :value="agent.id"
+              />
+            </el-select>
+            <Button :disabled="!canRun || !selectedAgentId" @click="startRun">
+              <VideoPlay />
+              {{ $t('common.run') }}
+            </Button>
+            <Button v-if="isRunActive" variant="destructive" @click="cancelRun(selectedRun)">
+              {{ $t('common.cancel') }}
+            </Button>
           </div>
-          <h1 class="text-body font-semibold truncate">{{ task.title }}</h1>
-        </div>
-      </div>
-      <el-select :model-value="task.status" style="width: 144px" @change="onStatusChange">
-        <el-option
-          v-for="status in TASK_STATUSES"
-          :key="status.value"
-          :label="$t(`common.status.task.${status.value}`)"
-          :value="status.value"
-        />
-      </el-select>
-    </header>
 
-    <div class="flex-1 overflow-y-auto px-6 pb-6">
-      <div class="grid max-w-[1440px] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,1fr)]">
-        <section class="space-y-4">
-          <el-card shadow="never">
-            <template #header>
-              <span class="text-label font-semibold">{{ $t('task.context') }}</span>
-            </template>
-            <dl class="space-y-2 text-label">
-              <div class="flex justify-between gap-3">
-                <dt class="text-fg-subtle">{{ $t('task.idLabel') }}</dt>
-                <dd class="font-mono text-fg-muted truncate">{{ task.id }}</dd>
-              </div>
-              <div class="flex justify-between gap-3">
-                <dt class="text-fg-subtle">{{ $t('runDetail.status') }}</dt>
-                <dd><StatusBadge :status="task.status" /></dd>
-              </div>
-              <div class="flex justify-between gap-3">
-                <dt class="text-fg-subtle">{{ $t('runDetail.created') }}</dt>
-                <dd class="text-fg-muted">{{ d(new Date(task.createdAt), 'long') }}</dd>
-              </div>
-              <div class="flex justify-between gap-3">
-                <dt class="text-fg-subtle">{{ $t('task.assigneeLabel') }}</dt>
-                <dd class="text-fg-muted truncate">{{ task.assigneeId || '—' }}</dd>
-              </div>
-            </dl>
-          </el-card>
+          <p
+            v-if="!canRun && !dependencyBlocked"
+            class="mt-3 rounded-[var(--cd-radius-md)] border border-warning-border bg-warning-soft px-3 py-2 text-caption text-warning"
+          >
+            {{ $t('task.moveHint') }}
+          </p>
+          <p
+            v-if="dependencyBlocked && readiness"
+            class="mt-3 rounded-[var(--cd-radius-md)] border border-warning-border bg-warning-soft px-3 py-2 text-caption text-warning"
+          >
+            {{ $t('task.dependenciesNotSatisfied') }}
+            <span class="mt-0.5 block text-fg-subtle">{{ readiness.reasons.join('；') }}</span>
+          </p>
 
-          <el-card shadow="never">
-            <template #header>
-              <span class="text-label font-semibold">{{ $t('task.description') }}</span>
-            </template>
-            <p class="text-body text-fg-muted whitespace-pre-wrap">
-              {{ task.description || $t('task.noDescription') }}
-            </p>
-          </el-card>
-        </section>
-
-        <section class="space-y-4">
-          <el-card shadow="never">
-            <template #header>
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-label font-semibold">{{ $t('task.runs') }}</span>
-                <div class="flex items-center gap-2">
-                  <el-select v-model="selectedAgentId" style="width: 220px" :placeholder="$t('task.selectAgent')">
-                    <el-option
-                      v-for="agent in agents.items"
-                      :key="agent.id"
-                      :label="`${agent.name} · ${agent.runtime}`"
-                      :value="agent.id"
-                    />
-                  </el-select>
-                  <el-button
-                    type="primary"
-                    :icon="VideoPlay"
-                    :disabled="!canRun || !selectedAgentId"
-                    @click="startRun"
-                  >
-                    {{ $t('common.run') }}
-                  </el-button>
-                </div>
-              </div>
-            </template>
-
-            <el-alert
-              v-if="!canRun && !dependencyBlocked"
-              :title="$t('task.moveHint')"
-              type="warning"
-              :closable="false"
-              show-icon
-              class="mb-3"
-            />
-            <el-alert
-              v-if="dependencyBlocked && readiness"
-              :title="$t('task.dependenciesNotSatisfied')"
-              type="warning"
-              :closable="false"
-              show-icon
-              class="mb-3"
-              :description="readiness.reasons.join('；')"
-            />
-
-            <el-empty v-if="runs.length === 0" :description="$t('task.noRuns')" :image-size="48" />
-
-            <div v-else class="space-y-2">
-              <el-card
-                v-for="run in runs"
-                :key="run.id"
-                shadow="hover"
-                :body-style="{ padding: '10px' }"
-                class="cursor-pointer"
-                :class="{ 'ring-1 ring-primary/40': selectedRun?.id === run.id }"
-                @click="selectRun(run)"
-              >
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2">
-                    <StatusBadge :status="run.status" kind="run" />
-                    <el-tag size="small" effect="plain" type="info">{{ run.trigger }}</el-tag>
-                    <el-button text size="small" class="!px-1" @click.stop="router.push(`/runs/${run.id}`)">
-                      {{ $t('runDetail.title') }}
-                    </el-button>
-                  </div>
-                  <span class="text-caption text-fg-subtle">
-                    {{ d(new Date(run.createdAt), 'long') }}
-                  </span>
-                </div>
-                <div v-if="run.summary" class="text-caption text-fg-muted mt-1">
-                  {{ run.summary }}
-                </div>
-                <div v-if="run.error" class="text-caption text-danger mt-1">{{ run.error }}</div>
-              </el-card>
-            </div>
-          </el-card>
-
-          <el-card v-if="selectedRun" shadow="never">
-            <template #header>
-              <div class="flex items-center justify-between">
-                <span class="text-label font-semibold">
-                  {{ $t('task.runLog') }} · {{ selectedRun.id.slice(0, 8) }}
-                </span>
-                <el-button
-                  v-if="isRunActive"
-                  type="danger"
-                  plain
-                  size="small"
-                  @click="cancelRun(selectedRun)"
-                >
-                  {{ $t('common.cancel') }}
-                </el-button>
-              </div>
-            </template>
-
-            <div class="h-[360px] overflow-y-auto rounded-md border border-border bg-sunken p-3 space-y-2">
-              <div
-                v-if="events.length === 0 && !isRunActive"
-                class="flex size-full flex-col items-center justify-center gap-3 p-8 text-center"
-              >
-                <h3 class="text-body font-semibold">{{ $t('task.noEventsTitle') }}</h3>
-                <p class="text-label text-fg-subtle">{{ $t('task.noEventsDesc') }}</p>
-              </div>
-              <Message v-for="event in events" :key="`${event.runId}-${event.seq}`" from="assistant">
-                <MessageContent>
-                  <div class="text-caption uppercase tracking-wide text-fg-subtle">
-                    {{ event.type }}
-                  </div>
-                  <pre class="whitespace-pre-wrap text-label text-fg-muted">{{ event.message }}</pre>
-                </MessageContent>
-              </Message>
-              <Message v-if="isRunActive" from="assistant">
-                <MessageContent>
-                  <Loader :size="14" />
-                </MessageContent>
-              </Message>
-            </div>
-          </el-card>
-        </section>
-
-        <section class="space-y-4">
-          <el-card shadow="never">
-            <template #header>
-              <span class="text-label font-semibold">{{ $t('task.reviewPanel') }}</span>
-            </template>
-
-            <div v-if="taskEvidence" class="space-y-2 text-label">
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-fg-subtle">{{ $t('task.dodLabel') }}</span>
-                <el-tag
-                  size="small"
-                  effect="plain"
-                  :type="taskEvidence.dod.satisfied ? 'success' : 'warning'"
-                >
-                  {{ taskEvidence.dod.satisfied ? $t('runDetail.dodSatisfied') : $t('runDetail.dodMissing') }}
-                </el-tag>
-              </div>
-              <div class="flex flex-wrap gap-1.5">
-                <el-tag
-                  v-for="required in taskEvidence.dod.required"
-                  :key="required"
-                  size="small"
-                  effect="plain"
-                  :type="taskEvidence.dod.present[required] ? 'success' : 'danger'"
-                >
-                  {{ required }}
-                </el-tag>
-              </div>
-            </div>
-            <p v-else class="text-caption text-fg-subtle">{{ $t('runDetail.evidenceEmpty') }}</p>
-
-            <div class="mt-3 space-y-1 text-label">
-              <div class="flex items-center justify-between gap-3">
-                <span class="text-fg-subtle">{{ $t('task.reviewStatus') }}</span>
-                <el-tag v-if="latestReview" size="small" effect="plain">{{ latestReview.status }}</el-tag>
-                <span v-else class="text-caption text-fg-subtle">—</span>
-              </div>
-              <p v-if="latestReview?.decisionNote" class="text-caption text-fg-muted whitespace-pre-wrap">
-                {{ latestReview.decisionNote }}
-              </p>
-            </div>
-
-            <el-button
-              v-if="latestRun"
-              class="mt-3"
-              type="primary"
-              plain
-              @click="router.push(`/runs/${latestRun.id}`)"
+          <EmptyState v-if="runs.length === 0" :title="$t('task.noRuns')" class="mt-2" />
+          <div v-else class="mt-3 space-y-2">
+            <div
+              v-for="run in runs"
+              :key="run.id"
+              class="cursor-pointer rounded-[var(--cd-radius-md)] border border-border-subtle px-3 py-2 transition-colors hover:border-border-strong"
+              :class="{ 'ring-1 ring-primary/40': selectedRun?.id === run.id }"
+              @click="selectRun(run)"
             >
-              {{ $t('task.openRun') }}
-            </el-button>
-            <p v-else class="mt-3 text-caption text-fg-subtle">{{ $t('task.noRuns') }}</p>
-          </el-card>
-
-          <el-card shadow="never">
-            <template #header>
-              <div class="flex items-center justify-between">
-                <span class="text-label font-semibold">{{ $t('task.dependencies') }}</span>
-                <el-tag
-                  v-if="readiness"
-                  :type="readiness.ready ? 'success' : 'warning'"
-                  size="small"
-                >
-                  {{ readiness.ready ? $t('task.dependenciesReady') : $t('task.dependenciesWaiting') }}
-                </el-tag>
-              </div>
-            </template>
-
-            <p v-if="!dependencies || dependencies.outgoing.length === 0" class="text-caption text-fg-subtle">
-              {{ $t('task.noDependencies') }}
-            </p>
-            <div v-else class="space-y-2">
-              <div
-                v-for="dependency in dependencies.outgoing"
-                :key="dependency.dependsOnTaskId"
-                class="flex items-center gap-2"
-              >
-                <el-tag
-                  :type="taskStatus(dependency.dependsOnTaskId) === 'done' ? 'success' : 'warning'"
-                  size="small"
-                >
-                  {{ $t('common.status.task.' + taskStatus(dependency.dependsOnTaskId)) }}
-                </el-tag>
-                <span class="text-label truncate flex-1">
-                  {{ taskTitle(dependency.dependsOnTaskId) || dependency.dependsOnTaskId }}
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex min-w-0 items-center gap-2">
+                  <StatusBadge :status="run.status" kind="run" />
+                  <Badge tone="neutral">{{ run.trigger }}</Badge>
+                  <Button variant="ghost" size="xs" @click.stop="router.push(`/runs/${run.id}`)">
+                    {{ $t('runDetail.title') }}
+                  </Button>
+                </div>
+                <span class="shrink-0 text-caption text-fg-subtle">
+                  {{ d(new Date(run.createdAt), 'long') }}
                 </span>
-                <el-button text size="small" type="danger" @click="removeDependency(dependency.dependsOnTaskId)">
-                  {{ $t('common.delete') }}
-                </el-button>
               </div>
+              <div v-if="run.summary" class="mt-1 text-caption text-fg-muted">{{ run.summary }}</div>
+              <div v-if="run.error" class="mt-1 text-caption text-danger">{{ run.error }}</div>
             </div>
+          </div>
+        </SectionCard>
 
-            <div class="mt-3 flex items-center gap-2">
-              <el-select
-                v-model="dependencyCandidate"
-                size="small"
-                style="width: 200px"
-                clearable
-                filterable
-                :placeholder="$t('task.addDependencyPlaceholder')"
+        <SectionCard :title="$t('task.dependencies')">
+          <template #actions>
+            <Badge v-if="readiness" :tone="readiness.ready ? 'success' : 'warning'">
+              {{ readiness.ready ? $t('task.dependenciesReady') : $t('task.dependenciesWaiting') }}
+            </Badge>
+          </template>
+
+          <p v-if="!dependencies || dependencies.outgoing.length === 0" class="text-caption text-fg-subtle">
+            {{ $t('task.noDependencies') }}
+          </p>
+          <div v-else class="space-y-1">
+            <div
+              v-for="dependency in dependencies.outgoing"
+              :key="dependency.dependsOnTaskId"
+              class="flex h-8 items-center gap-2"
+            >
+              <Badge :tone="taskStatus(dependency.dependsOnTaskId) === 'done' ? 'success' : 'warning'">
+                {{ $t('common.status.task.' + taskStatus(dependency.dependsOnTaskId)) }}
+              </Badge>
+              <span class="min-w-0 flex-1 truncate text-label">
+                {{ taskTitle(dependency.dependsOnTaskId) || dependency.dependsOnTaskId }}
+              </span>
+              <Button variant="destructive" size="xs" @click="removeDependency(dependency.dependsOnTaskId)">
+                {{ $t('common.delete') }}
+              </Button>
+            </div>
+          </div>
+
+          <div class="mt-3 flex items-center gap-2">
+            <el-select
+              v-model="dependencyCandidate"
+              size="small"
+              style="width: 200px"
+              clearable
+              filterable
+              :placeholder="$t('task.addDependencyPlaceholder')"
+            >
+              <el-option
+                v-for="candidate in dependencyCandidates"
+                :key="candidate.id"
+                :label="candidate.title"
+                :value="candidate.id"
+              />
+            </el-select>
+            <Button size="sm" variant="outline" :disabled="!dependencyCandidate" @click="addDependency">
+              {{ $t('task.addDependency') }}
+            </Button>
+          </div>
+
+          <template v-if="dependencies && dependencies.incoming.length > 0">
+            <p class="mt-3 text-caption text-fg-subtle">{{ $t('task.incomingDependencies') }}</p>
+            <p v-for="dependency in dependencies.incoming" :key="dependency.taskId" class="text-caption">
+              {{ taskTitle(dependency.taskId) || dependency.taskId }}
+            </p>
+          </template>
+        </SectionCard>
+      </section>
+
+      <!-- 右栏：事件 + 评审 -->
+      <section class="space-y-4">
+        <SectionCard :title="$t('task.runLog')" :description="selectedRun ? selectedRun.id.slice(0, 8) : undefined">
+          <div class="h-[360px] overflow-y-auto rounded-[var(--cd-radius-md)] border border-border-subtle bg-sunken px-3 py-1">
+            <div
+              v-if="events.length === 0 && !isRunActive"
+              class="flex size-full flex-col items-center justify-center gap-2 p-8 text-center"
+            >
+              <h3 class="text-body font-semibold">{{ $t('task.noEventsTitle') }}</h3>
+              <p class="text-label text-fg-subtle">{{ $t('task.noEventsDesc') }}</p>
+            </div>
+            <div
+              v-for="event in events"
+              :key="`${event.runId}-${event.seq}`"
+              class="flex items-start gap-2 border-b border-border-subtle/60 py-2 last:border-0"
+            >
+              <span class="w-8 shrink-0 text-right font-mono text-caption text-fg-subtle tabular-nums">{{ event.seq }}</span>
+              <span class="shrink-0"><Badge :tone="event.level === 'error' ? 'danger' : 'neutral'">{{ event.type }}</Badge></span>
+              <span class="min-w-0 flex-1 break-words text-caption text-fg-muted">{{ event.message }}</span>
+            </div>
+            <div v-if="isRunActive" class="flex items-center gap-2 py-2">
+              <Loader :size="14" />
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard :title="$t('task.reviewPanel')">
+          <div v-if="taskEvidence" class="space-y-2 text-label">
+            <div class="flex h-8 items-center justify-between gap-3">
+              <span class="text-fg-subtle">{{ $t('task.dodLabel') }}</span>
+              <Badge :tone="taskEvidence.dod.satisfied ? 'success' : 'warning'">
+                {{ taskEvidence.dod.satisfied ? $t('runDetail.dodSatisfied') : $t('runDetail.dodMissing') }}
+              </Badge>
+            </div>
+            <div class="flex flex-wrap gap-1.5">
+              <Badge
+                v-for="required in taskEvidence.dod.required"
+                :key="required"
+                :tone="taskEvidence.dod.present[required] ? 'success' : 'danger'"
               >
-                <el-option
-                  v-for="candidate in dependencyCandidates"
-                  :key="candidate.id"
-                  :label="candidate.title"
-                  :value="candidate.id"
-                />
-              </el-select>
-              <el-button size="small" :disabled="!dependencyCandidate" @click="addDependency">
-                {{ $t('task.addDependency') }}
-              </el-button>
+                {{ required }}
+              </Badge>
             </div>
+          </div>
+          <p v-else class="text-caption text-fg-subtle">{{ $t('runDetail.evidenceEmpty') }}</p>
 
-            <template v-if="dependencies && dependencies.incoming.length > 0">
-              <p class="mt-3 text-caption text-fg-subtle">{{ $t('task.incomingDependencies') }}</p>
-              <p v-for="dependency in dependencies.incoming" :key="dependency.taskId" class="text-caption">
-                {{ taskTitle(dependency.taskId) || dependency.taskId }}
-              </p>
-            </template>
-          </el-card>
-        </section>
-      </div>
+          <div class="mt-3 space-y-1 text-label">
+            <div class="flex h-8 items-center justify-between gap-3">
+              <span class="text-fg-subtle">{{ $t('task.reviewStatus') }}</span>
+              <Badge v-if="latestReview" tone="neutral">{{ latestReview.status }}</Badge>
+              <span v-else class="text-caption text-fg-subtle">—</span>
+            </div>
+            <p v-if="latestReview?.decisionNote" class="whitespace-pre-wrap text-caption text-fg-muted">
+              {{ latestReview.decisionNote }}
+            </p>
+          </div>
+
+          <Button v-if="latestRun" variant="outline" class="mt-3" @click="router.push(`/runs/${latestRun.id}`)">
+            {{ $t('task.openRun') }}
+          </Button>
+          <p v-else class="mt-3 text-caption text-fg-subtle">{{ $t('task.noRuns') }}</p>
+        </SectionCard>
+      </section>
     </div>
   </div>
 </template>
