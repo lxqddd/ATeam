@@ -138,6 +138,7 @@ const zhCN: typeof enUS = {
     nextBranch: '下一个分支',
     previousBranch: '上一个分支',
     scrollToBottom: '滚动到底部',
+    branchPage: '{current}/{total}',
   },
 }
 

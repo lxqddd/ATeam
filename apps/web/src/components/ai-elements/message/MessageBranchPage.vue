@@ -23,6 +23,6 @@ const { currentBranch, totalBranches } = useMessageBranchContext()
     "
     v-bind="$attrs"
   >
-    {{ currentBranch + 1 }} of {{ totalBranches }}
+    {{ $t('aiElements.branchPage', { current: currentBranch + 1, total: totalBranches }) }}
   </ButtonGroupText>
 </template>

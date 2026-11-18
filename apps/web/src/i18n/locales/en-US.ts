@@ -138,6 +138,7 @@ const enUS = {
     nextBranch: 'Next branch',
     previousBranch: 'Previous branch',
     scrollToBottom: 'Scroll to bottom',
+    branchPage: '{current} of {total}',
   },
 }
 
