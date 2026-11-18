@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
@@ -53,7 +54,7 @@ func newWorktreeScheduler(t *testing.T, st *fakeStore) (*Scheduler, string) {
 	hub := events.NewHub(security.NewGuard())
 	registry := runtime.NewRegistry()
 	registry.Register(&fakeAdapter{name: "fake-claude"})
-	return New(st, hub, registry, workspace.New(dataDir), 1), dataDir
+	return New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1), dataDir
 }
 
 func startRun(t *testing.T, sched *Scheduler, runID string) {
@@ -223,7 +224,7 @@ func TestProbeFailureBlocksRun(t *testing.T) {
 		fakeAdapter: fakeAdapter{name: "fake-claude"},
 		info:        runtime.ProbeInfo{Name: "fake-claude", Version: "0.0.1", Compatible: false, Detail: "missing required flags"},
 	})
-	sched := New(st, hub, registry, workspace.New(dataDir), 1)
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
 
 	startRun(t, sched, run.ID)
 	waitFor(t, "probe failure", 5*time.Second, func() bool {
@@ -264,4 +265,105 @@ func TestReconcileMarksInterruptedAndRequeues(t *testing.T) {
 	waitFor(t, "queued run re-executed", 5*time.Second, func() bool {
 		return st.runStatus(queuedRun.ID) == domain.RunCompleted
 	})
+}
+
+type artifactEmittingAdapter struct{ fakeAdapter }
+
+func (a *artifactEmittingAdapter) Run(_ context.Context, _ runtime.Request, emit func(runtime.Event)) error {
+	emit(runtime.Event{Type: "artifact", Message: "declare", Data: map[string]any{"path": "README.md", "type": "file", "mediaType": "text/plain"}})
+	emit(runtime.Event{Type: "artifact", Message: "declare", Data: map[string]any{"path": "../escape.txt", "type": "file"}})
+	emit(runtime.Event{Type: "log", Message: "adapter finished"})
+	return nil
+}
+
+func TestCodeRunCollectsArtifacts(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	st.setAgentRuntime("fake-claude")
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{
+		ID:            domain.DefaultWorkspaceID,
+		Name:          "Bound",
+		RepoPath:      repo,
+		DefaultBranch: "main",
+		Status:        domain.WorkspaceActive,
+		Settings:      domain.WorkspaceSettings{VerificationCommands: []string{"true"}},
+	})
+
+	sched, _ := newWorktreeScheduler(t, st)
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+
+	types := map[string]bool{}
+	for _, record := range st.artifactsForRun(run.ID) {
+		types[record.Type] = true
+	}
+	for _, expected := range []string{domain.ArtifactDiff, domain.ArtifactTestReport, domain.ArtifactLogBundle, domain.ArtifactNote} {
+		if !types[expected] {
+			t.Fatalf("missing artifact type %q (got %v)", expected, types)
+		}
+	}
+	if !st.hasEventType("test_result") {
+		t.Fatal("system verification should emit a test_result event")
+	}
+}
+
+func TestMockRunCollectsOnlyLogAndNote(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	sched, _ := newWorktreeScheduler(t, st)
+	startRun(t, sched, run.ID)
+	waitFor(t, "mock run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+
+	types := map[string]bool{}
+	for _, record := range st.artifactsForRun(run.ID) {
+		types[record.Type] = true
+	}
+	if types[domain.ArtifactDiff] || types[domain.ArtifactTestReport] {
+		t.Fatalf("mock run must not produce diff/test evidence: %v", types)
+	}
+	if !types[domain.ArtifactLogBundle] || !types[domain.ArtifactNote] {
+		t.Fatalf("mock run should keep log bundle and summary: %v", types)
+	}
+}
+
+func TestAgentDeclaredArtifactIsValidated(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&artifactEmittingAdapter{fakeAdapter{name: "fake-claude"}})
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{
+		ID:            domain.DefaultWorkspaceID,
+		Name:          "Bound",
+		RepoPath:      repo,
+		DefaultBranch: "main",
+		Status:        domain.WorkspaceActive,
+	})
+	st.setAgentRuntime("fake-claude")
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+
+	foundAgent := false
+	for _, record := range st.artifactsForRun(run.ID) {
+		if record.Origin == domain.ArtifactOriginAgent && record.Name == "README.md" {
+			foundAgent = true
+		}
+		if strings.Contains(record.Name, "escape") {
+			t.Fatalf("path traversal artifact was captured: %#v", record)
+		}
+	}
+	if !foundAgent {
+		t.Fatal("expected the agent-declared README.md artifact")
+	}
+	if !st.hasEventType("error") {
+		t.Fatal("path traversal should emit an error event")
+	}
 }

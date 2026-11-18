@@ -48,6 +48,12 @@ type Store interface {
 	CreateRunConfigSnapshot(context.Context, *domain.RunConfigSnapshot) error
 	GetRunConfigSnapshotByRun(context.Context, string) (*domain.RunConfigSnapshot, error)
 
+	CreateArtifact(context.Context, *domain.Artifact) error
+	GetArtifact(context.Context, string) (*domain.Artifact, error)
+	ListArtifactsByRun(context.Context, string) ([]domain.Artifact, error)
+	ListArtifactsByTask(context.Context, string) ([]domain.Artifact, error)
+	FindArtifactBySHA(context.Context, string) (*domain.Artifact, error)
+
 	AppendRunEvent(context.Context, *domain.RunEvent) error
 	ListRunEvents(context.Context, string) ([]domain.RunEvent, error)
 

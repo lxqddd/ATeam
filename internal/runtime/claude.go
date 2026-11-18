@@ -57,7 +57,7 @@ func (a *ClaudeAdapter) Run(ctx context.Context, req Request, emit func(Event)) 
 	args, stdinPrompt := buildClaudeArgs(req)
 	command := exec.Command(path, args...)
 	command.Dir = req.Workdir
-	command.Env = sanitizedEnv()
+	command.Env = SanitizedEnv()
 	configureProcessGroup(command)
 	if stdinPrompt != "" {
 		command.Stdin = strings.NewReader(stdinPrompt)
@@ -142,10 +142,11 @@ func permissionModeFlag(mode string) string {
 	}
 }
 
-// sanitizedEnv forwards only the variables a CLI needs. Any *_KEY, *_TOKEN,
-// *_SECRET or *_PASSWORD variable is dropped by construction
-// (M1-RUNTIME-010, SEC-009).
-func sanitizedEnv() []string {
+// SanitizedEnv returns the environment forwarded to runtime subprocesses and
+// verification commands: only PATH, HOME, temp and locale variables survive.
+// Any *_KEY, *_TOKEN, *_SECRET or *_PASSWORD variable is dropped by
+// construction (M1-RUNTIME-010, SEC-009).
+func SanitizedEnv() []string {
 	allowed := map[string]bool{
 		"PATH": true, "HOME": true, "TMPDIR": true, "TEMP": true, "TMP": true,
 		"LANG": true, "LC_ALL": true, "LC_CTYPE": true, "TERM": true,

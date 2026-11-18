@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
@@ -31,7 +32,7 @@ func newTestHandler(t *testing.T) (http.Handler, store.Store) {
 
 	hub := events.NewHub(guard)
 	registry := runtime.NewRegistry()
-	sched := scheduler.New(st, hub, registry, workspace.New(t.TempDir()), 1)
+	sched := scheduler.New(st, hub, registry, workspace.New(t.TempDir()), artifact.NewWriter(st, t.TempDir()), 1)
 	return New(st, hub, sched, registry, "test", "", guard).Handler(), st
 }
 

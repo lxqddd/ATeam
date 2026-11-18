@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/lxqddd/ATeam/internal/api"
+	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
@@ -80,7 +81,8 @@ func New(cfg Config) (*App, error) {
 	hub := events.NewHub(guard)
 	workspaces := workspace.New(cfg.DataDir)
 	registry := runtime.NewRegistry()
-	sched := scheduler.New(st, hub, registry, workspaces, cfg.Concurrency)
+	artifacts := artifact.NewWriter(st, cfg.DataDir)
+	sched := scheduler.New(st, hub, registry, workspaces, artifacts, cfg.Concurrency)
 	handler := api.New(st, hub, sched, registry, cfg.Version, cfg.WebDir, guard)
 
 	return &App{

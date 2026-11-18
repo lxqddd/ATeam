@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
@@ -25,6 +26,7 @@ type fakeStore struct {
 	agents     map[string]domain.Agent
 	workspaces map[string]domain.Workspace
 	snapshots  map[string]domain.RunConfigSnapshot
+	artifacts  map[string]domain.Artifact
 	events     int
 	eventTypes []string
 }
@@ -65,7 +67,72 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 			domain.DefaultWorkspaceID: {ID: domain.DefaultWorkspaceID, Name: "Default", DefaultBranch: "main", Status: domain.WorkspaceActive},
 		},
 		snapshots: map[string]domain.RunConfigSnapshot{},
+		artifacts: map[string]domain.Artifact{},
 	}, &run
+}
+
+func (f *fakeStore) ListRunEvents(_ context.Context, runID string) ([]domain.RunEvent, error) {
+	return []domain.RunEvent{}, nil
+}
+
+func (f *fakeStore) CreateArtifact(_ context.Context, artifact *domain.Artifact) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if artifact.ID == "" {
+		artifact.ID = domain.NewID()
+	}
+	f.artifacts[artifact.ID] = *artifact
+	return nil
+}
+
+func (f *fakeStore) GetArtifact(_ context.Context, id string) (*domain.Artifact, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	record, ok := f.artifacts[id]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &record, nil
+}
+
+func (f *fakeStore) ListArtifactsByRun(_ context.Context, runID string) ([]domain.Artifact, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	result := []domain.Artifact{}
+	for _, record := range f.artifacts {
+		if record.RunID == runID {
+			result = append(result, record)
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeStore) ListArtifactsByTask(_ context.Context, taskID string) ([]domain.Artifact, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	result := []domain.Artifact{}
+	for _, record := range f.artifacts {
+		if record.TaskID == taskID {
+			result = append(result, record)
+		}
+	}
+	return result, nil
+}
+
+func (f *fakeStore) FindArtifactBySHA(context.Context, string) (*domain.Artifact, error) {
+	return nil, store.ErrNotFound
+}
+
+func (f *fakeStore) artifactsForRun(runID string) []domain.Artifact {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	result := []domain.Artifact{}
+	for _, record := range f.artifacts {
+		if record.RunID == runID {
+			result = append(result, record)
+		}
+	}
+	return result
 }
 
 func (f *fakeStore) ListRuns(_ context.Context) ([]domain.Run, error) {
@@ -247,7 +314,8 @@ func (f *fakeStore) eventCount() int {
 func newTestScheduler(t *testing.T, st store.Store) *Scheduler {
 	t.Helper()
 	hub := events.NewHub(security.NewGuard())
-	return New(st, hub, runtime.NewRegistry(), workspace.New(t.TempDir()), 1)
+	dataDir := t.TempDir()
+	return New(st, hub, runtime.NewRegistry(), workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
 }
 
 func waitFor(t *testing.T, what string, timeout time.Duration, cond func() bool) {

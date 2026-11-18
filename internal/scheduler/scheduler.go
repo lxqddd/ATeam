@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
@@ -23,13 +24,14 @@ type Scheduler struct {
 	hub        *events.Hub
 	registry   *runtime.Registry
 	workspaces *workspace.Manager
+	artifacts  *artifact.Writer
 	queue      chan string
 	workers    int
 	mu         sync.Mutex
 	cancels    map[string]context.CancelFunc
 }
 
-func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces *workspace.Manager, workers int) *Scheduler {
+func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces *workspace.Manager, artifacts *artifact.Writer, workers int) *Scheduler {
 	if workers < 1 {
 		workers = 1
 	}
@@ -38,6 +40,7 @@ func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces
 		hub:        hub,
 		registry:   registry,
 		workspaces: workspaces,
+		artifacts:  artifacts,
 		queue:      make(chan string, 256),
 		workers:    workers,
 		cancels:    make(map[string]context.CancelFunc),
@@ -203,6 +206,10 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		return
 	}
 
+	// Declared before emit so artifact-event capture can see the workspace.
+	workdir := ""
+	settings := domain.WorkspaceSettings{}
+
 	sequence := 0
 	eventCount := 0
 	truncationWarned := false
@@ -217,7 +224,9 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		}
 		s.hub.Broadcast(events.Event{Type: "run.event", Data: runEvent})
 	}
-	emit := func(event runtime.Event) {
+	// emit is declared first so artifact capture can re-enter it.
+	var emit func(runtime.Event)
+	emit = func(event runtime.Event) {
 		if eventCount >= maxRunEventsPerRun {
 			if !truncationWarned {
 				truncationWarned = true
@@ -258,6 +267,10 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 			logsInWindow++
 		}
 		eventCount++
+
+		if event.Type == "artifact" && workdir != "" {
+			s.captureAgentArtifact(ctx, run, workdir, event, emit)
+		}
 
 		message := event.Message
 		if len(message) > maxRunEventMessageBytes {
@@ -356,7 +369,6 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	// Code changing runs get an isolated git worktree; mock (non-code) runs
 	// only get a plain directory (PRD runtime-and-workspace §8.2).
 	codeChange := adapter.Name() != "mock"
-	workdir := ""
 	if codeChange {
 		workspaceRecord, err := s.store.GetWorkspace(ctx, run.WorkspaceID)
 		if err != nil || !workspaceRecord.Bound() {
@@ -364,7 +376,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 			s.finishFailed(ctx, run, "workspace_error", "workspace_provision_failed", "workspace is not bound to a local repository")
 			return
 		}
-		settings := workspaceRecord.Settings.WithDefaults()
+		settings = workspaceRecord.Settings.WithDefaults()
 		emit(runtime.Event{
 			Type:    "run.workspace.provisioning",
 			Message: "Provisioning run workspace",
@@ -472,6 +484,11 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		run.Status = domain.RunCompleted
 		run.Summary = fmt.Sprintf("Completed with %s runtime", adapter.Name())
 	}
+
+	// Collect evidence before the terminal write so artifacts reference the
+	// final status, summary and error (PRD runtime-and-workspace §10.2).
+	s.collectRunArtifacts(ctx, run, task, workdir, codeChange, settings, emit)
+
 	if !s.writeActiveRun(ctx, run, "run.updated") {
 		slog.Info("run already terminal; keeping stored state", "run", run.ID)
 	}

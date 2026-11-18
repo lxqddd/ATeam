@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 
+	"github.com/lxqddd/ATeam/internal/artifact"
+	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/runtime"
 )
 
@@ -37,5 +39,11 @@ func (a *API) getMeta(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, map[string]any{
 		"version":  a.version,
 		"runtimes": runtimes,
+		"artifacts": map[string]any{
+			"maxBytes":          artifact.MaxArtifactBytes,
+			"textTruncateBytes": artifact.MaxTextEvidenceBytes,
+			"previewBytes":      artifact.PreviewBytes,
+			"types":             []string{domain.ArtifactDiff, domain.ArtifactTestReport, domain.ArtifactLogBundle, domain.ArtifactNote, domain.ArtifactScreenshot, domain.ArtifactFile},
+		},
 	})
 }
