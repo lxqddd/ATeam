@@ -2,12 +2,16 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Plus } from '@element-plus/icons-vue'
+import { PlusIcon } from '@lucide/vue'
 import { TASK_STATUSES, type Task, type TaskStatus } from '@ateam/shared'
 import { useTasksStore } from '../stores/tasks'
 import TaskCard from '../components/TaskCard.vue'
 import Modal from '../components/Modal.vue'
 import EmptyState from '../components/EmptyState.vue'
+import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
+import { Textarea } from '../components/ui/textarea'
+import { Field } from '../components/ui/field'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -62,35 +66,32 @@ function openTask(task: Task) {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
-    <header class="shrink-0 flex items-center justify-between px-6 pt-5 pb-4">
-      <div>
-        <h1 class="text-title font-semibold tracking-tight">{{ $t('board.title') }}</h1>
-        <p class="text-caption text-fg-subtle">{{ $t('board.subtitle') }}</p>
-      </div>
-      <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('board.newTask') }}</el-button>
-    </header>
+  <div class="flex h-full flex-col">
+    <Teleport to="#titlebar-actions">
+      <Button size="lg" @click="showCreate = true">
+        <PlusIcon class="size-4" />
+        {{ $t('board.newTask') }}
+      </Button>
+    </Teleport>
 
-    <div class="flex-1 overflow-x-auto px-6 pb-6">
-      <div class="flex gap-4 min-w-max h-full">
+    <div class="flex-1 overflow-x-auto overflow-y-hidden px-6 pb-6 pt-4">
+      <div class="flex h-full min-w-max gap-4">
         <section
           v-for="column in columns"
           :key="column.value"
-          class="w-[280px] shrink-0 flex flex-col"
+          class="flex w-[280px] shrink-0 flex-col"
           @dragover.prevent
           @drop="drop(column.value)"
         >
-          <div class="flex items-center justify-between mb-2 px-1">
-            <div class="flex items-center gap-2">
-              <span class="text-label font-semibold text-fg-muted">{{ column.label }}</span>
-              <el-tag size="small" effect="plain" type="info">{{ column.tasks.length }}</el-tag>
-            </div>
-            <span class="text-caption text-fg-subtle">{{ column.hint }}</span>
+          <div class="mb-2 flex items-center gap-2 px-1">
+            <span class="text-label font-semibold text-fg-muted">{{ column.label }}</span>
+            <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--cd-color-surface-raised)] px-1.5 text-caption text-fg-subtle tabular-nums">
+              {{ column.tasks.length }}
+            </span>
+            <span class="ml-auto text-caption text-fg-subtle">{{ column.hint }}</span>
           </div>
 
-          <div
-            class="flex-1 space-y-2 overflow-y-auto rounded-lg border border-border-subtle bg-sunken/60 p-2"
-          >
+          <div class="lane flex-1 space-y-2 overflow-y-auto p-2">
             <TaskCard
               v-for="task in column.tasks"
               :key="task.id"
@@ -109,23 +110,14 @@ function openTask(task: Task) {
     </div>
 
     <Modal :open="showCreate" :title="$t('board.newTask')" @close="showCreate = false">
-      <el-form label-position="top" @submit.prevent>
-        <el-form-item :label="$t('board.form.title')">
-          <el-input
-            v-model="draft.title"
-            :placeholder="$t('board.form.titlePlaceholder')"
-            @keydown.enter="createTask"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('board.form.description')">
-          <el-input
-            v-model="draft.description"
-            type="textarea"
-            :rows="3"
-            :placeholder="$t('board.form.descriptionPlaceholder')"
-          />
-        </el-form-item>
-        <el-form-item :label="$t('board.form.status')">
+      <div class="flex flex-col gap-4">
+        <Field :label="$t('board.form.title')" for="board-title">
+          <Input id="board-title" v-model="draft.title" :placeholder="$t('board.form.titlePlaceholder')" @keydown.enter="createTask" />
+        </Field>
+        <Field :label="$t('board.form.description')" for="board-description">
+          <Textarea id="board-description" v-model="draft.description" :placeholder="$t('board.form.descriptionPlaceholder')" />
+        </Field>
+        <Field :label="$t('board.form.status')">
           <el-select v-model="draft.status" style="width: 100%">
             <el-option
               v-for="status in TASK_STATUSES"
@@ -134,12 +126,14 @@ function openTask(task: Task) {
               :value="status.value"
             />
           </el-select>
-        </el-form-item>
-      </el-form>
-      <div class="flex justify-end gap-2">
-        <el-button @click="showCreate = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="createTask">{{ $t('common.create') }}</el-button>
+        </Field>
       </div>
+      <template #footer>
+        <div class="flex justify-end gap-2">
+          <el-button @click="showCreate = false">{{ $t('common.cancel') }}</el-button>
+          <el-button type="primary" @click="createTask">{{ $t('common.create') }}</el-button>
+        </div>
+      </template>
     </Modal>
   </div>
 </template>
