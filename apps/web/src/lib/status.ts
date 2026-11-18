@@ -6,7 +6,8 @@ export type WorkTone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger'
  */
 export function workTone(status: string): WorkTone {
   if (status === 'done' || status === 'completed') return 'success'
-  if (status === 'in_progress' || status === 'running' || status === 'preparing') return 'brand'
+  if (status === 'in_progress' || status === 'running' || status === 'preparing' || status === 'working')
+    return 'brand'
   if (status === 'failed') return 'danger'
   if (status === 'blocked' || status === 'cancelled' || status === 'in_review') return 'warning'
   return 'neutral'
