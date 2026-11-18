@@ -1,84 +1,46 @@
-// ATeam 设计令牌（Sass 版）— 对齐 Nomi 石墨（Graphite）主题
-// https://github.com/Cookieboty/nomi-ai · packages/ui/src/tokens.css
-// 当 Tailwind 工具类不适用（如第三方组件深层覆盖、复杂选择器嵌套、动态生成的规则）时，
-// 用这些变量与 mixin 编写原生样式。
-//
-// 该文件通过 vite.config.ts 的 css.preprocessorOptions.scss.additionalData
-// 自动注入到每个 SCSS 编译单元（.scss 文件与 <style lang="scss"> 块），
-// 因此在组件样式中可直接使用变量与 mixin，无需手动 @use。
+// ATeam 设计令牌（Sass 镜像）— 与 styles/tokens.css 保持一致。
+// 仅在 <style lang="scss"> 中需要变量时使用；优先用 CSS 变量。
 
-// ---------- 颜色（石墨主题，与 main.css 保持一致） ----------
-$color-bg: #13161b;          // 画布
-$color-panel: #191d23;       // 侧边栏 / 下沉表面
-$color-surface: #20252d;     // 卡片表面
-$color-surface-raised: #282e38; // 弹层 / 输入框
-$color-text: #f0f2f6;        // 主文本
-$color-text-muted: #c9cfd9;  // 次要文本
-$color-text-subtle: #969fad; // 第三级文本
-$color-border: #343b46;      // 边框 / 分隔线
-$color-border-strong: #414b5a;
-$color-accent: #7887f5;      // 强调色（主按钮）
-$color-accent-hover: #96a1ff;
-$color-accent-soft: rgba(120, 135, 245, 0.16);
-$color-danger: #f29a8e;      // 危险文本
-$color-danger-fill: #b9382f; // 危险实底
-$color-success: #6cc59a;
-$color-warning: #e5b567;
+$color-bg: var(--cd-color-bg);
+$color-panel: var(--cd-panel-bg);
+$color-surface: var(--cd-color-surface);
+$color-surface-raised: var(--cd-color-surface-raised);
+$color-text: var(--cd-color-text);
+$color-text-muted: var(--cd-color-text-muted);
+$color-text-subtle: var(--cd-color-text-subtle);
+$color-border: var(--cd-color-border);
+$color-border-strong: var(--cd-color-border-strong);
+$color-accent: var(--cd-color-accent);
+$color-accent-soft: var(--cd-color-accent-soft);
+$color-danger: var(--cd-color-danger);
+$color-success: var(--cd-color-success);
+$color-warning: var(--cd-color-warning);
 
-// ---------- 字体 ----------
-$font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI',
-  'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
-  'Noto Sans SC', 'Noto Sans CJK SC', 'Source Han Sans SC', Roboto, Ubuntu, 'Helvetica Neue',
-  Arial, sans-serif;
-$font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas,
-  'Noto Sans Mono CJK SC', monospace;
+$font-sans: var(--cd-font-sans);
+$font-mono: var(--cd-font-mono);
 
-// ---------- 排版阶梯 12 / 13 / 14 / 16 / 18 / 22 ----------
-$font-size-xs: 12px;
-$font-size-sm: 13px;
-$font-size-md: 14px;
-$font-size-lg: 16px;
-$font-size-xl: 18px;
-$font-size-2xl: 22px;
+$font-size-xs: var(--cd-font-size-xs);
+$font-size-sm: var(--cd-font-size-sm);
+$font-size-md: var(--cd-font-size-md);
+$font-size-lg: var(--cd-font-size-lg);
+$font-size-xl: var(--cd-font-size-xl);
+$font-size-2xl: var(--cd-font-size-2xl);
 
-// ---------- 圆角与间距 ----------
-$radius-xs: 6px;
-$radius-sm: 8px;
-$radius-md: 10px;
-$radius-lg: 14px;
-$radius-xl: 20px;
-$radius-base: $radius-md;
-$spacing-unit: 0.25rem; // 4px 栅格
+$radius-xs: var(--cd-radius-xs);
+$radius-sm: var(--cd-radius-sm);
+$radius-md: var(--cd-radius-md);
+$radius-lg: var(--cd-radius-lg);
+$radius-xl: var(--cd-radius-xl);
 
-// ---------- 断点 ----------
 $breakpoint-sm: 640px;
 $breakpoint-md: 768px;
 $breakpoint-lg: 1024px;
 $breakpoint-xl: 1280px;
 
-// ≥ 指定断点时应用样式
 @mixin respond-to($breakpoint) {
-  @media (min-width: $breakpoint) {
-    @content;
-  }
+  @media (min-width: $breakpoint) { @content; }
 }
 
-// 深色滚动条（与 main.css 全局样式一致），可用于嵌套滚动容器
-@mixin scrollbar-dark {
-  &::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: $color-border;
-    border-radius: 4px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-}
-
-// 单行文本溢出省略
 @mixin text-ellipsis {
   overflow: hidden;
   text-overflow: ellipsis;
