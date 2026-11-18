@@ -26,7 +26,7 @@ function handleClick() {
       'absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted',
       props.class,
     )"
-    aria-label="Scroll to bottom"
+    :aria-label="$t('aiElements.scrollToBottom')"
     size="icon"
     type="button"
     variant="outline"

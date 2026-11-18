@@ -8,7 +8,7 @@ const { goToNext, totalBranches } = useMessageBranchContext()
 
 <template>
   <Button
-    aria-label="Next branch"
+    :aria-label="$t('aiElements.nextBranch')"
     :disabled="totalBranches <= 1"
     size="icon-sm"
     type="button"
