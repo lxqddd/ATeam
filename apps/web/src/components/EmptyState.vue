@@ -6,7 +6,7 @@ defineProps<{ title: string; description?: string }>()
 
 <template>
   <div class="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
-    <span class="flex size-9 items-center justify-center rounded-full bg-[var(--cd-color-surface-raised)] text-fg-subtle">
+    <span class="flex size-9 items-center justify-center rounded-full bg-surface-raised text-fg-subtle">
       <InboxIcon class="size-4" />
     </span>
     <p class="text-body font-semibold">{{ title }}</p>

@@ -4,7 +4,7 @@ defineProps<{ title?: string; description?: string }>()
 
 <template>
   <section class="section-card">
-    <header v-if="title || $slots.actions" class="section-card__header">
+    <header v-if="title || description || $slots.actions" class="section-card__header">
       <div>
         <h2 v-if="title" class="section-card__title">{{ title }}</h2>
         <p v-if="description" class="section-card__desc">{{ description }}</p>

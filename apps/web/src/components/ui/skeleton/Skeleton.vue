@@ -6,5 +6,5 @@ defineProps<{ class?: HTMLAttributes['class'] }>()
 </script>
 
 <template>
-  <div :class="cn('animate-pulse rounded-[var(--cd-radius-sm)] bg-[var(--cd-color-hover)]', $props.class)" />
+  <div :class="cn('animate-pulse rounded-[var(--cd-radius-sm)] bg-hover', $props.class)" />
 </template>

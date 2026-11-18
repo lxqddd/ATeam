@@ -16,8 +16,12 @@ function priorityLabel(priority: number) {
 <template>
   <article
     draggable="true"
-    class="cursor-pointer rounded-[var(--cd-radius-md)] border border-[var(--cd-color-border-subtle)] bg-[var(--cd-color-surface)] p-3 transition-colors hover:border-[var(--cd-color-border-strong)] hover:shadow-[var(--cd-shadow-sm)]"
+    tabindex="0"
+    role="button"
+    class="cursor-pointer rounded-[var(--cd-radius-md)] border border-[var(--cd-color-border-subtle)] bg-[var(--cd-color-surface)] p-3 transition-[border-color,box-shadow] hover:border-[var(--cd-color-border-strong)] hover:shadow-[var(--cd-shadow-sm)]"
     @click="$emit('open', task)"
+    @keydown.enter="$emit('open', task)"
+    @keydown.space.prevent="$emit('open', task)"
     @dragstart="$emit('dragstart', task)"
   >
     <div class="flex items-start justify-between gap-2">

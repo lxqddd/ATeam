@@ -20,7 +20,7 @@ defineEmits<{ select: [] }>()
     @click="$emit('select')"
   >
     <span
-      class="relative block h-16 w-full overflow-hidden rounded-[var(--cd-radius-sm)] border border-black/5"
+      class="relative block h-16 w-full overflow-hidden rounded-[var(--cd-radius-sm)] border border-[var(--cd-color-border-subtle)]"
       :style="{ background: theme.swatch[0] }"
     >
       <span class="absolute inset-x-2 top-2 h-2 rounded-sm" :style="{ background: theme.swatch[1] }" />

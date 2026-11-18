@@ -6,7 +6,7 @@ defineEmits<{ close: [] }>()
 <template>
   <el-dialog :model-value="open" :title="title" :width="width" append-to-body @close="$emit('close')">
     <slot />
-    <template #footer>
+    <template v-if="$slots.footer" #footer>
       <slot name="footer" />
     </template>
   </el-dialog>
