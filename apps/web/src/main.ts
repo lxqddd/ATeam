@@ -11,8 +11,15 @@ import './styles/element-theme.css'
 import i18n from './i18n'
 import App from './App.vue'
 import { router } from './router'
-import { initTheme } from './stores/theme'
+import { initTheme, useThemeStore } from './stores/theme'
 
 initTheme()
 
-createApp(App).use(createPinia()).use(router).use(i18n).use(ElementPlus).mount('#app')
+const pinia = createPinia()
+const app = createApp(App)
+app.use(pinia).use(router).use(i18n).use(ElementPlus)
+
+// Instantiate the theme store so its prefers-color-scheme listener is active
+useThemeStore(pinia)
+
+app.mount('#app')

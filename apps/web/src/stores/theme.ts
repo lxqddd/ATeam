@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 
 export const THEME_IDS = ['light', 'dark', 'sunset', 'cream', 'mist', 'ink', 'graphite'] as const
 export type ThemeId = (typeof THEME_IDS)[number]
@@ -79,11 +79,13 @@ export const useThemeStore = defineStore('theme', () => {
 
   if (typeof matchMedia === 'function') {
     const media = matchMedia('(prefers-color-scheme: dark)')
-    media.addEventListener('change', () => {
+    const onMediaChange = () => {
       if (pref.value === 'system') {
         resolved.value = applyTheme('system')
       }
-    })
+    }
+    media.addEventListener('change', onMediaChange)
+    onScopeDispose(() => media.removeEventListener('change', onMediaChange))
   }
 
   function setTheme(next: ThemePref): void {
