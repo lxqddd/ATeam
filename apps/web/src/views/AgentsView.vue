@@ -180,6 +180,19 @@ async function submitAgent() {
   }
 }
 
+function workTagType(status?: string): 'success' | 'warning' | 'danger' | 'info' {
+  switch (status) {
+    case 'working':
+      return 'warning'
+    case 'completed':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    default:
+      return 'info'
+  }
+}
+
 async function deleteAgent(agent: Agent) {
   try {
     await ElMessageBox.confirm(
@@ -217,7 +230,13 @@ async function deleteAgent(agent: Agent) {
       />
 
       <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <el-card v-for="agent in agents.items" :key="agent.id" shadow="hover">
+        <el-card
+          v-for="agent in agents.items"
+          :key="agent.id"
+          shadow="hover"
+          class="cursor-pointer"
+          @click="$router.push(`/agents/${agent.id}/work`)"
+        >
           <template #header>
             <div class="flex items-start justify-between gap-2">
               <div>
@@ -226,7 +245,7 @@ async function deleteAgent(agent: Agent) {
                   {{ agent.description || $t('agents.noDescription') }}
                 </p>
               </div>
-              <div class="flex items-center gap-1">
+              <div class="flex items-center gap-1" @click.stop>
                 <el-button text :icon="Edit" @click="openEdit(agent)">{{ $t('agents.edit') }}</el-button>
                 <el-button text type="danger" :icon="Delete" @click="deleteAgent(agent)">
                   {{ $t('agents.delete') }}
@@ -237,14 +256,21 @@ async function deleteAgent(agent: Agent) {
           <p class="text-label text-fg-muted line-clamp-3 whitespace-pre-wrap">
             {{ agent.instructions || $t('agents.noInstructions') }}
           </p>
-          <div class="mt-3 flex items-center gap-3 text-caption text-fg-subtle">
+          <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-fg-subtle">
             <span>{{ agent.runtime }}</span>
+            <span v-if="agent.model">{{ agent.model }}</span>
             <span>{{ $t('agents.card.concurrency', { n: agent.maxConcurrency }) }}</span>
             <span>{{ $t('agents.card.timeout', { n: agent.timeoutMinutes }) }}</span>
-            <span>{{ agent.workspaceMode }}</span>
-            <span v-if="agent.model">{{ agent.model }}</span>
             <el-tag v-if="agent.modelStatus === 'unavailable'" type="danger" size="small">
               {{ $t('agents.card.modelUnavailable') }}
+            </el-tag>
+            <el-tag
+              v-if="agent.workStatus"
+              :type="workTagType(agent.workStatus)"
+              size="small"
+              class="ml-auto"
+            >
+              {{ $t(`work.status.${agent.workStatus}`) }}
             </el-tag>
           </div>
         </el-card>

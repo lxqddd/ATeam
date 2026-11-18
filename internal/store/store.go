@@ -39,6 +39,12 @@ type Store interface {
 	CreateRun(context.Context, *domain.Run) error
 	ListRuns(context.Context) ([]domain.Run, error)
 	ListRunsByTask(context.Context, string) ([]domain.Run, error)
+	// ListRunsByAgent returns the agent's most recent runs, newest first,
+	// capped at limit (work page history, PRD api-and-data §5.16).
+	ListRunsByAgent(context.Context, string, int) ([]domain.Run, error)
+	// CountActiveRunsByAgent reports queued/preparing/running runs for the
+	// agent; the work page working state keys off it.
+	CountActiveRunsByAgent(context.Context, string) (int, error)
 	GetRun(context.Context, string) (*domain.Run, error)
 	UpdateRun(context.Context, *domain.Run) error
 	// UpdateRunIfActive writes the run only while the stored status is still

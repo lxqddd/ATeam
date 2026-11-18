@@ -161,16 +161,6 @@ func (a *API) deleteTask(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (a *API) listAgents(w http.ResponseWriter, r *http.Request) {
-	agents, err := a.store.ListAgents(r.Context())
-	if err != nil {
-		a.writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	a.decorateAgents(r.Context(), agents)
-	a.writeJSON(w, http.StatusOK, agents)
-}
-
 type agentInput struct {
 	Name            string   `json:"name"`
 	Description     string   `json:"description"`

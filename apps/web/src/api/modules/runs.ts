@@ -1,4 +1,4 @@
-import type { Run, RunEvent } from '@ateam/shared'
+import type { Run, RunEvent, RunSnapshot } from '@ateam/shared'
 import { HttpClient } from '../http/client'
 
 export interface StartRunInput {
@@ -31,5 +31,9 @@ export class RunApi {
 export class RunDetailApi {
   static get(runId: string): Promise<Run> {
     return HttpClient.get<Run>(`/runs/${runId}`)
+  }
+
+  static snapshot(runId: string): Promise<RunSnapshot> {
+    return HttpClient.get<RunSnapshot>(`/runs/${runId}/snapshot`)
   }
 }

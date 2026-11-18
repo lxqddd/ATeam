@@ -84,6 +84,54 @@ export interface ModelTestResult {
   errorCode?: string
 }
 
+export type AgentWorkStatus = 'idle' | 'working' | 'completed' | 'failed'
+
+export interface RunSummary {
+  id: string
+  taskId: string
+  taskTitle?: string
+  status: RunStatus | string
+  phase?: string
+  startedAt?: string
+  endedAt?: string
+  durationMs: number
+  branch?: string
+  headCommit?: string
+  error?: string
+  errorCode?: string
+  summary?: string
+  reviewDone: boolean
+  artifactCount: number
+}
+
+export interface WorkCounts {
+  active: number
+  completed24h: number
+  failed24h: number
+}
+
+export interface AgentWork {
+  agent: Agent
+  workStatus: AgentWorkStatus
+  workStatusReason: string
+  activeRuns: RunSummary[]
+  lastRun: RunSummary | null
+  recentRuns: RunSummary[]
+  counts: WorkCounts
+  generatedAt: string
+}
+
+export interface RunSnapshot {
+  runId: string
+  agentVersionId?: string
+  configSnapshot: Record<string, unknown>
+  promptHash: string
+  runtimeVersion: string
+  permissionMode: string
+  permissionEnvelope: Record<string, unknown>
+  createdAt: string
+}
+
 export interface WorkspaceSettings {
   remote?: string
   worktreeRoot?: string

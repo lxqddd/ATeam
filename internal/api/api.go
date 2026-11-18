@@ -92,12 +92,14 @@ func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/agents", a.listAgents)
 	mux.HandleFunc("POST "+prefix+"/agents", a.createAgent)
 	mux.HandleFunc("GET "+prefix+"/agents/{id}", a.getAgent)
+	mux.HandleFunc("GET "+prefix+"/agents/{id}/work", a.getAgentWork)
 	mux.HandleFunc("PATCH "+prefix+"/agents/{id}", a.updateAgent)
 	mux.HandleFunc("DELETE "+prefix+"/agents/{id}", a.deleteAgent)
 
 	mux.HandleFunc("GET "+prefix+"/runs", a.listRuns)
 	mux.HandleFunc("GET "+prefix+"/runs/{id}", a.getRun)
 	mux.HandleFunc("GET "+prefix+"/runs/{id}/events", a.listRunEvents)
+	mux.HandleFunc("GET "+prefix+"/runs/{id}/snapshot", a.getRunSnapshot)
 	mux.HandleFunc("POST "+prefix+"/runs/{id}/cancel", a.cancelRun)
 
 	mux.HandleFunc("GET "+prefix+"/ws", a.hub.ServeWS)

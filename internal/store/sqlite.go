@@ -632,6 +632,36 @@ func (s *SQLite) ListRunsByTask(ctx context.Context, taskID string) ([]domain.Ru
 	return runs, rows.Err()
 }
 
+func (s *SQLite) ListRunsByAgent(ctx context.Context, agentID string, limit int) ([]domain.Run, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+runColumns+` FROM runs WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?`, agentID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list agent runs: %w", err)
+	}
+	defer rows.Close()
+
+	runs := []domain.Run{}
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan run: %w", err)
+		}
+		runs = append(runs, *run)
+	}
+	return runs, rows.Err()
+}
+
+func (s *SQLite) CountActiveRunsByAgent(ctx context.Context, agentID string) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE agent_id = ? AND status IN ('queued', 'preparing', 'running')`, agentID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count active agent runs: %w", err)
+	}
+	return count, nil
+}
+
 func (s *SQLite) GetRun(ctx context.Context, id string) (*domain.Run, error) {
 	run, err := scanRun(s.db.QueryRowContext(ctx, `SELECT `+runColumns+` FROM runs WHERE id = ?`, id))
 	if err != nil {
