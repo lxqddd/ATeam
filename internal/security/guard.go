@@ -45,9 +45,9 @@ func (g *Guard) Bind(listenAddr string) error {
 	}
 
 	origins := map[string]struct{}{
-		"http://127.0.0.1:" + port:  {},
-		"http://localhost:" + port:  {},
-		"http://[::1]:" + port:      {},
+		"http://127.0.0.1:" + port: {},
+		"http://localhost:" + port: {},
+		"http://[::1]:" + port:     {},
 	}
 	hosts := map[string]struct{}{
 		"127.0.0.1:" + port: {},

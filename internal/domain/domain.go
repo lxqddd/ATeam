@@ -115,13 +115,17 @@ type Run struct {
 }
 
 type RunEvent struct {
-	ID        string         `json:"id"`
-	RunID     string         `json:"runId"`
-	Seq       int            `json:"seq"`
-	Type      string         `json:"type"`
-	Message   string         `json:"message"`
-	Payload   map[string]any `json:"payload,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
+	ID             string         `json:"id"`
+	RunID          string         `json:"runId"`
+	Seq            int            `json:"seq"`
+	Type           string         `json:"type"`
+	Message        string         `json:"message"`
+	Payload        map[string]any `json:"payload,omitempty"`
+	Source         string         `json:"source,omitempty"`
+	Level          string         `json:"level,omitempty"`
+	Truncated      bool           `json:"truncated,omitempty"`
+	PayloadVersion int            `json:"payloadVersion,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
 }
 
 func NewID() string {

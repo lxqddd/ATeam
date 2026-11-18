@@ -435,7 +435,7 @@ func (s *SQLite) DeleteAgent(ctx context.Context, id string) error {
 
 const runColumns = `id, workspace_id, task_id, agent_id, agent_version_id, config_snapshot_id, status, trigger, attempt, branch, worktree, base_commit, head_commit, summary, error, error_code, failure_detail, queue_reason, retry_of, runtime_session_id, exit_code, created_at, queued_at, started_at, ended_at, cancel_requested_at, last_event_at`
 
-const runMutableSet = `status = ?, branch = ?, worktree = ?, summary = ?, error = ?, error_code = ?, failure_detail = ?, base_commit = ?, head_commit = ?, agent_version_id = ?, config_snapshot_id = ?, runtime_session_id = ?, queue_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, cancel_requested_at = ?, last_event_at = ?`
+const runMutableSet = `status = ?, branch = ?, worktree = ?, summary = ?, error = ?, error_code = ?, failure_detail = ?, base_commit = ?, head_commit = ?, agent_version_id = ?, config_snapshot_id = ?, runtime_session_id = ?, queue_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, last_event_at = ?`
 
 func runMutableArgs(run *domain.Run) []any {
 	return []any{
@@ -455,7 +455,6 @@ func runMutableArgs(run *domain.Run) []any {
 		nullableInt(run.ExitCode),
 		millisPtr(run.StartedAt),
 		millisPtr(run.EndedAt),
-		millisPtr(run.CancelRequestedAt),
 		millisPtr(run.LastEventAt),
 	}
 }
@@ -465,6 +464,13 @@ func nullableInt(value *int) any {
 		return nil
 	}
 	return *value
+}
+
+func boolInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func scanRun(s scanner) (*domain.Run, error) {
@@ -672,13 +678,23 @@ func (s *SQLite) AppendRunEvent(ctx context.Context, event *domain.RunEvent) err
 	if event.Payload == nil {
 		event.Payload = map[string]any{}
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO run_events (id, run_id, seq, type, message, payload, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+	if event.Level == "" {
+		event.Level = "info"
+	}
+	if event.PayloadVersion == 0 {
+		event.PayloadVersion = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO run_events (id, run_id, seq, type, message, payload, source, level, truncated, payload_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		event.ID,
 		event.RunID,
 		event.Seq,
 		event.Type,
 		event.Message,
 		mustJSON(event.Payload),
+		event.Source,
+		event.Level,
+		boolInt(event.Truncated),
+		event.PayloadVersion,
 		millis(event.CreatedAt),
 	)
 	if err != nil {
@@ -688,7 +704,7 @@ func (s *SQLite) AppendRunEvent(ctx context.Context, event *domain.RunEvent) err
 }
 
 func (s *SQLite) ListRunEvents(ctx context.Context, runID string) ([]domain.RunEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, run_id, seq, type, message, payload, created_at FROM run_events WHERE run_id = ? ORDER BY seq ASC`, runID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, run_id, seq, type, message, payload, source, level, truncated, payload_version, created_at FROM run_events WHERE run_id = ? ORDER BY seq ASC`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("list run events: %w", err)
 	}
@@ -697,14 +713,16 @@ func (s *SQLite) ListRunEvents(ctx context.Context, runID string) ([]domain.RunE
 	events := []domain.RunEvent{}
 	for rows.Next() {
 		var (
-			event   domain.RunEvent
-			payload string
-			created int64
+			event     domain.RunEvent
+			payload   string
+			truncated int
+			created   int64
 		)
-		if err := rows.Scan(&event.ID, &event.RunID, &event.Seq, &event.Type, &event.Message, &payload, &created); err != nil {
+		if err := rows.Scan(&event.ID, &event.RunID, &event.Seq, &event.Type, &event.Message, &payload, &event.Source, &event.Level, &truncated, &event.PayloadVersion, &created); err != nil {
 			return nil, fmt.Errorf("scan run event: %w", err)
 		}
 		event.Payload = jsonMap(payload)
+		event.Truncated = truncated != 0
 		event.CreatedAt = timeFromMillis(created)
 		events = append(events, event)
 	}
@@ -777,4 +795,17 @@ func jsonMap(value string) map[string]any {
 		return map[string]any{}
 	}
 	return result
+}
+
+// MarkRunCancelRequested records when the user asked to cancel an active run.
+func (s *SQLite) MarkRunCancelRequested(ctx context.Context, runID string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE runs SET cancel_requested_at = ? WHERE id = ? AND status IN ('queued', 'preparing', 'running')`, millis(domain.Now()), runID)
+	if err != nil {
+		return false, fmt.Errorf("mark run cancel requested: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("mark run cancel requested: rows affected: %w", err)
+	}
+	return affected > 0, nil
 }

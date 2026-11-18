@@ -168,3 +168,100 @@ func TestUnboundWorkspaceFailsRealRuntime(t *testing.T) {
 		t.Fatalf("errorCode = %q, want workspace_error", final.ErrorCode)
 	}
 }
+
+type probingAdapter struct {
+	fakeAdapter
+	info runtime.ProbeInfo
+}
+
+func (a *probingAdapter) Probe(context.Context) runtime.ProbeInfo { return a.info }
+
+func TestRunConfigSnapshotRecorded(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	st.setAgentRuntime("fake-claude")
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{
+		ID:            domain.DefaultWorkspaceID,
+		Name:          "Bound",
+		RepoPath:      repo,
+		DefaultBranch: "main",
+		Status:        domain.WorkspaceActive,
+	})
+
+	sched, _ := newWorktreeScheduler(t, st)
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+
+	snapshot, ok := st.snapshot(run.ID)
+	if !ok {
+		t.Fatal("expected a run configuration snapshot")
+	}
+	if len(snapshot.PromptHash) != 64 {
+		t.Fatalf("prompt hash = %q", snapshot.PromptHash)
+	}
+	if snapshot.PermissionMode != "controlled_edit" {
+		t.Fatalf("permission mode = %q", snapshot.PermissionMode)
+	}
+	if !strings.Contains(snapshot.ConfigSnapshot, "fake-claude") {
+		t.Fatalf("snapshot missing runtime: %s", snapshot.ConfigSnapshot)
+	}
+	final := st.run(run.ID)
+	if final.ConfigSnapshotID == "" {
+		t.Fatal("run is not linked to its snapshot")
+	}
+}
+
+func TestProbeFailureBlocksRun(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	st.setAgentRuntime("fake-claude")
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&probingAdapter{
+		fakeAdapter: fakeAdapter{name: "fake-claude"},
+		info:        runtime.ProbeInfo{Name: "fake-claude", Version: "0.0.1", Compatible: false, Detail: "missing required flags"},
+	})
+	sched := New(st, hub, registry, workspace.New(dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "probe failure", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunFailed
+	})
+	final := st.run(run.ID)
+	if final.ErrorCode != "runtime_error" || final.FailureDetail != "runtime_version_unsupported" {
+		t.Fatalf("codes = %s/%s", final.ErrorCode, final.FailureDetail)
+	}
+	if st.hasEventType("run.workspace.provisioning") {
+		t.Fatal("probe must fail before provisioning")
+	}
+}
+
+func TestReconcileMarksInterruptedAndRequeues(t *testing.T) {
+	st, queuedRun := newFakeStore(t, domain.RunQueued)
+	interrupted := domain.Run{
+		ID:          "run-interrupted",
+		WorkspaceID: domain.DefaultWorkspaceID,
+		TaskID:      queuedRun.TaskID,
+		AgentID:     queuedRun.AgentID,
+		Status:      domain.RunRunning,
+		Trigger:     "manual",
+		CreatedAt:   domain.Now(),
+	}
+	st.setRun(interrupted)
+
+	sched, _ := newWorktreeScheduler(t, st)
+	startRun(t, sched, queuedRun.ID)
+
+	waitFor(t, "interrupted run failed", 3*time.Second, func() bool {
+		return st.runStatus(interrupted.ID) == domain.RunFailed
+	})
+	recovered := st.run(interrupted.ID)
+	if recovered.ErrorCode != "interrupted" || recovered.FailureDetail != "app_restart" {
+		t.Fatalf("codes = %s/%s", recovered.ErrorCode, recovered.FailureDetail)
+	}
+	waitFor(t, "queued run re-executed", 5*time.Second, func() bool {
+		return st.runStatus(queuedRun.ID) == domain.RunCompleted
+	})
+}

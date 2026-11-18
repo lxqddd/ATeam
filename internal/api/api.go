@@ -51,6 +51,7 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/projects/{id}", a.getWorkspace)
 	mux.HandleFunc("PATCH /api/v1/projects/{id}", a.updateWorkspace)
 	mux.HandleFunc("GET /api/v1/runs/{id}/workspace", a.getRunWorkspace)
+	mux.HandleFunc("GET /api/v1/meta", a.getMeta)
 
 	mux.HandleFunc("GET /api/tasks", a.listTasks)
 	mux.HandleFunc("POST /api/tasks", a.createTask)

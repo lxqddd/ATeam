@@ -10,6 +10,11 @@ type MockAdapter struct{}
 
 func (a *MockAdapter) Name() string { return "mock" }
 
+// Probe reports the built-in mock runtime as always available.
+func (a *MockAdapter) Probe(context.Context) ProbeInfo {
+	return ProbeInfo{Name: a.Name(), Version: "builtin", Compatible: true}
+}
+
 func (a *MockAdapter) Run(ctx context.Context, req Request, emit func(Event)) error {
 	steps := []string{
 		"Reading task context and agent instructions",

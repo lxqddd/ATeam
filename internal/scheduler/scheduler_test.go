@@ -24,6 +24,7 @@ type fakeStore struct {
 	tasks      map[string]domain.Task
 	agents     map[string]domain.Agent
 	workspaces map[string]domain.Workspace
+	snapshots  map[string]domain.RunConfigSnapshot
 	events     int
 	eventTypes []string
 }
@@ -63,7 +64,45 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 		workspaces: map[string]domain.Workspace{
 			domain.DefaultWorkspaceID: {ID: domain.DefaultWorkspaceID, Name: "Default", DefaultBranch: "main", Status: domain.WorkspaceActive},
 		},
+		snapshots: map[string]domain.RunConfigSnapshot{},
 	}, &run
+}
+
+func (f *fakeStore) ListRuns(_ context.Context) ([]domain.Run, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	runs := make([]domain.Run, 0, len(f.runs))
+	for _, run := range f.runs {
+		runs = append(runs, run)
+	}
+	return runs, nil
+}
+
+func (f *fakeStore) CreateRunConfigSnapshot(_ context.Context, snapshot *domain.RunConfigSnapshot) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if snapshot.ID == "" {
+		snapshot.ID = domain.NewID()
+	}
+	f.snapshots[snapshot.RunID] = *snapshot
+	return nil
+}
+
+func (f *fakeStore) GetRunConfigSnapshotByRun(_ context.Context, runID string) (*domain.RunConfigSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	snapshot, ok := f.snapshots[runID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &snapshot, nil
+}
+
+func (f *fakeStore) snapshot(runID string) (domain.RunConfigSnapshot, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	snapshot, ok := f.snapshots[runID]
+	return snapshot, ok
 }
 
 func (f *fakeStore) GetWorkspace(_ context.Context, id string) (*domain.Workspace, error) {
@@ -135,6 +174,10 @@ func (f *fakeStore) UpdateRunIfActive(_ context.Context, run *domain.Run) (bool,
 	if !ok || !current.Status.Active() {
 		return false, nil
 	}
+	// Mirror the SQL: cancel_requested_at is managed by MarkRunCancelRequested.
+	if run.CancelRequestedAt == nil {
+		run.CancelRequestedAt = current.CancelRequestedAt
+	}
 	f.runs[run.ID] = *run
 	return true, nil
 }
@@ -174,6 +217,25 @@ func (f *fakeStore) run(id string) domain.Run {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.runs[id]
+}
+
+func (f *fakeStore) setRun(run domain.Run) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.runs[run.ID] = run
+}
+
+func (f *fakeStore) MarkRunCancelRequested(_ context.Context, runID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[runID]
+	if !ok || !run.Status.Active() {
+		return false, nil
+	}
+	requested := domain.Now()
+	run.CancelRequestedAt = &requested
+	f.runs[runID] = run
+	return true, nil
 }
 
 func (f *fakeStore) eventCount() int {
@@ -272,5 +334,23 @@ func TestExecuteSkipsTerminalRun(t *testing.T) {
 	}
 	if n := st.eventCount(); n != 0 {
 		t.Fatalf("terminal run emitted %d events, want 0", n)
+	}
+}
+
+func TestCancelCodesAlignWithCatalog(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	st, run := newFakeStore(t, domain.RunQueued)
+	sched := newTestScheduler(t, st)
+	if !sched.Cancel(ctx, run.ID) {
+		t.Fatal("cancel should handle a queued run")
+	}
+	cancelled := st.run(run.ID)
+	if cancelled.ErrorCode != "cancelled_by_user" || cancelled.FailureDetail != "user_cancel" {
+		t.Fatalf("codes = %s/%s", cancelled.ErrorCode, cancelled.FailureDetail)
+	}
+	if cancelled.CancelRequestedAt == nil {
+		t.Fatal("expected cancelRequestedAt to be recorded")
 	}
 }

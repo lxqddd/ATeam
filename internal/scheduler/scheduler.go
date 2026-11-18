@@ -2,6 +2,9 @@ package scheduler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -42,8 +45,46 @@ func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
+	// Recover before serving: persisted queued runs are re-enqueued, and runs
+	// interrupted mid-flight are failed with errorCode=interrupted so no run
+	// stays forever queued/preparing/running (PRD api-and-data G-02).
+	s.reconcile(ctx)
 	for index := 0; index < s.workers; index++ {
 		go s.worker(ctx)
+	}
+}
+
+func (s *Scheduler) reconcile(ctx context.Context) {
+	runs, err := s.store.ListRuns(ctx)
+	if err != nil {
+		slog.Warn("reconcile runs", "error", err)
+		return
+	}
+	for index := range runs {
+		run := &runs[index]
+		switch run.Status {
+		case domain.RunPreparing, domain.RunRunning:
+			ended := domain.Now()
+			run.Status = domain.RunFailed
+			run.Error = "interrupted by application restart"
+			run.ErrorCode = "interrupted"
+			run.FailureDetail = "app_restart"
+			run.EndedAt = &ended
+			updated, err := s.store.UpdateRunIfActive(ctx, run)
+			if err != nil {
+				slog.Warn("reconcile interrupted run", "run", run.ID, "error", err)
+				continue
+			}
+			if updated {
+				s.hub.Broadcast(events.Event{Type: "run.updated", Data: run})
+			}
+		case domain.RunQueued:
+			select {
+			case s.queue <- run.ID:
+			default:
+				slog.Warn("recovery queue full; run stays queued for a manual retry", "run", run.ID)
+			}
+		}
 	}
 }
 
@@ -66,6 +107,7 @@ func (s *Scheduler) Cancel(ctx context.Context, runID string) bool {
 	cancel, running := s.cancels[runID]
 	s.mu.Unlock()
 	if running {
+		s.markCancelRequested(ctx, runID)
 		cancel()
 		return true
 	}
@@ -79,11 +121,22 @@ func (s *Scheduler) Cancel(ctx context.Context, runID string) bool {
 		return false
 	}
 	ended := domain.Now()
+	s.markCancelRequested(ctx, run.ID)
 	run.Status = domain.RunCancelled
 	run.Error = "run cancelled"
+	run.ErrorCode = "cancelled_by_user"
+	run.FailureDetail = "user_cancel"
 	run.EndedAt = &ended
 	s.writeActiveRun(ctx, run, "run.updated")
 	return true
+}
+
+// markCancelRequested records when the user asked to cancel a run. It is a
+// dedicated conditional update so worker writes never clear the timestamp.
+func (s *Scheduler) markCancelRequested(ctx context.Context, runID string) {
+	if _, err := s.store.MarkRunCancelRequested(ctx, runID); err != nil {
+		slog.Warn("record cancel request", "run", runID, "error", err)
+	}
 }
 
 func (s *Scheduler) worker(ctx context.Context) {
@@ -111,16 +164,16 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 
 	task, err := s.store.GetTask(ctx, run.TaskID)
 	if err != nil {
-		s.finishFailed(ctx, run, "internal_error", "failed to load the task")
+		s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to load the task")
 		return
 	}
 	agent, err := s.store.GetAgent(ctx, run.AgentID)
 	if err != nil {
-		s.finishFailed(ctx, run, "internal_error", "failed to load the agent")
+		s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to load the agent")
 		return
 	}
 	if !task.Status.Executable() {
-		s.finishFailed(ctx, run, "task_not_executable", fmt.Sprintf("task is %s; move it to todo or in_progress before running", task.Status))
+		s.finishFailed(ctx, run, "invalid_task_state", "task_not_executable", fmt.Sprintf("task is %s; move it to todo or in_progress before running", task.Status))
 		return
 	}
 
@@ -151,29 +204,153 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	}
 
 	sequence := 0
-	emit := func(event runtime.Event) {
+	eventCount := 0
+	truncationWarned := false
+	logsInWindow := 0
+	windowStart := time.Now()
+	logsDropped := 0
+	appendEvent := func(runEvent *domain.RunEvent) {
 		sequence++
-		runEvent := &domain.RunEvent{
-			ID:        domain.NewID(),
-			RunID:     run.ID,
-			Seq:       sequence,
-			Type:      event.Type,
-			Message:   event.Message,
-			Payload:   event.Data,
-			CreatedAt: domain.Now(),
-		}
+		runEvent.Seq = sequence
 		if err := s.store.AppendRunEvent(ctx, runEvent); err != nil {
 			slog.Warn("append run event", "run", run.ID, "error", err)
 		}
 		s.hub.Broadcast(events.Event{Type: "run.event", Data: runEvent})
 	}
+	emit := func(event runtime.Event) {
+		if eventCount >= maxRunEventsPerRun {
+			if !truncationWarned {
+				truncationWarned = true
+				appendEvent(&domain.RunEvent{
+					ID:        domain.NewID(),
+					RunID:     run.ID,
+					Type:      "warning",
+					Message:   "event limit reached; further events are dropped",
+					Payload:   map[string]any{"code": "EVENTS_TRUNCATED", "limit": maxRunEventsPerRun},
+					Source:    "scheduler",
+					Level:     "warn",
+					CreatedAt: domain.Now(),
+				})
+			}
+			return
+		}
+		if isLogEvent(event.Type) {
+			if time.Since(windowStart) > time.Second {
+				windowStart = time.Now()
+				logsInWindow = 0
+			}
+			if logsInWindow >= maxLogEventsPerSecond {
+				logsDropped++
+				if logsDropped%200 == 0 {
+					appendEvent(&domain.RunEvent{
+						ID:        domain.NewID(),
+						RunID:     run.ID,
+						Type:      "warning",
+						Message:   fmt.Sprintf("log events throttled; %d dropped so far", logsDropped),
+						Payload:   map[string]any{"code": "LOGS_TRUNCATED", "dropped": logsDropped},
+						Source:    "scheduler",
+						Level:     "warn",
+						CreatedAt: domain.Now(),
+					})
+				}
+				return
+			}
+			logsInWindow++
+		}
+		eventCount++
+
+		message := event.Message
+		if len(message) > maxRunEventMessageBytes {
+			message = message[:maxRunEventMessageBytes] + "…"
+		}
+		payload := event.Data
+		truncated := false
+		if payload != nil {
+			if encoded, err := json.Marshal(payload); err == nil && len(encoded) > maxRunEventPayloadBytes {
+				payload = map[string]any{"truncated": true, "originalBytes": len(encoded)}
+				truncated = true
+			}
+		}
+		level := event.Level
+		if level == "" {
+			level = "info"
+		}
+		appendEvent(&domain.RunEvent{
+			ID:             domain.NewID(),
+			RunID:          run.ID,
+			Type:           event.Type,
+			Message:        message,
+			Payload:        payload,
+			Source:         event.Source,
+			Level:          level,
+			Truncated:      truncated,
+			PayloadVersion: 1,
+			CreatedAt:      domain.Now(),
+		})
+	}
 
 	adapter, registered := s.registry.Get(agent.Runtime)
 	if !registered {
 		// Unknown runtimes fail explicitly; they never fall back to mock (MILE-009).
-		emit(runtime.Event{Type: "error", Message: fmt.Sprintf("runtime %q is not registered", agent.Runtime), Data: map[string]any{"errorCode": "runtime_error"}})
-		s.finishFailed(ctx, run, "runtime_error", fmt.Sprintf("runtime %q is not registered", agent.Runtime))
+		emit(runtime.Event{Type: "error", Message: fmt.Sprintf("runtime %q is not registered", agent.Runtime), Data: map[string]any{"errorCode": "runtime_error"}, Level: "error"})
+		s.finishFailed(ctx, run, "runtime_error", "invalid_agent_config", fmt.Sprintf("runtime %q is not registered", agent.Runtime))
 		return
+	}
+
+	// Probe the CLI before spending work: missing/incompatible runtimes fail
+	// with an actionable error instead of degrading (M1-RUNTIME-001/002/007).
+	probe := runtime.ProbeInfo{Name: adapter.Name(), Version: "builtin", Compatible: true}
+	if prober, ok := adapter.(runtime.Prober); ok {
+		probe = prober.Probe(runCtx)
+	}
+	if !probe.Compatible {
+		emit(runtime.Event{Type: "error", Message: probe.Detail, Data: map[string]any{"errorCode": "runtime_error", "failureDetail": "runtime_version_unsupported"}, Level: "error"})
+		s.finishFailed(ctx, run, "runtime_error", "runtime_version_unsupported", probe.Detail)
+		return
+	}
+
+	prompt := buildPrompt(task, agent)
+	permissionMode := agent.PermissionMode
+	if permissionMode == "" {
+		permissionMode = "controlled_edit"
+	}
+	promptSum := sha256.Sum256([]byte(prompt))
+	configJSON, err := json.Marshal(map[string]any{
+		"runtime":         agent.Runtime,
+		"model":           agent.Model,
+		"workspaceMode":   agent.WorkspaceMode,
+		"permissionMode":  permissionMode,
+		"timeoutMinutes":  agent.TimeoutMinutes,
+		"maxConcurrency":  agent.MaxConcurrency,
+		"allowedPaths":    agent.AllowedPaths,
+		"allowedCommands": agent.AllowedCommands,
+		"runtimeVersion":  probe.Version,
+		"capabilities":    probe.Capabilities,
+	})
+	if err == nil {
+		envelopeJSON, _ := json.Marshal(map[string]any{
+			"allowedPaths":    agent.AllowedPaths,
+			"allowedCommands": agent.AllowedCommands,
+		})
+		snapshot := &domain.RunConfigSnapshot{
+			RunID:              run.ID,
+			AgentVersionID:     run.AgentVersionID,
+			ConfigSnapshot:     string(configJSON),
+			PromptHash:         hex.EncodeToString(promptSum[:]),
+			RuntimeVersion:     probe.Version,
+			PermissionMode:     permissionMode,
+			PermissionEnvelope: string(envelopeJSON),
+		}
+		if err := s.store.CreateRunConfigSnapshot(ctx, snapshot); err != nil {
+			emit(runtime.Event{Type: "error", Message: "failed to record the run configuration snapshot", Data: map[string]any{"errorCode": "internal_error"}, Level: "error"})
+			s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to record the run configuration snapshot")
+			return
+		}
+		run.ConfigSnapshotID = snapshot.ID
+		_ = s.writeActiveRun(ctx, run, "run.preparing")
+	}
+	if permissionMode == "full_access" {
+		emit(runtime.Event{Type: "warning", Message: "runtime runs with full access; permission checks are bypassed", Data: map[string]any{"code": "PERMISSION_FULL_ACCESS", "permissionMode": permissionMode}, Level: "warn"})
 	}
 
 	// Code changing runs get an isolated git worktree; mock (non-code) runs
@@ -183,8 +360,8 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	if codeChange {
 		workspaceRecord, err := s.store.GetWorkspace(ctx, run.WorkspaceID)
 		if err != nil || !workspaceRecord.Bound() {
-			emit(runtime.Event{Type: "error", Message: "workspace is not bound to a local repository", Data: map[string]any{"errorCode": "workspace_error"}})
-			s.finishFailed(ctx, run, "workspace_error", "workspace is not bound to a local repository")
+			emit(runtime.Event{Type: "error", Message: "workspace is not bound to a local repository", Data: map[string]any{"errorCode": "workspace_error"}, Level: "error"})
+			s.finishFailed(ctx, run, "workspace_error", "workspace_provision_failed", "workspace is not bound to a local repository")
 			return
 		}
 		settings := workspaceRecord.Settings.WithDefaults()
@@ -212,8 +389,9 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 				Type:    "run.workspace.failed",
 				Message: "Failed to provision run workspace",
 				Data:    map[string]any{"runId": run.ID, "errorCode": "workspace_error"},
+				Level:   "error",
 			})
-			s.finishFailed(ctx, run, "workspace_error", "failed to provision the run workspace")
+			s.finishFailed(ctx, run, "workspace_error", "git_error", "failed to provision the run workspace")
 			return
 		}
 		run.Branch = worktree.Branch
@@ -237,7 +415,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 				s.finishCancelled(ctx, run)
 				return
 			}
-			s.finishFailed(ctx, run, "workspace_error", "failed to prepare the run directory")
+			s.finishFailed(ctx, run, "workspace_error", "workspace_provision_failed", "failed to prepare the run directory")
 			return
 		}
 		run.Worktree = dir
@@ -255,8 +433,10 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	})
 
 	err = adapter.Run(runCtx, runtime.Request{
-		Prompt:  buildPrompt(task, agent),
-		Workdir: workdir,
+		Prompt:         prompt,
+		Workdir:        workdir,
+		Model:          agent.Model,
+		PermissionMode: permissionMode,
 	}, emit)
 
 	if codeChange && workdir != "" {
@@ -271,17 +451,23 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	case errors.Is(err, context.Canceled):
 		run.Status = domain.RunCancelled
 		run.Error = "run cancelled"
-		run.ErrorCode = "cancelled"
+		run.ErrorCode = "cancelled_by_user"
+		run.FailureDetail = "user_cancel"
 	case errors.Is(err, context.DeadlineExceeded):
 		run.Status = domain.RunFailed
 		run.Error = "run timed out"
 		run.ErrorCode = "timeout"
-		run.FailureDetail = "run timed out"
+		run.FailureDetail = "timeout"
 	case err != nil:
 		run.Status = domain.RunFailed
 		run.Error = err.Error()
 		run.ErrorCode = "runtime_error"
-		run.FailureDetail = err.Error()
+		run.FailureDetail = "adapter_crash"
+		var runtimeErr *runtime.Error
+		if errors.As(err, &runtimeErr) && runtimeErr.Detail != "" {
+			run.FailureDetail = runtimeErr.Detail
+			run.Error = runtimeErr.Message
+		}
 	default:
 		run.Status = domain.RunCompleted
 		run.Summary = fmt.Sprintf("Completed with %s runtime", adapter.Name())
@@ -295,19 +481,35 @@ func (s *Scheduler) finishCancelled(ctx context.Context, run *domain.Run) {
 	ended := domain.Now()
 	run.Status = domain.RunCancelled
 	run.Error = "run cancelled"
-	run.ErrorCode = "cancelled"
+	run.ErrorCode = "cancelled_by_user"
+	run.FailureDetail = "user_cancel"
 	run.EndedAt = &ended
 	s.writeActiveRun(ctx, run, "run.updated")
 }
 
-func (s *Scheduler) finishFailed(ctx context.Context, run *domain.Run, code, message string) {
+func (s *Scheduler) finishFailed(ctx context.Context, run *domain.Run, code, detail, message string) {
 	ended := domain.Now()
 	run.Status = domain.RunFailed
 	run.Error = message
 	run.ErrorCode = code
-	run.FailureDetail = message
+	run.FailureDetail = detail
 	run.EndedAt = &ended
 	s.writeActiveRun(ctx, run, "run.updated")
+}
+
+const (
+	maxRunEventsPerRun      = 20000
+	maxLogEventsPerSecond   = 50
+	maxRunEventMessageBytes = 8 * 1024
+	maxRunEventPayloadBytes = 64 * 1024
+)
+
+func isLogEvent(eventType string) bool {
+	switch eventType {
+	case "log", "stdout", "stderr":
+		return true
+	}
+	return false
 }
 
 // writeActiveRun persists a run only while its stored status is still active.

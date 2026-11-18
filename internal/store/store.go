@@ -41,6 +41,12 @@ type Store interface {
 	// a terminal state (for example a concurrent cancel), so callers never
 	// resurrect a cancelled run.
 	UpdateRunIfActive(context.Context, *domain.Run) (bool, error)
+	// MarkRunCancelRequested records cancel_requested_at for an active run
+	// without touching the other columns, so worker writes cannot clear it.
+	MarkRunCancelRequested(context.Context, string) (bool, error)
+
+	CreateRunConfigSnapshot(context.Context, *domain.RunConfigSnapshot) error
+	GetRunConfigSnapshotByRun(context.Context, string) (*domain.RunConfigSnapshot, error)
 
 	AppendRunEvent(context.Context, *domain.RunEvent) error
 	ListRunEvents(context.Context, string) ([]domain.RunEvent, error)

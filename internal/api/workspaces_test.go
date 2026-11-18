@@ -305,3 +305,29 @@ func TestCreateRunRequiresBoundWorkspaceForRealRuntime(t *testing.T) {
 		t.Fatalf("unbound workspace run = %d, want 409 (body %s)", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestMetaListsRuntimes(t *testing.T) {
+	handler, _ := newTestHandler(t)
+	recorder := callJSON(t, handler, http.MethodGet, "/api/v1/meta", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("meta = %d", recorder.Code)
+	}
+	var payload struct {
+		Version  string           `json:"version"`
+		Runtimes []map[string]any `json:"runtimes"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode meta: %v", err)
+	}
+	names := map[string]bool{}
+	for _, entry := range payload.Runtimes {
+		name, _ := entry["name"].(string)
+		names[name] = true
+		if _, ok := entry["compatible"]; !ok {
+			t.Fatalf("runtime entry missing compatible: %#v", entry)
+		}
+	}
+	if !names["mock"] || !names["claude"] {
+		t.Fatalf("meta runtimes = %v", names)
+	}
+}
