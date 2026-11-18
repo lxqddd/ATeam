@@ -1,11 +1,11 @@
-/* ============================================================
- * Element Plus × Nomi 石墨主题
- * 必须晚于 element-plus/theme-chalk/dark/css-vars.css 引入，
- * 才能在同等特异性下覆盖 EP 的默认深色变量。
- * ============================================================ */
+/* Element Plus × nomi 令牌（7 套主题）。
+ * 基础映射同时挂 :root 与 html.dark：EP 的深色 css-vars 用 html.dark 定义变量，
+ * 只写 :root 会被其更高的特异性压过；选择器列表中的 html.dark 与 EP 同特异性、
+ * 后写生效，因此 7 套主题都取 --cd-* 令牌。深色补充放 html.dark。
+ */
 
+:root,
 html.dark {
-  /* --- 功能色：主色 --- */
   --el-color-primary: var(--cd-color-accent);
   --el-color-primary-light-3: color-mix(in srgb, var(--cd-color-accent) 72%, var(--cd-color-bg));
   --el-color-primary-light-5: color-mix(in srgb, var(--cd-color-accent) 52%, var(--cd-color-bg));
@@ -13,51 +13,17 @@ html.dark {
   --el-color-primary-light-8: color-mix(in srgb, var(--cd-color-accent) 22%, var(--cd-color-bg));
   --el-color-primary-light-9: color-mix(in srgb, var(--cd-color-accent) 14%, var(--cd-color-bg));
   --el-color-primary-dark-2: var(--cd-color-accent-hover);
-
-  /* --- 功能色：成功 --- */
   --el-color-success: var(--cd-color-success);
-  --el-color-success-light-3: color-mix(in srgb, var(--cd-color-success) 72%, var(--cd-color-bg));
-  --el-color-success-light-5: color-mix(in srgb, var(--cd-color-success) 52%, var(--cd-color-bg));
-  --el-color-success-light-7: color-mix(in srgb, var(--cd-color-success) 32%, var(--cd-color-bg));
-  --el-color-success-light-8: color-mix(in srgb, var(--cd-color-success) 22%, var(--cd-color-bg));
-  --el-color-success-light-9: color-mix(in srgb, var(--cd-color-success) 14%, var(--cd-color-bg));
-  --el-color-success-dark-2: color-mix(in srgb, var(--cd-color-success) 80%, white);
-
-  /* --- 功能色：警告 --- */
   --el-color-warning: var(--cd-color-warning);
-  --el-color-warning-light-3: color-mix(in srgb, var(--cd-color-warning) 72%, var(--cd-color-bg));
-  --el-color-warning-light-5: color-mix(in srgb, var(--cd-color-warning) 52%, var(--cd-color-bg));
-  --el-color-warning-light-7: color-mix(in srgb, var(--cd-color-warning) 32%, var(--cd-color-bg));
-  --el-color-warning-light-8: color-mix(in srgb, var(--cd-color-warning) 22%, var(--cd-color-bg));
-  --el-color-warning-light-9: color-mix(in srgb, var(--cd-color-warning) 14%, var(--cd-color-bg));
-  --el-color-warning-dark-2: color-mix(in srgb, var(--cd-color-warning) 80%, white);
-
-  /* --- 功能色：危险 --- */
   --el-color-danger: var(--cd-color-danger);
-  --el-color-danger-light-3: color-mix(in srgb, var(--cd-color-danger) 72%, var(--cd-color-bg));
-  --el-color-danger-light-5: color-mix(in srgb, var(--cd-color-danger) 52%, var(--cd-color-bg));
-  --el-color-danger-light-7: color-mix(in srgb, var(--cd-color-danger) 32%, var(--cd-color-bg));
-  --el-color-danger-light-8: color-mix(in srgb, var(--cd-color-danger) 22%, var(--cd-color-bg));
-  --el-color-danger-light-9: color-mix(in srgb, var(--cd-color-danger) 14%, var(--cd-color-bg));
-  --el-color-danger-dark-2: color-mix(in srgb, var(--cd-color-danger) 80%, white);
-  --el-color-error: var(--el-color-danger);
-  --el-color-error-light-3: var(--el-color-danger-light-3);
-  --el-color-error-light-5: var(--el-color-danger-light-5);
-  --el-color-error-light-7: var(--el-color-danger-light-7);
-  --el-color-error-light-8: var(--el-color-danger-light-8);
-  --el-color-error-light-9: var(--el-color-danger-light-9);
-  --el-color-error-dark-2: var(--el-color-danger-dark-2);
+  --el-color-error: var(--cd-color-danger);
+  --el-color-info: var(--cd-color-info);
+  --el-color-success-light-9: var(--cd-color-success-soft);
+  --el-color-warning-light-9: var(--cd-color-warning-soft);
+  --el-color-danger-light-9: var(--cd-color-danger-soft);
+  --el-color-error-light-9: var(--cd-color-danger-soft);
+  --el-color-info-light-9: var(--cd-color-info-soft);
 
-  /* --- 功能色：信息（中性灰蓝） --- */
-  --el-color-info: var(--cd-color-text-subtle);
-  --el-color-info-light-3: color-mix(in srgb, var(--cd-color-text-subtle) 72%, var(--cd-color-bg));
-  --el-color-info-light-5: color-mix(in srgb, var(--cd-color-text-subtle) 52%, var(--cd-color-bg));
-  --el-color-info-light-7: color-mix(in srgb, var(--cd-color-text-subtle) 32%, var(--cd-color-bg));
-  --el-color-info-light-8: color-mix(in srgb, var(--cd-color-text-subtle) 22%, var(--cd-color-bg));
-  --el-color-info-light-9: color-mix(in srgb, var(--cd-color-text-subtle) 14%, var(--cd-color-bg));
-  --el-color-info-dark-2: color-mix(in srgb, var(--cd-color-text-subtle) 80%, white);
-
-  /* --- 背景 / 文本 / 边框 / 填充 --- */
   --el-bg-color-page: var(--cd-color-bg);
   --el-bg-color: var(--cd-color-surface);
   --el-bg-color-overlay: var(--cd-color-surface-raised);
@@ -85,10 +51,9 @@ html.dark {
   --el-disabled-text-color: var(--cd-color-disabled-text);
   --el-disabled-border-color: var(--cd-color-border-subtle);
 
-  /* --- 圆角 / 阴影 --- */
   --el-border-radius-base: var(--cd-radius-md);
   --el-border-radius-small: var(--cd-radius-sm);
-  --el-border-radius-round: 9999px;
+  --el-border-radius-round: var(--cd-radius-full);
   --el-box-shadow: var(--cd-shadow-lg);
   --el-box-shadow-light: var(--cd-shadow-md);
   --el-box-shadow-lighter: var(--cd-shadow-sm);
@@ -96,115 +61,85 @@ html.dark {
   --el-card-bg-color: var(--cd-color-surface);
 }
 
-/* ---------- 按钮 ---------- */
-html.dark .el-button {
-  font-size: var(--cd-font-size-sm);
-  font-weight: var(--cd-font-weight-medium, 500);
+html.dark {
+  --el-color-info: var(--cd-color-info);
+  --el-fill-color-blank: var(--cd-color-surface);
+}
+
+/* 按钮：28（small）/ 36（默认与 large）/ 40（xl 自定义类） */
+.el-button {
+  height: var(--cd-control-h-md);
+  padding: 0 var(--cd-space-4);
   border-radius: var(--cd-radius-md);
+  font: var(--cd-text-label);
+  font-weight: 500;
   transition:
-    background-color var(--cd-duration-press) var(--cd-ease-out),
-    border-color var(--cd-duration-press) var(--cd-ease-out),
-    color var(--cd-duration-press) var(--cd-ease-out),
-    box-shadow var(--cd-duration-press) var(--cd-ease-out),
-    transform var(--cd-duration-press) var(--cd-ease-out);
+    background-color var(--cd-duration-fast) var(--cd-ease),
+    border-color var(--cd-duration-fast) var(--cd-ease),
+    color var(--cd-duration-fast) var(--cd-ease),
+    box-shadow var(--cd-duration-fast) var(--cd-ease),
+    transform var(--cd-duration-fast) var(--cd-ease);
 }
-html.dark .el-button:not(.is-text):not(.is-link):not(.is-disabled):active {
-  transform: scale(0.985);
+.el-button--small { height: var(--cd-control-h-sm); padding: 0 var(--cd-space-3); font-size: var(--cd-font-size-xs); }
+.el-button--large { height: var(--cd-control-h-lg); padding: 0 var(--cd-space-5); }
+.el-button:not(.is-text):not(.is-link):not(.is-disabled):active { transform: scale(0.985); }
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), var(--cd-shadow-sm);
 }
-html.dark .el-button--primary:not(.is-plain):not(.is-text):not(.is-link) {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    var(--cd-shadow-sm);
-}
-html.dark .el-button--default:not(.is-plain):not(.is-text):not(.is-link) {
-  --el-button-bg-color: var(--cd-color-surface-raised);
-  --el-button-border-color: var(--cd-color-border-strong);
-  --el-button-text-color: var(--cd-color-text);
+.el-button--default:not(.is-plain):not(.is-text):not(.is-link) {
+  --el-button-bg-color: var(--cd-color-btn-secondary-bg);
+  --el-button-border-color: var(--cd-color-btn-secondary-border);
+  --el-button-text-color: var(--cd-color-btn-secondary-text);
   --el-button-hover-bg-color: var(--cd-color-hover);
   --el-button-hover-border-color: var(--cd-color-border-strong);
   --el-button-hover-text-color: var(--cd-color-text);
-  box-shadow:
-    var(--cd-shadow-sm),
-    var(--cd-highlight-inset);
+  box-shadow: var(--cd-shadow-sm);
 }
 
-/* ---------- 输入 / 选择 / 文本域 ---------- */
-html.dark .el-input__wrapper,
-html.dark .el-select__wrapper,
-html.dark .el-textarea__inner {
+/* 输入 / 选择 / 文本域 */
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
   border-radius: var(--cd-radius-md);
-  transition: box-shadow var(--cd-duration-press) var(--cd-ease-out);
+  background: var(--cd-color-input-bg);
+  box-shadow: 0 0 0 1px var(--cd-color-border) inset;
+  transition: box-shadow var(--cd-duration-fast) var(--cd-ease);
 }
-html.dark .el-input__wrapper:hover,
-html.dark .el-select__wrapper:hover,
-html.dark .el-textarea__inner:hover {
-  box-shadow: 0 0 0 1px var(--cd-color-border-strong) inset;
+.el-input__wrapper:hover,
+.el-select__wrapper:hover,
+.el-textarea__inner:hover { box-shadow: 0 0 0 1px var(--cd-color-border-strong) inset; }
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--cd-color-border-focus) inset, var(--cd-input-ring);
 }
-html.dark .el-input__wrapper.is-focus,
-html.dark .el-select__wrapper.is-focused,
-html.dark .el-textarea__inner:focus {
-  box-shadow:
-    0 0 0 1px var(--cd-color-border-focus) inset,
-    var(--cd-input-ring);
-}
-html.dark .el-input__inner,
-html.dark .el-textarea__inner,
-html.dark .el-select__placeholder {
-  font-size: var(--cd-font-size-sm);
-}
+.el-input__inner, .el-textarea__inner, .el-select__placeholder { font-size: var(--cd-font-size-sm); }
 
-/* ---------- 卡片 ---------- */
-html.dark .el-card {
-  /* EP 自带 html.dark .el-card 覆盖 --el-card-bg-color，这里用同级选择器夺回 */
+/* 卡片（若仍有页面使用） */
+.el-card {
   --el-card-bg-color: var(--cd-color-surface);
-  border: 1px solid var(--cd-color-border);
+  border: 1px solid var(--cd-color-border-subtle);
   border-radius: var(--cd-radius-lg);
 }
-html.dark .el-card.is-never-shadow {
-  box-shadow: none;
-}
-html.dark .el-card.is-hover-shadow:hover {
-  border-color: var(--cd-color-border-strong);
-  box-shadow:
-    var(--cd-shadow-md),
-    var(--cd-shadow-glow);
-}
-html.dark .el-card__header {
-  border-bottom: 1px solid var(--cd-color-border-subtle);
-  padding: var(--cd-space-4) var(--cd-space-4) var(--cd-space-2);
-}
-html.dark .el-card__body {
-  padding: var(--cd-space-3) var(--cd-space-4) var(--cd-space-4);
-}
+.el-card.is-never-shadow { box-shadow: none; }
+.el-card__header { border-bottom: 1px solid var(--cd-color-border-subtle); padding: var(--cd-space-3) var(--cd-space-4) var(--cd-space-2); }
+.el-card__body { padding: var(--cd-space-3) var(--cd-space-4) var(--cd-space-4); }
 
-/* ---------- 对话框 ---------- */
-html.dark .el-dialog {
+/* 对话框 */
+.el-dialog {
   border: 1px solid var(--cd-color-border);
   border-radius: var(--cd-radius-xl);
   background: var(--cd-color-surface-raised);
-  box-shadow:
-    var(--cd-shadow-lg),
-    var(--cd-shadow-glow),
-    var(--cd-highlight-inset);
+  box-shadow: var(--cd-shadow-lg);
 }
-html.dark .el-overlay {
-  background-color: var(--cd-color-overlay);
-}
-html.dark .el-dialog__title {
-  font-size: var(--cd-font-size-lg);
-  font-weight: 600;
-  letter-spacing: var(--cd-tracking-tight);
-  color: var(--cd-color-text);
-}
+.el-overlay { background-color: var(--cd-color-overlay); }
+.el-dialog__title { font-size: var(--cd-font-size-lg); font-weight: 600; letter-spacing: var(--cd-tracking-tight); color: var(--cd-color-text); }
 
-/* ---------- 标签 ---------- */
-html.dark .el-tag {
-  border-radius: var(--cd-radius-xs);
-  font-weight: 500;
-}
+/* 标签 */
+.el-tag { border-radius: var(--cd-radius-xs); font-weight: 500; }
 
-/* ---------- 表格 ---------- */
-html.dark .el-table {
+/* 表格 */
+.el-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
   --el-table-header-bg-color: transparent;
@@ -213,8 +148,4 @@ html.dark .el-table {
   --el-table-header-text-color: var(--cd-color-text-subtle);
   --el-table-text-color: var(--cd-color-text-muted);
 }
-html.dark .el-table th.el-table__cell {
-  font-size: var(--cd-font-size-xs);
-  font-weight: 600;
-  letter-spacing: var(--cd-tracking-wide);
-}
+.el-table th.el-table__cell { font-size: var(--cd-font-size-xs); font-weight: 600; letter-spacing: var(--cd-tracking-wide); }

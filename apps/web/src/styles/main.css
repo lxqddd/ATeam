@@ -9,9 +9,6 @@
 :root {
   --cd-color-nav-bg: color-mix(in srgb, var(--cd-color-hover) 60%, var(--cd-color-selected-bg));
   --cd-shadow-workspace: var(--cd-shadow-sm);
-  --cd-duration-press: 0.12s;
-  --cd-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --cd-highlight-inset: inset 0 1px 0 rgba(240, 242, 246, 0.06);
 }
 
 @layer base {
