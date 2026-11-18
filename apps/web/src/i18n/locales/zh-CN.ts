@@ -41,6 +41,8 @@ const zhCN: typeof enUS = {
   sidebar: {
     tagline: '多 Agent 驾驶舱',
     localFirst: '本地优先',
+    collapse: '收起侧栏',
+    expand: '展开侧栏',
     nav: {
       board: '看板',
       agents: 'Agent',

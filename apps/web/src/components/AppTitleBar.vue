@@ -2,10 +2,15 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { PanelLeftCloseIcon, PanelLeftOpenIcon } from '@lucide/vue'
 import { useTasksStore } from '../stores/tasks'
+import { useAgentsStore } from '../stores/agents'
+import { useUiStore } from '../stores/ui'
 
 const route = useRoute()
 const tasks = useTasksStore()
+const agents = useAgentsStore()
+const ui = useUiStore()
 const { t } = useI18n()
 
 const PAGE_TITLE_KEYS: Record<string, string> = {
@@ -16,19 +21,39 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   settings: 'settings.title',
 }
 
-// 顶栏居中显示当前页面标题（任务详情页显示任务标题，与 nomi 的文档标题一致）
 const title = computed(() => {
   if (route.name === 'task') {
     const task = tasks.items.find((item) => item.id === String(route.params.id))
     return task?.title ?? t('task.pageTitle')
   }
+  if (route.name === 'agent-work') {
+    const agent = agents.items.find((item) => item.id === String(route.params.id))
+    return agent?.name ?? t('agents.title')
+  }
   const key = PAGE_TITLE_KEYS[String(route.name ?? '')]
   return key ? t(key) : 'ATeam'
 })
+
+const toggleLabel = computed(() =>
+  ui.sidebarCollapsed ? t('sidebar.expand') : t('sidebar.collapse'),
+)
 </script>
 
 <template>
-  <header class="app-titlebar h-11 shrink-0 flex items-center justify-center px-4 select-none">
-    <span class="text-label text-foreground truncate max-w-[60%]">{{ title }}</span>
+  <header class="app-titlebar">
+    <button
+      type="button"
+      class="inline-flex size-8 items-center justify-center rounded-[10px] text-fg-muted transition-colors hover:bg-[var(--cd-color-nav-bg)] hover:text-foreground"
+      :title="toggleLabel"
+      :aria-label="toggleLabel"
+      :aria-expanded="!ui.sidebarCollapsed"
+      @click="ui.toggleSidebar()"
+    >
+      <PanelLeftOpenIcon v-if="ui.sidebarCollapsed" class="size-4" />
+      <PanelLeftCloseIcon v-else class="size-4" />
+    </button>
+    <span class="app-titlebar__title">{{ title }}</span>
+    <span class="app-titlebar__spacer" />
+    <div id="titlebar-actions" class="flex items-center gap-2" />
   </header>
 </template>

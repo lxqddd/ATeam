@@ -8,7 +8,6 @@
 /* ATeam 兼容别名：导航悬停底（旧版主题令牌，nomi 最新 tokens 未包含） */
 :root {
   --cd-color-nav-bg: color-mix(in srgb, var(--cd-color-hover) 60%, var(--cd-color-selected-bg));
-  --cd-shadow-workspace: var(--cd-shadow-sm);
 }
 
 @layer base {

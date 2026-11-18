@@ -39,6 +39,8 @@ const enUS = {
   sidebar: {
     tagline: 'multi-agent cockpit',
     localFirst: 'local-first',
+    collapse: 'Collapse sidebar',
+    expand: 'Expand sidebar',
     nav: {
       board: 'Board',
       agents: 'Agents',

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, watch, type Component } from 'vue'
+import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Grid, Cpu, DataLine, Setting, Monitor } from '@element-plus/icons-vue'
+import { ChevronRightIcon } from '@lucide/vue'
 import { useTasksStore } from '../stores/tasks'
 import { useAgentsStore } from '../stores/agents'
 import { useRunsStore } from '../stores/runs'
+import { useUiStore } from '../stores/ui'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +15,7 @@ const { t } = useI18n()
 const tasks = useTasksStore()
 const agents = useAgentsStore()
 const runs = useRunsStore()
+const ui = useUiStore()
 
 const navItems: { path: string; icon: Component; labelKey: string }[] = [
   { path: '/', icon: Grid, labelKey: 'sidebar.nav.board' },
@@ -21,19 +24,21 @@ const navItems: { path: string; icon: Component; labelKey: string }[] = [
   { path: '/settings', icon: Setting, labelKey: 'sidebar.nav.settings' },
 ]
 
+const settingsSections = [
+  { id: 'settings-appearance', labelKey: 'settings.appearance' },
+  { id: 'settings-language', labelKey: 'settings.language' },
+  { id: 'settings-api', labelKey: 'settings.apiConnection' },
+  { id: 'settings-runtime-models', labelKey: 'settings.models.title' },
+  { id: 'settings-workspace', labelKey: 'settings.workspace' },
+  { id: 'settings-about', labelKey: 'settings.about' },
+]
+
 type Section = 'tasks' | 'agents' | 'runs' | 'settings'
 
-// 面板内容跟随当前页面（对齐 nomi 的上下文侧栏）
 const section = computed<Section>(() => {
-  if (route.path.startsWith('/agents')) {
-    return 'agents'
-  }
-  if (route.path.startsWith('/runs')) {
-    return 'runs'
-  }
-  if (route.path.startsWith('/settings')) {
-    return 'settings'
-  }
+  if (route.path.startsWith('/agents')) return 'agents'
+  if (route.path.startsWith('/runs')) return 'runs'
+  if (route.path.startsWith('/settings')) return 'settings'
   return 'tasks'
 })
 
@@ -48,43 +53,33 @@ const sectionTitleKey = computed(
 )
 
 const panelCount = computed(() => {
-  if (section.value === 'agents') {
-    return agents.items.length
-  }
-  if (section.value === 'runs') {
-    return runs.items.length
-  }
-  if (section.value === 'tasks') {
-    return tasks.items.length
-  }
-  return 0
+  if (section.value === 'agents') return agents.items.length
+  if (section.value === 'runs') return runs.items.length
+  if (section.value === 'tasks') return tasks.items.length
+  return settingsSections.length
+})
+
+const collapsedSections = ref(new Set<Section>())
+const sectionOpen = computed({
+  get: () => !collapsedSections.value.has(section.value),
+  set: (open: boolean) => {
+    const next = new Set(collapsedSections.value)
+    if (open) next.delete(section.value)
+    else next.add(section.value)
+    collapsedSections.value = next
+  },
 })
 
 async function ensureData() {
-  if (section.value === 'tasks' && tasks.items.length === 0) {
-    await tasks.fetchAll()
-  }
-  if (section.value === 'agents' && agents.items.length === 0) {
-    await agents.fetchAll()
-  }
+  if (section.value === 'tasks' && tasks.items.length === 0) await tasks.fetchAll()
+  if (section.value === 'agents' && agents.items.length === 0) await agents.fetchAll()
   if (section.value === 'runs') {
-    if (runs.items.length === 0) {
-      await runs.fetchAll()
-    }
-    if (tasks.items.length === 0) {
-      await tasks.fetchAll()
-    }
+    if (runs.items.length === 0) await runs.fetchAll()
+    if (tasks.items.length === 0) await tasks.fetchAll()
   }
 }
 
-onMounted(() => {
-  void ensureData()
-})
-
-// 路由切换时补全面板所需数据（视图自己也会拉取，这里兜底）
-watch(section, () => {
-  void ensureData()
-})
+watch(section, () => { void ensureData() }, { immediate: true })
 
 const TONE_CLASSES: Record<string, string> = {
   done: 'bg-success',
@@ -97,7 +92,6 @@ const TONE_CLASSES: Record<string, string> = {
   preparing: 'bg-brand',
   in_review: 'bg-warning',
 }
-
 function toneClass(status: string) {
   return TONE_CLASSES[status] ?? 'bg-fg-subtle/60'
 }
@@ -110,6 +104,26 @@ function openTask(id: string) {
   void router.push(`/tasks/${id}`)
 }
 
+const collapsedItems = computed(() => {
+  if (section.value === 'agents') {
+    return agents.items.slice(0, 8).map((agent) => ({
+      id: agent.id, title: agent.name, status: '', path: '/agents',
+    }))
+  }
+  if (section.value === 'runs') {
+    return runs.items.slice(0, 8).map((run) => ({
+      id: run.id, title: taskTitle(run.taskId), status: run.status, path: `/runs/${run.id}`,
+    }))
+  }
+  if (section.value === 'tasks') {
+    return tasks.items.slice(0, 8).map((task) => ({
+      id: task.id, title: task.title, status: task.status, path: `/tasks/${task.id}`,
+    }))
+  }
+  return []
+})
+const overflowCount = computed(() => Math.max(0, panelCount.value - collapsedItems.value.length))
+
 async function goToSection(id: string) {
   if (route.path !== '/settings') {
     await router.push('/settings')
@@ -118,46 +132,63 @@ async function goToSection(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-const settingsSections = [
-  { id: 'settings-language', labelKey: 'settings.language' },
-  { id: 'settings-api', labelKey: 'settings.apiConnection' },
-  { id: 'settings-workspace', labelKey: 'settings.workspace' },
-  { id: 'settings-about', labelKey: 'settings.about' },
-]
-
 const isTaskRoute = computed(() => route.name === 'task')
 </script>
 
 <template>
   <aside class="shrink-0 flex min-h-0">
-    <!-- 52px 图标导轨：全局页面切换（对齐 nomi 的 SidebarRail；
-         首个图标用 6px 上边距与右侧面板 44px 顶行居中对齐） -->
-    <nav class="w-[52px] shrink-0 flex flex-col items-center gap-1 px-2 py-[10px] mt-1.5">
-      <button
-        v-for="item in navItems"
-        :key="item.path"
-        type="button"
-        class="size-8 inline-flex items-center justify-center rounded-[10px] transition-colors"
-        :class="
-          route.path === item.path
-            ? 'bg-[var(--cd-color-nav-bg)] text-foreground'
-            : 'text-fg-muted hover:bg-[var(--cd-color-nav-bg)] hover:text-foreground'
-        "
-        :title="$t(item.labelKey)"
-        :aria-label="$t(item.labelKey)"
-        :aria-current="route.path === item.path ? 'page' : undefined"
-        @click="router.push(item.path)"
-      >
-        <el-icon :size="18"><component :is="item.icon" /></el-icon>
-      </button>
+    <nav class="w-[52px] shrink-0 flex flex-col items-center gap-1 px-2 py-[10px]">
+      <div class="flex flex-col items-center gap-0.5 w-full mt-1">
+        <button
+          v-for="item in navItems"
+          :key="item.path"
+          type="button"
+          class="size-8 inline-flex items-center justify-center rounded-[10px] transition-colors"
+          :class="
+            route.path === item.path
+              ? 'bg-[var(--cd-color-nav-bg)] text-foreground'
+              : 'text-fg-muted hover:bg-[var(--cd-color-nav-bg)] hover:text-foreground'
+          "
+          :title="$t(item.labelKey)"
+          :aria-label="$t(item.labelKey)"
+          :aria-current="route.path === item.path ? 'page' : undefined"
+          @click="router.push(item.path)"
+        >
+          <el-icon :size="18"><component :is="item.icon" /></el-icon>
+        </button>
+      </div>
+
+      <div v-if="ui.sidebarCollapsed && collapsedItems.length" class="w-full mt-2 flex flex-col items-center gap-1">
+        <router-link
+          v-for="entry in collapsedItems"
+          :key="entry.id"
+          :to="entry.path"
+          class="group relative size-8 rounded-[10px] bg-[var(--cd-color-surface-raised)] flex items-center justify-center text-caption text-fg-muted hover:bg-[var(--cd-color-hover)] hover:text-foreground"
+          :title="entry.title"
+        >
+          {{ entry.title.slice(0, 1) }}
+          <span class="absolute left-[44px] top-0 z-50 hidden group-hover:block group-focus-visible:block w-56 rounded-[10px] border border-border bg-[var(--cd-color-surface-raised)] px-3 py-2 shadow-[var(--cd-shadow-md)]">
+            <span class="block text-caption text-foreground truncate">{{ entry.title }}</span>
+            <span class="mt-1 flex items-center gap-1.5 text-caption text-fg-subtle">
+              <span class="size-1.5 rounded-full" :class="toneClass(entry.status)" />
+              {{ entry.status || '—' }}
+            </span>
+          </span>
+        </router-link>
+        <button
+          v-if="overflowCount > 0"
+          type="button"
+          class="size-8 rounded-[10px] text-caption text-fg-subtle hover:bg-[var(--cd-color-hover)]"
+          @click="ui.setSidebarCollapsed(false)"
+        >
+          +{{ overflowCount }}
+        </button>
+      </div>
     </nav>
 
-    <!-- 260px 上下文面板：当前页面的列表与底部状态 -->
-    <div class="w-[260px] shrink-0 flex flex-col gap-1 px-2 py-[10px] min-h-0">
+    <div v-if="!ui.sidebarCollapsed" class="panel w-[260px] shrink-0 flex flex-col gap-1 px-2 min-h-0">
       <div class="h-11 flex items-center gap-2.5 px-1">
-        <div
-          class="size-8 shrink-0 rounded-lg bg-[var(--cd-color-accent-soft)] flex items-center justify-center"
-        >
+        <div class="size-8 shrink-0 rounded-lg bg-[var(--cd-color-accent-soft)] flex items-center justify-center">
           <el-icon :size="17" color="var(--cd-color-accent-2)"><Monitor /></el-icon>
         </div>
         <div class="leading-tight min-w-0">
@@ -166,14 +197,18 @@ const isTaskRoute = computed(() => route.name === 'task')
         </div>
       </div>
 
-      <div class="h-8 flex items-center justify-between px-1">
-        <span class="text-caption text-fg-subtle">{{ $t(sectionTitleKey) }}</span>
-        <span class="text-caption text-fg-subtle tabular-nums">
-          {{ section === 'settings' ? settingsSections.length : panelCount }}
-        </span>
-      </div>
+      <button
+        type="button"
+        class="h-8 flex items-center gap-1.5 px-1 text-caption text-fg-subtle hover:text-fg-muted"
+        :aria-expanded="sectionOpen"
+        @click="sectionOpen = !sectionOpen"
+      >
+        <ChevronRightIcon class="size-3 transition-transform duration-200" :class="{ 'rotate-90': sectionOpen }" />
+        {{ $t(sectionTitleKey) }}
+        <span class="ml-auto tabular-nums">{{ panelCount }}</span>
+      </button>
 
-      <div class="flex-1 min-h-0 overflow-y-auto space-y-0.5">
+      <div v-if="sectionOpen" class="flex-1 min-h-0 overflow-y-auto space-y-0.5">
         <template v-if="section === 'tasks'">
           <button
             v-for="task in tasks.items"
@@ -232,18 +267,14 @@ const isTaskRoute = computed(() => route.name === 'task')
         </template>
 
         <p
-          v-if="
-            (section === 'tasks' && tasks.items.length === 0) ||
-            (section === 'agents' && agents.items.length === 0) ||
-            (section === 'runs' && runs.items.length === 0)
-          "
+          v-if="(section === 'tasks' && tasks.items.length === 0) || (section === 'agents' && agents.items.length === 0) || (section === 'runs' && runs.items.length === 0)"
           class="px-2.5 py-2 text-caption text-fg-subtle"
         >
           {{ $t('common.empty') }}
         </p>
       </div>
 
-      <div class="rounded-lg border border-border-subtle bg-surface-raised/60 px-3 py-2.5">
+      <div class="mt-auto rounded-lg border border-border-subtle bg-surface-raised/60 px-3 py-2.5">
         <div class="flex items-center gap-2 text-caption text-fg-muted">
           <span class="size-1.5 rounded-full bg-success" />
           {{ $t('sidebar.localFirst') }}
@@ -253,3 +284,21 @@ const isTaskRoute = computed(() => route.name === 'task')
     </div>
   </aside>
 </template>
+
+<style scoped>
+.panel {
+  margin: var(--cd-space-2) 0;
+  background: var(--cd-panel-bg);
+  border: 1px solid var(--cd-panel-border);
+  border-right: none;
+  border-radius: var(--cd-radius-xl) 0 0 var(--cd-radius-xl);
+  padding: 10px var(--cd-space-2);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .panel { animation: panel-in 0.18s var(--cd-ease); }
+  @keyframes panel-in {
+    from { margin-right: -260px; clip-path: inset(0 100% 0 0); }
+    to { margin-right: 0; clip-path: inset(0 0 0 0); }
+  }
+}
+</style>
