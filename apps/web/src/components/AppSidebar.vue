@@ -96,6 +96,17 @@ function toneClass(status: string) {
   return TONE_CLASSES[status] ?? 'bg-fg-subtle/60'
 }
 
+const peek = ref<{ title: string; status: string; statusLabel: string; x: number; y: number } | null>(null)
+
+function showPeek(entry: { title: string; status: string; statusLabel: string }, event: Event) {
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  peek.value = { ...entry, x: rect.right + 8, y: rect.top }
+}
+
+function hidePeek() {
+  peek.value = null
+}
+
 function taskTitle(id: string) {
   return tasks.items.find((task) => task.id === id)?.title ?? id.slice(0, 8)
 }
@@ -111,7 +122,6 @@ const collapsedItems = computed(() => {
     return agents.items.slice(0, RAIL_ITEM_LIMIT).map((agent) => ({
       id: agent.id,
       title: agent.name,
-      kind: 'agent' as const,
       status: '' as const,
       statusLabel: '',
       path: `/agents/${agent.id}/work`,
@@ -121,7 +131,6 @@ const collapsedItems = computed(() => {
     return runs.items.slice(0, RAIL_ITEM_LIMIT).map((run) => ({
       id: run.id,
       title: taskTitle(run.taskId),
-      kind: 'run' as const,
       status: run.status,
       statusLabel: t(`common.status.run.${run.status}`),
       path: `/runs/${run.id}`,
@@ -131,7 +140,6 @@ const collapsedItems = computed(() => {
     return tasks.items.slice(0, RAIL_ITEM_LIMIT).map((task) => ({
       id: task.id,
       title: task.title,
-      kind: 'task' as const,
       status: task.status,
       statusLabel: t(`common.status.task.${task.status}`),
       path: `/tasks/${task.id}`,
@@ -180,7 +188,7 @@ const isTaskRoute = computed(() => route.name === 'task')
           v-for="entry in collapsedItems"
           :key="entry.id"
           :to="entry.path"
-          class="group relative size-8 rounded-[10px] flex items-center justify-center text-caption"
+          class="size-8 rounded-[10px] flex items-center justify-center text-caption"
           :class="
             route.path === entry.path
               ? 'bg-[var(--cd-color-selected-bg)] text-foreground'
@@ -189,15 +197,12 @@ const isTaskRoute = computed(() => route.name === 'task')
           :title="entry.title"
           :aria-label="entry.title"
           :aria-current="route.path === entry.path ? 'page' : undefined"
+          @mouseenter="showPeek(entry, $event)"
+          @mouseleave="hidePeek"
+          @focus="showPeek(entry, $event)"
+          @blur="hidePeek"
         >
           {{ entry.title.slice(0, 1) }}
-          <span class="absolute left-[44px] top-0 z-50 hidden group-hover:block group-focus-visible:block w-56 rounded-[10px] border border-border bg-[var(--cd-color-surface-raised)] px-3 py-2 shadow-[var(--cd-shadow-md)]">
-            <span class="block text-caption text-foreground truncate">{{ entry.title }}</span>
-            <span class="mt-1 flex items-center gap-1.5 text-caption text-fg-subtle">
-              <span class="size-1.5 rounded-full" :class="toneClass(entry.status)" />
-              {{ entry.statusLabel || '—' }}
-            </span>
-          </span>
         </router-link>
         <button
           v-if="overflowCount > 0"
@@ -315,6 +320,18 @@ const isTaskRoute = computed(() => route.name === 'task')
         </div>
         <div class="mt-0.5 text-caption text-fg-subtle">v0.1.0</div>
       </div>
+    </div>
+
+    <div
+      v-if="peek"
+      class="fixed z-50 w-56 rounded-[var(--cd-radius-md)] border border-border bg-[var(--cd-color-surface-raised)] px-3 py-2 shadow-[var(--cd-shadow-md)] pointer-events-none"
+      :style="{ left: peek.x + 'px', top: peek.y + 'px' }"
+    >
+      <span class="block text-caption text-foreground truncate">{{ peek.title }}</span>
+      <span class="mt-1 flex items-center gap-1.5 text-caption text-fg-subtle">
+        <span class="size-1.5 rounded-full" :class="toneClass(peek.status)" />
+        {{ peek.statusLabel || '—' }}
+      </span>
     </div>
   </aside>
 </template>
