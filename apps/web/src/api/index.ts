@@ -6,9 +6,10 @@ import { EventApi } from './modules/events'
 import { ArtifactApi } from './modules/artifacts'
 import { ReviewApi } from './modules/reviews'
 import { WorkspaceApi } from './modules/workspaces'
+import { RuntimeApi } from './modules/runtimes'
 import type { SseHandle } from './http/sse'
 
-export { HealthApi, TaskApi, AgentApi, RunApi, RunDetailApi, EventApi, ArtifactApi, ReviewApi, WorkspaceApi }
+export { HealthApi, TaskApi, AgentApi, RunApi, RunDetailApi, EventApi, ArtifactApi, ReviewApi, WorkspaceApi, RuntimeApi }
 export type { SseHandle }
 export type { CreateTaskInput } from './modules/tasks'
-export type { CreateAgentInput } from './modules/agents'
+export type { CreateAgentInput, UpdateAgentInput } from './modules/agents'

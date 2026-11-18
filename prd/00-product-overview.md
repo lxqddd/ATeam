@@ -452,7 +452,8 @@ Run 失败、取消或超时后，Task 的下一步必须可解释。M0 只更�
 | PROD-019 | 本地接口安全基线 | 默认只绑定 127.0.0.1；CORS 使用允许列表；WebSocket 校验 Origin；桌面壳使用会话令牌；非本地访问必须显式配置并启用认证 | M1 Origin/Host/CORS 收紧；M2.1 会话令牌（SEC-003） |
 | PROD-020 | Agent Team 讨论层 | 用户可创建 Agent 小组并在小组会话中讨论；用户消息自动路由到小组内合适 Agent，`@` 可覆盖；每条用户消息的路由决策持久化且可解释；会话 Agent 只读运行，不写仓库、不创建 Run/Artifact、不修改 Task；Agent 消息不触发其他 Agent；任意消息可幂等转为 Task 并保留来源追溯 | M2.3 |
 | PROD-021 | Agent 状态与工作台 | Agent 看板显示派生工作状态（空闲、工作中、已完成、失败待处理），状态与 Run 列表一致；点击工作中或已完成的 Agent 进入工作页，查看所选 Run 的 Task 上下文、配置快照摘要、Workspace/commit 与完成过程时间线；工作页只读且不暴露明文密钥、凭据值或完整拼装 prompt | M2.4 |
-| PROD-022 | Runtime 模型选择 | Agent 创建/编辑时模型为下拉选择，选项来自所选 Runtime 的本地模型目录（Runtime 探测 + 本地配置）；空值表示 Runtime 默认；非空模型必须是目录中的 ID，未知模型返回 400 `MODEL_NOT_AVAILABLE`；切换 Runtime 时重新校验；目录为空时只允许默认模型并提供本地配置入口 | M2.1（Agent 编辑器子项） |
+| PROD-022 | Runtime 模型选择 | Runtime 列表直接检测本机已安装的 harness CLI（如 Claude Code、Codex、OpenCode、Cursor Agent），未实现执行适配器的 CLI 标记为「暂不支持执行」；Agent 创建/编辑时模型为下拉选择，选项来自所选 Runtime 的本地模型目录（Runtime 探测、Claude 本地 `modelPicker`/`ANTHROPIC_*_MODEL`、ATeam 本地配置）；空值表示 Runtime 默认；非空模型必须是目录中的 ID，未知模型返回 400 `MODEL_NOT_AVAILABLE`；切换 Runtime 时重新校验 | M2.1（Agent 编辑器子项） |
+| PROD-023 | Agent 编辑、删除与连接测试 | 已有 Agent 可在看板直接编辑和删除；编辑预填当前配置并保存；删除二次确认，活跃 Run 阻止删除且历史记录保留；创建/编辑选择 Runtime 与模型后可测试连接，测试发送一次最小只读请求并显示耗时或失败原因，不创建 Run/Artifact | M2.1 |
 
 PROD-009 的拆分与 `prd/01-scope-and-roadmap.md` 的 US-005（M1 合并，M2 扩展）一致：M1 的合并必须产生人工评审/审批记录，绑定 Run、diff/head SHA、目标分支、操作者与时间；M2 再扩展到推送、部署、删除与通用 Approval Gate。
 
@@ -484,6 +485,7 @@ PROD 需求不单独存在，必须由模块级功能需求承接。下表给出
 | PROD-020 | AGTEAM-001、AGTEAM-002、CONV-001 至 CONV-006、ROUTE-001 至 ROUTE-004；API-1400 至 API-1415 | agent-teams-and-conversations、api-and-data、ui-ux、security-and-permissions |
 | PROD-021 | AGENT-074 至 AGENT-078、UI-153 至 UI-160、API-1416 至 API-1425 | agent-system、ui-ux、api-and-data、02-domain-model |
 | PROD-022 | AGENT-079 至 AGENT-082、UI-161 至 UI-164、API-1426 至 API-1429 | agent-system、ui-ux、api-and-data、runtime-and-workspace |
+| PROD-023 | AGENT-083、AGENT-084、UI-165 至 UI-168、API-1430 至 API-1432 | agent-system、ui-ux、api-and-data |
 
 截至本次修订，部分模块文档尚未在需求行反向引用 PROD 编号；这属于跨文档追踪债务，应在各模块下一次修订时补齐，并在 `prd/04-acceptance-and-test-plan.md` 的追踪链检查中核对，而不是在本章重复模块细节。
 
@@ -563,6 +565,11 @@ Then 看板分别显示「工作中」「已完成」「空闲」；进入 `/age
 Given 用户创建 Agent 并选择了一个已安装的 Runtime；
 When 用户打开模型下拉；
 Then 选项来自该 Runtime 的本地模型目录，首项为「默认（由 Runtime 决定）」；用户不能输入任意模型 ID；若目录为空，只显示默认项与「去设置添加模型」入口；切换 Runtime 后旧模型若不可用会被重置或阻止保存。
+
+**US-PROD-16 编辑、删除 Agent 并测试连接（独立开发者，M2.1）**
+Given Agents 看板已有 Agent；
+When 用户点击编辑并保存，或删除并确认；
+Then 编辑预填当前配置并更新卡片；删除二次确认，有活跃 Run 时被拒绝且历史记录保留；在创建/编辑表单中选择 Runtime 与模型后点击「测试连接」，系统显示成功耗时或失败原因，且不创建 Run。
 
 ## 12. 成功指标
 

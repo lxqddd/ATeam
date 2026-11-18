@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 
 	"github.com/lxqddd/ATeam/internal/app"
@@ -12,6 +13,9 @@ import (
 )
 
 func main() {
+	// macOS GUI toolkits require the AppKit run loop on the main OS thread.
+	runtime.LockOSThread()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

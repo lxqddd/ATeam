@@ -10,6 +10,12 @@ type MockAdapter struct{}
 
 func (a *MockAdapter) Name() string { return "mock" }
 
+// TestModel reports the built-in mock runtime as reachable without making a
+// network request.
+func (a *MockAdapter) TestModel(context.Context, string) (ModelTestResult, error) {
+	return ModelTestResult{Reply: "mock runtime is always available"}, nil
+}
+
 // Probe reports the built-in mock runtime as always available.
 func (a *MockAdapter) Probe(context.Context) ProbeInfo {
 	return ProbeInfo{Name: a.Name(), Version: "builtin", Compatible: true}

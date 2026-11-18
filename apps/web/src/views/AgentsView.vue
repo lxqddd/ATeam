@@ -1,52 +1,201 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
-import { RUNTIMES } from '@ateam/shared'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, Edit, Plus } from '@element-plus/icons-vue'
+import type { Agent, RuntimeInfo } from '@ateam/shared'
+import { RuntimeApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import Modal from '../components/Modal.vue'
 import EmptyState from '../components/EmptyState.vue'
 
+const { t } = useI18n()
+const DEFAULT_MODEL = '__default__'
 const agents = useAgentsStore()
 const showCreate = ref(false)
+const editingId = ref<string | null>(null)
+const saving = ref(false)
+const runtimes = ref<RuntimeInfo[]>([])
+const runtimeLoading = ref(false)
+const runtimeError = ref('')
+const testState = ref<{ status: 'idle' | 'testing' | 'success' | 'error'; message: string }>({
+  status: 'idle',
+  message: '',
+})
 const form = reactive({
   name: '',
   description: '',
   instructions: '',
   runtime: 'mock',
-  model: '',
+  model: DEFAULT_MODEL,
   maxConcurrency: 1,
   timeoutMinutes: 60,
   allowedPaths: '',
 })
 
-onMounted(() => {
-  void agents.fetchAll()
+const selectedRuntime = computed(() => runtimes.value.find((runtime) => runtime.name === form.runtime))
+const modelOptions = computed(() => selectedRuntime.value?.models ?? [])
+const unavailableModel = computed(() =>
+  form.model !== DEFAULT_MODEL && !modelOptions.value.some((model) => model.id === form.model)
+    ? form.model
+    : '',
+)
+
+function runtimeLabel(runtime: RuntimeInfo): string {
+  const version = runtime.version ? ` · ${runtime.version}` : ''
+  return runtime.supported ? `${runtime.name}${version}` : `${runtime.name}${version} · ${t('agents.form.runtimeUnsupported')}`
+}
+
+async function loadRuntimes() {
+  runtimeLoading.value = true
+  try {
+    runtimes.value = await RuntimeApi.list()
+    runtimeError.value = ''
+  } catch (err) {
+    runtimeError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    runtimeLoading.value = false
+  }
+}
+
+function resetForm() {
+  form.name = ''
+  form.description = ''
+  form.instructions = ''
+  form.runtime = 'mock'
+  form.model = DEFAULT_MODEL
+  form.maxConcurrency = 1
+  form.timeoutMinutes = 60
+  form.allowedPaths = ''
+  testState.value = { status: 'idle', message: '' }
+}
+
+function openCreate() {
+  editingId.value = null
+  resetForm()
+  showCreate.value = true
+}
+
+function openEdit(agent: Agent) {
+  editingId.value = agent.id
+  form.name = agent.name
+  form.description = agent.description
+  form.instructions = agent.instructions
+  form.runtime = agent.runtime
+  form.model = agent.model || DEFAULT_MODEL
+  form.maxConcurrency = agent.maxConcurrency
+  form.timeoutMinutes = agent.timeoutMinutes
+  form.allowedPaths = agent.allowedPaths.join(', ')
+  testState.value = { status: 'idle', message: '' }
+  showCreate.value = true
+}
+
+watch(
+  () => form.runtime,
+  () => {
+    if (form.model === DEFAULT_MODEL) {
+      return
+    }
+    if (!modelOptions.value.some((model) => model.id === form.model)) {
+      form.model = DEFAULT_MODEL
+      ElMessage.warning(t('agents.form.modelReset'))
+    }
+  },
+)
+
+watch([() => form.runtime, () => form.model], () => {
+  testState.value = { status: 'idle', message: '' }
 })
 
-async function createAgent() {
+onMounted(() => {
+  void agents.fetchAll()
+  void loadRuntimes()
+})
+
+async function testConnection() {
+  if (!selectedRuntime.value?.supported) {
+    return
+  }
+  testState.value = { status: 'testing', message: '' }
+  try {
+    const result = await RuntimeApi.testModel(
+      form.runtime,
+      form.model === DEFAULT_MODEL ? '' : form.model,
+    )
+    if (result.ok) {
+      testState.value = {
+        status: 'success',
+        message: t('agents.form.testSuccess', { ms: result.latencyMs }),
+      }
+    } else {
+      testState.value = {
+        status: 'error',
+        message: result.error || t('agents.form.testFailed'),
+      }
+    }
+  } catch (err) {
+    testState.value = {
+      status: 'error',
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+async function submitAgent() {
   if (!form.name.trim()) {
     return
   }
-  await agents.create({
+  if (form.model !== DEFAULT_MODEL && !modelOptions.value.some((model) => model.id === form.model)) {
+    ElMessage.error(t('agents.form.modelInvalid'))
+    return
+  }
+  const input = {
     name: form.name,
     description: form.description,
     instructions: form.instructions,
     runtime: form.runtime,
-    model: form.model,
+    model: form.model === DEFAULT_MODEL ? '' : form.model,
     maxConcurrency: form.maxConcurrency,
     timeoutMinutes: form.timeoutMinutes,
     allowedPaths: form.allowedPaths
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
-  })
-  form.name = ''
-  form.description = ''
-  form.instructions = ''
-  form.runtime = 'mock'
-  form.model = ''
-  form.allowedPaths = ''
-  showCreate.value = false
+  }
+  saving.value = true
+  try {
+    if (editingId.value) {
+      await agents.update(editingId.value, input)
+      ElMessage.success(t('agents.updated'))
+    } else {
+      await agents.create(input)
+      ElMessage.success(t('agents.created'))
+    }
+    showCreate.value = false
+    resetForm()
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : String(err))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteAgent(agent: Agent) {
+  try {
+    await ElMessageBox.confirm(
+      t('agents.deleteConfirm', { name: agent.name }),
+      t('agents.deleteTitle'),
+      { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') },
+    )
+  } catch {
+    return
+  }
+  try {
+    await agents.remove(agent.id)
+    ElMessage.success(t('agents.deleted'))
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : String(err))
+  }
 }
 </script>
 
@@ -57,7 +206,7 @@ async function createAgent() {
         <h1 class="text-title font-semibold tracking-tight">{{ $t('agents.title') }}</h1>
         <p class="text-caption text-fg-subtle">{{ $t('agents.subtitle') }}</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('agents.newAgent') }}</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate">{{ $t('agents.newAgent') }}</el-button>
     </header>
 
     <div class="flex-1 overflow-y-auto px-6 pb-6">
@@ -77,22 +226,36 @@ async function createAgent() {
                   {{ agent.description || $t('agents.noDescription') }}
                 </p>
               </div>
-              <el-tag size="small" effect="dark">{{ agent.runtime }}</el-tag>
+              <div class="flex items-center gap-1">
+                <el-button text :icon="Edit" @click="openEdit(agent)">{{ $t('agents.edit') }}</el-button>
+                <el-button text type="danger" :icon="Delete" @click="deleteAgent(agent)">
+                  {{ $t('agents.delete') }}
+                </el-button>
+              </div>
             </div>
           </template>
           <p class="text-label text-fg-muted line-clamp-3 whitespace-pre-wrap">
             {{ agent.instructions || $t('agents.noInstructions') }}
           </p>
           <div class="mt-3 flex items-center gap-3 text-caption text-fg-subtle">
+            <span>{{ agent.runtime }}</span>
             <span>{{ $t('agents.card.concurrency', { n: agent.maxConcurrency }) }}</span>
             <span>{{ $t('agents.card.timeout', { n: agent.timeoutMinutes }) }}</span>
             <span>{{ agent.workspaceMode }}</span>
+            <span v-if="agent.model">{{ agent.model }}</span>
+            <el-tag v-if="agent.modelStatus === 'unavailable'" type="danger" size="small">
+              {{ $t('agents.card.modelUnavailable') }}
+            </el-tag>
           </div>
         </el-card>
       </div>
     </div>
 
-    <Modal :open="showCreate" :title="$t('agents.newAgent')" @close="showCreate = false">
+    <Modal
+      :open="showCreate"
+      :title="editingId ? $t('agents.editAgent') : $t('agents.newAgent')"
+      @close="showCreate = false"
+    >
       <el-form label-position="top">
         <el-form-item :label="$t('agents.form.name')">
           <el-input v-model="form.name" :placeholder="$t('agents.form.namePlaceholder')" />
@@ -110,17 +273,75 @@ async function createAgent() {
         </el-form-item>
         <div class="grid grid-cols-2 gap-3">
           <el-form-item :label="$t('agents.form.runtime')">
-            <el-select v-model="form.runtime" style="width: 100%">
+            <el-select v-model="form.runtime" :loading="runtimeLoading" style="width: 100%">
               <el-option
-                v-for="runtime in RUNTIMES"
-                :key="runtime.value"
-                :label="runtime.label"
-                :value="runtime.value"
+                v-for="runtime in runtimes"
+                :key="runtime.name"
+                :label="runtimeLabel(runtime)"
+                :value="runtime.name"
+                :disabled="!runtime.supported"
               />
             </el-select>
           </el-form-item>
           <el-form-item :label="$t('agents.form.model')">
-            <el-input v-model="form.model" :placeholder="$t('agents.form.modelPlaceholder')" />
+            <el-select
+              v-model="form.model"
+              :loading="runtimeLoading"
+              :disabled="!form.runtime || runtimeLoading"
+              style="width: 100%"
+            >
+              <el-option :label="$t('agents.form.defaultModel')" :value="DEFAULT_MODEL" />
+              <el-option
+                v-for="model in modelOptions"
+                :key="model.id"
+                :label="model.label || model.id"
+                :value="model.id"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span>{{ model.label || model.id }}</span>
+                  <span class="text-caption text-fg-subtle">
+                    {{
+                      model.source === 'runtime'
+                        ? $t('agents.form.modelSourceRuntime')
+                        : $t('agents.form.modelSourceSettings')
+                    }}
+                  </span>
+                </div>
+              </el-option>
+              <el-option
+                v-if="unavailableModel"
+                :key="unavailableModel"
+                :label="`${unavailableModel} · ${$t('agents.card.modelUnavailable')}`"
+                :value="unavailableModel"
+                disabled
+              />
+            </el-select>
+            <div class="mt-2 flex items-center gap-2">
+              <el-button
+                size="small"
+                :loading="testState.status === 'testing'"
+                :disabled="!selectedRuntime?.supported || runtimeLoading"
+                @click="testConnection"
+              >
+                {{ $t('agents.form.testConnection') }}
+              </el-button>
+              <span v-if="testState.status === 'success'" class="text-caption text-success">
+                {{ testState.message }}
+              </span>
+              <span v-else-if="testState.status === 'error'" class="text-caption text-danger">
+                {{ testState.message }}
+              </span>
+              <span v-else class="text-caption text-fg-subtle">{{ $t('agents.form.testHint') }}</span>
+            </div>
+            <p v-if="runtimeError" class="mt-1 text-caption text-danger">{{ runtimeError }}</p>
+            <p v-else-if="!modelOptions.length && selectedRuntime?.modelsError" class="mt-1 text-caption text-fg-subtle">
+              {{ selectedRuntime.modelsError }}
+              <router-link class="underline" to="/settings">{{ $t('agents.form.configureModels') }}</router-link>
+            </p>
+            <p v-else-if="!modelOptions.length" class="mt-1 text-caption text-fg-subtle">
+              {{ $t('agents.form.noModels') }}
+              <router-link class="underline" to="/settings">{{ $t('agents.form.configureModels') }}</router-link>
+            </p>
           </el-form-item>
         </div>
         <div class="grid grid-cols-2 gap-3">
@@ -137,7 +358,9 @@ async function createAgent() {
       </el-form>
       <div class="flex justify-end gap-2">
         <el-button @click="showCreate = false">{{ $t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="createAgent">{{ $t('common.create') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="submitAgent">
+          {{ editingId ? $t('common.save') : $t('common.create') }}
+        </el-button>
       </div>
     </Modal>
   </div>

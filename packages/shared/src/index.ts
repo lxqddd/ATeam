@@ -40,6 +40,7 @@ export interface Agent {
   instructions: string
   runtime: string
   model: string
+  modelStatus?: 'available' | 'unavailable' | 'unknown'
   workspaceMode: string
   permissionMode?: string
   currentVersionId?: string
@@ -49,6 +50,38 @@ export interface Agent {
   allowedCommands: string[]
   createdAt: string
   updatedAt: string
+}
+
+export interface RuntimeModel {
+  id: string
+  label?: string
+  source: 'runtime' | 'settings'
+  default: boolean
+  status: 'available' | 'unverified' | 'unavailable'
+  deprecated?: boolean
+}
+
+export interface RuntimeInfo {
+  name: string
+  available: boolean
+  installed?: boolean
+  supported: boolean
+  compatible: boolean
+  version: string
+  detail?: string
+  capabilities?: Record<string, boolean>
+  models: RuntimeModel[]
+  modelsError?: string
+}
+
+export interface ModelTestResult {
+  ok: boolean
+  runtime: string
+  model: string
+  latencyMs: number
+  message?: string
+  error?: string
+  errorCode?: string
 }
 
 export interface WorkspaceSettings {
@@ -146,11 +179,6 @@ export const PRIORITY_LABELS: Record<number, string> = {
   3: 'High',
   4: 'Urgent',
 }
-
-export const RUNTIMES: { value: string; label: string }[] = [
-  { value: 'mock', label: 'Mock' },
-  { value: 'claude', label: 'Claude Code' },
-]
 
 export interface Artifact {
   id: string

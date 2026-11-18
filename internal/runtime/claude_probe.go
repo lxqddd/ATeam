@@ -2,11 +2,16 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
+
+const claudeProbeTTL = 60 * time.Second
 
 // Probe verifies the CLI is installed, records its version, and checks that
 // the required flags are advertised by --help. Results are cached in memory
@@ -14,7 +19,7 @@ import (
 func (a *ClaudeAdapter) Probe(ctx context.Context) ProbeInfo {
 	if cached, ok := claudeProbeCache.Load("claude"); ok {
 		entry := cached.(claudeProbeCacheEntry)
-		if time.Since(entry.at) < 5*time.Minute {
+		if time.Since(entry.at) < claudeProbeTTL {
 			return entry.info
 		}
 	}
@@ -65,7 +70,100 @@ func probeClaude(ctx context.Context) ProbeInfo {
 		return info
 	}
 	info.Compatible = true
+	// claude --help does not enumerate models, but Claude Code stores the
+	// configured model aliases in settings.json. Surface those local IDs
+	// without reading credentials (PRD §6.4.1).
+	info.Models = discoverClaudeModels("")
+	if len(info.Models) == 0 {
+		info.ModelsError = "claude CLI does not expose a model list; add local models in Settings"
+	}
 	return info
+}
+
+type claudeModelOption struct {
+	Model string `json:"model"`
+	Label string `json:"label"`
+}
+
+type claudeSettings struct {
+	Env         map[string]string `json:"env"`
+	ModelPicker struct {
+		Options []claudeModelOption `json:"options"`
+	} `json:"modelPicker"`
+}
+
+var claudeModelEnvKeys = []string{
+	"ANTHROPIC_MODEL",
+	"ANTHROPIC_DEFAULT_FABLE_MODEL",
+	"ANTHROPIC_DEFAULT_OPUS_MODEL",
+	"ANTHROPIC_DEFAULT_SONNET_MODEL",
+	"ANTHROPIC_DEFAULT_HAIKU_MODEL",
+	"ANTHROPIC_SMALL_FAST_MODEL",
+}
+
+// discoverClaudeModels merges modelPicker options and ANTHROPIC_* model
+// aliases from Claude Code's local settings. An explicit configPath is used
+// by tests; production resolves CLAUDE_CONFIG_DIR or ~/.claude/settings.json.
+func discoverClaudeModels(configPath string) []Model {
+	if configPath == "" {
+		configPath = claudeSettingsPath()
+	}
+	settings := claudeSettings{Env: map[string]string{}}
+	if body, err := os.ReadFile(configPath); err == nil {
+		_ = json.Unmarshal(body, &settings)
+	}
+	models := []Model{}
+	seen := map[string]bool{}
+	add := func(id, label string, isDefault bool) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		if seen[id] {
+			for index := range models {
+				if models[index].ID != id {
+					continue
+				}
+				if label != "" && models[index].Label == "" {
+					models[index].Label = strings.TrimSpace(label)
+				}
+				if isDefault {
+					models[index].Default = true
+				}
+			}
+			return
+		}
+		seen[id] = true
+		models = append(models, Model{
+			ID:      id,
+			Label:   strings.TrimSpace(label),
+			Source:  ModelSourceSettings,
+			Default: isDefault,
+			Status:  ModelStatusUnverified,
+		})
+	}
+	for _, option := range settings.ModelPicker.Options {
+		add(option.Model, option.Label, false)
+	}
+	for _, key := range claudeModelEnvKeys {
+		value := strings.TrimSpace(settings.Env[key])
+		if value == "" {
+			value = strings.TrimSpace(os.Getenv(key))
+		}
+		add(value, settings.Env[key+"_NAME"], key == "ANTHROPIC_MODEL")
+	}
+	return models
+}
+
+func claudeSettingsPath() string {
+	if dir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR")); dir != "" {
+		return filepath.Join(dir, "settings.json")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "settings.json")
 }
 
 func runProbeCommand(parent context.Context, path string, args ...string) (string, error) {

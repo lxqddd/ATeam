@@ -54,6 +54,7 @@ type Agent struct {
 	Instructions     string    `json:"instructions"`
 	Runtime          string    `json:"runtime"`
 	Model            string    `json:"model"`
+	ModelStatus      string    `json:"modelStatus,omitempty"`
 	WorkspaceMode    string    `json:"workspaceMode"`
 	PermissionMode   string    `json:"permissionMode"`
 	CurrentVersionID string    `json:"currentVersionId"`
@@ -63,6 +64,21 @@ type Agent struct {
 	AllowedCommands  []string  `json:"allowedCommands"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+// RuntimeModel is one locally configured model ID for a runtime. Only the
+// ID and an optional display label are persisted; availability comes from
+// the runtime probe at request time (PRD api-and-data §5.17).
+type RuntimeModel struct {
+	ID    string `json:"id"`
+	Label string `json:"label,omitempty"`
+}
+
+type RuntimeModelConfig struct {
+	Runtime   string
+	Models    []RuntimeModel
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type RunStatus string

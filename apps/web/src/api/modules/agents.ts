@@ -14,6 +14,8 @@ export interface CreateAgentInput {
   allowedCommands?: string[]
 }
 
+export type UpdateAgentInput = Partial<CreateAgentInput>
+
 export class AgentApi {
   static list(): Promise<Agent[]> {
     return HttpClient.get<Agent[]>('/agents')
@@ -21,6 +23,10 @@ export class AgentApi {
 
   static create(input: CreateAgentInput): Promise<Agent> {
     return HttpClient.post<Agent>('/agents', input)
+  }
+
+  static update(id: string, input: UpdateAgentInput): Promise<Agent> {
+    return HttpClient.patch<Agent>(`/agents/${id}`, input)
   }
 
   static delete(id: string): Promise<void> {

@@ -243,7 +243,8 @@ M0 的现状是：prompt 中写了「Do not push, merge, or deploy without expli
 | FLOW-X-007 | 子任务全部完成且集成步骤通过后，父任务才可进入 done | 父任务验收门检查子任务状态与集成证据 | M2.1 | 计划（M2.1） |
 | FLOW-X-008 | 创建 Agent 时 runtime 默认 mock，workspaceMode 默认 worktree，maxConcurrency 默认 1，timeoutMinutes 默认 60 | 省略对应字段创建后，返回值符合默认值 | M0 | 已实现（M0） |
 | FLOW-X-009 | 未知 runtime 不得静默回退到 mock | 保存时校验 runtime 是否已注册；未知值返回 400 并提示 | M1 | 计划（M1） |
-| FLOW-X-047 | Agent 的 model 为空表示 Runtime 默认；非空必须命中所选 Runtime 的本地模型目录；表单使用下拉选择，不提供自由文本；未知模型返回 400 `MODEL_NOT_AVAILABLE`；切换 Runtime 时重新校验并重置或阻止保存 | 下拉选项与目录一致；空目录只显示默认项与配置入口；切换 Runtime 后无残留无效模型 | M2.1 | 计划（M2.1） |
+| FLOW-X-047 | Agent 的 model 为空表示 Runtime 默认；非空必须命中所选 Runtime 的本地模型目录；目录包含 Runtime 探测、Claude 本地配置（modelPicker / ANTHROPIC_*_MODEL）与 ATeam 本地配置；表单使用下拉选择，不提供自由文本；未知模型返回 400 `MODEL_NOT_AVAILABLE`；Runtime 列表包含本机检测到的 harness CLI，未实现适配器的标记为暂不支持 | 下拉选项与目录一致；空目录只显示默认项与配置入口；切换 Runtime 后无残留无效模型；不支持的 Runtime 不可选 | M2.1 | 计划（M2.1） |
+| FLOW-X-048 | Agent 支持编辑与删除；编辑预填并 PATCH，删除前二次确认且活跃 Run 阻止删除；创建/编辑可选择 Runtime 与模型后测试连接，测试为一次最小只读请求，不创建 Run | 编辑保存后卡片更新；删除 409 可读；测试成功显示耗时，失败显示原因且不阻塞保存 | M2.1 | 计划（M2.1） |
 | FLOW-X-010 | 每个 Run 必须快照其 Agent 配置 | Run 详情可查看创建时的 instructions、runtime、model、timeout 与权限 | M1 | 计划（M1） |
 | FLOW-X-011 | 提供 UI Design、Frontend、Backend、DevOps 四个角色模板 | 模板可一键创建 Agent，含默认 instructions、路径与证据要求；不提供 API Contract 与 Integration 模板 | M2.1 | 计划（M2.1） |
 | FLOW-X-012 | Agent 的 allowedPaths 与 allowedCommands 必须被强制执行 | 越界写入或越界命令导致 Run 失败并保留违规证据 | M2.1 | 计划（M2.1） |

@@ -326,10 +326,11 @@ M0 的 Registry 在找不到指定名称时返回 mock adapter，这会让配置
 
 ### 6.4.1 模型目录与本地模型配置（M2.1）
 
-Agent 的模型选择不再是自由文本，而是所选 Runtime 的**模型目录**。目录由两部分合并去重：
+Agent 的模型选择不再是自由文本，而是所选 Runtime 的**模型目录**。目录由三部分合并去重：
 
 1. **Runtime 探测**：Adapter 的 `Probe()` 返回本机该 Runtime 可用的模型标识。不同 CLI 能力不同：能枚举的返回真实列表；不能枚举的返回空列表并给出 `modelsError`，不得伪造模型名。
-2. **本地模型配置**：用户在 ATeam 设置中为某个 Runtime 维护的模型 ID 列表，存储在本机配置中，不包含密钥。用于补足 CLI 无法枚举或用户使用自定义模型 ID 的场景。
+2. **Claude Code 本地配置**：从 `CLAUDE_CONFIG_DIR/settings.json`（默认 `~/.claude/settings.json`）读取 `modelPicker.options[]` 与 `ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_FABLE_MODEL`、`ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL`、`ANTHROPIC_DEFAULT_HAIKU_MODEL`、`ANTHROPIC_SMALL_FAST_MODEL` 等模型别名；只读取模型键与展示名，**不得读取或记录 token/API Key**。这些条目标记为本地配置，供用户直接选择（例如 DeepSeek、GLM、MiniMax）。
+3. **本地模型配置**：用户在 ATeam 设置中为某个 Runtime 维护的模型 ID 列表，存储在本机配置中，不包含密钥。用于补足 CLI 无法枚举或用户使用自定义模型 ID 的场景。
 
 模型条目至少包含：`id`、`label`、`source`（`runtime`/`settings`）、`default`（是否 Runtime 默认）、`status`（`available`/`unverified`/`unavailable`）、`deprecated`。规则：
 
@@ -339,6 +340,8 @@ Agent 的模型选择不再是自由文本，而是所选 Runtime 的**模型目
 - 目录按 Runtime 缓存，TTL 60 秒；用户可手动刷新。探测失败时返回本地配置列表与 `modelsError`，不得把过期缓存当作实时结果。
 - 模型目录只用于选择与校验，不改变权限、隔离或审批；模型不可用不自动降级到其他模型。
 - Agent 保存时按目录校验；Run 启动时若目录可用则再次校验，不可用时交由 Adapter 返回 `runtime_error`，不得静默改用默认模型。
+
+**Runtime 列表的发现规则**：`GET /runtimes` 除已注册 Adapter 外，还必须扫描 PATH 中已知的 harness CLI（至少 `claude`、`codex`、`opencode`、`cursor-agent`，可扩展 `gemini`、`qwen`、`aider`）。已安装但没有执行适配器的 CLI 必须以 `supported=false` 返回并展示，禁止把它当作可执行 Runtime；UI 下拉中禁用并标注「暂不支持执行」。有适配器的 Runtime 才允许创建 Agent 与启动 Run。
 
 ### 6.5 Claude Code Adapter
 

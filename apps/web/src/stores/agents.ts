@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Agent } from '@ateam/shared'
-import { AgentApi, type CreateAgentInput } from '../api'
+import { AgentApi, type CreateAgentInput, type UpdateAgentInput } from '../api'
 
 export const useAgentsStore = defineStore('agents', () => {
   const items = ref<Agent[]>([])
@@ -20,5 +20,16 @@ export const useAgentsStore = defineStore('agents', () => {
     return agent
   }
 
-  return { items, fetchAll, create }
+  async function update(id: string, input: UpdateAgentInput) {
+    const agent = await AgentApi.update(id, input)
+    items.value = items.value.map((item) => (item.id === id ? agent : item))
+    return agent
+  }
+
+  async function remove(id: string) {
+    await AgentApi.delete(id)
+    items.value = items.value.filter((item) => item.id !== id)
+  }
+
+  return { items, fetchAll, create, update, remove }
 })

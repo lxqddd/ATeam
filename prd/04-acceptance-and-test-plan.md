@@ -365,10 +365,12 @@ M1 不引入 Approval 实体，合并门由 Review approved + 显式确认 + Mer
 
 | 验收编号 | 引用 FR | 验收标准（可判定） | 证据 | 阶段 |
 |---|---|---|---|---|
-| AC-AGMODEL-01 | AGENT-079、AGENT-082、API-1426、API-1429 | `/runtimes` 的 `models[]` 合并 Runtime 探测与本地配置并按 ID 去重；条目含 source/default/status/deprecated；探测失败返回本地配置与 `modelsError`，不返回过期缓存 | 契约夹具与探测失败测试 | M2.1 |
-| AC-AGMODEL-02 | AGENT-079、API-1427、UI-161 | Agent 创建/编辑的模型为下拉；空值表示 Runtime 默认；非目录 ID 返回 `400 MODEL_NOT_AVAILABLE` 并列出可选模型；无自由文本输入 | 正负用例与 UI 走查 | M2.1 |
+| AC-AGMODEL-01 | AGENT-079、AGENT-082、API-1426、API-1429 | `/runtimes` 返回已注册 Runtime 与本机检测到的 harness CLI；未实现适配器的 CLI `supported=false`；Claude 的 `models[]` 包含 `modelPicker`/`ANTHROPIC_*_MODEL` 配置且不读取 token；探测失败返回本地配置与 `modelsError` | 契约夹具、检测夹具与脱敏检查 | M2.1 |
+| AC-AGMODEL-02 | AGENT-079、API-1427、UI-161 | Agent 创建/编辑的模型为下拉；空值表示 Runtime 默认；非目录 ID 返回 `400 MODEL_NOT_AVAILABLE` 并列出可选模型；无自由文本输入；`supported=false` 的 Runtime 不可选 | 正负用例与 UI 走查 | M2.1 |
 | AC-AGMODEL-03 | AGENT-080、AGENT-081、UI-162、UI-163 | 切换 Runtime 刷新目录；原模型不可用时重置或阻止保存；目录为空时只显示默认项与配置入口；不静默回退旧列表 | 切换与空目录走查 | M2.1 |
 | AC-AGMODEL-04 | API-1428、UI-164 | Settings 可添加/移除本地模型 ID 与展示名并持久化；保存后表单立即生效；只存本地、无密钥；删除被使用模型时提示影响 | 配置读写与 UI 联动测试 | M2.1 |
+| AC-AGMODEL-05 | AGENT-084、API-1430、API-1431、UI-167、UI-168 | 选择 Runtime/模型后可测试连接；成功显示耗时，失败显示原因且不阻塞保存；测试不创建 Run/Artifact、不写仓库；超时被终止 | 真实/模拟连通性测试与负向检查 | M2.1 |
+| AC-AGENT-EDIT-01 | AGENT-083、UI-165、UI-166 | 编辑预填并 PATCH 成功；删除二次确认；有活跃 Run 时 409 并保留卡片；删除后历史 Run 记录仍可查询 | UI 走查与接口测试 | M2.1 |
 
 ## 4. 按里程碑的验收标准与演示脚本
 
@@ -741,7 +743,7 @@ M0 与 M1 的 AC→TC 映射如下；「自动化位置」中的路径为计划�
 | AC-NFR-04/05/07 | TC-NFR-104/105/107 | 手工 + 日志检查 | `prd/evidence/` 报告 | 工程负责人 |
 | AC-NFR-09/10 | TC-NFR-109/110 | 手工抓包 + 长跑脚本 | `scripts/verify/offline_check.sh`、`soak_check.sh`（计划） | 性能/安全负责人 |
 
-M2-M4 的 TC 规划：M2 使用 `TC-COLLAB-*`、`TC-AGENT-2xx`、`TC-UI-2xx`、`TC-SEC-2xx`、`TC-NFR-2xx`，覆盖 AC-COLLAB-01～10、AC-AGENT-05～07、AC-UI-06～08、AC-SEC-02/03/05/06/10、AC-NFR-06；M2.1 模型子项使用 `TC-AGMODEL-001～008` 覆盖 AC-AGMODEL-01～04；M2.3 使用 `TC-CONV-*` 覆盖 AC-AGTEAM-01、AC-CONV-01～07、AC-ROUTE-01～03；M2.4 使用 `TC-AGWORK-001～010` 覆盖 AC-AGWORK-01～05；M3 使用 `TC-TEAM-001～020` 覆盖 AC-TEAM-01～06 与 AC-SEC-07；M4 使用 `TC-AUTO-001～015` 覆盖 AC-AUTO-01～06 与 AC-SEC-09/AC-NFR-08。每个里程碑开工时把上述 TC 落到独立测试文档 `prd/testcases/<milestone>.md`，字段与上表相同；本表是 M0/M1 的规范映射，也是后续 TC 文档的模板。未建立 TC 的 AC 不得在验收记录中标记「通过」，只能标记「阻塞」或「有条件通过」并说明原因。
+M2-M4 的 TC 规划：M2 使用 `TC-COLLAB-*`、`TC-AGENT-2xx`、`TC-UI-2xx`、`TC-SEC-2xx`、`TC-NFR-2xx`，覆盖 AC-COLLAB-01～10、AC-AGENT-05～07、AC-UI-06～08、AC-SEC-02/03/05/06/10、AC-NFR-06；M2.1 模型子项使用 `TC-AGMODEL-001～012` 覆盖 AC-AGMODEL-01～05 与 AC-AGENT-EDIT-01；M2.3 使用 `TC-CONV-*` 覆盖 AC-AGTEAM-01、AC-CONV-01～07、AC-ROUTE-01～03；M2.4 使用 `TC-AGWORK-001～010` 覆盖 AC-AGWORK-01～05；M3 使用 `TC-TEAM-001～020` 覆盖 AC-TEAM-01～06 与 AC-SEC-07；M4 使用 `TC-AUTO-001～015` 覆盖 AC-AUTO-01～06 与 AC-SEC-09/AC-NFR-08。每个里程碑开工时把上述 TC 落到独立测试文档 `prd/testcases/<milestone>.md`，字段与上表相同；本表是 M0/M1 的规范映射，也是后续 TC 文档的模板。未建立 TC 的 AC 不得在验收记录中标记「通过」，只能标记「阻塞」或「有条件通过」并说明原因。
 
 追踪要求：
 

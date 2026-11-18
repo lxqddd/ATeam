@@ -20,6 +20,9 @@ import (
 
 func newTestHandler(t *testing.T) (http.Handler, store.Store) {
 	t.Helper()
+	// Keep the Claude model catalog hermetic: tests must not read the
+	// developer's ~/.claude/settings.json.
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)

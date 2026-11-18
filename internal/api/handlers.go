@@ -167,6 +167,7 @@ func (a *API) listAgents(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.decorateAgents(r.Context(), agents)
 	a.writeJSON(w, http.StatusOK, agents)
 }
 
@@ -193,18 +194,24 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	if input.Runtime != "" {
-		if _, ok := a.registry.Get(input.Runtime); !ok {
-			a.writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown runtime %q; available runtimes: %s", input.Runtime, strings.Join(a.registry.Names(), ", ")))
-			return
-		}
+	effectiveRuntime := input.Runtime
+	if effectiveRuntime == "" {
+		effectiveRuntime = "mock"
+	}
+	if _, ok := a.registry.Get(effectiveRuntime); !ok {
+		a.writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown runtime %q; available runtimes: %s", effectiveRuntime, strings.Join(a.registry.Names(), ", ")))
+		return
+	}
+	if details, message := a.validateAgentModel(r.Context(), effectiveRuntime, input.Model); message != "" {
+		a.writeAPIError(w, http.StatusBadRequest, "MODEL_NOT_AVAILABLE", message, details)
+		return
 	}
 	agent := &domain.Agent{
 		Name:            strings.TrimSpace(input.Name),
 		Description:     input.Description,
 		Instructions:    input.Instructions,
-		Runtime:         input.Runtime,
-		Model:           input.Model,
+		Runtime:         effectiveRuntime,
+		Model:           strings.TrimSpace(input.Model),
 		WorkspaceMode:   input.WorkspaceMode,
 		MaxConcurrency:  input.MaxConcurrency,
 		TimeoutMinutes:  input.TimeoutMinutes,
@@ -215,6 +222,7 @@ func (a *API) createAgent(w http.ResponseWriter, r *http.Request) {
 		a.writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	a.decorateAgent(r.Context(), agent)
 	a.broadcast("agent.created", agent)
 	a.writeJSON(w, http.StatusCreated, agent)
 }
@@ -225,6 +233,7 @@ func (a *API) getAgent(w http.ResponseWriter, r *http.Request) {
 		a.handleStoreError(w, err)
 		return
 	}
+	a.decorateAgent(r.Context(), agent)
 	a.writeJSON(w, http.StatusOK, agent)
 }
 
@@ -265,15 +274,25 @@ func (a *API) updateAgent(w http.ResponseWriter, r *http.Request) {
 	if patch.Instructions != nil {
 		agent.Instructions = *patch.Instructions
 	}
+	runtimeChanged := false
+	modelChanged := false
 	if patch.Runtime != nil {
 		if _, ok := a.registry.Get(*patch.Runtime); !ok {
 			a.writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown runtime %q; available runtimes: %s", *patch.Runtime, strings.Join(a.registry.Names(), ", ")))
 			return
 		}
 		agent.Runtime = *patch.Runtime
+		runtimeChanged = true
 	}
 	if patch.Model != nil {
-		agent.Model = *patch.Model
+		agent.Model = strings.TrimSpace(*patch.Model)
+		modelChanged = true
+	}
+	if runtimeChanged || modelChanged {
+		if details, message := a.validateAgentModel(r.Context(), agent.Runtime, agent.Model); message != "" {
+			a.writeAPIError(w, http.StatusBadRequest, "MODEL_NOT_AVAILABLE", message, details)
+			return
+		}
 	}
 	if patch.WorkspaceMode != nil {
 		agent.WorkspaceMode = *patch.WorkspaceMode
@@ -294,12 +313,24 @@ func (a *API) updateAgent(w http.ResponseWriter, r *http.Request) {
 		a.handleStoreError(w, err)
 		return
 	}
+	a.decorateAgent(r.Context(), agent)
 	a.broadcast("agent.updated", agent)
 	a.writeJSON(w, http.StatusOK, agent)
 }
 
 func (a *API) deleteAgent(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	runs, err := a.store.ListRuns(r.Context())
+	if err != nil {
+		a.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for index := range runs {
+		if runs[index].AgentID == id && runs[index].Status.Active() {
+			a.writeAPIError(w, http.StatusConflict, "AGENT_HAS_ACTIVE_RUNS", "agent has an active run; cancel or finish it first", map[string]any{"agentId": id, "runId": runs[index].ID})
+			return
+		}
+	}
 	if err := a.store.DeleteAgent(r.Context(), id); err != nil {
 		a.handleStoreError(w, err)
 		return
@@ -345,6 +376,10 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 	agent, err := a.store.GetAgent(r.Context(), input.AgentID)
 	if err != nil {
 		a.handleStoreError(w, err)
+		return
+	}
+	if details, message := a.validateAgentModel(r.Context(), agent.Runtime, agent.Model); message != "" {
+		a.writeAPIError(w, http.StatusBadRequest, "MODEL_NOT_AVAILABLE", message, details)
 		return
 	}
 
@@ -488,6 +523,14 @@ func (a *API) writeJSON(w http.ResponseWriter, status int, value any) {
 
 func (a *API) writeError(w http.ResponseWriter, status int, message string) {
 	a.writeJSON(w, status, map[string]string{"error": message})
+}
+
+func (a *API) writeAPIError(w http.ResponseWriter, status int, code, message string, details any) {
+	body := map[string]any{"error": message, "code": code}
+	if details != nil {
+		body["details"] = details
+	}
+	a.writeJSON(w, status, body)
 }
 
 func decodeJSON(r *http.Request, value any) error {

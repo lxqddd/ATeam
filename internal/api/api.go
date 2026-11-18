@@ -77,6 +77,9 @@ func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/reviews/{id}/comments", a.listReviewComments)
 	mux.HandleFunc("POST "+prefix+"/review-comments/{id}/resolve", a.resolveReviewComment)
 	mux.HandleFunc("GET "+prefix+"/meta", a.getMeta)
+	mux.HandleFunc("GET "+prefix+"/runtimes", a.listRuntimes)
+	mux.HandleFunc("PUT "+prefix+"/runtimes/{name}/models", a.updateRuntimeModels)
+	mux.HandleFunc("POST "+prefix+"/runtimes/{name}/test", a.testRuntimeModel)
 
 	mux.HandleFunc("GET "+prefix+"/tasks", a.listTasks)
 	mux.HandleFunc("POST "+prefix+"/tasks", a.createTask)
@@ -157,7 +160,7 @@ func withCORS(guard *security.Guard, next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 		if r.Method == http.MethodOptions {

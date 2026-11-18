@@ -69,6 +69,10 @@ export class HttpClient {
     return HttpClient.request<T>({ ...config, url, method: 'PATCH', data })
   }
 
+  static put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+    return HttpClient.request<T>({ ...config, url, method: 'PUT', data })
+  }
+
   static delete<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
     return HttpClient.request<T>({ ...config, url, method: 'DELETE' })
   }

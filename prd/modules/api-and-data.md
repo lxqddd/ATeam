@@ -732,10 +732,10 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `runtime.name`、`available`、`version`、`authStatus`、`capabilities` | string/bool/object | Runtime 探测结果 |
+| `runtime.name`、`available`、`installed`、`supported`、`compatible`、`version`、`authStatus`、`capabilities` | string/bool/object | Runtime 探测结果；`supported=false` 表示 CLI 已检测到但没有执行适配器，不可用于创建 Agent/Run |
 | `runtime.models[]` | object[] | 合并去重后的模型目录；空数组表示只能使用 Runtime 默认 |
 | `model.id`、`label` | string | 模型标识与展示名；`label` 缺失时展示 `id` |
-| `model.source` | string | `runtime`（CLI 探测）或 `settings`（本地配置） |
+| `model.source` | string | `runtime`（CLI 探测）或 `settings`（Claude 本地配置 / ATeam 本地配置） |
 | `model.default` | boolean | 是否为 Runtime 默认模型；至多一个 |
 | `model.status` | string | `available`、`unverified`、`unavailable` |
 | `model.deprecated` | boolean | 是否已弃用；仍可选择但显示警示 |
@@ -936,20 +936,24 @@ M4 规则：Schedule/Webhook 创建的任务默认进入 Backlog，不自动启�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/v1/runtimes` | 每个 Runtime 返回 `models[]` 与 `modelsError`；模型目录由 Runtime 探测与本地模型配置合并去重 |
-| PUT | `/api/v1/runtimes/{name}/models` | 全量替换该 Runtime 的本地模型配置；`{models:[{id,label?}]}`；幂等；不包含密钥 |
+| GET | `/api/v1/runtimes` | 每个 Runtime 返回 `models[]`、`modelsError` 与 `supported`；已注册 Adapter 与 PATH 中检测到的 harness CLI 都会返回，未实现适配器的 `supported=false` |
+| PUT | `/api/v1/runtimes/{name}/models` | 全量替换该 Runtime 的本地模型配置；`{models:[{id,label?}]}`；幂等；不包含密钥；`supported=false` 的 Runtime 不接受写入 |
+| POST | `/api/v1/runtimes/{name}/test` | 测试所选 Runtime/模型连通性；`{model}`；返回 `{ok, runtime, model, latencyMs, message?, error?, errorCode?}`；不创建 Run/Artifact |
 
 **模型目录规则**
 
-- 合并顺序：先 Runtime 探测条目，再本地配置条目；按 `id` 去重，同一 `id` 以 Runtime 条目为准。
+- 合并顺序：先 Runtime 探测条目，再 Claude Code 本地配置（`modelPicker.options` 与 `ANTHROPIC_*_MODEL`），最后 ATeam 本地配置；按 `id` 去重。
+- Claude Code 本地配置只读取模型 ID 与展示名，禁止读取或记录 token/API Key；来源记为 `settings`。
 - `default` 至多一个；Runtime 默认始终是下拉首项（空模型值表示使用默认）。
 - `label` 可空；空时客户端展示 `id`；`id` 是不透明字符串，服务端只做精确匹配。
-- `source=settings` 的条目 `status` 为 `unverified`；`source=runtime` 的条目由 Adapter 给出 `available`/`unavailable`。
+- 本地配置条目 `status=unverified`；Runtime 探测条目由 Adapter 给出 `available`/`unavailable`。
 - 目录缓存 TTL 60 秒；`PUT /runtimes/{name}/models` 后立即失效并重新合并；客户端可带 `refresh=true` 强制刷新。
 - 探测失败时返回本地配置条目与 `modelsError`；不得返回过期缓存并标记为实时。
 - Agent 创建或 PATCH 时，`model` 非空必须命中当前目录的 `id`，否则 `400 MODEL_NOT_AVAILABLE`，details 包含 `runtime` 与 `availableModels[]`。
 - 切换 Runtime 时按新目录重新校验；原模型不在新目录中返回 `400 MODEL_NOT_AVAILABLE`，客户端可将模型重置为空后重试。
 - 已有 Agent 的模型在目录变化后不可用时，服务端不自动改写；`GET /agents` 标记 `modelStatus=unavailable`，启动 Run 前拒绝并提示重新选择；目录探测失败时交由 Adapter 返回 `runtime_error`。
+- `supported=false` 的 Runtime 只用于展示检测结果，不能创建 Agent、不能启动 Run、不能写入本地模型配置；`GET /agents` 与 `POST /agents` 均按未知 Runtime 拒绝。
+- 连通性测试：`model` 为空表示测试 Runtime 默认模型；非空必须命中当前目录。测试失败返回 200 且 `ok=false`（包含 `error`/`errorCode`），不是 5xx；未知 Runtime、非目录模型与不支持的 Runtime 返回 400。测试超时默认 45 秒，必须使用只读权限且不写仓库。
 - `PUT /runtimes/{name}/models` 只允许本地模式或具备管理权限的用户；写入本地配置，不触发模型调用、不保存凭据、不联网验证模型存在性。
 - M3 起模型目录以 Runner 能力上报为准，`runtime_model_configs` 只服务本地模式；团队共享模型策略需单独定义，不复用本表。
 
@@ -2340,10 +2344,13 @@ CI 检查：同一文档内编号唯一；跨文档引用必须带文档前缀�
 
 | 编号 | 需求 | 验收要点 | 里程碑 |
 | --- | --- | --- | --- |
-| API-1426 | `GET /runtimes` 的 `models[]` 合并 Runtime 探测与本地配置，按 `id` 去重；条目含 `id`、`label`、`source`、`default`、`status`、`deprecated`；空目录合法 | 契约夹具；同 ID 以 Runtime 条目为准；默认至多一个 | M2.1 |
-| API-1427 | Agent 创建/PATCH 时 `model` 为空或命中当前 Runtime 目录；否则 `400 MODEL_NOT_AVAILABLE`，details 含 `runtime` 与 `availableModels[]`；切换 Runtime 同样校验 | 正负用例；错误详情可驱动 UI | M2.1 |
-| API-1428 | `PUT /runtimes/{name}/models` 全量替换本地模型配置，幂等；只存模型 ID 与展示名，不保存密钥、不联网验证、不触发模型调用 | 写入与回读测试；配置表无敏感字段 | M2.1 |
-| API-1429 | 模型目录按 Runtime 缓存 60 秒；`PUT` 后立即失效；`modelsError` 存在时只返回本地配置条目，不得把过期缓存当作实时结果 | 缓存与探测失败测试 | M2.1 |
+| API-1426 | `GET /runtimes` 返回已注册 Adapter 与 PATH 中检测到的 harness CLI；`models[]` 合并 Runtime 探测、Claude 本地配置与 ATeam 本地配置，按 `id` 去重；条目含 `id`、`label`、`source`、`default`、`status`、`deprecated`；未实现适配器的 Runtime `supported=false` | 契约夹具；同 ID 去重；默认至多一个；检测到 opencode/cursor-agent 时出现 | M2.1 |
+| API-1427 | Agent 创建/PATCH 时 `model` 为空或命中当前 Runtime 目录；否则 `400 MODEL_NOT_AVAILABLE`，details 含 `runtime` 与 `availableModels[]`；切换 Runtime 同样校验；`supported=false` 的 Runtime 按未知 Runtime 拒绝 | 正负用例；错误详情可驱动 UI | M2.1 |
+| API-1428 | `PUT /runtimes/{name}/models` 全量替换本地模型配置，幂等；只存模型 ID 与展示名，不保存密钥、不联网验证、不触发模型调用；`supported=false` 的 Runtime 拒绝写入 | 写入与回读测试；配置表无敏感字段 | M2.1 |
+| API-1429 | 模型目录按 Runtime 缓存 60 秒；`PUT` 后立即失效；`modelsError` 存在时只返回本地配置条目，不得把过期缓存当作实时结果；Claude 本地配置只读取模型键，不读取 token/API Key | 缓存、探测失败与配置脱敏测试 | M2.1 |
+| API-1430 | 提供 `POST /runtimes/{name}/test`：校验 Runtime/模型后发送一次最小只读请求，返回 `ok`、`latencyMs`、`message` 或 `error`/`errorCode`；失败返回 200 且 `ok=false` | 成功/失败/超时夹具；不产生 Run/Artifact | M2.1 |
+| API-1431 | 连通性测试不得写仓库、不得创建 Run/Artifact、不得使用 `full_access`；Claude 使用 `plan` 权限并禁用写工具，超时默认 45 秒 | 负向测试与进程清理检查 | M2.1 |
+| API-1432 | `supported=false`、未知 Runtime、非目录模型调用测试端点返回 400；测试端点同时挂在 `/api` 别名下 | 错误码与别名测试 | M2.1 |
 
 ### 14.17 M4 自动化与分发（API-1300 至 API-1315）
 

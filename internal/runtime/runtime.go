@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"sort"
+	"time"
 )
 
 type Event struct {
@@ -27,6 +28,26 @@ type Adapter interface {
 	Run(ctx context.Context, req Request, emit func(Event)) error
 }
 
+// Model is one selectable model in a runtime's local catalog. Source
+// distinguishes models discovered from the CLI from models configured
+// locally in ATeam (PRD runtime-and-workspace §6.4.1).
+type Model struct {
+	ID         string `json:"id"`
+	Label      string `json:"label,omitempty"`
+	Source     string `json:"source"`
+	Default    bool   `json:"default"`
+	Status     string `json:"status"`
+	Deprecated bool   `json:"deprecated,omitempty"`
+}
+
+const (
+	ModelSourceRuntime     = "runtime"
+	ModelSourceSettings    = "settings"
+	ModelStatusAvailable   = "available"
+	ModelStatusUnverified  = "unverified"
+	ModelStatusUnavailable = "unavailable"
+)
+
 // ProbeInfo is the cached capability probe result (M1-RUNTIME-001/007).
 type ProbeInfo struct {
 	Name         string
@@ -34,12 +55,26 @@ type ProbeInfo struct {
 	Compatible   bool
 	Detail       string
 	Capabilities map[string]bool
+	Models       []Model
+	ModelsError  string
 }
 
 // Prober is implemented by adapters that can verify CLI availability,
 // version and required flags before a run starts.
 type Prober interface {
 	Probe(ctx context.Context) ProbeInfo
+}
+
+// ModelTestResult is the outcome of a minimal model connectivity check.
+type ModelTestResult struct {
+	Latency time.Duration
+	Reply   string
+}
+
+// ModelTester is implemented by adapters that can perform a minimal,
+// read-only model request without creating a Run.
+type ModelTester interface {
+	TestModel(ctx context.Context, model string) (ModelTestResult, error)
 }
 
 // Error classifies a runtime failure so the scheduler can map it to a

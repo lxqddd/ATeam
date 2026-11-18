@@ -233,6 +233,14 @@ M0 的目标是跑通 Task/Agent/Run 的最小闭环，Agent 能力只覆盖「�
 - **And** 用户点击工作中或已完成的 Agent，进入该 Agent 的工作页，看到当前/最近 Run 的工作上下文与完成任务的过程
 - **And** 空闲 Agent 进入工作页时显示明确的空态，不伪造上下文
 
+### US-AGENT-16 编辑/删除 Agent 并测试模型连接（M2.1）
+
+- **Given** Agents 看板已有 Agent
+- **When** 用户点击编辑并保存，或点击删除并确认
+- **Then** 编辑复用同一表单并预填当前配置，保存后卡片更新；删除前二次确认，存在活跃 Run 时拒绝并提示先取消
+- **And** 在创建/编辑表单中选择 Runtime 与模型后，用户可以点击「测试连接」；系统发送一次最小只读请求并显示成功耗时或失败原因
+- **And** 测试连接不创建 Run、不产生 Artifact、不写仓库
+
 ## 4. Agent 概念模型
 
 ### 4.1 定义
@@ -342,7 +350,7 @@ M1 起，保存 Agent 时按字段所属里程碑统一执行校验；M0 仅执�
 4. **指令**：允许为空但给出警告，因为空指令意味着 Agent 没有职责与边界；最长 64KB。
 5. **角色**：只接受 `general`、`ui_design`、`frontend`、`backend`、`devops`、`custom`；旧数据迁移时默认 `general`。角色只影响依赖校验与默认门禁，不改变权限信封。
 6. **Runtime**：必须属于已注册适配器集合；未注册值返回 400，不允许静默回退。
-7. **模型**：可空；非空时必须是所选 Runtime 当前模型目录中的 `id`，否则返回 `400 MODEL_NOT_AVAILABLE` 并在 details 中列出可选模型。模型目录由 Runtime 探测结果与本地模型配置合并去重；目录为空时只允许空模型（Runtime 默认）。切换 Runtime 时，若已有模型不在新目录中，UI 必须重置为空或阻止保存并提示。模型不作为权限或隔离依据。已有 Agent 的模型在目录变化后变为不可用时，服务端不得自动改写其配置；Agent 列表与编辑器标记 `unavailable`，启动 Run 前阻止并提示重新选择（模型目录不可探测时除外，由 Adapter 返回运行错误）。
+7. **模型**：可空；非空时必须是所选 Runtime 当前模型目录中的 `id`，否则返回 `400 MODEL_NOT_AVAILABLE` 并在 details 中列出可选模型。模型目录由 Runtime 探测结果、Claude Code 本地配置（`modelPicker.options` 与 `ANTHROPIC_*_MODEL`，只读模型键，不读取 token）与 ATeam 本地模型配置合并去重；目录为空时只允许空模型（Runtime 默认）。只有 `supported=true` 的 Runtime 可用于创建 Agent；仅检测到 CLI 但无执行适配器的 Runtime 显示「暂不支持执行」。切换 Runtime 时，若已有模型不在新目录中，UI 必须重置为空或阻止保存并提示。模型不作为权限或隔离依据。已有 Agent 的模型在目录变化后变为不可用时，服务端不得自动改写其配置；Agent 列表与编辑器标记 `unavailable`，启动 Run 前阻止并提示重新选择（模型目录不可探测时除外，由 Adapter 返回运行错误）。
 8. **工作区模式**：M1 只接受 `worktree`；M2 增加 `directory`（直接目录模式），必须显式确认并提示「不具备 worktree 隔离」；两者不能与 `shared` 之类未定义值混用。
 9. **Runtime 权限模式**：只接受 `read_only`、`controlled_edit`、`full_access`；默认 `controlled_edit`；`full_access` 必须在 UI 中显式开启并展示风险警示，保存与每次生效都要写入事件与 Run 快照。
 10. **并发**：整数 1–16；创建时缺失或小于 1 使用 1；PATCH 不允许小于 1。
@@ -773,7 +781,9 @@ staging 审批的绑定对象是：`run_id` + 动作类型 + 目标环境 `stagi
 | AGENT-079 | Agent 的 `model` 只接受空值或所选 Runtime 模型目录中的 `id`；未知模型返回 `400 MODEL_NOT_AVAILABLE` 并列出可选模型 | P0 | 计划 | M2.1 |
 | AGENT-080 | 切换 Runtime 时重新解析模型目录；原模型不在新目录中时拒绝保存并返回字段级错误，或由 UI 重置为默认后保存 | P0 | 计划 | M2.1 |
 | AGENT-081 | Runtime 模型目录为空时只允许空模型（Runtime 默认）；UI 不得回退为自由文本输入，必须提供本地模型配置入口 | P1 | 计划 | M2.1 |
-| AGENT-082 | 模型目录由 Runtime 探测与本地模型配置合并去重；探测失败时返回可用性警告与 `modelsError`，不得把旧缓存当作实时结果 | P1 | 计划 | M2.1 |
+| AGENT-082 | 模型目录由 Runtime 探测、Claude 本地配置与 ATeam 本地配置合并去重；探测失败时返回可用性警告与 `modelsError`，不得把旧缓存当作实时结果；只有 `supported=true` 的 Runtime 可创建 Agent | P1 | 计划 | M2.1 |
+| AGENT-083 | Agent 看板支持编辑与删除；编辑预填当前配置，保存走 PATCH 并重新校验 runtime/model；删除前二次确认，存在活跃 Run 时返回 409，删除后历史 Run 记录保留 | P0 | 计划 | M2.1 |
+| AGENT-084 | 提供模型连通性测试：`POST /runtimes/{name}/test` 使用所选 Runtime/模型发送一次最小只读请求，返回 `ok`、`latencyMs`、`message` 或 `error`；不创建 Run/Artifact、不写仓库；失败是测试结果而非 5xx | P0 | 计划 | M2.1 |
 
 ### 10.3 指令与提示词
 
@@ -886,6 +896,8 @@ M1 起的基础表单规则如下；M1 只复用创建弹窗做基础编辑（�
 | 校验时机：字段失焦时做格式校验，提交时做完整校验；服务端错误按 field 映射到具体输入框 | AGENT-009 至 AGENT-020 | M1 |
 | Runtime 下拉只展示已注册适配器；每个选项展示可用状态；不可用选项允许查看但不可选 | AGENT-011、AGENT-053、UI-071 | M1 |
 | 模型使用下拉选择，选项来自所选 Runtime 的模型目录；首项为「默认（由 Runtime 决定）」（空值），其余按来源分组；不提供自由文本输入；目录为空时只显示默认项与「去设置添加模型」入口 | AGENT-079 至 AGENT-082、UI-161 至 UI-164 | M2.1 |
+| 选择 Runtime 与模型后提供「测试连接」，显示进行中、成功耗时或失败原因；切换模型/ Runtime 后清空上次结果；测试不创建 Run、不写仓库 | AGENT-084、UI-167 | M2.1 |
+| 卡片提供编辑与删除入口；编辑预填当前配置，删除需二次确认；有活跃 Run 时删除返回 409 并提示先取消 | AGENT-083、UI-165、UI-166 | M2.1 |
 | 切换 Runtime 时刷新模型目录；原模型不在新目录中时重置为默认并提示，或阻止保存；模型目录探测失败时显示警告与重试，不静默使用旧列表 | AGENT-080、AGENT-082、UI-163 | M2.1 |
 | Runtime 权限模式选择：只读、受控编辑、完全授权；默认受控编辑；选择完全授权时显示风险警示并要求二次确认 | AGENT-062 | M1 |
 | 允许路径使用多行编辑器或路径选择器，逐条添加；**必须展示「空表示不可写任何路径」**，不得显示「空表示整个工作区」 | AGENT-023、AGENT-072、UI-067 | M1 输入与文案；M2 影响预览 |

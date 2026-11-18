@@ -540,7 +540,7 @@ M2 的 role 枚举以 `prd/02-domain-model.md` 第 3.4 节为准：`general`（�
 | COLLAB-004、COLLAB-006、AGENT-044、AGENT-045 | 角色子任务、custom 角色、模板变量 | P1 | M2.1 新增 | 可从父任务创建带 role 的子任务并默认绑定同角色 Agent；custom 角色不获得门禁豁免；未解析变量阻止实例化 | `prd/modules/agent-system.md` 第 7.3 节 |
 | TASK-083、TASK-084、TASK-085、TASK-086、TASK-089 | 任务模板、预填 DAG/契约/证据、Agent 草稿 | P1（TASK-083/084 保持模块 P2，可选） | M2.1 必须交付 TASK-085/086/089（退出标准第 10 项依赖 TASK-089）；TASK-083/084 不阻塞退出 | 至少六类模板可创建；模板可实例化预置 DAG；Agent 生成的任务默认 `backlog` 且不自动启动 Run | `prd/modules/task-management.md` 第 8 节 |
 | AGENT-028、UI-064 | 六段式指令模板与 Markdown 预览 | P2 | M2.1 可选 | 模板包含职责、边界、输入、输出、检查、汇报；预览与源文切换不丢内容 | `prd/modules/agent-system.md` 第 5 节 |
-| AGENT-079～082、UI-161～164、API-1426～1429 | Runtime 模型目录与 Agent 模型下拉；本地模型配置 | P0 | M2.1 模型子项，可随 Agent 编辑器提前交付，不依赖 DAG/契约 | 模型下拉只列所选 Runtime 目录；空值表示默认；非目录 ID 返回 `MODEL_NOT_AVAILABLE`；切换 Runtime 重新校验；目录为空只显示默认项与配置入口 | `prd/modules/agent-system.md` §4.4/§10.2、`prd/modules/runtime-and-workspace.md` §6.4.1、`prd/modules/api-and-data.md` §5.17 |
+| AGENT-079～084、UI-161～168、API-1426～1432 | Runtime 模型目录与 Agent 模型下拉；本机 harness CLI 检测；本地模型配置；Agent 编辑/删除；模型连通性测试 | P0 | M2.1 模型子项，可随 Agent 编辑器提前交付，不依赖 DAG/契约 | Runtime 列表包含本机检测到的 CLI；未实现适配器的标记暂不支持；模型下拉只列所选 Runtime 目录；Claude 本地 modelPicker/ANTHROPIC_*_MODEL 可见；编辑/删除可用；测试连接显示耗时或失败且不创建 Run | `prd/modules/agent-system.md` §4.4/§10.2、`prd/modules/runtime-and-workspace.md` §6.4.1、`prd/modules/api-and-data.md` §5.17 |
 
 ### 7.5 路径与命令权限
 

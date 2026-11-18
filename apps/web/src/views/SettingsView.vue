@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { Health } from '@ateam/shared'
-import { HealthApi } from '../api'
+import { ElMessage } from 'element-plus'
+import type { Health, RuntimeInfo } from '@ateam/shared'
+import { HealthApi, RuntimeApi } from '../api'
 import { setAppLocale, type AppLocale } from '../i18n'
+
+interface ModelDraft {
+  id: string
+  label: string
+}
 
 const { t, locale } = useI18n()
 const health = ref<Health | null>(null)
 const error = ref('')
+const runtimes = ref<RuntimeInfo[]>([])
+const modelDrafts = ref<Record<string, ModelDraft[]>>({})
+const modelErrors = ref<Record<string, string>>({})
+const savingRuntime = ref('')
+const supportedRuntimes = computed(() => runtimes.value.filter((runtime) => runtime.supported))
 
 async function check() {
   try {
@@ -15,6 +26,53 @@ async function check() {
     error.value = ''
   } catch (err) {
     error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+async function loadRuntimes() {
+  try {
+    runtimes.value = await RuntimeApi.list()
+    const drafts: Record<string, ModelDraft[]> = {}
+    for (const runtime of runtimes.value) {
+      drafts[runtime.name] = runtime.models
+        .filter((model) => model.source === 'settings')
+        .map((model) => ({ id: model.id, label: model.label || '' }))
+    }
+    modelDrafts.value = drafts
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+  }
+}
+
+function addModel(runtimeName: string) {
+  modelDrafts.value[runtimeName] = [...(modelDrafts.value[runtimeName] || []), { id: '', label: '' }]
+}
+
+function removeModel(runtimeName: string, index: number) {
+  modelDrafts.value[runtimeName] = (modelDrafts.value[runtimeName] || []).filter((_, i) => i !== index)
+}
+
+async function saveModels(runtimeName: string) {
+  const draft = modelDrafts.value[runtimeName] || []
+  const models = draft.map((model) => ({ id: model.id.trim(), label: model.label.trim() }))
+  if (models.some((model) => !model.id)) {
+    modelErrors.value[runtimeName] = t('settings.models.modelIdRequired')
+    return
+  }
+  if (new Set(models.map((model) => model.id)).size !== models.length) {
+    modelErrors.value[runtimeName] = t('settings.models.modelIdDuplicate')
+    return
+  }
+  savingRuntime.value = runtimeName
+  try {
+    await RuntimeApi.updateModels(runtimeName, models)
+    modelErrors.value[runtimeName] = ''
+    await loadRuntimes()
+    ElMessage.success(t('settings.models.saved'))
+  } catch (err) {
+    modelErrors.value[runtimeName] = err instanceof Error ? err.message : String(err)
+  } finally {
+    savingRuntime.value = ''
   }
 }
 
@@ -26,6 +84,7 @@ watch(locale, (value) => {
 
 onMounted(() => {
   void check()
+  void loadRuntimes()
 })
 </script>
 
@@ -70,6 +129,54 @@ onMounted(() => {
         <p class="text-label text-fg-muted">
           {{ $t('settings.workspaceNote', { path: '~/.ateam/workspaces/runs/<run-id>' }) }}
         </p>
+      </el-card>
+
+      <el-card id="settings-runtime-models" shadow="never" class="lg:col-span-2">
+        <template #header>
+          <span class="text-label font-semibold">{{ $t('settings.models.title') }}</span>
+        </template>
+        <p class="text-caption text-fg-subtle">{{ $t('settings.models.hint') }}</p>
+        <div class="mt-4 flex flex-col gap-5">
+          <section v-for="runtime in supportedRuntimes" :key="runtime.name">
+            <div class="flex items-center gap-2">
+              <span class="text-label font-semibold">{{ runtime.name }}</span>
+              <el-tag v-if="runtime.version" size="small">{{ runtime.version }}</el-tag>
+              <el-tag v-if="!runtime.available" size="small" type="warning">
+                {{ $t('settings.models.unavailable') }}
+              </el-tag>
+            </div>
+            <p v-if="runtime.modelsError" class="mt-1 text-caption text-fg-subtle">
+              {{ runtime.modelsError }}
+            </p>
+
+            <div
+              v-for="(model, index) in modelDrafts[runtime.name] || []"
+              :key="`${runtime.name}-${index}`"
+              class="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2"
+            >
+              <el-input v-model="model.id" :placeholder="$t('settings.models.modelId')" />
+              <el-input v-model="model.label" :placeholder="$t('settings.models.modelLabel')" />
+              <el-button text type="danger" @click="removeModel(runtime.name, index)">
+                {{ $t('settings.models.remove') }}
+              </el-button>
+            </div>
+
+            <div class="mt-2 flex items-center gap-2">
+              <el-button text @click="addModel(runtime.name)">{{ $t('settings.models.add') }}</el-button>
+              <el-button
+                type="primary"
+                size="small"
+                :loading="savingRuntime === runtime.name"
+                @click="saveModels(runtime.name)"
+              >
+                {{ $t('settings.models.save') }}
+              </el-button>
+            </div>
+            <p v-if="modelErrors[runtime.name]" class="mt-1 text-caption text-danger">
+              {{ modelErrors[runtime.name] }}
+            </p>
+          </section>
+        </div>
       </el-card>
 
       <el-card id="settings-about" shadow="never">

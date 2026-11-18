@@ -35,6 +35,24 @@ func collectEvents() (func(Event), *[]Event) {
 	return func(event Event) { *events = append(*events, event) }, events
 }
 
+func TestClaudeAdapterTestModel(t *testing.T) {
+	writeFakeClaude(t, `if [ "$1" = "-p" ]; then
+  echo '{"type":"result","subtype":"success","is_error":false,"result":"OK"}'
+  exit 0
+fi
+exit 1`)
+	result, err := (&ClaudeAdapter{}).TestModel(context.Background(), "deepseek")
+	if err != nil {
+		t.Fatalf("test model: %v", err)
+	}
+	if result.Reply != "OK" {
+		t.Fatalf("reply = %q, want OK", result.Reply)
+	}
+	if result.Latency <= 0 {
+		t.Fatalf("latency = %v", result.Latency)
+	}
+}
+
 func TestClaudeAdapterMapsStreamJSON(t *testing.T) {
 	dir := t.TempDir()
 	argsFile := filepath.Join(dir, "args.txt")
