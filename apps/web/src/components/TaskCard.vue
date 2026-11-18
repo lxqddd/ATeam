@@ -1,9 +1,25 @@
 <script setup lang="ts">
-import { PRIORITY_LABELS, type Task } from '@ateam/shared'
+import { useI18n } from 'vue-i18n'
+import type { Task } from '@ateam/shared'
 import StatusBadge from './StatusBadge.vue'
 
 defineProps<{ task: Task }>()
 defineEmits<{ open: [task: Task]; dragstart: [task: Task] }>()
+
+const { t } = useI18n()
+
+// shared 包 PRIORITY_LABELS 的数字键 → locale 键名
+const PRIORITY_KEYS: Record<number, string> = {
+  0: 'none',
+  1: 'low',
+  2: 'medium',
+  3: 'high',
+  4: 'urgent',
+}
+
+function priorityLabel(priority: number) {
+  return t(`common.priority.${PRIORITY_KEYS[priority] ?? 'none'}`)
+}
 </script>
 
 <template>
@@ -25,7 +41,7 @@ defineEmits<{ open: [task: Task]; dragstart: [task: Task] }>()
     <div class="mt-3 flex items-center justify-between gap-2">
       <StatusBadge :status="task.status" />
       <el-tag size="small" effect="plain" type="info">
-        {{ PRIORITY_LABELS[task.priority] ?? 'None' }}
+        {{ priorityLabel(task.priority) }}
       </el-tag>
     </div>
   </el-card>

@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  RUN_STATUS_LABELS,
-  TASK_STATUS_LABELS,
-  type RunStatus,
-  type TaskStatus,
-} from '@ateam/shared'
+import { useI18n } from 'vue-i18n'
+import type { RunStatus, TaskStatus } from '@ateam/shared'
 
 const props = withDefaults(
   defineProps<{
@@ -15,13 +11,15 @@ const props = withDefaults(
   { kind: 'task' },
 )
 
+const { t } = useI18n()
+
 type TagType = 'primary' | 'success' | 'info' | 'warning' | 'danger'
 
 const label = computed(() => {
   if (props.kind === 'run') {
-    return RUN_STATUS_LABELS[props.status as RunStatus]
+    return t(`common.status.run.${props.status}`)
   }
-  return TASK_STATUS_LABELS[props.status as TaskStatus]
+  return t(`common.status.task.${props.status}`)
 })
 
 const tagType = computed<TagType>(() => {

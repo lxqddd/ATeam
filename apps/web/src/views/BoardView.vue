@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Plus } from '@element-plus/icons-vue'
 import { TASK_STATUSES, type Task, type TaskStatus } from '@ateam/shared'
 import { useTasksStore } from '../stores/tasks'
@@ -9,6 +10,7 @@ import Modal from '../components/Modal.vue'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
+const { t } = useI18n()
 const tasks = useTasksStore()
 
 const showCreate = ref(false)
@@ -21,7 +23,9 @@ const draft = ref({
 
 const columns = computed(() =>
   TASK_STATUSES.map((status) => ({
-    ...status,
+    value: status.value,
+    label: t(`common.status.task.${status.value}`),
+    hint: t(`board.hints.${status.value}`),
     tasks: tasks.items.filter((task) => task.status === status.value),
   })),
 )
@@ -61,10 +65,10 @@ function openTask(task: Task) {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
       <div>
-        <h1 class="text-sm font-semibold">Board</h1>
-        <p class="text-[11px] text-zinc-500">Tasks and their current execution state</p>
+        <h1 class="text-sm font-semibold">{{ $t('board.title') }}</h1>
+        <p class="text-[11px] text-zinc-500">{{ $t('board.subtitle') }}</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="showCreate = true">New task</el-button>
+      <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('board.newTask') }}</el-button>
     </header>
 
     <div class="flex-1 overflow-x-auto p-5">
@@ -96,45 +100,45 @@ function openTask(task: Task) {
             />
             <EmptyState
               v-if="column.tasks.length === 0"
-              title="No tasks"
-              description="Drag a card here or create a new one."
+              :title="$t('board.emptyTitle')"
+              :description="$t('board.emptyDesc')"
             />
           </div>
         </section>
       </div>
     </div>
 
-    <Modal :open="showCreate" title="New task" @close="showCreate = false">
+    <Modal :open="showCreate" :title="$t('board.newTask')" @close="showCreate = false">
       <el-form label-position="top" @submit.prevent>
-        <el-form-item label="Title">
+        <el-form-item :label="$t('board.form.title')">
           <el-input
             v-model="draft.title"
-            placeholder="Fix the login redirect loop"
+            :placeholder="$t('board.form.titlePlaceholder')"
             @keydown.enter="createTask"
           />
         </el-form-item>
-        <el-form-item label="Description">
+        <el-form-item :label="$t('board.form.description')">
           <el-input
             v-model="draft.description"
             type="textarea"
             :rows="3"
-            placeholder="Context, scope, acceptance criteria..."
+            :placeholder="$t('board.form.descriptionPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="Status">
+        <el-form-item :label="$t('board.form.status')">
           <el-select v-model="draft.status" style="width: 100%">
             <el-option
               v-for="status in TASK_STATUSES"
               :key="status.value"
-              :label="status.label"
+              :label="$t(`common.status.task.${status.value}`)"
               :value="status.value"
             />
           </el-select>
         </el-form-item>
       </el-form>
       <div class="flex justify-end gap-2">
-        <el-button @click="showCreate = false">Cancel</el-button>
-        <el-button type="primary" @click="createTask">Create</el-button>
+        <el-button @click="showCreate = false">{{ $t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="createTask">{{ $t('common.create') }}</el-button>
       </div>
     </Modal>
   </div>
