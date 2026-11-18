@@ -33,49 +33,49 @@ onMounted(() => {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center px-5">
       <div>
-        <h1 class="text-sm font-semibold">{{ $t('settings.title') }}</h1>
-        <p class="text-[11px] text-zinc-500">{{ $t('settings.subtitle') }}</p>
+        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('settings.title') }}</h1>
+        <p class="text-caption text-fg-subtle">{{ $t('settings.subtitle') }}</p>
       </div>
     </header>
 
     <div class="flex-1 overflow-y-auto p-5 space-y-4 max-w-3xl">
       <el-card shadow="never">
         <template #header>
-          <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('settings.language') }}</span>
+          <span class="text-label font-semibold">{{ $t('settings.language') }}</span>
         </template>
         <el-radio-group v-model="locale">
           <el-radio-button value="zh-CN">简体中文</el-radio-button>
           <el-radio-button value="en-US">English</el-radio-button>
         </el-radio-group>
-        <p class="mt-3 text-[11px] text-zinc-500">{{ $t('settings.languageHint') }}</p>
+        <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.languageHint') }}</p>
       </el-card>
 
       <el-card shadow="never">
         <template #header>
-          <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('settings.apiConnection') }}</span>
+          <span class="text-label font-semibold">{{ $t('settings.apiConnection') }}</span>
         </template>
         <div class="flex items-center gap-3">
           <el-button @click="check">{{ $t('settings.checkHealth') }}</el-button>
           <el-tag v-if="health" type="success">OK · v{{ health.version }}</el-tag>
           <el-tag v-if="error" type="danger">{{ error }}</el-tag>
         </div>
-        <p class="mt-3 text-[11px] text-zinc-500">{{ $t('settings.apiNote') }}</p>
+        <p class="mt-3 text-caption text-fg-subtle">{{ $t('settings.apiNote') }}</p>
       </el-card>
 
       <el-card shadow="never">
         <template #header>
-          <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('settings.workspace') }}</span>
+          <span class="text-label font-semibold">{{ $t('settings.workspace') }}</span>
         </template>
-        <p class="text-xs text-zinc-400">
+        <p class="text-label text-fg-muted">
           {{ $t('settings.workspaceNote', { path: '~/.ateam/workspaces/runs/<run-id>' }) }}
         </p>
       </el-card>
 
       <el-card shadow="never">
         <template #header>
-          <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('settings.about') }}</span>
+          <span class="text-label font-semibold">{{ $t('settings.about') }}</span>
         </template>
-        <p class="text-xs text-zinc-400">{{ $t('settings.aboutNote') }}</p>
+        <p class="text-label text-fg-muted">{{ $t('settings.aboutNote') }}</p>
       </el-card>
     </div>
   </div>

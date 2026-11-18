@@ -8,10 +8,10 @@ const route = useRoute()
 <template>
   <aside class="w-60 shrink-0 border-r border-border bg-panel flex flex-col">
     <div class="h-14 flex items-center gap-2.5 px-4 border-b border-border">
-      <el-icon :size="20" color="#818cf8"><Monitor /></el-icon>
+      <el-icon :size="20" color="var(--cd-color-accent-2)"><Monitor /></el-icon>
       <div class="leading-tight">
-        <div class="text-sm font-semibold">ATeam</div>
-        <div class="text-[10px] text-zinc-500">{{ $t('sidebar.tagline') }}</div>
+        <div class="text-body font-semibold">ATeam</div>
+        <div class="text-caption text-fg-subtle">{{ $t('sidebar.tagline') }}</div>
       </div>
     </div>
 
@@ -34,9 +34,9 @@ const route = useRoute()
       </el-menu-item>
     </el-menu>
 
-    <div class="p-3 border-t border-border text-[11px] text-zinc-500">
+    <div class="p-3 border-t border-border text-caption text-fg-subtle">
       <div class="flex items-center gap-2">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        <span class="w-1.5 h-1.5 rounded-full bg-success" />
         {{ $t('sidebar.localFirst') }}
       </div>
       <div class="mt-1">v0.1.0</div>

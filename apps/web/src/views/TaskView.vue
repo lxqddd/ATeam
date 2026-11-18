@@ -149,10 +149,10 @@ onUnmounted(() => {
         <el-button :icon="ArrowLeft" text @click="router.push('/')">{{ $t('task.back') }}</el-button>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <span class="text-[10px] text-zinc-500">{{ task.id }}</span>
+            <span class="text-caption text-fg-subtle">{{ task.id }}</span>
             <StatusBadge :status="task.status" />
           </div>
-          <h1 class="text-sm font-semibold truncate">{{ task.title }}</h1>
+          <h1 class="text-body font-semibold truncate">{{ task.title }}</h1>
         </div>
       </div>
       <el-select :model-value="task.status" style="width: 144px" @change="onStatusChange">
@@ -168,9 +168,9 @@ onUnmounted(() => {
     <div class="flex-1 overflow-y-auto p-5 space-y-4">
       <el-card shadow="never">
         <template #header>
-          <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('task.description') }}</span>
+          <span class="text-label font-semibold">{{ $t('task.description') }}</span>
         </template>
-        <p class="text-sm text-zinc-300 whitespace-pre-wrap">
+        <p class="text-body text-fg-muted whitespace-pre-wrap">
           {{ task.description || $t('task.noDescription') }}
         </p>
       </el-card>
@@ -178,7 +178,7 @@ onUnmounted(() => {
       <el-card shadow="never">
         <template #header>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('task.runs') }}</span>
+            <span class="text-label font-semibold">{{ $t('task.runs') }}</span>
             <div class="flex items-center gap-2">
               <el-select v-model="selectedAgentId" style="width: 220px" :placeholder="$t('task.selectAgent')">
                 <el-option
@@ -218,7 +218,7 @@ onUnmounted(() => {
             shadow="hover"
             :body-style="{ padding: '10px' }"
             class="cursor-pointer"
-            :class="{ 'ring-1 ring-indigo-500/50': selectedRun?.id === run.id }"
+            :class="{ 'ring-1 ring-primary/40': selectedRun?.id === run.id }"
             @click="selectRun(run)"
           >
             <div class="flex items-center justify-between gap-2">
@@ -226,14 +226,14 @@ onUnmounted(() => {
                 <StatusBadge :status="run.status" kind="run" />
                 <el-tag size="small" effect="plain" type="info">{{ run.trigger }}</el-tag>
               </div>
-              <span class="text-[10px] text-zinc-500">
+              <span class="text-caption text-fg-subtle">
                 {{ d(new Date(run.createdAt), 'long') }}
               </span>
             </div>
-            <div v-if="run.summary" class="text-[11px] text-zinc-400 mt-1">
+            <div v-if="run.summary" class="text-caption text-fg-muted mt-1">
               {{ run.summary }}
             </div>
-            <div v-if="run.error" class="text-[11px] text-rose-300 mt-1">{{ run.error }}</div>
+            <div v-if="run.error" class="text-caption text-danger mt-1">{{ run.error }}</div>
           </el-card>
         </div>
       </el-card>
@@ -241,7 +241,7 @@ onUnmounted(() => {
       <el-card v-if="selectedRun" shadow="never">
         <template #header>
           <div class="flex items-center justify-between">
-            <span class="text-xs font-semibold text-zinc-400 uppercase">
+            <span class="text-label font-semibold">
               {{ $t('task.runLog') }} · {{ selectedRun.id.slice(0, 8) }}
             </span>
             <el-button
@@ -256,20 +256,20 @@ onUnmounted(() => {
           </div>
         </template>
 
-        <div class="h-[360px] overflow-y-auto rounded-md border border-border bg-black/30 p-3 space-y-2">
+        <div class="h-[360px] overflow-y-auto rounded-md border border-border bg-sunken p-3 space-y-2">
           <div
             v-if="events.length === 0 && !isRunActive"
             class="flex size-full flex-col items-center justify-center gap-3 p-8 text-center"
           >
-            <h3 class="text-sm font-medium">{{ $t('task.noEventsTitle') }}</h3>
-            <p class="text-sm text-zinc-500">{{ $t('task.noEventsDesc') }}</p>
+            <h3 class="text-body font-semibold">{{ $t('task.noEventsTitle') }}</h3>
+            <p class="text-label text-fg-subtle">{{ $t('task.noEventsDesc') }}</p>
           </div>
           <Message v-for="event in events" :key="`${event.runId}-${event.seq}`" from="assistant">
             <MessageContent>
-              <div class="text-[10px] uppercase tracking-wide text-zinc-500">
+              <div class="text-caption uppercase tracking-wide text-fg-subtle">
                 {{ event.type }}
               </div>
-              <pre class="whitespace-pre-wrap text-xs text-zinc-300">{{ event.message }}</pre>
+              <pre class="whitespace-pre-wrap text-label text-fg-muted">{{ event.message }}</pre>
             </MessageContent>
           </Message>
           <Message v-if="isRunActive" from="assistant">

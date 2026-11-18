@@ -65,8 +65,8 @@ function openTask(task: Task) {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
       <div>
-        <h1 class="text-sm font-semibold">{{ $t('board.title') }}</h1>
-        <p class="text-[11px] text-zinc-500">{{ $t('board.subtitle') }}</p>
+        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('board.title') }}</h1>
+        <p class="text-caption text-fg-subtle">{{ $t('board.subtitle') }}</p>
       </div>
       <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('board.newTask') }}</el-button>
     </header>
@@ -82,10 +82,10 @@ function openTask(task: Task) {
         >
           <div class="flex items-center justify-between mb-2 px-1">
             <div class="flex items-center gap-2">
-              <span class="text-xs font-semibold text-zinc-300">{{ column.label }}</span>
+              <span class="text-label font-semibold text-fg-muted">{{ column.label }}</span>
               <el-tag size="small" effect="plain" type="info">{{ column.tasks.length }}</el-tag>
             </div>
-            <span class="text-[10px] text-zinc-600">{{ column.hint }}</span>
+            <span class="text-caption text-fg-subtle">{{ column.hint }}</span>
           </div>
 
           <div

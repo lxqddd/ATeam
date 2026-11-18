@@ -14,7 +14,7 @@ const elLocale = computed(() => (locale.value === 'zh-CN' ? zhCn : en))
 
 <template>
   <el-config-provider :locale="elLocale">
-    <div class="h-screen w-screen flex bg-bg text-zinc-100 overflow-hidden">
+    <div class="h-screen w-screen flex bg-bg text-foreground overflow-hidden">
       <AppSidebar />
       <main class="flex-1 min-w-0 flex flex-col">
         <router-view />

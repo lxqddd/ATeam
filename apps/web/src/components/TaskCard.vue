@@ -32,10 +32,10 @@ function priorityLabel(priority: number) {
     @dragstart="$emit('dragstart', task)"
   >
     <div class="flex items-start justify-between gap-2">
-      <h3 class="text-sm font-medium leading-snug">{{ task.title }}</h3>
-      <span class="text-[10px] text-zinc-500 shrink-0">{{ task.id.slice(0, 4) }}</span>
+      <h3 class="text-body font-semibold leading-snug">{{ task.title }}</h3>
+      <span class="text-caption text-fg-subtle shrink-0">{{ task.id.slice(0, 4) }}</span>
     </div>
-    <p v-if="task.description" class="mt-1.5 text-xs text-zinc-500 line-clamp-2">
+    <p v-if="task.description" class="mt-1.5 text-caption text-fg-subtle line-clamp-2">
       {{ task.description }}
     </p>
     <div class="mt-3 flex items-center justify-between gap-2">

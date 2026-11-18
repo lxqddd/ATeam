@@ -54,8 +54,8 @@ async function createAgent() {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
       <div>
-        <h1 class="text-sm font-semibold">{{ $t('agents.title') }}</h1>
-        <p class="text-[11px] text-zinc-500">{{ $t('agents.subtitle') }}</p>
+        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('agents.title') }}</h1>
+        <p class="text-caption text-fg-subtle">{{ $t('agents.subtitle') }}</p>
       </div>
       <el-button type="primary" :icon="Plus" @click="showCreate = true">{{ $t('agents.newAgent') }}</el-button>
     </header>
@@ -72,18 +72,18 @@ async function createAgent() {
           <template #header>
             <div class="flex items-start justify-between gap-2">
               <div>
-                <h2 class="text-sm font-semibold">{{ agent.name }}</h2>
-                <p class="text-[11px] text-zinc-500 mt-0.5">
+                <h2 class="text-subtitle font-semibold tracking-tight">{{ agent.name }}</h2>
+                <p class="text-caption text-fg-subtle mt-0.5">
                   {{ agent.description || $t('agents.noDescription') }}
                 </p>
               </div>
               <el-tag size="small" effect="dark">{{ agent.runtime }}</el-tag>
             </div>
           </template>
-          <p class="text-xs text-zinc-400 line-clamp-3 whitespace-pre-wrap">
+          <p class="text-label text-fg-muted line-clamp-3 whitespace-pre-wrap">
             {{ agent.instructions || $t('agents.noInstructions') }}
           </p>
-          <div class="mt-3 flex items-center gap-3 text-[10px] text-zinc-500">
+          <div class="mt-3 flex items-center gap-3 text-caption text-fg-subtle">
             <span>{{ $t('agents.card.concurrency', { n: agent.maxConcurrency }) }}</span>
             <span>{{ $t('agents.card.timeout', { n: agent.timeoutMinutes }) }}</span>
             <span>{{ agent.workspaceMode }}</span>

@@ -31,8 +31,8 @@ function openTask(row: Run) {
   <div class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5">
       <div>
-        <h1 class="text-sm font-semibold">{{ $t('runs.title') }}</h1>
-        <p class="text-[11px] text-zinc-500">{{ $t('runs.subtitle') }}</p>
+        <h1 class="text-subtitle font-semibold tracking-tight">{{ $t('runs.title') }}</h1>
+        <p class="text-caption text-fg-subtle">{{ $t('runs.subtitle') }}</p>
       </div>
       <el-button :icon="Refresh" @click="runs.fetchAll()">{{ $t('common.refresh') }}</el-button>
     </header>
@@ -48,18 +48,18 @@ function openTask(row: Run) {
         </el-table-column>
         <el-table-column :label="t('runs.columns.task')" min-width="220">
           <template #default="{ row }">
-            <span class="text-zinc-300">{{ taskTitle(row.taskId) }}</span>
+            <span class="text-fg-muted">{{ taskTitle(row.taskId) }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('runs.columns.trigger')" prop="trigger" width="120" />
         <el-table-column :label="t('runs.columns.created')" width="190">
           <template #default="{ row }">
-            <span class="text-zinc-500">{{ d(new Date(row.createdAt), 'long') }}</span>
+            <span class="text-fg-subtle">{{ d(new Date(row.createdAt), 'long') }}</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('runs.columns.summary')" min-width="260">
           <template #default="{ row }">
-            <span class="text-zinc-400">{{ row.summary || row.error || '—' }}</span>
+            <span class="text-fg-muted">{{ row.summary || row.error || '—' }}</span>
           </template>
         </el-table-column>
       </el-table>

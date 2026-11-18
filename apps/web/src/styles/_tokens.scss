@@ -1,4 +1,5 @@
-// ATeam 设计令牌（Sass 版）
+// ATeam 设计令牌（Sass 版）— 对齐 Nomi 石墨（Graphite）主题
+// https://github.com/Cookieboty/nomi-ai · packages/ui/src/tokens.css
 // 当 Tailwind 工具类不适用（如第三方组件深层覆盖、复杂选择器嵌套、动态生成的规则）时，
 // 用这些变量与 mixin 编写原生样式。
 //
@@ -6,22 +7,48 @@
 // 自动注入到每个 SCSS 编译单元（.scss 文件与 <style lang="scss"> 块），
 // 因此在组件样式中可直接使用变量与 mixin，无需手动 @use。
 
-// ---------- 颜色（与 main.css 主题保持一致） ----------
-$color-bg: #09090b;         // 页面背景（zinc-950）
-$color-panel: #111113;      // 面板背景
-$color-text: #e4e4e7;       // 主文本（zinc-200）
-$color-text-muted: #a1a1aa; // 次要文本（zinc-400）
-$color-border: #27272a;     // 边框 / 分隔线（zinc-800）
-$color-accent: #6366f1;     // 强调色（indigo-500）
-$color-destructive: #dc2626; // 危险操作（red-600）
+// ---------- 颜色（石墨主题，与 main.css 保持一致） ----------
+$color-bg: #13161b;          // 画布
+$color-panel: #191d23;       // 侧边栏 / 下沉表面
+$color-surface: #20252d;     // 卡片表面
+$color-surface-raised: #282e38; // 弹层 / 输入框
+$color-text: #f0f2f6;        // 主文本
+$color-text-muted: #c9cfd9;  // 次要文本
+$color-text-subtle: #969fad; // 第三级文本
+$color-border: #343b46;      // 边框 / 分隔线
+$color-border-strong: #414b5a;
+$color-accent: #7887f5;      // 强调色（主按钮）
+$color-accent-hover: #96a1ff;
+$color-accent-soft: rgba(120, 135, 245, 0.16);
+$color-danger: #f29a8e;      // 危险文本
+$color-danger-fill: #b9382f; // 危险实底
+$color-success: #6cc59a;
+$color-warning: #e5b567;
 
 // ---------- 字体 ----------
-$font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-$font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+$font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI',
+  'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui,
+  'Noto Sans SC', 'Noto Sans CJK SC', 'Source Han Sans SC', Roboto, Ubuntu, 'Helvetica Neue',
+  Arial, sans-serif;
+$font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas,
+  'Noto Sans Mono CJK SC', monospace;
+
+// ---------- 排版阶梯 12 / 13 / 14 / 16 / 18 / 22 ----------
+$font-size-xs: 12px;
+$font-size-sm: 13px;
+$font-size-md: 14px;
+$font-size-lg: 16px;
+$font-size-xl: 18px;
+$font-size-2xl: 22px;
 
 // ---------- 圆角与间距 ----------
-$radius-base: 0.625rem; // 与 --radius 保持一致
-$spacing-unit: 0.25rem; // 4px，工具类间距的最小刻度
+$radius-xs: 6px;
+$radius-sm: 8px;
+$radius-md: 10px;
+$radius-lg: 14px;
+$radius-xl: 20px;
+$radius-base: $radius-md;
+$spacing-unit: 0.25rem; // 4px 栅格
 
 // ---------- 断点 ----------
 $breakpoint-sm: 640px;
