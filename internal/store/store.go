@@ -54,6 +54,16 @@ type Store interface {
 	ListArtifactsByTask(context.Context, string) ([]domain.Artifact, error)
 	FindArtifactBySHA(context.Context, string) (*domain.Artifact, error)
 
+	CreateReview(context.Context, *domain.Review) error
+	GetReview(context.Context, string) (*domain.Review, error)
+	ListReviewsByRun(context.Context, string) ([]domain.Review, error)
+	UpdateReviewIfStatus(context.Context, *domain.Review, string) (bool, error)
+	CreateReviewComment(context.Context, *domain.ReviewComment) error
+	ListReviewComments(context.Context, string) ([]domain.ReviewComment, error)
+	ResolveReviewComment(context.Context, string) (*domain.ReviewComment, error)
+	CreateMergeRecord(context.Context, *domain.MergeRecord) error
+	GetMergeRecordByRun(context.Context, string) (*domain.MergeRecord, error)
+
 	AppendRunEvent(context.Context, *domain.RunEvent) error
 	ListRunEvents(context.Context, string) ([]domain.RunEvent, error)
 

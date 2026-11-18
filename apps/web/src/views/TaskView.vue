@@ -225,6 +225,9 @@ onUnmounted(() => {
               <div class="flex items-center gap-2">
                 <StatusBadge :status="run.status" kind="run" />
                 <el-tag size="small" effect="plain" type="info">{{ run.trigger }}</el-tag>
+                <el-button text size="small" class="!px-1" @click.stop="router.push(`/runs/${run.id}`)">
+                  {{ $t('runDetail.title') }}
+                </el-button>
               </div>
               <span class="text-caption text-fg-subtle">
                 {{ d(new Date(run.createdAt), 'long') }}

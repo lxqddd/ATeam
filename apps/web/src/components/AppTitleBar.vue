@@ -12,6 +12,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   board: 'board.title',
   agents: 'agents.title',
   runs: 'runs.title',
+  run: 'runDetail.title',
   settings: 'settings.title',
 }
 

@@ -12,27 +12,30 @@ import (
 	"github.com/lxqddd/ATeam/internal/scheduler"
 	"github.com/lxqddd/ATeam/internal/security"
 	"github.com/lxqddd/ATeam/internal/store"
+	"github.com/lxqddd/ATeam/internal/workspace"
 )
 
 type API struct {
-	store     store.Store
-	hub       *events.Hub
-	scheduler *scheduler.Scheduler
-	registry  *runtime.Registry
-	version   string
-	webDir    string
-	guard     *security.Guard
+	store      store.Store
+	hub        *events.Hub
+	scheduler  *scheduler.Scheduler
+	registry   *runtime.Registry
+	workspaces *workspace.Manager
+	version    string
+	webDir     string
+	guard      *security.Guard
 }
 
-func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, registry *runtime.Registry, version, webDir string, guard *security.Guard) *API {
+func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, registry *runtime.Registry, workspaces *workspace.Manager, version, webDir string, guard *security.Guard) *API {
 	return &API{
-		store:     st,
-		hub:       hub,
-		scheduler: scheduler,
-		registry:  registry,
-		version:   version,
-		webDir:    webDir,
-		guard:     guard,
+		store:      st,
+		hub:        hub,
+		scheduler:  scheduler,
+		registry:   registry,
+		workspaces: workspaces,
+		version:    version,
+		webDir:     webDir,
+		guard:      guard,
 	}
 }
 
@@ -55,6 +58,14 @@ func (a *API) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/artifacts/{id}", a.getArtifact)
 	mux.HandleFunc("GET /api/v1/artifacts/{id}/content", a.getArtifactContent)
 	mux.HandleFunc("GET /api/v1/tasks/{id}/artifacts", a.listTaskArtifacts)
+	mux.HandleFunc("POST /api/v1/runs/{id}/merge", a.mergeRun)
+	mux.HandleFunc("GET /api/v1/runs/{id}/reviews", a.listRunReviews)
+	mux.HandleFunc("POST /api/v1/runs/{id}/reviews", a.createReview)
+	mux.HandleFunc("GET /api/v1/reviews/{id}", a.getReview)
+	mux.HandleFunc("POST /api/v1/reviews/{id}/decision", a.decideReview)
+	mux.HandleFunc("POST /api/v1/reviews/{id}/comments", a.createReviewComment)
+	mux.HandleFunc("GET /api/v1/reviews/{id}/comments", a.listReviewComments)
+	mux.HandleFunc("POST /api/v1/review-comments/{id}/resolve", a.resolveReviewComment)
 	mux.HandleFunc("GET /api/v1/meta", a.getMeta)
 
 	mux.HandleFunc("GET /api/tasks", a.listTasks)

@@ -212,7 +212,7 @@ const isTaskRoute = computed(() => route.name === 'task')
             :key="run.id"
             type="button"
             class="w-full h-8 flex items-center gap-2 rounded-[10px] px-2.5 text-left text-fg-muted transition-colors hover:bg-[var(--cd-color-nav-bg)] hover:text-foreground"
-            @click="openTask(run.taskId)"
+            @click="router.push(`/runs/${run.id}`)"
           >
             <span class="size-1.5 shrink-0 rounded-full" :class="toneClass(run.status)" />
             <span class="text-label truncate">{{ taskTitle(run.taskId) }}</span>

@@ -32,8 +32,9 @@ func newTestHandler(t *testing.T) (http.Handler, store.Store) {
 
 	hub := events.NewHub(guard)
 	registry := runtime.NewRegistry()
-	sched := scheduler.New(st, hub, registry, workspace.New(t.TempDir()), artifact.NewWriter(st, t.TempDir()), 1)
-	return New(st, hub, sched, registry, "test", "", guard).Handler(), st
+	workspaces := workspace.New(t.TempDir())
+	sched := scheduler.New(st, hub, registry, workspaces, artifact.NewWriter(st, t.TempDir()), 1)
+	return New(st, hub, sched, registry, workspaces, "test", "", guard).Handler(), st
 }
 
 func call(handler http.Handler, method, path, origin string) *httptest.ResponseRecorder {

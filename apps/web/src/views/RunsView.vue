@@ -22,8 +22,8 @@ function taskTitle(id: string) {
   return tasks.items.find((task) => task.id === id)?.title ?? id
 }
 
-function openTask(row: Run) {
-  void router.push(`/tasks/${row.taskId}`)
+function openRun(row: Run) {
+  void router.push(`/runs/${row.id}`)
 }
 </script>
 
@@ -40,7 +40,7 @@ function openTask(row: Run) {
     <div class="flex-1 overflow-y-auto px-6 pb-6">
       <el-empty v-if="runs.items.length === 0" :description="$t('runs.empty')" />
 
-      <el-table v-else :data="runs.items" style="width: 100%" @row-click="openTask">
+      <el-table v-else :data="runs.items" style="width: 100%" @row-click="openRun">
         <el-table-column :label="t('runs.columns.status')" width="130">
           <template #default="{ row }">
             <StatusBadge :status="row.status" kind="run" />

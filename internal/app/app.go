@@ -83,7 +83,7 @@ func New(cfg Config) (*App, error) {
 	registry := runtime.NewRegistry()
 	artifacts := artifact.NewWriter(st, cfg.DataDir)
 	sched := scheduler.New(st, hub, registry, workspaces, artifacts, cfg.Concurrency)
-	handler := api.New(st, hub, sched, registry, cfg.Version, cfg.WebDir, guard)
+	handler := api.New(st, hub, sched, registry, workspaces, cfg.Version, cfg.WebDir, guard)
 
 	return &App{
 		cfg:       cfg,

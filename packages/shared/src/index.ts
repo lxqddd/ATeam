@@ -73,15 +73,23 @@ export interface Workspace {
 
 export interface Run {
   id: string
+  workspaceId?: string
+  agentVersionId?: string
+  attempt?: number
   taskId: string
   agentId: string
   status: RunStatus
   trigger: string
   branch: string
   worktree: string
+  baseCommit?: string
+  headCommit?: string
   summary: string
   error: string
+  errorCode?: string
+  failureDetail?: string
   createdAt: string
+  queuedAt?: string
   startedAt?: string
   endedAt?: string
 }
@@ -91,6 +99,8 @@ export interface RunEvent {
   runId: string
   seq: number
   type: string
+  source?: string
+  level?: string
   message: string
   payload?: Record<string, unknown>
   createdAt: string
@@ -141,3 +151,89 @@ export const RUNTIMES: { value: string; label: string }[] = [
   { value: 'mock', label: 'Mock' },
   { value: 'claude', label: 'Claude Code' },
 ]
+
+export interface Artifact {
+  id: string
+  workspaceId: string
+  taskId: string
+  runId: string
+  type: string
+  subtype?: string
+  name: string
+  mediaType: string
+  sizeBytes: number
+  sha256: string
+  origin: string
+  truncated: boolean
+  supersedesId?: string
+  redactionState: string
+  createdAt: string
+}
+
+export interface Review {
+  id: string
+  workspaceId: string
+  taskId: string
+  runId: string
+  status: string
+  requestedBy: string
+  reviewerId: string
+  decisionNote: string
+  evidenceSnapshotHash: string
+  requiresMerge: boolean
+  noMergeReason?: string
+  createdAt: string
+  startedAt?: string
+  decidedAt?: string
+  supersededBy?: string
+  revision: number
+}
+
+export interface ReviewComment {
+  id: string
+  reviewId: string
+  artifactId?: string
+  filePath?: string
+  line?: number
+  severity: string
+  body: string
+  resolvedAt?: string
+  createdBy: string
+  createdAt: string
+}
+
+export interface MergeRecord {
+  id: string
+  workspaceId: string
+  runId: string
+  reviewId: string
+  targetBranch: string
+  sourceBranch: string
+  strategy: string
+  commit: string
+  operator: string
+  result: string
+  createdAt: string
+}
+
+export interface RunWorkspace {
+  runId: string
+  path: string
+  branch: string
+  baseCommit: string
+  headCommit: string
+  state: string
+  cleanupState: string
+}
+
+export interface TaskDoD {
+  required: string[]
+  present: Record<string, boolean>
+  satisfied: boolean
+  missing: string[]
+}
+
+export interface TaskArtifactsResponse {
+  artifacts: Artifact[]
+  dod: TaskDoD
+}

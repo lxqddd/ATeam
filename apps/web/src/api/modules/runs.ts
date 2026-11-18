@@ -27,3 +27,9 @@ export class RunApi {
     return HttpClient.post<Run>(`/runs/${runId}/cancel`)
   }
 }
+
+export class RunDetailApi {
+  static get(runId: string): Promise<Run> {
+    return HttpClient.get<Run>(`/runs/${runId}`)
+  }
+}
