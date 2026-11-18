@@ -213,6 +213,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	sequence := 0
 	eventCount := 0
 	truncationWarned := false
+	seenStatus := map[string]bool{}
 	logsInWindow := 0
 	windowStart := time.Now()
 	logsDropped := 0
@@ -270,6 +271,17 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 
 		if event.Type == "artifact" && workdir != "" {
 			s.captureAgentArtifact(ctx, run, workdir, event, emit)
+		}
+
+		// A misbehaving runtime can repeat the same lifecycle line thousands of
+		// times (for example an auth/model retry loop). Keep one status event
+		// per unique phase so the log bundle and UI stay readable.
+		if event.Type == "status" {
+			key := event.Message + "|" + fmt.Sprint(event.Data["phase"])
+			if seenStatus[key] {
+				return
+			}
+			seenStatus[key] = true
 		}
 
 		message := event.Message
@@ -452,6 +464,15 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	}, emit)
 
 	if codeChange && workdir != "" {
+		// Agents often finish without committing; commit the remaining work so
+		// the reviewed diff is also mergeable and headCommit advances.
+		message := fmt.Sprintf("ATeam run %s: commit remaining changes", run.ID)
+		if commit, committed, commitErr := s.workspaces.CommitPendingChanges(ctx, workdir, message); commitErr != nil {
+			emit(runtime.Event{Type: "warning", Message: "failed to commit remaining run changes", Data: map[string]any{"detail": "commit_failed"}, Level: "warn"})
+		} else if committed {
+			run.HeadCommit = commit
+			emit(runtime.Event{Type: "status", Message: "committed remaining run changes", Data: map[string]any{"commit": commit}, Source: "scheduler"})
+		}
 		if head, headErr := s.workspaces.HeadCommit(ctx, workdir); headErr == nil && head != "" {
 			run.HeadCommit = head
 		}
@@ -565,6 +586,7 @@ Priority: %d
 - Read the existing code before changing it.
 - Prefer small, reviewable changes.
 - Run the relevant checks when possible.
+- Commit your changes on the current branch before finishing.
 - Do not push, merge, or deploy without explicit human approval.
 - Report progress, blockers, and the final summary back to the run.
 `, task.ID, task.Title, task.Status, task.Priority, task.Description, agent.Instructions)

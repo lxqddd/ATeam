@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/lxqddd/ATeam/internal/app"
@@ -52,8 +54,10 @@ func serve(args []string) {
 	flags.StringVar(&cfg.Addr, "addr", cfg.Addr, "listen address")
 	flags.StringVar(&cfg.DBPath, "db", cfg.DBPath, "SQLite database path")
 	flags.StringVar(&cfg.WebDir, "web", cfg.WebDir, "built web assets directory")
+	dataDir := flags.String("data", "", "data directory for workspaces, worktrees, artifacts and locks (defaults to the database directory)")
 	flags.IntVar(&cfg.Concurrency, "concurrency", cfg.Concurrency, "scheduler concurrency")
 	_ = flags.Parse(args)
+	cfg.DataDir = resolveDataDir(cfg.DBPath, *dataDir)
 
 	instance, err := app.New(cfg)
 	if err != nil {
@@ -69,4 +73,14 @@ func serve(args []string) {
 		slog.Error("serve", "error", err)
 		os.Exit(1)
 	}
+}
+
+// resolveDataDir keeps run workspaces, worktrees, artifacts and locks next to
+// the database unless --data overrides the location. Without this, pointing
+// --db at a temporary database would still write runtime data into ~/.ateam.
+func resolveDataDir(dbPath, dataFlag string) string {
+	if strings.TrimSpace(dataFlag) != "" {
+		return dataFlag
+	}
+	return filepath.Dir(dbPath)
 }

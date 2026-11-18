@@ -422,3 +422,15 @@ func TestCancelCodesAlignWithCatalog(t *testing.T) {
 		t.Fatal("expected cancelRequestedAt to be recorded")
 	}
 }
+
+func (f *fakeStore) countEventsOfType(eventType string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for _, recorded := range f.eventTypes {
+		if recorded == eventType {
+			count++
+		}
+	}
+	return count
+}

@@ -367,3 +367,69 @@ func TestAgentDeclaredArtifactIsValidated(t *testing.T) {
 		t.Fatal("path traversal should emit an error event")
 	}
 }
+
+type statusStormAdapter struct{ fakeAdapter }
+
+func (a *statusStormAdapter) Run(_ context.Context, _ runtime.Request, emit func(runtime.Event)) error {
+	for i := 0; i < 50; i++ {
+		emit(runtime.Event{Type: "status", Message: "runtime initialized", Data: map[string]any{"phase": "init"}, Source: "adapter"})
+	}
+	emit(runtime.Event{Type: "log", Message: "done", Source: "adapter"})
+	return nil
+}
+
+func TestRepeatedStatusEventsAreDeduplicated(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&statusStormAdapter{fakeAdapter{name: "fake-claude"}})
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{ID: domain.DefaultWorkspaceID, Name: "Bound", RepoPath: repo, DefaultBranch: "main", Status: domain.WorkspaceActive})
+	st.setAgentRuntime("fake-claude")
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+	if count := st.countEventsOfType("status"); count != 1 {
+		t.Fatalf("status events = %d, want 1 after dedupe", count)
+	}
+}
+
+type fileWritingAdapter struct{ fakeAdapter }
+
+func (a *fileWritingAdapter) Run(_ context.Context, req runtime.Request, emit func(runtime.Event)) error {
+	if err := os.WriteFile(filepath.Join(req.Workdir, "agent-output.txt"), []byte("agent work"), 0o644); err != nil {
+		return err
+	}
+	emit(runtime.Event{Type: "log", Message: "wrote agent-output.txt"})
+	return nil
+}
+
+func TestRunCommitsRemainingAgentChanges(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	registry.Register(&fileWritingAdapter{fakeAdapter{name: "fake-claude"}})
+	repo := initRepo(t)
+	st.setWorkspace(domain.Workspace{ID: domain.DefaultWorkspaceID, Name: "Bound", RepoPath: repo, DefaultBranch: "main", Status: domain.WorkspaceActive})
+	st.setAgentRuntime("fake-claude")
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+
+	final := st.run(run.ID)
+	if final.HeadCommit == "" || final.HeadCommit == final.BaseCommit {
+		t.Fatalf("head should advance past base: head=%q base=%q", final.HeadCommit, final.BaseCommit)
+	}
+	status, err := exec.Command("git", "-C", final.Worktree, "status", "--porcelain").Output()
+	if err != nil || strings.TrimSpace(string(status)) != "" {
+		t.Fatalf("worktree should be clean: %q err=%v", status, err)
+	}
+}

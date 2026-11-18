@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/lxqddd/ATeam/internal/domain"
@@ -220,16 +221,23 @@ func (a *API) getRunWorkspace(w http.ResponseWriter, r *http.Request) {
 	state := "none"
 	cleanupState := "none"
 	if run.Worktree != "" {
-		cleanupState = "kept"
-		switch {
-		case run.Status == domain.RunPreparing:
-			state = "provisioning"
-		case run.Status == domain.RunRunning:
-			state = "active"
-		case run.Status == domain.RunQueued:
-			state = "provisioning"
-		default:
-			state = "review"
+		if _, statErr := os.Stat(run.Worktree); statErr != nil {
+			// The directory was cleaned after merge or an explicit discard; the
+			// run keeps the recorded path as evidence.
+			state = "removed"
+			cleanupState = "removed"
+		} else {
+			cleanupState = "kept"
+			switch {
+			case run.Status == domain.RunPreparing:
+				state = "provisioning"
+			case run.Status == domain.RunRunning:
+				state = "active"
+			case run.Status == domain.RunQueued:
+				state = "provisioning"
+			default:
+				state = "review"
+			}
 		}
 	}
 

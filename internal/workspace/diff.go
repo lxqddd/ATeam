@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strings"
 )
 
@@ -75,4 +76,37 @@ func (result DiffResult) Render() string {
 		builder.WriteString("\n")
 	}
 	return builder.String()
+}
+
+// CommitPendingChanges commits any uncommitted work in the run workspace so
+// the reviewed evidence is also mergeable (an agent may finish without
+// committing). It returns the resulting HEAD and whether a commit was made.
+func (m *Manager) CommitPendingChanges(ctx context.Context, worktreePath, message string) (string, bool, error) {
+	if worktreePath == "" {
+		return "", false, fmt.Errorf("run workspace is not available")
+	}
+	status, err := gitOutput(ctx, worktreePath, "status", "--porcelain")
+	if err != nil {
+		return "", false, fmt.Errorf("check run workspace: %w", err)
+	}
+	if strings.TrimSpace(status) == "" {
+		head, _ := gitOutput(ctx, worktreePath, "rev-parse", "HEAD")
+		return head, false, nil
+	}
+	if _, err := gitOutput(ctx, worktreePath, "add", "-A"); err != nil {
+		return "", false, fmt.Errorf("stage run changes: %w", err)
+	}
+	if _, err := gitOutput(ctx, worktreePath, "commit", "-m", message); err != nil {
+		// Fall back to an explicit identity when the repository has none, so a
+		// minimal local repo can still record the run commit.
+		command := exec.CommandContext(ctx, "git", "-C", worktreePath, "-c", "user.name=ATeam", "-c", "user.email=ateam@local", "commit", "-m", message)
+		if output, retryErr := command.CombinedOutput(); retryErr != nil {
+			return "", false, fmt.Errorf("commit run changes: %v (%s)", retryErr, strings.TrimSpace(string(output)))
+		}
+	}
+	head, err := gitOutput(ctx, worktreePath, "rev-parse", "HEAD")
+	if err != nil {
+		return "", false, fmt.Errorf("resolve run commit: %w", err)
+	}
+	return head, true, nil
 }

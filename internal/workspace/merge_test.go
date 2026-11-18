@@ -269,3 +269,33 @@ func containsString(values []string, needle string) bool {
 	}
 	return false
 }
+
+func TestCommitPendingChanges(t *testing.T) {
+	repo := initRepo(t)
+	manager := New(t.TempDir())
+	worktree, err := manager.CreateWorktree(context.Background(), WorktreeOptions{
+		RepoPath: repo, DefaultBranch: "main", TaskID: "task-1", TaskTitle: "Commit", RunID: "run-commit",
+	})
+	if err != nil {
+		t.Fatalf("create worktree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree.Path, "agent.txt"), []byte("agent work"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	head, committed, err := manager.CommitPendingChanges(context.Background(), worktree.Path, "run commit")
+	if err != nil || !committed {
+		t.Fatalf("commit: %v committed=%v", err, committed)
+	}
+	if head == worktree.BaseCommit {
+		t.Fatal("head should advance")
+	}
+	status, _ := gitOutput(context.Background(), worktree.Path, "status", "--porcelain")
+	if strings.TrimSpace(status) != "" {
+		t.Fatalf("worktree should be clean after commit: %q", status)
+	}
+
+	if _, again, err := manager.CommitPendingChanges(context.Background(), worktree.Path, "again"); err != nil || again {
+		t.Fatalf("second commit: %v committed=%v", err, again)
+	}
+}

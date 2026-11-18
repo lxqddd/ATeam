@@ -245,6 +245,7 @@ func TestRunWorkspaceEndpoint(t *testing.T) {
 	if err := st.CreateAgent(ctx, agent); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
+	worktreeDir := t.TempDir()
 	ended := domain.Now()
 	run := &domain.Run{
 		TaskID:     task.ID,
@@ -252,7 +253,7 @@ func TestRunWorkspaceEndpoint(t *testing.T) {
 		Status:     domain.RunCompleted,
 		Trigger:    "manual",
 		Branch:     "ateam/task1234/fix-run123",
-		Worktree:   "/tmp/worktrees/demo/run123",
+		Worktree:   worktreeDir,
 		BaseCommit: "base123",
 		HeadCommit: "head456",
 		EndedAt:    &ended,
@@ -329,5 +330,31 @@ func TestMetaListsRuntimes(t *testing.T) {
 	}
 	if !names["mock"] || !names["claude"] {
 		t.Fatalf("meta runtimes = %v", names)
+	}
+}
+
+func TestRunWorkspaceReportsRemovedAfterCleanup(t *testing.T) {
+	handler, st := newTestHandler(t)
+	ctx := context.Background()
+
+	task := &domain.Task{Title: "Cleaned", Status: domain.TaskTodo}
+	_ = st.CreateTask(ctx, task)
+	agent := &domain.Agent{Name: "A"}
+	_ = st.CreateAgent(ctx, agent)
+	ended := domain.Now()
+	run := &domain.Run{
+		TaskID: task.ID, AgentID: agent.ID, Status: domain.RunCompleted, Trigger: "manual",
+		Branch: "ateam/x/run", Worktree: "/tmp/ateam-cleaned-worktree-missing", EndedAt: &ended,
+	}
+	_ = st.CreateRun(ctx, run)
+
+	recorder := callJSON(t, handler, http.MethodGet, "/api/v1/runs/"+run.ID+"/workspace", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("workspace = %d", recorder.Code)
+	}
+	var payload map[string]any
+	_ = json.Unmarshal(recorder.Body.Bytes(), &payload)
+	if payload["state"] != "removed" || payload["cleanupState"] != "removed" {
+		t.Fatalf("unexpected state: %#v", payload)
 	}
 }
