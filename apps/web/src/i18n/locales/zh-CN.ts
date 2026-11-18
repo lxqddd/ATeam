@@ -81,6 +81,13 @@ const zhCN: typeof enUS = {
     runLog: '运行日志',
     noEventsTitle: '暂无事件',
     noEventsDesc: '运行事件将显示在这里。',
+    context: '上下文',
+    reviewPanel: '评审',
+    idLabel: 'ID',
+    assigneeLabel: '负责人',
+    dodLabel: '完成定义',
+    reviewStatus: '评审状态',
+    openRun: '打开最近运行',
   },
   runs: {
     title: '运行记录',

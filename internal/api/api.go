@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
@@ -41,57 +42,63 @@ func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, regist
 
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /api/health", a.health)
-
-	// M1: Workspaces. /api/v1/projects is the documented M1-M2 alias.
-	mux.HandleFunc("GET /api/v1/workspaces", a.listWorkspaces)
-	mux.HandleFunc("POST /api/v1/workspaces", a.createWorkspace)
-	mux.HandleFunc("GET /api/v1/workspaces/{id}", a.getWorkspace)
-	mux.HandleFunc("PATCH /api/v1/workspaces/{id}", a.updateWorkspace)
-	mux.HandleFunc("GET /api/v1/projects", a.listWorkspaces)
-	mux.HandleFunc("POST /api/v1/projects", a.createWorkspace)
-	mux.HandleFunc("GET /api/v1/projects/{id}", a.getWorkspace)
-	mux.HandleFunc("PATCH /api/v1/projects/{id}", a.updateWorkspace)
-	mux.HandleFunc("GET /api/v1/runs/{id}/workspace", a.getRunWorkspace)
-	mux.HandleFunc("GET /api/v1/runs/{id}/artifacts", a.listRunArtifacts)
-	mux.HandleFunc("GET /api/v1/artifacts/{id}", a.getArtifact)
-	mux.HandleFunc("GET /api/v1/artifacts/{id}/content", a.getArtifactContent)
-	mux.HandleFunc("GET /api/v1/tasks/{id}/artifacts", a.listTaskArtifacts)
-	mux.HandleFunc("POST /api/v1/runs/{id}/merge", a.mergeRun)
-	mux.HandleFunc("GET /api/v1/runs/{id}/reviews", a.listRunReviews)
-	mux.HandleFunc("POST /api/v1/runs/{id}/reviews", a.createReview)
-	mux.HandleFunc("GET /api/v1/reviews/{id}", a.getReview)
-	mux.HandleFunc("POST /api/v1/reviews/{id}/decision", a.decideReview)
-	mux.HandleFunc("POST /api/v1/reviews/{id}/comments", a.createReviewComment)
-	mux.HandleFunc("GET /api/v1/reviews/{id}/comments", a.listReviewComments)
-	mux.HandleFunc("POST /api/v1/review-comments/{id}/resolve", a.resolveReviewComment)
-	mux.HandleFunc("GET /api/v1/meta", a.getMeta)
-
-	mux.HandleFunc("GET /api/tasks", a.listTasks)
-	mux.HandleFunc("POST /api/tasks", a.createTask)
-	mux.HandleFunc("GET /api/tasks/{id}", a.getTask)
-	mux.HandleFunc("PATCH /api/tasks/{id}", a.updateTask)
-	mux.HandleFunc("DELETE /api/tasks/{id}", a.deleteTask)
-	mux.HandleFunc("GET /api/tasks/{id}/runs", a.listTaskRuns)
-	mux.HandleFunc("POST /api/tasks/{id}/runs", a.createRun)
-
-	mux.HandleFunc("GET /api/agents", a.listAgents)
-	mux.HandleFunc("POST /api/agents", a.createAgent)
-	mux.HandleFunc("GET /api/agents/{id}", a.getAgent)
-	mux.HandleFunc("PATCH /api/agents/{id}", a.updateAgent)
-	mux.HandleFunc("DELETE /api/agents/{id}", a.deleteAgent)
-
-	mux.HandleFunc("GET /api/runs", a.listRuns)
-	mux.HandleFunc("GET /api/runs/{id}", a.getRun)
-	mux.HandleFunc("GET /api/runs/{id}/events", a.listRunEvents)
-	mux.HandleFunc("POST /api/runs/{id}/cancel", a.cancelRun)
-
-	mux.HandleFunc("GET /api/ws", a.hub.ServeWS)
-	mux.HandleFunc("GET /api/events", a.hub.ServeSSE)
+	// /api/v1 is canonical; /api is the permanent compatibility alias
+	// (PRD api-and-data §5.0) and receives Deprecation headers.
+	for _, prefix := range []string{"/api/v1", "/api"} {
+		a.registerRoutes(mux, prefix)
+	}
 	mux.Handle("/", a.webHandler())
+	return withAPIVersion(withCORS(a.guard, mux))
+}
 
-	return withCORS(a.guard, mux)
+// registerRoutes mounts every first-party endpoint under prefix.
+func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
+	mux.HandleFunc("GET "+prefix+"/health", a.health)
+
+	mux.HandleFunc("GET "+prefix+"/workspaces", a.listWorkspaces)
+	mux.HandleFunc("POST "+prefix+"/workspaces", a.createWorkspace)
+	mux.HandleFunc("GET "+prefix+"/workspaces/{id}", a.getWorkspace)
+	mux.HandleFunc("PATCH "+prefix+"/workspaces/{id}", a.updateWorkspace)
+	mux.HandleFunc("GET "+prefix+"/projects", a.listWorkspaces)
+	mux.HandleFunc("POST "+prefix+"/projects", a.createWorkspace)
+	mux.HandleFunc("GET "+prefix+"/projects/{id}", a.getWorkspace)
+	mux.HandleFunc("PATCH "+prefix+"/projects/{id}", a.updateWorkspace)
+	mux.HandleFunc("GET "+prefix+"/runs/{id}/workspace", a.getRunWorkspace)
+	mux.HandleFunc("GET "+prefix+"/runs/{id}/artifacts", a.listRunArtifacts)
+	mux.HandleFunc("GET "+prefix+"/artifacts/{id}", a.getArtifact)
+	mux.HandleFunc("GET "+prefix+"/artifacts/{id}/content", a.getArtifactContent)
+	mux.HandleFunc("GET "+prefix+"/tasks/{id}/artifacts", a.listTaskArtifacts)
+	mux.HandleFunc("POST "+prefix+"/runs/{id}/merge", a.mergeRun)
+	mux.HandleFunc("GET "+prefix+"/runs/{id}/reviews", a.listRunReviews)
+	mux.HandleFunc("POST "+prefix+"/runs/{id}/reviews", a.createReview)
+	mux.HandleFunc("GET "+prefix+"/reviews/{id}", a.getReview)
+	mux.HandleFunc("POST "+prefix+"/reviews/{id}/decision", a.decideReview)
+	mux.HandleFunc("POST "+prefix+"/reviews/{id}/comments", a.createReviewComment)
+	mux.HandleFunc("GET "+prefix+"/reviews/{id}/comments", a.listReviewComments)
+	mux.HandleFunc("POST "+prefix+"/review-comments/{id}/resolve", a.resolveReviewComment)
+	mux.HandleFunc("GET "+prefix+"/meta", a.getMeta)
+
+	mux.HandleFunc("GET "+prefix+"/tasks", a.listTasks)
+	mux.HandleFunc("POST "+prefix+"/tasks", a.createTask)
+	mux.HandleFunc("GET "+prefix+"/tasks/{id}", a.getTask)
+	mux.HandleFunc("PATCH "+prefix+"/tasks/{id}", a.updateTask)
+	mux.HandleFunc("DELETE "+prefix+"/tasks/{id}", a.deleteTask)
+	mux.HandleFunc("GET "+prefix+"/tasks/{id}/runs", a.listTaskRuns)
+	mux.HandleFunc("POST "+prefix+"/tasks/{id}/runs", a.createRun)
+
+	mux.HandleFunc("GET "+prefix+"/agents", a.listAgents)
+	mux.HandleFunc("POST "+prefix+"/agents", a.createAgent)
+	mux.HandleFunc("GET "+prefix+"/agents/{id}", a.getAgent)
+	mux.HandleFunc("PATCH "+prefix+"/agents/{id}", a.updateAgent)
+	mux.HandleFunc("DELETE "+prefix+"/agents/{id}", a.deleteAgent)
+
+	mux.HandleFunc("GET "+prefix+"/runs", a.listRuns)
+	mux.HandleFunc("GET "+prefix+"/runs/{id}", a.getRun)
+	mux.HandleFunc("GET "+prefix+"/runs/{id}/events", a.listRunEvents)
+	mux.HandleFunc("POST "+prefix+"/runs/{id}/cancel", a.cancelRun)
+
+	mux.HandleFunc("GET "+prefix+"/ws", a.hub.ServeWS)
+	mux.HandleFunc("GET "+prefix+"/events", a.hub.ServeSSE)
 }
 
 func (a *API) webHandler() http.Handler {
@@ -156,6 +163,24 @@ func withCORS(guard *security.Guard, next http.Handler) http.Handler {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// withAPIVersion tags every response with the API version and a request id,
+// and marks the unversioned /api alias as deprecated with a successor link
+// (PRD api-and-data §5.0). The incoming-hook path is exempt by design.
+func withAPIVersion(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-ATEAM-API-Version", "1")
+		w.Header().Set("X-Request-ID", "req_"+domain.NewID())
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/api/") &&
+			!strings.HasPrefix(path, "/api/v1/") &&
+			!strings.HasPrefix(path, "/api/hooks/") {
+			w.Header().Set("Deprecation", "true")
+			w.Header().Set("Link", "</api/v1"+strings.TrimPrefix(path, "/api")+`>; rel="successor-version"`)
 		}
 		next.ServeHTTP(w, r)
 	})

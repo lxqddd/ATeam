@@ -79,6 +79,13 @@ const enUS = {
     runLog: 'Run log',
     noEventsTitle: 'No events yet',
     noEventsDesc: 'Run events will appear here.',
+    context: 'Context',
+    reviewPanel: 'Review',
+    idLabel: 'ID',
+    assigneeLabel: 'Assignee',
+    dodLabel: 'Completion definition',
+    reviewStatus: 'Review status',
+    openRun: 'Open latest run',
   },
   runs: {
     title: 'Runs',

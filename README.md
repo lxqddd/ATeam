@@ -83,6 +83,16 @@ make dev-desktop
 
 The Wails shell starts the Go server on a random local port and loads it in a native window. Packaging (DMG/NSIS/AppImage) is a later milestone.
 
+### M1 local loop demo
+
+`scripts/demo-m1.sh` starts an isolated server (temporary HOME and database), binds a throwaway git repository as the default workspace, and drives one mock run through event collection, artifacts and the completion-definition check. It never touches your real `~/.ateam` data.
+
+```bash
+./scripts/demo-m1.sh
+```
+
+The mock runtime intentionally produces no diff or test report, so the completion definition stays unsatisfied. The full loop — git worktree, Claude Code stream-json events, diff and system verification evidence, review and an explicit local merge — needs an agent whose runtime is `claude` with the Claude Code CLI installed and logged in. Run details, evidence preview, the review decision and the merge confirmation are all available at `/runs/<id>` in the web UI. Merges stay local; nothing is pushed.
+
 ### Build
 
 ```bash

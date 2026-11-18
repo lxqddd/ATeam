@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/lxqddd/ATeam/internal/artifact"
@@ -133,5 +134,40 @@ func TestCancelQueuedRunEndpoint(t *testing.T) {
 	stored, _ = st.GetRun(ctx, run.ID)
 	if stored.Status != domain.RunCancelled {
 		t.Fatalf("status after second cancel = %q", stored.Status)
+	}
+}
+
+func TestAPIAliasAndVersionHeaders(t *testing.T) {
+	handler, _ := newTestHandler(t)
+
+	recorder := callJSON(t, handler, http.MethodGet, "/api/v1/tasks", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("v1 tasks = %d", recorder.Code)
+	}
+	if recorder.Header().Get("X-ATEAM-API-Version") != "1" {
+		t.Fatal("missing API version header")
+	}
+	if !strings.HasPrefix(recorder.Header().Get("X-Request-ID"), "req_") {
+		t.Fatal("missing request id header")
+	}
+	if recorder.Header().Get("Deprecation") != "" {
+		t.Fatal("v1 must not carry Deprecation")
+	}
+
+	recorder = callJSON(t, handler, http.MethodGet, "/api/tasks", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("alias tasks = %d", recorder.Code)
+	}
+	if recorder.Header().Get("Deprecation") != "true" {
+		t.Fatal("alias must set Deprecation")
+	}
+	if link := recorder.Header().Get("Link"); !strings.Contains(link, "/api/v1/tasks") {
+		t.Fatalf("Link = %q", link)
+	}
+
+	// New M1 endpoints are reachable through the alias as well.
+	recorder = callJSON(t, handler, http.MethodGet, "/api/workspaces", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("alias workspaces = %d", recorder.Code)
 	}
 }
