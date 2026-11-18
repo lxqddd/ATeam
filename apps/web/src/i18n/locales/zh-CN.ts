@@ -127,7 +127,7 @@ const zhCN: typeof enUS = {
     checkHealth: '检查健康状态',
     apiNote: 'Web 界面调用 /api，开发模式下由 Vite 代理到 Go 服务。',
     workspace: '工作区',
-    workspaceNote: '每次运行会在 ~/.ateam/workspaces/runs/<run-id> 下获得独立目录。Git worktree 隔离将在下一里程碑提供。',
+    workspaceNote: '每次运行会在 {path} 下获得独立目录。Git worktree 隔离将在下一里程碑提供。',
     about: '关于',
     aboutNote: 'ATeam 为原创的本地优先实现，不包含第三方产品代码、文档、UI 资源或商标。',
     language: '语言',

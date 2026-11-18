@@ -66,7 +66,9 @@ onMounted(() => {
         <template #header>
           <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('settings.workspace') }}</span>
         </template>
-        <p class="text-xs text-zinc-400">{{ $t('settings.workspaceNote') }}</p>
+        <p class="text-xs text-zinc-400">
+          {{ $t('settings.workspaceNote', { path: '~/.ateam/workspaces/runs/<run-id>' }) }}
+        </p>
       </el-card>
 
       <el-card shadow="never">

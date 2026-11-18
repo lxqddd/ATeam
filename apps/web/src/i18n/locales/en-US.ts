@@ -126,7 +126,7 @@ const enUS = {
     apiNote: 'The web UI calls /api, and Vite proxies it to the Go server in development.',
     workspace: 'Workspace',
     workspaceNote:
-      'Each run gets a directory under ~/.ateam/workspaces/runs/<run-id>. Git worktree isolation is the next milestone.',
+      'Each run gets a directory under {path}. Git worktree isolation is the next milestone.',
     about: 'About',
     aboutNote:
       'ATeam is an original, local-first implementation. It does not include third-party product code, docs, UI assets, or trademarks.',
