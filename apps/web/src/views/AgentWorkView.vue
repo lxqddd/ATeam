@@ -1,18 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { ArrowLeftIcon, RefreshCwIcon } from '@lucide/vue'
 import type { AgentWork, RunEvent, RunSnapshot, RunSummary } from '@ateam/shared'
 import { AgentApi, RunApi, RunDetailApi } from '../api'
 import SectionCard from '../components/SectionCard.vue'
 import EmptyState from '../components/EmptyState.vue'
-import { Badge, type BadgeTone } from '../components/ui/badge'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Skeleton } from '../components/ui/skeleton'
+import { statusDotClass, workTone } from '../lib/status'
 
 const props = defineProps<{ id: string }>()
 
-const { t } = useI18n()
 const work = ref<AgentWork | null>(null)
 const loadError = ref('')
 const loading = ref(true)
@@ -30,19 +29,6 @@ const selectedRun = computed<RunSummary | null>(() => {
     if (run.id === selectedRunId.value) return run
   }
   return recentRuns.value.find((run) => run.id === selectedRunId.value) ?? null
-})
-
-const workTone = computed<BadgeTone>(() => {
-  switch (work.value?.workStatus) {
-    case 'working':
-      return 'brand'
-    case 'completed':
-      return 'success'
-    case 'failed':
-      return 'danger'
-    default:
-      return 'neutral'
-  }
 })
 
 const eventTypes = computed(() => {
@@ -101,22 +87,6 @@ async function selectRun(runId: string) {
     }
   } finally {
     eventsLoading.value = false
-  }
-}
-
-function statusDotClass(status: string): string {
-  switch (status) {
-    case 'completed':
-      return 'bg-[var(--cd-color-success)]'
-    case 'running':
-    case 'preparing':
-    case 'queued':
-      return 'bg-[var(--cd-color-accent)]'
-    case 'failed':
-    case 'cancelled':
-      return 'bg-[var(--cd-color-danger)]'
-    default:
-      return 'bg-[var(--cd-color-neutral)]'
   }
 }
 
@@ -188,7 +158,7 @@ onMounted(() => {
             <h1 class="truncate text-title font-semibold tracking-tight">
               {{ work?.agent.name || props.id }}
             </h1>
-            <Badge v-if="work" :tone="workTone">{{ $t(`work.status.${work.workStatus}`) }}</Badge>
+            <Badge v-if="work" :tone="workTone(work.workStatus)">{{ $t(`work.status.${work.workStatus}`) }}</Badge>
           </div>
           <p class="mt-0.5 text-caption text-fg-subtle">
             <span>{{ work?.agent.runtime }}</span>

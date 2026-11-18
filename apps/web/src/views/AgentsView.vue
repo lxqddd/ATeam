@@ -8,12 +8,13 @@ import { RuntimeApi } from '../api'
 import { useAgentsStore } from '../stores/agents'
 import Modal from '../components/Modal.vue'
 import EmptyState from '../components/EmptyState.vue'
-import { Badge, type BadgeTone } from '../components/ui/badge'
+import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
 import { Field } from '../components/ui/field'
 import { Input } from '../components/ui/input'
 import { Textarea } from '../components/ui/textarea'
 import { Loader } from '../components/ai-elements/loader'
+import { workTone } from '../lib/status'
 
 const { t } = useI18n()
 const DEFAULT_MODEL = '__default__'
@@ -201,19 +202,6 @@ async function submitAgent() {
   }
 }
 
-function workTone(status?: string): BadgeTone {
-  switch (status) {
-    case 'working':
-      return 'brand'
-    case 'completed':
-      return 'success'
-    case 'failed':
-      return 'danger'
-    default:
-      return 'neutral'
-  }
-}
-
 async function deleteAgent(agent: Agent) {
   try {
     await ElMessageBox.confirm(
@@ -253,22 +241,20 @@ async function deleteAgent(agent: Agent) {
         <article
           v-for="agent in agents.items"
           :key="agent.id"
-          role="button"
-          tabindex="0"
-          class="section-card group cursor-pointer p-4 transition-[border-color,box-shadow] hover:border-[var(--cd-color-border-strong)] hover:shadow-[var(--cd-shadow-sm)]"
+          class="agent-card section-card group cursor-pointer p-4 transition-[border-color,box-shadow] hover:shadow-[var(--cd-shadow-sm)]"
           @click="$router.push(`/agents/${agent.id}/work`)"
-          @keydown.enter="$router.push(`/agents/${agent.id}/work`)"
-          @keydown.space.prevent="$router.push(`/agents/${agent.id}/work`)"
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <h2 class="truncate text-subtitle font-semibold tracking-tight">{{ agent.name }}</h2>
+              <h2 class="truncate text-subtitle font-semibold tracking-tight">
+                <router-link :to="`/agents/${agent.id}/work`">{{ agent.name }}</router-link>
+              </h2>
               <p class="mt-0.5 truncate text-caption text-fg-subtle">
                 {{ agent.description || $t('agents.noDescription') }}
               </p>
             </div>
             <div
-              class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
+              class="flex shrink-0 items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
               @click.stop
               @keydown.stop
             >
@@ -339,8 +325,8 @@ async function deleteAgent(agent: Agent) {
         </Field>
 
         <div class="grid grid-cols-2 gap-3">
-          <Field :label="$t('agents.form.runtime')">
-            <el-select v-model="form.runtime" :loading="runtimeLoading" style="width: 100%">
+          <Field :label="$t('agents.form.runtime')" for="agent-runtime">
+            <el-select id="agent-runtime" v-model="form.runtime" :loading="runtimeLoading" style="width: 100%">
               <el-option
                 v-for="runtime in runtimes"
                 :key="runtime.name"
@@ -350,8 +336,8 @@ async function deleteAgent(agent: Agent) {
               />
             </el-select>
           </Field>
-          <Field :label="$t('agents.form.role')">
-            <el-select v-model="form.role" style="width: 100%">
+          <Field :label="$t('agents.form.role')" for="agent-role">
+            <el-select id="agent-role" v-model="form.role" style="width: 100%">
               <el-option
                 v-for="role in AGENT_ROLES"
                 :key="role.value"
@@ -362,8 +348,9 @@ async function deleteAgent(agent: Agent) {
           </Field>
         </div>
 
-        <Field :label="$t('agents.form.model')">
+        <Field :label="$t('agents.form.model')" for="agent-model">
           <el-select
+            id="agent-model"
             v-model="form.model"
             :loading="runtimeLoading"
             :disabled="!form.runtime || runtimeLoading"
@@ -425,16 +412,16 @@ async function deleteAgent(agent: Agent) {
         </Field>
 
         <div class="grid grid-cols-2 gap-3">
-          <Field :label="$t('agents.form.maxConcurrency')">
-            <el-input-number v-model="form.maxConcurrency" :min="1" style="width: 100%" />
+          <Field :label="$t('agents.form.maxConcurrency')" for="agent-concurrency">
+            <el-input-number id="agent-concurrency" v-model="form.maxConcurrency" :min="1" style="width: 100%" />
           </Field>
-          <Field :label="$t('agents.form.timeoutMinutes')">
-            <el-input-number v-model="form.timeoutMinutes" :min="1" style="width: 100%" />
+          <Field :label="$t('agents.form.timeoutMinutes')" for="agent-timeout">
+            <el-input-number id="agent-timeout" v-model="form.timeoutMinutes" :min="1" style="width: 100%" />
           </Field>
         </div>
 
-        <Field :label="$t('agents.form.permissionMode')">
-          <el-select v-model="form.permissionMode" style="width: 100%">
+        <Field :label="$t('agents.form.permissionMode')" for="agent-permission-mode">
+          <el-select id="agent-permission-mode" v-model="form.permissionMode" style="width: 100%">
             <el-option :label="$t('agents.form.permissionReadOnly')" value="read_only" />
             <el-option :label="$t('agents.form.permissionControlled')" value="controlled_edit" />
             <el-option :label="$t('agents.form.permissionFull')" value="full_access" />
@@ -481,3 +468,9 @@ async function deleteAgent(agent: Agent) {
     </Modal>
   </div>
 </template>
+
+<style scoped>
+.agent-card:hover {
+  border-color: var(--cd-color-border-strong);
+}
+</style>
