@@ -33,6 +33,7 @@ const AssigneeAgent AssigneeType = "agent"
 
 type Task struct {
 	ID           string       `json:"id"`
+	WorkspaceID  string       `json:"workspaceId"`
 	Title        string       `json:"title"`
 	Description  string       `json:"description"`
 	Status       TaskStatus   `json:"status"`
@@ -46,19 +47,22 @@ type Task struct {
 }
 
 type Agent struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Description     string    `json:"description"`
-	Instructions    string    `json:"instructions"`
-	Runtime         string    `json:"runtime"`
-	Model           string    `json:"model"`
-	WorkspaceMode   string    `json:"workspaceMode"`
-	MaxConcurrency  int       `json:"maxConcurrency"`
-	TimeoutMinutes  int       `json:"timeoutMinutes"`
-	AllowedPaths    []string  `json:"allowedPaths"`
-	AllowedCommands []string  `json:"allowedCommands"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID               string    `json:"id"`
+	WorkspaceID      string    `json:"workspaceId"`
+	Name             string    `json:"name"`
+	Description      string    `json:"description"`
+	Instructions     string    `json:"instructions"`
+	Runtime          string    `json:"runtime"`
+	Model            string    `json:"model"`
+	WorkspaceMode    string    `json:"workspaceMode"`
+	PermissionMode   string    `json:"permissionMode"`
+	CurrentVersionID string    `json:"currentVersionId"`
+	MaxConcurrency   int       `json:"maxConcurrency"`
+	TimeoutMinutes   int       `json:"timeoutMinutes"`
+	AllowedPaths     []string  `json:"allowedPaths"`
+	AllowedCommands  []string  `json:"allowedCommands"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type RunStatus string
@@ -81,18 +85,33 @@ func (s RunStatus) Active() bool {
 func (s RunStatus) Terminal() bool { return !s.Active() }
 
 type Run struct {
-	ID        string     `json:"id"`
-	TaskID    string     `json:"taskId"`
-	AgentID   string     `json:"agentId"`
-	Status    RunStatus  `json:"status"`
-	Trigger   string     `json:"trigger"`
-	Branch    string     `json:"branch"`
-	Worktree  string     `json:"worktree"`
-	Summary   string     `json:"summary"`
-	Error     string     `json:"error"`
-	CreatedAt time.Time  `json:"createdAt"`
-	StartedAt *time.Time `json:"startedAt,omitempty"`
-	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	ID                string     `json:"id"`
+	WorkspaceID       string     `json:"workspaceId"`
+	TaskID            string     `json:"taskId"`
+	AgentID           string     `json:"agentId"`
+	AgentVersionID    string     `json:"agentVersionId,omitempty"`
+	ConfigSnapshotID  string     `json:"configSnapshotId,omitempty"`
+	Status            RunStatus  `json:"status"`
+	Trigger           string     `json:"trigger"`
+	Attempt           int        `json:"attempt"`
+	Branch            string     `json:"branch"`
+	Worktree          string     `json:"worktree"`
+	BaseCommit        string     `json:"baseCommit,omitempty"`
+	HeadCommit        string     `json:"headCommit,omitempty"`
+	Summary           string     `json:"summary"`
+	Error             string     `json:"error"`
+	ErrorCode         string     `json:"errorCode,omitempty"`
+	FailureDetail     string     `json:"failureDetail,omitempty"`
+	QueueReason       string     `json:"queueReason,omitempty"`
+	RetryOf           string     `json:"retryOf,omitempty"`
+	RuntimeSessionID  string     `json:"runtimeSessionId,omitempty"`
+	ExitCode          *int       `json:"exitCode,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	QueuedAt          *time.Time `json:"queuedAt,omitempty"`
+	StartedAt         *time.Time `json:"startedAt,omitempty"`
+	EndedAt           *time.Time `json:"endedAt,omitempty"`
+	CancelRequestedAt *time.Time `json:"cancelRequestedAt,omitempty"`
+	LastEventAt       *time.Time `json:"lastEventAt,omitempty"`
 }
 
 type RunEvent struct {

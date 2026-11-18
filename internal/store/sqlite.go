@@ -46,6 +46,10 @@ func Open(path string) (*SQLite, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := s.bootstrap(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -110,7 +114,7 @@ func (s *SQLite) Close() error {
 	return s.db.Close()
 }
 
-const taskColumns = `id, title, description, status, priority, assignee_type, assignee_id, parent_id, labels, created_at, updated_at`
+const taskColumns = `id, workspace_id, title, description, status, priority, assignee_type, assignee_id, parent_id, labels, created_at, updated_at`
 
 func scanTask(s scanner) (*domain.Task, error) {
 	var (
@@ -123,6 +127,7 @@ func scanTask(s scanner) (*domain.Task, error) {
 	)
 	if err := s.Scan(
 		&task.ID,
+		&task.WorkspaceID,
 		&task.Title,
 		&task.Description,
 		&status,
@@ -151,6 +156,9 @@ func (s *SQLite) CreateTask(ctx context.Context, task *domain.Task) error {
 	if task.Status == "" {
 		task.Status = domain.TaskBacklog
 	}
+	if task.WorkspaceID == "" {
+		task.WorkspaceID = domain.DefaultWorkspaceID
+	}
 	if task.Labels == nil {
 		task.Labels = []string{}
 	}
@@ -160,8 +168,9 @@ func (s *SQLite) CreateTask(ctx context.Context, task *domain.Task) error {
 	}
 	task.UpdatedAt = now
 
-	_, err := s.db.ExecContext(ctx, `INSERT INTO tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID,
+		task.WorkspaceID,
 		task.Title,
 		task.Description,
 		string(task.Status),
@@ -236,7 +245,7 @@ func (s *SQLite) DeleteTask(ctx context.Context, id string) error {
 	return ensureAffected(result, "task", id)
 }
 
-const agentColumns = `id, name, description, instructions, runtime, model, workspace_mode, max_concurrency, timeout_minutes, allowed_paths, allowed_commands, created_at, updated_at`
+const agentColumns = `id, workspace_id, name, description, instructions, runtime, model, workspace_mode, permission_mode, current_version_id, max_concurrency, timeout_minutes, allowed_paths, allowed_commands, created_at, updated_at`
 
 func scanAgent(s scanner) (*domain.Agent, error) {
 	var (
@@ -248,12 +257,15 @@ func scanAgent(s scanner) (*domain.Agent, error) {
 	)
 	if err := s.Scan(
 		&agent.ID,
+		&agent.WorkspaceID,
 		&agent.Name,
 		&agent.Description,
 		&agent.Instructions,
 		&agent.Runtime,
 		&agent.Model,
 		&agent.WorkspaceMode,
+		&agent.PermissionMode,
+		&agent.CurrentVersionID,
 		&agent.MaxConcurrency,
 		&agent.TimeoutMinutes,
 		&allowedPaths,
@@ -274,11 +286,17 @@ func (s *SQLite) CreateAgent(ctx context.Context, agent *domain.Agent) error {
 	if agent.ID == "" {
 		agent.ID = domain.NewID()
 	}
+	if agent.WorkspaceID == "" {
+		agent.WorkspaceID = domain.DefaultWorkspaceID
+	}
 	if agent.Runtime == "" {
 		agent.Runtime = "mock"
 	}
 	if agent.WorkspaceMode == "" {
 		agent.WorkspaceMode = "worktree"
+	}
+	if agent.PermissionMode == "" {
+		agent.PermissionMode = "controlled_edit"
 	}
 	if agent.MaxConcurrency <= 0 {
 		agent.MaxConcurrency = 1
@@ -298,14 +316,23 @@ func (s *SQLite) CreateAgent(ctx context.Context, agent *domain.Agent) error {
 	}
 	agent.UpdatedAt = now
 
-	_, err := s.db.ExecContext(ctx, `INSERT INTO agents (`+agentColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin create agent: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx, `INSERT INTO agents (`+agentColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		agent.ID,
+		agent.WorkspaceID,
 		agent.Name,
 		agent.Description,
 		agent.Instructions,
 		agent.Runtime,
 		agent.Model,
 		agent.WorkspaceMode,
+		agent.PermissionMode,
+		agent.CurrentVersionID,
 		agent.MaxConcurrency,
 		agent.TimeoutMinutes,
 		mustJSON(agent.AllowedPaths),
@@ -316,7 +343,16 @@ func (s *SQLite) CreateAgent(ctx context.Context, agent *domain.Agent) error {
 	if err != nil {
 		return fmt.Errorf("create agent: %w", err)
 	}
-	return nil
+
+	versionID, _, err := s.insertAgentVersion(ctx, tx, agent, "initial version")
+	if err != nil {
+		return err
+	}
+	agent.CurrentVersionID = versionID
+	if _, err := tx.ExecContext(ctx, `UPDATE agents SET current_version_id = ? WHERE id = ?`, versionID, agent.ID); err != nil {
+		return fmt.Errorf("set agent version: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLite) ListAgents(ctx context.Context) ([]domain.Agent, error) {
@@ -350,13 +386,20 @@ func (s *SQLite) GetAgent(ctx context.Context, id string) (*domain.Agent, error)
 
 func (s *SQLite) UpdateAgent(ctx context.Context, agent *domain.Agent) error {
 	agent.UpdatedAt = domain.Now()
-	result, err := s.db.ExecContext(ctx, `UPDATE agents SET name = ?, description = ?, instructions = ?, runtime = ?, model = ?, workspace_mode = ?, max_concurrency = ?, timeout_minutes = ?, allowed_paths = ?, allowed_commands = ?, updated_at = ? WHERE id = ?`,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update agent: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(ctx, `UPDATE agents SET name = ?, description = ?, instructions = ?, runtime = ?, model = ?, workspace_mode = ?, permission_mode = ?, max_concurrency = ?, timeout_minutes = ?, allowed_paths = ?, allowed_commands = ?, updated_at = ? WHERE id = ?`,
 		agent.Name,
 		agent.Description,
 		agent.Instructions,
 		agent.Runtime,
 		agent.Model,
 		agent.WorkspaceMode,
+		agent.PermissionMode,
 		agent.MaxConcurrency,
 		agent.TimeoutMinutes,
 		mustJSON(agent.AllowedPaths),
@@ -367,7 +410,19 @@ func (s *SQLite) UpdateAgent(ctx context.Context, agent *domain.Agent) error {
 	if err != nil {
 		return fmt.Errorf("update agent: %w", err)
 	}
-	return ensureAffected(result, "agent", agent.ID)
+	if err := ensureAffected(result, "agent", agent.ID); err != nil {
+		return err
+	}
+
+	versionID, _, err := s.insertAgentVersion(ctx, tx, agent, "updated via API")
+	if err != nil {
+		return err
+	}
+	agent.CurrentVersionID = versionID
+	if _, err := tx.ExecContext(ctx, `UPDATE agents SET current_version_id = ? WHERE id = ?`, versionID, agent.ID); err != nil {
+		return fmt.Errorf("set agent version: %w", err)
+	}
+	return tx.Commit()
 }
 
 func (s *SQLite) DeleteAgent(ctx context.Context, id string) error {
@@ -378,41 +433,103 @@ func (s *SQLite) DeleteAgent(ctx context.Context, id string) error {
 	return ensureAffected(result, "agent", id)
 }
 
-const runColumns = `id, task_id, agent_id, status, trigger, branch, worktree, summary, error, created_at, started_at, ended_at`
+const runColumns = `id, workspace_id, task_id, agent_id, agent_version_id, config_snapshot_id, status, trigger, attempt, branch, worktree, base_commit, head_commit, summary, error, error_code, failure_detail, queue_reason, retry_of, runtime_session_id, exit_code, created_at, queued_at, started_at, ended_at, cancel_requested_at, last_event_at`
+
+const runMutableSet = `status = ?, branch = ?, worktree = ?, summary = ?, error = ?, error_code = ?, failure_detail = ?, base_commit = ?, head_commit = ?, agent_version_id = ?, config_snapshot_id = ?, runtime_session_id = ?, queue_reason = ?, exit_code = ?, started_at = ?, ended_at = ?, cancel_requested_at = ?, last_event_at = ?`
+
+func runMutableArgs(run *domain.Run) []any {
+	return []any{
+		string(run.Status),
+		run.Branch,
+		run.Worktree,
+		run.Summary,
+		run.Error,
+		run.ErrorCode,
+		run.FailureDetail,
+		run.BaseCommit,
+		run.HeadCommit,
+		run.AgentVersionID,
+		run.ConfigSnapshotID,
+		run.RuntimeSessionID,
+		run.QueueReason,
+		nullableInt(run.ExitCode),
+		millisPtr(run.StartedAt),
+		millisPtr(run.EndedAt),
+		millisPtr(run.CancelRequestedAt),
+		millisPtr(run.LastEventAt),
+	}
+}
+
+func nullableInt(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
 
 func scanRun(s scanner) (*domain.Run, error) {
 	var (
-		run     domain.Run
-		status  string
-		created int64
-		started int64
-		ended   int64
+		run       domain.Run
+		status    string
+		exitCode  sql.NullInt64
+		created   int64
+		queued    sql.NullInt64
+		started   sql.NullInt64
+		ended     sql.NullInt64
+		cancelReq sql.NullInt64
+		lastEvent sql.NullInt64
 	)
 	if err := s.Scan(
 		&run.ID,
+		&run.WorkspaceID,
 		&run.TaskID,
 		&run.AgentID,
+		&run.AgentVersionID,
+		&run.ConfigSnapshotID,
 		&status,
 		&run.Trigger,
+		&run.Attempt,
 		&run.Branch,
 		&run.Worktree,
+		&run.BaseCommit,
+		&run.HeadCommit,
 		&run.Summary,
 		&run.Error,
+		&run.ErrorCode,
+		&run.FailureDetail,
+		&run.QueueReason,
+		&run.RetryOf,
+		&run.RuntimeSessionID,
+		&exitCode,
 		&created,
+		&queued,
 		&started,
 		&ended,
+		&cancelReq,
+		&lastEvent,
 	); err != nil {
 		return nil, err
 	}
 	run.Status = domain.RunStatus(status)
-	run.CreatedAt = timeFromMillis(created)
-	if started > 0 {
-		t := timeFromMillis(started)
-		run.StartedAt = &t
+	if exitCode.Valid {
+		value := int(exitCode.Int64)
+		run.ExitCode = &value
 	}
-	if ended > 0 {
-		t := timeFromMillis(ended)
-		run.EndedAt = &t
+	run.CreatedAt = timeFromMillis(created)
+	if queued.Valid {
+		run.QueuedAt = timePtrFromMillis(queued.Int64)
+	}
+	if started.Valid {
+		run.StartedAt = timePtrFromMillis(started.Int64)
+	}
+	if ended.Valid {
+		run.EndedAt = timePtrFromMillis(ended.Int64)
+	}
+	if cancelReq.Valid {
+		run.CancelRequestedAt = timePtrFromMillis(cancelReq.Int64)
+	}
+	if lastEvent.Valid {
+		run.LastEventAt = timePtrFromMillis(lastEvent.Int64)
 	}
 	return &run, nil
 }
@@ -421,26 +538,51 @@ func (s *SQLite) CreateRun(ctx context.Context, run *domain.Run) error {
 	if run.ID == "" {
 		run.ID = domain.NewID()
 	}
+	if run.WorkspaceID == "" {
+		run.WorkspaceID = domain.DefaultWorkspaceID
+	}
 	if run.Status == "" {
 		run.Status = domain.RunQueued
+	}
+	if run.Attempt <= 0 {
+		run.Attempt = 1
 	}
 	if run.CreatedAt.IsZero() {
 		run.CreatedAt = domain.Now()
 	}
+	if run.QueuedAt == nil {
+		queued := run.CreatedAt
+		run.QueuedAt = &queued
+	}
 
-	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (`+runColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO runs (`+runColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		run.ID,
+		run.WorkspaceID,
 		run.TaskID,
 		run.AgentID,
+		run.AgentVersionID,
+		run.ConfigSnapshotID,
 		string(run.Status),
 		run.Trigger,
+		run.Attempt,
 		run.Branch,
 		run.Worktree,
+		run.BaseCommit,
+		run.HeadCommit,
 		run.Summary,
 		run.Error,
+		run.ErrorCode,
+		run.FailureDetail,
+		run.QueueReason,
+		run.RetryOf,
+		run.RuntimeSessionID,
+		nullableInt(run.ExitCode),
 		millis(run.CreatedAt),
+		millisPtr(run.QueuedAt),
 		millisPtr(run.StartedAt),
 		millisPtr(run.EndedAt),
+		millisPtr(run.CancelRequestedAt),
+		millisPtr(run.LastEventAt),
 	)
 	if err != nil {
 		return fmt.Errorf("create run: %w", err)
@@ -496,16 +638,8 @@ func (s *SQLite) GetRun(ctx context.Context, id string) (*domain.Run, error) {
 }
 
 func (s *SQLite) UpdateRun(ctx context.Context, run *domain.Run) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ?, branch = ?, worktree = ?, summary = ?, error = ?, started_at = ?, ended_at = ? WHERE id = ?`,
-		string(run.Status),
-		run.Branch,
-		run.Worktree,
-		run.Summary,
-		run.Error,
-		millisPtr(run.StartedAt),
-		millisPtr(run.EndedAt),
-		run.ID,
-	)
+	args := append(runMutableArgs(run), run.ID)
+	result, err := s.db.ExecContext(ctx, `UPDATE runs SET `+runMutableSet+` WHERE id = ?`, args...)
 	if err != nil {
 		return fmt.Errorf("update run: %w", err)
 	}
@@ -516,16 +650,8 @@ func (s *SQLite) UpdateRun(ctx context.Context, run *domain.Run) error {
 // active. A concurrent cancel therefore wins: the second writer gets false
 // instead of overwriting a terminal status.
 func (s *SQLite) UpdateRunIfActive(ctx context.Context, run *domain.Run) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `UPDATE runs SET status = ?, branch = ?, worktree = ?, summary = ?, error = ?, started_at = ?, ended_at = ? WHERE id = ? AND status IN ('queued', 'preparing', 'running')`,
-		string(run.Status),
-		run.Branch,
-		run.Worktree,
-		run.Summary,
-		run.Error,
-		millisPtr(run.StartedAt),
-		millisPtr(run.EndedAt),
-		run.ID,
-	)
+	args := append(runMutableArgs(run), run.ID)
+	result, err := s.db.ExecContext(ctx, `UPDATE runs SET `+runMutableSet+` WHERE id = ? AND status IN ('queued', 'preparing', 'running')`, args...)
 	if err != nil {
 		return false, fmt.Errorf("update run if active: %w", err)
 	}
@@ -619,6 +745,14 @@ func timeFromMillis(ms int64) time.Time {
 		return time.Time{}
 	}
 	return time.UnixMilli(ms).UTC()
+}
+
+func timePtrFromMillis(ms int64) *time.Time {
+	if ms == 0 {
+		return nil
+	}
+	value := time.UnixMilli(ms).UTC()
+	return &value
 }
 
 func mustJSON(value any) string {

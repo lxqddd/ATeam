@@ -19,6 +19,7 @@ export type RunStatus =
 
 export interface Task {
   id: string
+  workspaceId?: string
   title: string
   description: string
   status: TaskStatus
@@ -33,16 +34,39 @@ export interface Task {
 
 export interface Agent {
   id: string
+  workspaceId?: string
   name: string
   description: string
   instructions: string
   runtime: string
   model: string
   workspaceMode: string
+  permissionMode?: string
+  currentVersionId?: string
   maxConcurrency: number
   timeoutMinutes: number
   allowedPaths: string[]
   allowedCommands: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkspaceSettings {
+  remote?: string
+  worktreeRoot?: string
+  branchTemplate?: string
+  protectedBranches?: string[]
+  verificationCommands?: string[]
+}
+
+export interface Workspace {
+  id: string
+  name: string
+  repoPath: string
+  defaultBranch: string
+  settings: WorkspaceSettings
+  status: string
+  archivedAt?: string
   createdAt: string
   updatedAt: string
 }

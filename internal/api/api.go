@@ -38,6 +38,16 @@ func (a *API) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/health", a.health)
 
+	// M1: Workspaces. /api/v1/projects is the documented M1-M2 alias.
+	mux.HandleFunc("GET /api/v1/workspaces", a.listWorkspaces)
+	mux.HandleFunc("POST /api/v1/workspaces", a.createWorkspace)
+	mux.HandleFunc("GET /api/v1/workspaces/{id}", a.getWorkspace)
+	mux.HandleFunc("PATCH /api/v1/workspaces/{id}", a.updateWorkspace)
+	mux.HandleFunc("GET /api/v1/projects", a.listWorkspaces)
+	mux.HandleFunc("POST /api/v1/projects", a.createWorkspace)
+	mux.HandleFunc("GET /api/v1/projects/{id}", a.getWorkspace)
+	mux.HandleFunc("PATCH /api/v1/projects/{id}", a.updateWorkspace)
+
 	mux.HandleFunc("GET /api/tasks", a.listTasks)
 	mux.HandleFunc("POST /api/tasks", a.createTask)
 	mux.HandleFunc("GET /api/tasks/{id}", a.getTask)

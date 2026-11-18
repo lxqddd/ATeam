@@ -10,6 +10,15 @@ import (
 var ErrNotFound = errors.New("not found")
 
 type Store interface {
+	CreateWorkspace(context.Context, *domain.Workspace) error
+	ListWorkspaces(context.Context) ([]domain.Workspace, error)
+	GetWorkspace(context.Context, string) (*domain.Workspace, error)
+	UpdateWorkspace(context.Context, *domain.Workspace) error
+	// HasActiveRunsByWorkspace reports whether a queued/preparing/running Run
+	// belongs to the workspace; repoPath/defaultBranch changes are blocked
+	// while true.
+	HasActiveRunsByWorkspace(context.Context, string) (bool, error)
+
 	CreateTask(context.Context, *domain.Task) error
 	ListTasks(context.Context) ([]domain.Task, error)
 	GetTask(context.Context, string) (*domain.Task, error)

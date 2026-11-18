@@ -338,15 +338,47 @@ func (a *API) createRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// M1: a task may have at most one active run.
+	existing, err := a.store.ListRunsByTask(r.Context(), task.ID)
+	if err != nil {
+		a.handleStoreError(w, err)
+		return
+	}
+	for index := range existing {
+		if existing[index].Status.Active() {
+			a.writeError(w, http.StatusConflict, "task already has an active run")
+			return
+		}
+	}
+
+	// M1: real runtimes need a workspace bound to a local repository.
+	workspaceID := task.WorkspaceID
+	if workspaceID == "" {
+		workspaceID = domain.DefaultWorkspaceID
+	}
+	if agent.Runtime != "mock" {
+		workspace, err := a.store.GetWorkspace(r.Context(), workspaceID)
+		if err != nil {
+			a.handleStoreError(w, err)
+			return
+		}
+		if !workspace.Bound() {
+			a.writeError(w, http.StatusConflict, "workspace is not bound to a local repository yet")
+			return
+		}
+	}
+
 	trigger := input.Trigger
 	if trigger == "" {
 		trigger = "manual"
 	}
 	run := &domain.Run{
-		TaskID:  task.ID,
-		AgentID: agent.ID,
-		Status:  domain.RunQueued,
-		Trigger: trigger,
+		WorkspaceID:    workspaceID,
+		TaskID:         task.ID,
+		AgentID:        agent.ID,
+		AgentVersionID: agent.CurrentVersionID,
+		Status:         domain.RunQueued,
+		Trigger:        trigger,
 	}
 	if err := a.store.CreateRun(r.Context(), run); err != nil {
 		a.writeError(w, http.StatusInternalServerError, err.Error())
