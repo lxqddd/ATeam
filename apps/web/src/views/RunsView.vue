@@ -16,6 +16,8 @@ const tasks = useTasksStore()
 const router = useRouter()
 const { d } = useI18n()
 
+const gridTemplate = 'grid grid-cols-[130px_minmax(0,1.2fr)_100px_170px_minmax(0,1.5fr)] items-center gap-3'
+
 onMounted(() => {
   void runs.fetchAll()
   void tasks.fetchAll()
@@ -40,12 +42,15 @@ function openRun(row: Run) {
     </Teleport>
 
     <div class="flex-1 overflow-y-auto px-6 pb-6 pt-4">
-      <SectionCard>
+      <SectionCard class="runs-card">
         <div v-if="runs.items.length === 0">
           <EmptyState :title="$t('runs.empty')" />
         </div>
-        <div v-else class="overflow-hidden">
-          <div class="grid grid-cols-[130px_minmax(0,1.2fr)_100px_170px_minmax(0,1.5fr)] items-center gap-3 border-b border-border-subtle px-2 py-2 text-caption font-semibold uppercase tracking-wide text-fg-subtle">
+        <template v-else>
+          <div
+            class="sticky top-0 z-10 bg-[var(--cd-color-surface)] border-b border-border-subtle px-2 py-2 text-caption font-semibold uppercase tracking-wide text-fg-subtle"
+            :class="gridTemplate"
+          >
             <span>{{ $t('runs.columns.status') }}</span>
             <span>{{ $t('runs.columns.task') }}</span>
             <span>{{ $t('runs.columns.trigger') }}</span>
@@ -56,8 +61,8 @@ function openRun(row: Run) {
             v-for="run in runs.items"
             :key="run.id"
             type="button"
-            class="grid w-full grid-cols-[130px_minmax(0,1.2fr)_100px_170px_minmax(0,1.5fr)] items-center gap-3 border-b border-border-subtle/60 px-2 text-left text-label transition-colors last:border-0 hover:bg-[var(--cd-color-hover)]"
-            style="height: 40px"
+            class="h-10 w-full border-b border-border-subtle/60 px-2 text-left text-label transition-colors last:border-0 hover:bg-[var(--cd-color-hover)]"
+            :class="gridTemplate"
             @click="openRun(run)"
           >
             <StatusBadge :status="run.status" kind="run" />
@@ -66,8 +71,15 @@ function openRun(row: Run) {
             <span class="truncate text-fg-subtle">{{ d(new Date(run.createdAt), 'long') }}</span>
             <span class="truncate text-fg-muted">{{ run.summary || run.error || '—' }}</span>
           </button>
-        </div>
+        </template>
       </SectionCard>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* The card clips overflow by default, which would disable the sticky header. */
+.runs-card {
+  overflow: visible;
+}
+</style>

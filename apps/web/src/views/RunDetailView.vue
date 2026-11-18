@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeftIcon, RefreshCwIcon } from '@lucide/vue'
 import type { Artifact, Review, Run, RunEvent, RunWorkspace, Task } from '@ateam/shared'
@@ -16,13 +16,12 @@ import { Skeleton } from '../components/ui/skeleton'
 import { Textarea } from '../components/ui/textarea'
 import { Loader } from '../components/ai-elements/loader'
 
-const route = useRoute()
 const router = useRouter()
 const { t, d } = useI18n()
 
-const props = defineProps<{ id?: string }>()
+const props = defineProps<{ id: string }>()
 
-const runId = computed(() => String(props.id ?? route.params.id))
+const runId = computed(() => props.id)
 const run = ref<Run | null>(null)
 const task = ref<Task | null>(null)
 const events = ref<RunEvent[]>([])
@@ -39,6 +38,7 @@ const previewLoading = ref(false)
 
 const comment = ref('')
 const reviewBusy = ref(false)
+const reviewPending = ref<'approve' | 'request_changes' | ''>('')
 const reviewError = ref('')
 
 const mergeTarget = ref('main')
@@ -106,6 +106,7 @@ async function preview(artifact: Artifact) {
 
 async function submitReview(decision: 'approve' | 'request_changes') {
   reviewBusy.value = true
+  reviewPending.value = decision
   reviewError.value = ''
   try {
     await ReviewApi.create(runId.value, { decision, comment: comment.value.trim() })
@@ -115,10 +116,14 @@ async function submitReview(decision: 'approve' | 'request_changes') {
     reviewError.value = error instanceof Error ? error.message : String(error)
   } finally {
     reviewBusy.value = false
+    reviewPending.value = ''
   }
 }
 
 async function merge() {
+  if (mergeBusy.value) {
+    return
+  }
   if (!run.value || !approvedReview.value || !run.value.headCommit) {
     return
   }
@@ -164,13 +169,10 @@ function payloadBody(payload: Record<string, unknown> | undefined) {
   return payload ? JSON.stringify(payload, null, 2) : ''
 }
 
-watch(
-  () => route.params.id,
-  () => {
-    loading.value = true
-    void load()
-  },
-)
+watch(runId, () => {
+  loading.value = true
+  void load()
+})
 
 onMounted(() => {
   void load()
@@ -308,6 +310,7 @@ onUnmounted(() => {
             :class="previewId === artifact.id
               ? 'border-[var(--cd-color-accent)] bg-[var(--cd-color-accent-soft)] text-foreground'
               : 'border-[var(--cd-color-border-subtle)] text-fg-muted hover:border-[var(--cd-color-border-strong)]'"
+            :aria-pressed="previewId === artifact.id"
             @click="preview(artifact)"
           >
             <span class="font-mono text-fg-subtle">{{ artifact.type }}</span>
@@ -359,7 +362,7 @@ onUnmounted(() => {
           <p class="text-caption text-fg-subtle">{{ $t('runDetail.reviewHint') }}</p>
           <div class="flex items-center gap-2">
             <Button :disabled="reviewBusy || run.status !== 'completed'" @click="submitReview('approve')">
-              <Loader v-if="reviewBusy" :size="14" />
+              <Loader v-if="reviewPending === 'approve'" :size="14" />
               {{ $t('runDetail.approve') }}
             </Button>
             <Button
@@ -367,6 +370,7 @@ onUnmounted(() => {
               :disabled="reviewBusy || run.status !== 'completed'"
               @click="submitReview('request_changes')"
             >
+              <Loader v-if="reviewPending === 'request_changes'" :size="14" />
               {{ $t('runDetail.requestChanges') }}
             </Button>
             <span v-if="reviewError" class="text-caption text-danger">{{ reviewError }}</span>
@@ -388,7 +392,7 @@ onUnmounted(() => {
         </div>
         <div class="mt-3 flex flex-wrap items-center gap-2">
           <el-checkbox v-model="mergeConfirm">{{ $t('runDetail.mergeConfirm') }}</el-checkbox>
-          <Button size="lg" :disabled="!canMerge" @click="merge">
+          <Button size="lg" :disabled="!canMerge || mergeBusy" @click="merge">
             <Loader v-if="mergeBusy" :size="14" />
             {{ $t('runDetail.merge') }}
           </Button>
