@@ -147,9 +147,9 @@ func TestModelConnectivityEndpoint(t *testing.T) {
 		t.Fatalf("unknown model test = %d, want 400: %s", recorder.Code, recorder.Body.String())
 	}
 
-	recorder = callJSON(t, handler, http.MethodPost, "/api/v1/runtimes/opencode/test", map[string]any{"model": ""})
+	recorder = callJSON(t, handler, http.MethodPost, "/api/v1/runtimes/nonexistent-runtime/test", map[string]any{"model": ""})
 	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("unsupported runtime test = %d, want 400: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("unknown runtime test = %d, want 400: %s", recorder.Code, recorder.Body.String())
 	}
 }
 

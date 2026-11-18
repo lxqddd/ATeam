@@ -94,6 +94,7 @@ func NewRegistry() *Registry {
 	registry := &Registry{adapters: make(map[string]Adapter)}
 	registry.Register(&MockAdapter{})
 	registry.Register(&ClaudeAdapter{})
+	registry.Register(&OpenCodeAdapter{})
 	return registry
 }
 

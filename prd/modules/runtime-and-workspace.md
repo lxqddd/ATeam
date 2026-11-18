@@ -46,6 +46,7 @@ ATeam 的核心闭环是 Task（上下文容器）→ Agent（可复用工作配
 | mock adapter | 已实现，按固定四步、每步约 350 毫秒输出日志与总结 | 不产生真实代码修改，不可作为完成证据 |
 | Claude Code adapter | 最小实现：查找 PATH 中的 `claude`，以 `claude -p prompt` 在 workdir 执行，逐行转发 stdout/stderr | 不传 model、不解析 stream-json、不处理权限模式、不支持会话恢复与预算控制 |
 | Codex adapter | 未实现 | 计划在 M2 提供 |
+| OpenCode adapter | 已实现（M2.1 模型子项交付）：`run --format json`、`--model`、plan agent 只读、JSONL 事件映射、进程组取消、`opencode models` 模型目录与连通性测试 | 无路径级拦截，隔离依赖 worktree；`full_access` 的 `--auto` 需 UI 警示 |
 | Scheduler | 进程内 worker 池，默认并发 2，队列容量 256，支持 context 取消与按 Agent 超时 | 无持久化队列、无排队原因、无每 Agent 并发限制、重启后队列丢失 |
 | 机器与 Runner | 只有本地进程内 Runner；`ateam runner` 子命令仅提示 M3 预留 | 无 Machine 实体、无注册、心跳、租约、远程执行 |
 | 工作区 | 每次 Run 在 `~/.ateam/workspaces/runs/{runId}` 创建普通目录；`workspaceMode` 字段被存储但被忽略 | 无 git worktree、无分支、无 diff、无清理策略 |
@@ -304,7 +305,8 @@ M0 的 Adapter 契约非常小：`Name()` 返回稳定标识，`Run(ctx, Request
 | Runtime | 状态 | 适用场景 | 关键限制 |
 | --- | --- | --- | --- |
 | `mock` | 已实现（M0） | 演示、UI 联调、自动化测试、无 CLI 环境 | 不产生真实修改，不可作为交付证据 |
-| `claude` | 部分实现（M0 最小版），完整版计划 M1 | 使用本机 Claude Code CLI 执行真实编码任务 | M0 不传模型与权限参数、不解析结构化流、不支持会话恢复 |
+| `claude` | 已实现（M1 完整版） | 使用本机 Claude Code CLI 执行真实编码任务 | 模型目录来自本地 `modelPicker`/`ANTHROPIC_*_MODEL`，CLI 不枚举模型 |
+| `opencode` | 已实现（M2.1） | 使用本机 OpenCode CLI 与其配置的任意模型（DeepSeek、GLM、MiniMax 等） | 权限边界弱于 Claude：read_only 用 plan agent，无路径级拦截；依赖 worktree 隔离 |
 | `codex` | 计划（M2） | 使用本机 Codex CLI 作为替代 Runtime | 协议与参数不同，需要独立 adapter 与能力声明 |
 
 对 Runtime 的产品约束：
@@ -368,7 +370,18 @@ Codex 计划在 M2 提供，定位是「同一 Task、同一 Agent 配置下的�
 4. 能力声明中标明是否支持会话恢复、图片输入、预算控制；UI 对不支持的配置项禁用或提示。
 5. Codex 与 Claude 产生的 Artifact 使用同一套类型与存储规则，评审界面不因 Runtime 不同而分裂。
 
-### 6.7 Mock Adapter
+### 6.7 OpenCode Adapter（M2.1）
+
+OpenCode 适配器让 Agent 使用本机 OpenCode CLI 及其配置的任意模型（DeepSeek、GLM、MiniMax 等）。调用契约：
+
+- 非交互执行：`opencode run --format json [--model provider/model] "<prompt>"`，工作目录为 Run Workspace；长提示词省略消息参数、经 stdin 传入；
+- 模型选择：`--model provider/model`，`id` 与 `opencode models` 枚举一致；为空使用用户 OpenCode 默认模型；
+- 权限映射：`read_only` 传 `--agent plan`（只读规划 agent）；`controlled_edit` 使用默认 agent；`full_access` 额外传 `--auto`（自动批准权限，必须在 UI 显式开启并警示）；OpenCode 无路径/命令级强制，隔离依赖 worktree 边界，隔离等级 B；
+- 事件映射：JSONL 的 `step_start`→status、`text`→assistant 日志、`tool_use`→tool_call/tool_result（按 state.status）、`step_finish`→usage（tokens/cost）、`error`→error 事件并映射为 Run 失败；
+- 取消与超时：进程组 SIGTERM→10 秒宽限→SIGKILL，与 Claude 适配器一致；
+- 模型目录与连通性测试：`opencode models` 枚举目录；`TestModel` 以 plan agent 发送一次最小只读请求。
+
+### 6.8 Mock Adapter
 
 Mock 的产品定位是「可预测的演示与测试替身」：
 
@@ -378,7 +391,7 @@ Mock 的产品定位是「可预测的演示与测试替身」：
 - 在 M1 的证据化完成定义中，mock Run 不能被计为满足代码变更类 Task 的证据。
 - Mock 仍应遵守事件、取消与超时契约，以便作为其他 adapter 的契约测试基准。
 
-### 6.8 流式输出与背压
+### 6.9 流式输出与背压
 
 真实 Agent 可能在一秒内产生数百行输出。M0 逐行写库并广播，缺少限流，输出洪峰会造成数据库写入放大与 WebSocket 阻塞。M1 要求：
 
@@ -388,7 +401,7 @@ Mock 的产品定位是「可预测的演示与测试替身」：
 4. WebSocket 客户端消费过慢时允许丢弃低优先级日志事件，但必须保证状态事件最终一致。
 5. Adapter 的 stdout/stderr 读取协程必须在进程退出后完全结束，避免 goroutine 泄漏。
 
-### 6.9 模型与凭据
+### 6.10 模型与凭据
 
 - 模型选择属于 Agent 配置，不属于 Task；同一 Task 可以用不同 Agent 以不同模型重试。
 - API Key、订阅凭据由用户在本机 CLI 或环境变量中管理，ATeam 只读取状态，不持久化明文密钥。

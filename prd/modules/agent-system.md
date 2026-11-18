@@ -1139,6 +1139,7 @@ Runtime 能力矩阵（M1/M2 计划；实现后由 adapter 自描述，UI 显示
 | claude（M1） | 支持只读/受控/完全授权 | 否（依赖 worktree 边界） | 否（依赖 CLI 工具权限参数） | 是（10 秒宽限后强杀） | 是（结构化输出） | B 级，M1 起逐步接近 A 级 |
 | claude（M2） | 支持 | 依赖 CLI 工具策略 + worktree 边界 | 依赖 CLI 工具策略；不支持时降级 B | 是 | 是 | A 或 B，由能力探测决定 |
 | codex（M2） | 计划支持 | 依赖其沙箱能力 | 依赖其沙箱能力 | 计划支持 | 计划支持 | 待能力探测 |
+| opencode（M2.1） | read_only 传 `--agent plan`；full_access 传 `--auto`；受控编辑为默认行为 | 否（依赖 worktree 边界） | 否（依赖其 permission 配置） | 是（10 秒宽限后强杀） | 是（`run --format json` JSONL） | B 级（worktree 隔离 + plan agent） |
 
 能力声明必须可测试：`adapter.Capabilities()` 返回布尔与枚举；缺失字段按最低能力（C 级）处理，不得默认乐观假设。
 
