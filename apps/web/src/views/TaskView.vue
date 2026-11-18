@@ -322,7 +322,7 @@ onUnmounted(() => {
                 <div class="flex min-w-0 items-center gap-2">
                   <StatusBadge :status="run.status" kind="run" />
                   <Badge tone="neutral">{{ run.trigger }}</Badge>
-                  <Button variant="ghost" size="xs" @click.stop="router.push(`/runs/${run.id}`)">
+                  <Button variant="ghost" size="xs" @click.stop="router.push(`/runs/${run.id}`)" @keydown.stop>
                     {{ $t('runDetail.title') }}
                   </Button>
                 </div>
