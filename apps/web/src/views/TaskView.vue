@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ArrowLeft, VideoPlay } from '@element-plus/icons-vue'
 import {
   TASK_STATUSES,
-  TASK_STATUS_LABELS,
   type Run,
   type RunEvent,
   type Task,
@@ -22,6 +22,7 @@ const route = useRoute()
 const router = useRouter()
 const tasks = useTasksStore()
 const agents = useAgentsStore()
+const { t, d } = useI18n()
 
 const task = ref<Task | null>(null)
 const runs = ref<Run[]>([])
@@ -137,15 +138,15 @@ onUnmounted(() => {
   </div>
 
   <div v-else-if="!task" class="p-6">
-    <el-empty description="Task not found">
-      <el-button @click="router.push('/')">Back to board</el-button>
+    <el-empty :description="$t('task.notFound')">
+      <el-button @click="router.push('/')">{{ $t('task.backToBoard') }}</el-button>
     </el-empty>
   </div>
 
   <div v-else class="flex flex-col h-full">
     <header class="h-14 shrink-0 border-b border-border flex items-center justify-between px-5 gap-3">
       <div class="min-w-0 flex-1 flex items-center gap-3">
-        <el-button :icon="ArrowLeft" text @click="router.push('/')">Back</el-button>
+        <el-button :icon="ArrowLeft" text @click="router.push('/')">{{ $t('task.back') }}</el-button>
         <div class="min-w-0">
           <div class="flex items-center gap-2">
             <span class="text-[10px] text-zinc-500">{{ task.id }}</span>
@@ -158,7 +159,7 @@ onUnmounted(() => {
         <el-option
           v-for="status in TASK_STATUSES"
           :key="status.value"
-          :label="TASK_STATUS_LABELS[status.value]"
+          :label="$t(`common.status.task.${status.value}`)"
           :value="status.value"
         />
       </el-select>
@@ -167,19 +168,19 @@ onUnmounted(() => {
     <div class="flex-1 overflow-y-auto p-5 space-y-4">
       <el-card shadow="never">
         <template #header>
-          <span class="text-xs font-semibold text-zinc-400">DESCRIPTION</span>
+          <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('task.description') }}</span>
         </template>
         <p class="text-sm text-zinc-300 whitespace-pre-wrap">
-          {{ task.description || 'No description yet.' }}
+          {{ task.description || $t('task.noDescription') }}
         </p>
       </el-card>
 
       <el-card shadow="never">
         <template #header>
           <div class="flex items-center justify-between gap-3">
-            <span class="text-xs font-semibold text-zinc-400">RUNS</span>
+            <span class="text-xs font-semibold text-zinc-400 uppercase">{{ $t('task.runs') }}</span>
             <div class="flex items-center gap-2">
-              <el-select v-model="selectedAgentId" style="width: 220px" placeholder="Select an agent">
+              <el-select v-model="selectedAgentId" style="width: 220px" :placeholder="$t('task.selectAgent')">
                 <el-option
                   v-for="agent in agents.items"
                   :key="agent.id"
@@ -193,7 +194,7 @@ onUnmounted(() => {
                 :disabled="!canRun || !selectedAgentId"
                 @click="startRun"
               >
-                Run
+                {{ $t('common.run') }}
               </el-button>
             </div>
           </div>
@@ -201,14 +202,14 @@ onUnmounted(() => {
 
         <el-alert
           v-if="!canRun"
-          title="Move the task to Todo or In Progress before starting a run."
+          :title="$t('task.moveHint')"
           type="warning"
           :closable="false"
           show-icon
           class="mb-3"
         />
 
-        <el-empty v-if="runs.length === 0" description="No runs yet" :image-size="48" />
+        <el-empty v-if="runs.length === 0" :description="$t('task.noRuns')" :image-size="48" />
 
         <div v-else class="space-y-2">
           <el-card
@@ -226,7 +227,7 @@ onUnmounted(() => {
                 <el-tag size="small" effect="plain" type="info">{{ run.trigger }}</el-tag>
               </div>
               <span class="text-[10px] text-zinc-500">
-                {{ new Date(run.createdAt).toLocaleString() }}
+                {{ d(new Date(run.createdAt), 'long') }}
               </span>
             </div>
             <div v-if="run.summary" class="text-[11px] text-zinc-400 mt-1">
@@ -240,8 +241,8 @@ onUnmounted(() => {
       <el-card v-if="selectedRun" shadow="never">
         <template #header>
           <div class="flex items-center justify-between">
-            <span class="text-xs font-semibold text-zinc-400">
-              RUN LOG · {{ selectedRun.id.slice(0, 8) }}
+            <span class="text-xs font-semibold text-zinc-400 uppercase">
+              {{ $t('task.runLog') }} · {{ selectedRun.id.slice(0, 8) }}
             </span>
             <el-button
               v-if="isRunActive"
@@ -250,7 +251,7 @@ onUnmounted(() => {
               size="small"
               @click="cancelRun(selectedRun)"
             >
-              Cancel
+              {{ $t('common.cancel') }}
             </el-button>
           </div>
         </template>
@@ -260,8 +261,8 @@ onUnmounted(() => {
             v-if="events.length === 0 && !isRunActive"
             class="flex size-full flex-col items-center justify-center gap-3 p-8 text-center"
           >
-            <h3 class="text-sm font-medium">No events yet</h3>
-            <p class="text-sm text-zinc-500">Run events will appear here.</p>
+            <h3 class="text-sm font-medium">{{ $t('task.noEventsTitle') }}</h3>
+            <p class="text-sm text-zinc-500">{{ $t('task.noEventsDesc') }}</p>
           </div>
           <Message v-for="event in events" :key="`${event.runId}-${event.seq}`" from="assistant">
             <MessageContent>
