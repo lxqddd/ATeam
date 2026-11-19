@@ -261,7 +261,7 @@ func (a *API) updateRuntimeModels(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case err == nil:
 			defaultModel = strings.TrimSpace(config.DefaultModel)
-		case err != store.ErrNotFound:
+		case !errors.Is(err, store.ErrNotFound):
 			a.writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
