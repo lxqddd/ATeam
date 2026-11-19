@@ -13,6 +13,7 @@ import type {
   ProviderTestResult,
 } from '@ateam/shared' with { "resolution-mode": "import" }
 import { kernelConfig, kernelEnv, providerConfig } from './settings'
+import { activeDirectory } from './projects'
 
 interface RawSession {
   id: string
@@ -172,7 +173,7 @@ export class KernelManager {
 
   async listSessions(): Promise<KernelSession[]> {
     const response = await this.request<{ data?: RawSession[] }>('/api/session?limit=50')
-    return (response.data ?? []).map((raw) => mapSession(raw, this.workspace))
+    return (response.data ?? []).map((raw) => mapSession(raw, this.sessionDirectory()))
   }
 
   async createSession(title: string): Promise<KernelSession> {
@@ -180,10 +181,14 @@ export class KernelManager {
       method: 'POST',
       body: {
         title: title.trim() || 'ATeam',
-        location: { directory: this.workspace },
+        location: { directory: this.sessionDirectory() },
       },
     })
-    return mapSession(response.data, this.workspace)
+    return mapSession(response.data, this.sessionDirectory())
+  }
+
+  private sessionDirectory(): string {
+    return activeDirectory(this.workspace)
   }
 
   async prompt(sessionID: string, text: string): Promise<void> {

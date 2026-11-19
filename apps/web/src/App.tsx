@@ -26,6 +26,8 @@ import { Avatar, Button, Empty, Progress, Select, Tag, Tooltip } from 'antd'
 import { APP_NAME, type KernelMessage } from '@ateam/shared'
 import { useKernel, type KernelController } from './kernel'
 import { SettingsView } from './views/SettingsView'
+import { ProjectsView } from './views/ProjectsView'
+import { useProjects, type ProjectsController } from './projects'
 
 type NavKey = 'sessions' | 'overview' | 'projects' | 'settings'
 
@@ -112,6 +114,7 @@ export function App() {
   const [active, setActive] = useState<NavKey>('sessions')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const kernel = useKernel()
+  const projects = useProjects()
   const meta = pageMeta[active]
   const pageTitle = t(meta.titleKey)
 
@@ -189,6 +192,8 @@ export function App() {
           <Sidebar
             active={active}
             kernel={kernel}
+            projects={projects}
+            onOpenProjects={() => setActive('projects')}
             onSelectSession={(sessionId) => {
               kernel.selectSession(sessionId)
               setActive('sessions')
@@ -246,6 +251,8 @@ export function App() {
               <div className="mx-auto w-full max-w-[1080px] px-6 py-5">
                 {active === 'overview' ? (
                   <Overview />
+                ) : active === 'projects' ? (
+                  <ProjectsView projects={projects} />
                 ) : active === 'settings' ? (
                   <SettingsView />
                 ) : (
@@ -263,11 +270,15 @@ export function App() {
 function Sidebar({
   active,
   kernel,
+  projects,
   onSelectSession,
+  onOpenProjects,
 }: {
   active: NavKey
   kernel: KernelController
+  projects: ProjectsController
   onSelectSession: (sessionId: string) => void
+  onOpenProjects: () => void
 }) {
   const { t } = useTranslation()
   const settingsItems = [
@@ -293,13 +304,23 @@ function Sidebar({
           <button type="button" className="flex items-center gap-1 text-[12px] text-faint hover:text-ink">
             {t('sidebar.workspace')} <DownOutlined className="text-[9px]" />
           </button>
-          <button type="button" className="text-faint hover:text-ink" aria-label={t('sidebar.newWorkspace')}>
+          <button
+            type="button"
+            className="text-faint hover:text-ink"
+            aria-label={t('sidebar.newWorkspace')}
+            onClick={() => void projects.choose()}
+          >
             <PlusOutlined className="text-[12px]" />
           </button>
         </div>
-        <button type="button" className="cd-sidebar-item" data-active="true">
+        <button
+          type="button"
+          className="cd-sidebar-item"
+          data-active={active === 'projects'}
+          onClick={onOpenProjects}
+        >
           <FolderOutlined className="text-[13px]" />
-          <span className="truncate">{t('sidebar.noProject')}</span>
+          <span className="truncate">{projects.activeProject?.name ?? t('sidebar.noProject')}</span>
         </button>
       </div>
 

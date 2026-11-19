@@ -129,6 +129,20 @@ const zhCN = {
       desc: '通过 OpenAI 兼容供应商路由会话',
     },
   },
+  projects: {
+    title: "项目",
+    desc: "选择本地代码仓库作为工作目录。新会话会在当前项目的目录中运行。",
+    open: "打开项目",
+    empty: "还没有打开项目。选择一个本地仓库作为工作目录。",
+    current: "当前",
+    rename: "重命名",
+    renameTitle: "重命名项目",
+    remove: "移除",
+    save: "保存",
+    cancel: "取消",
+    name: "项目名称",
+  },
+
   settings: {
     provider: {
       title: '模型供应商',

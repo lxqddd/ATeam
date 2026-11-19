@@ -25,5 +25,12 @@ interface Window {
       }): Promise<import('@ateam/shared').ProviderConfig>
       test(): Promise<import('@ateam/shared').ProviderTestResult>
     }
+    projects?: {
+      list(): Promise<import('@ateam/shared').ProjectList>
+      choose(): Promise<import('@ateam/shared').Project | null>
+      select(id: string): Promise<import('@ateam/shared').ProjectList>
+      remove(id: string): Promise<import('@ateam/shared').ProjectList>
+      rename(id: string, name: string): Promise<import('@ateam/shared').ProjectList>
+    }
   }
 }

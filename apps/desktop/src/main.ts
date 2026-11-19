@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { KernelManager, kernelWorkspace } from './kernel'
 import { providerConfig, saveProvider } from './settings'
+import { chooseProject, listProjects, removeProject, renameProject, selectProject } from './projects'
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 let kernel: KernelManager | null = null
@@ -116,6 +117,21 @@ void app.whenReady().then(() => {
     return saved
   })
   ipcMain.handle('provider:test', () => kernel?.testProvider() ?? { ok: false, message: '内核未启动' })
+  ipcMain.handle('projects:list', () => listProjects())
+  ipcMain.handle('projects:choose', () => chooseProject(BrowserWindow.getFocusedWindow()))
+  ipcMain.handle('projects:select', (_event, id: unknown) =>
+    typeof id === 'string' ? selectProject(id) : listProjects(),
+  )
+  ipcMain.handle('projects:remove', (_event, id: unknown) =>
+    typeof id === 'string' ? removeProject(id) : listProjects(),
+  )
+  ipcMain.handle('projects:rename', (_event, input: unknown) => {
+    const payload = input as { id?: unknown; name?: unknown } | null
+    if (!payload || typeof payload.id !== 'string' || typeof payload.name !== 'string') {
+      throw new Error('invalid project payload')
+    }
+    return renameProject(payload.id, payload.name)
+  })
   void kernel.start()
 
   createWindow()

@@ -131,6 +131,20 @@ const enUS = {
       desc: 'Route sessions through OpenAI-compatible providers',
     },
   },
+  projects: {
+    title: "Projects",
+    desc: "Pick a local repository as the working directory. New sessions run inside the current project.",
+    open: "Open project",
+    empty: "No project yet. Choose a local repository to use as the working directory.",
+    current: "Current",
+    rename: "Rename",
+    renameTitle: "Rename project",
+    remove: "Remove",
+    save: "Save",
+    cancel: "Cancel",
+    name: "Project name",
+  },
+
   settings: {
     provider: {
       title: 'Model provider',

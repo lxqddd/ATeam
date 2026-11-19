@@ -27,4 +27,11 @@ contextBridge.exposeInMainWorld('ateam', {
       ipcRenderer.invoke('provider:set', input),
     test: () => ipcRenderer.invoke('provider:test'),
   },
+  projects: {
+    list: () => ipcRenderer.invoke('projects:list'),
+    choose: () => ipcRenderer.invoke('projects:choose'),
+    select: (id: string) => ipcRenderer.invoke('projects:select', id),
+    remove: (id: string) => ipcRenderer.invoke('projects:remove', id),
+    rename: (id: string, name: string) => ipcRenderer.invoke('projects:rename', { id, name }),
+  },
 })

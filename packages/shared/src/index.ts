@@ -4,6 +4,12 @@ export interface Project {
   id: string
   name: string
   path: string
+  lastOpenedAt?: string
+}
+
+export interface ProjectList {
+  projects: Project[]
+  activeId?: string
 }
 
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'failed'
