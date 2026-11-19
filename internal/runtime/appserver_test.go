@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFakeAppServer(t *testing.T, argsFile, permFile string) {
@@ -126,5 +127,76 @@ func TestAppServerDriverDeniesApprovalOutsidePolicy(t *testing.T) {
 	}
 	if runtimeErr.Detail != "command_not_allowed" {
 		t.Fatalf("detail = %q", runtimeErr.Detail)
+	}
+}
+
+func writeFakeAppServerSteering(t *testing.T, steerFile string) {
+	t.Helper()
+	binDir := t.TempDir()
+	script := `#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"userAgent":"codex-test"}}\n' "$id" ;;
+    *'"method":"initialized"'*) ;;
+    *'"method":"thread/start"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"thread":{"id":"th1"}}}\n' "$id" ;;
+    *'"method":"turn/start"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"turn":{"id":"turn1"}}}\n' "$id"
+      printf '{"jsonrpc":"2.0","method":"item/agentMessage/delta","params":{"threadId":"th1","delta":"working"}}\n'
+      while IFS= read -r steerLine; do
+        steerID=$(printf '%s\n' "$steerLine" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+        case "$steerLine" in
+          *'"method":"turn/steer"'*)
+            printf '%s\n' "$steerLine" >> __STEER_FILE__
+            printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$steerID"
+            break ;;
+        esac
+      done
+      printf '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"th1","turn":{"id":"turn1","status":"completed"}}}\n' ;;
+  esac
+done
+`
+	script = strings.ReplaceAll(script, "__STEER_FILE__", fmt.Sprintf("%q", steerFile))
+	if err := os.WriteFile(filepath.Join(binDir, "fake-appserver"), []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake app-server steering CLI: %v", err)
+	}
+	t.Setenv("PATH", binDir+":"+os.Getenv("PATH"))
+}
+
+func TestAppServerDriverSteersRunningTurn(t *testing.T) {
+	steerFile := filepath.Join(t.TempDir(), "steer.txt")
+	writeFakeAppServerSteering(t, steerFile)
+	manifest := appServerTestManifest()
+	driver, _ := NewDriver(manifest)
+	emit, events := collectEventsConcurrent()
+	steerCh := make(chan string, 1)
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		steerCh <- "also run tests"
+	}()
+	err := driver.Run(context.Background(), SessionRequest{Manifest: manifest, Request: Request{
+		Prompt: "hello", Workdir: t.TempDir(), PermissionMode: "controlled_edit",
+		Control: &SessionControl{Steer: steerCh},
+	}}, emit)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	steerRequest, err := os.ReadFile(steerFile)
+	if err != nil {
+		t.Fatalf("steering request: %v", err)
+	}
+	if !strings.Contains(string(steerRequest), "also run tests") || !strings.Contains(string(steerRequest), `"expectedTurnId":"turn1"`) {
+		t.Fatalf("steering request = %s", steerRequest)
+	}
+	found := false
+	for _, event := range *events {
+		if event.Type == "status" && strings.Contains(event.Message, "steering message injected") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing steering status event")
 	}
 }

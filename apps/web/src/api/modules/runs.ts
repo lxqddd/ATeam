@@ -26,6 +26,10 @@ export class RunApi {
   static cancel(runId: string): Promise<Run> {
     return HttpClient.post<Run>(`/runs/${runId}/cancel`)
   }
+
+  static steer(runId: string, message: string): Promise<{ accepted: boolean; runId: string }> {
+    return HttpClient.post<{ accepted: boolean; runId: string }>(`/runs/${runId}/steer`, { message })
+  }
 }
 
 export class RunDetailApi {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -79,6 +80,25 @@ func SanitizedEnv() []string {
 		if allowed[name] || strings.HasPrefix(name, "LC_") {
 			env = append(env, entry)
 		}
+	}
+	return env
+}
+
+// RuntimeEnv returns the sanitized environment plus account-profile
+// overrides. Overrides are namespaced config variables such as
+// CLAUDE_CONFIG_DIR; they never carry credentials read by ATeam itself.
+func RuntimeEnv(overrides map[string]string) []string {
+	env := SanitizedEnv()
+	if len(overrides) == 0 {
+		return env
+	}
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		env = append(env, key+"="+overrides[key])
 	}
 	return env
 }

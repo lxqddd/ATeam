@@ -92,6 +92,28 @@ async function load() {
 
 const mergeTargetTouched = ref(false)
 
+const steerMessage = ref('')
+const steerBusy = ref(false)
+const steerNotice = ref('')
+
+async function sendSteer() {
+  const message = steerMessage.value.trim()
+  if (!message || steerBusy.value) {
+    return
+  }
+  steerBusy.value = true
+  steerNotice.value = ''
+  try {
+    await RunApi.steer(runId.value, message)
+    steerMessage.value = ''
+    steerNotice.value = t('runDetail.steerSent')
+  } catch (error) {
+    steerNotice.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    steerBusy.value = false
+  }
+}
+
 async function preview(artifact: Artifact) {
   previewId.value = artifact.id
   previewLoading.value = true
@@ -237,6 +259,26 @@ onUnmounted(() => {
           <span v-if="task" class="shrink-0 font-mono text-caption text-fg-subtle">{{ run.id }}</span>
         </div>
       </header>
+
+      <SectionCard v-if="run?.status === 'running'" :title="$t('runDetail.steerTitle')">
+        <div class="flex flex-col gap-2">
+          <Textarea
+            v-model="steerMessage"
+            :placeholder="$t('runDetail.steerPlaceholder')"
+            :rows="2"
+            :disabled="steerBusy"
+            @keydown.meta.enter.prevent="sendSteer"
+            @keydown.ctrl.enter.prevent="sendSteer"
+          />
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-caption text-fg-subtle">{{ $t('runDetail.steerHint') }}</p>
+            <Button size="sm" :disabled="steerBusy || !steerMessage.trim()" @click="sendSteer">
+              {{ steerBusy ? $t('runDetail.steerSending') : $t('runDetail.steerSend') }}
+            </Button>
+          </div>
+          <p v-if="steerNotice" class="text-caption text-fg-muted">{{ steerNotice }}</p>
+        </div>
+      </SectionCard>
 
       <SectionCard :title="$t('runDetail.title')">
         <dl class="grid gap-x-6 text-label sm:grid-cols-2">

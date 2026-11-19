@@ -85,8 +85,31 @@ export interface RuntimeInfo {
   modelsError?: string
 }
 
-export interface ModelTestResult {
-  ok: boolean
+export interface CLIHarnessInfo {
+  id: string
+  displayName: string
+  executable: string
+  path?: string
+  version?: string
+  transport?: string
+  supported: boolean
+  installed: boolean
+  npmPackage?: string
+  installCommand?: string
+  configPath?: string
+  authPath?: string
+  configPresent: boolean
+  authPresent: boolean
+  loginChecked: boolean
+  loggedIn: boolean
+  authMethod?: string
+  providers?: string[]
+  loginCommand?: string
+  accountRoot?: string
+  accountProfiles?: { name: string; path: string; loginCommand: string }[]
+}
+
+export interface ModelTestResult {  ok: boolean
   runtime: string
   model: string
   latencyMs: number
@@ -170,6 +193,10 @@ export interface WorkspaceSettings {
   branchTemplate?: string
   protectedBranches?: string[]
   verificationCommands?: string[]
+  sandboxMode?: 'none' | 'seatbelt'
+  allowSandboxFallback?: boolean
+  accountProfiles?: Record<string, string>
+  useGateway?: boolean
 }
 
 export interface Workspace {
@@ -346,4 +373,30 @@ export interface TaskDoD {
 export interface TaskArtifactsResponse {
   artifacts: Artifact[]
   dod: TaskDoD
+}
+
+export interface GatewayProvider {
+  id: string
+  name: string
+  kind: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  default: boolean
+}
+
+export interface GatewayStatus {
+  baseUrl: string
+  token: string
+  configured: boolean
+  providers: GatewayProvider[]
+}
+
+export interface GatewayProviderInput {
+  name: string
+  kind?: string
+  baseUrl: string
+  apiKey?: string
+  model?: string
+  default?: boolean
 }

@@ -21,6 +21,23 @@ type Request struct {
 	PermissionMode string
 	MaxTurns       int
 	Policy         *Policy
+	Control        *SessionControl
+	SandboxMode    string
+	// EnvOverrides are CLI-specific account profile variables (for example
+	// CLAUDE_CONFIG_DIR) merged into the sanitized child environment.
+	EnvOverrides map[string]string
+	// AccountDirs are profile directories the sandbox must keep readable and
+	// writable for the CLI to use that account.
+	AccountDirs []string
+}
+
+// SessionControl is the orchestration handle for one running session. The
+// driver reports the runtime session id once it is known and consumes
+// mid-turn steering messages from Steer. Nil fields mean the caller does not
+// need that capability.
+type SessionControl struct {
+	ReportSession func(sessionID string)
+	Steer         <-chan string
 }
 
 // Adapter is the runtime boundary. Adapters map their CLI's output to Event.

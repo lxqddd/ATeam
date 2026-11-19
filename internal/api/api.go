@@ -9,6 +9,7 @@ import (
 
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
+	"github.com/lxqddd/ATeam/internal/gateway"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
 	"github.com/lxqddd/ATeam/internal/security"
@@ -25,6 +26,7 @@ type API struct {
 	version    string
 	webDir     string
 	guard      *security.Guard
+	gateway    *gateway.Manager
 }
 
 func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, registry *runtime.Registry, workspaces *workspace.Manager, version, webDir string, guard *security.Guard) *API {
@@ -40,12 +42,21 @@ func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, regist
 	}
 }
 
+// SetGateway attaches the local model gateway. It is optional so tests and
+// deployments that only need the scheduler API can skip it.
+func (a *API) SetGateway(manager *gateway.Manager) {
+	a.gateway = manager
+}
+
 func (a *API) Handler() http.Handler {
 	mux := http.NewServeMux()
 	// /api/v1 is canonical; /api is the permanent compatibility alias
 	// (PRD api-and-data §5.0) and receives Deprecation headers.
 	for _, prefix := range []string{"/api/v1", "/api"} {
 		a.registerRoutes(mux, prefix)
+	}
+	if a.gateway != nil {
+		mux.Handle("/gateway/", http.StripPrefix("/gateway", gateway.NewServer(a.gateway).Handler()))
 	}
 	mux.Handle("/", a.webHandler())
 	return withAPIVersion(withCORS(a.guard, mux))
@@ -78,6 +89,14 @@ func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("POST "+prefix+"/review-comments/{id}/resolve", a.resolveReviewComment)
 	mux.HandleFunc("GET "+prefix+"/meta", a.getMeta)
 	mux.HandleFunc("GET "+prefix+"/runtimes", a.listRuntimes)
+	mux.HandleFunc("GET "+prefix+"/cli-harnesses", a.listCLIHarnesses)
+	mux.HandleFunc("POST "+prefix+"/cli-harnesses/{id}/accounts", a.createCLIAccount)
+	mux.HandleFunc("GET "+prefix+"/gateway/status", a.gatewayStatus)
+	mux.HandleFunc("GET "+prefix+"/gateway/providers", a.listGatewayProviders)
+	mux.HandleFunc("POST "+prefix+"/gateway/providers", a.createGatewayProvider)
+	mux.HandleFunc("PUT "+prefix+"/gateway/providers/{id}", a.updateGatewayProvider)
+	mux.HandleFunc("DELETE "+prefix+"/gateway/providers/{id}", a.deleteGatewayProvider)
+	mux.HandleFunc("POST "+prefix+"/gateway/token/rotate", a.rotateGatewayToken)
 	mux.HandleFunc("PUT "+prefix+"/runtimes/{name}/models", a.updateRuntimeModels)
 	mux.HandleFunc("POST "+prefix+"/runtimes/{name}/test", a.testRuntimeModel)
 
@@ -103,6 +122,7 @@ func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/runs/{id}/events", a.listRunEvents)
 	mux.HandleFunc("GET "+prefix+"/runs/{id}/snapshot", a.getRunSnapshot)
 	mux.HandleFunc("POST "+prefix+"/runs/{id}/cancel", a.cancelRun)
+	mux.HandleFunc("POST "+prefix+"/runs/{id}/steer", a.steerRun)
 
 	mux.HandleFunc("GET "+prefix+"/ws", a.hub.ServeWS)
 	mux.HandleFunc("GET "+prefix+"/events", a.hub.ServeSSE)

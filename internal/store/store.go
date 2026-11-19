@@ -62,6 +62,9 @@ type Store interface {
 	// MarkRunCancelRequested records cancel_requested_at for an active run
 	// without touching the other columns, so worker writes cannot clear it.
 	MarkRunCancelRequested(context.Context, string) (bool, error)
+	// SetRunRuntimeSessionID records the harness session/thread id once the
+	// runtime reports it, so a Run detail can link back to the CLI session.
+	SetRunRuntimeSessionID(context.Context, string, string) error
 	// SetRunQueueReason records why a queued run is waiting (per-agent
 	// concurrency) without changing its status.
 	SetRunQueueReason(context.Context, string, string) (bool, error)

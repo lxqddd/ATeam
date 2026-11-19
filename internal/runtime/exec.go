@@ -25,9 +25,13 @@ func (d *execDriver) Run(ctx context.Context, session SessionRequest, emit func(
 		return &Error{Detail: "runtime_missing", Message: d.manifest.Executable + " CLI not found in PATH"}
 	}
 	args, stdinPrompt := d.buildArgs(req)
+	path, args, err = wrapSandbox(d.manifest, req, path, args)
+	if err != nil {
+		return err
+	}
 	command := exec.Command(path, args...)
 	command.Dir = req.Workdir
-	command.Env = SanitizedEnv()
+	command.Env = RuntimeEnv(req.EnvOverrides)
 	configureProcessGroup(command)
 	if stdinPrompt != "" {
 		command.Stdin = strings.NewReader(stdinPrompt)
@@ -51,6 +55,13 @@ func (d *execDriver) Run(ctx context.Context, session SessionRequest, emit func(
 	stopWatcher := watchCancellation(runCtx, command)
 	defer stopWatcher()
 
+	var emitMu sync.Mutex
+	safeEmit := func(event Event) {
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		emit(event)
+	}
+
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(2)
 	var tail tailBuffer
@@ -61,7 +72,7 @@ func (d *execDriver) Run(ctx context.Context, session SessionRequest, emit func(
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if line != "" {
-				emit(Event{Type: "log", Message: truncateMessage(line), Source: "assistant"})
+				safeEmit(Event{Type: "log", Message: truncateMessage(line), Source: "assistant"})
 			}
 		}
 	}()
@@ -73,7 +84,7 @@ func (d *execDriver) Run(ctx context.Context, session SessionRequest, emit func(
 			line := strings.TrimSpace(scanner.Text())
 			if line != "" {
 				tail.Write(line + "\n")
-				emit(Event{Type: "log", Message: truncateMessage(line), Source: "stderr", Level: "warn"})
+				safeEmit(Event{Type: "log", Message: truncateMessage(line), Source: "stderr", Level: "warn"})
 			}
 		}
 	}()

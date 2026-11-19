@@ -20,6 +20,12 @@ type Manifest struct {
 	// ModelLaunchConfig, when set, passes the model to the CLI as
 	// "-c <key>=\"value\"" before SessionArgs (Codex).
 	ModelLaunchConfig string
+	// Local environment facts used by the CLI inventory. Paths are expanded
+	// at read time and never contain credentials.
+	ConfigPath     string
+	AuthPath       string
+	InstallCommand string
+	LoginCommand   string
 	// StreamJSON invocation contract.
 	PromptFlag              string
 	OutputFormat            string
@@ -67,6 +73,10 @@ var builtinManifests = []Manifest{
 		RequiredProbeFlags:      []string{"--output-format", "--permission-mode", "--verbose"},
 		ExecPromptFlag:          "-p",
 		ExecPermissionFlag:      "--permission-mode",
+		ConfigPath:              "~/.claude/settings.json",
+		AuthPath:                "~/.claude.json",
+		InstallCommand:          "npm install -g @anthropic-ai/claude-code",
+		LoginCommand:            "claude auth login",
 	},
 	{
 		ID:                "opencode",
@@ -83,6 +93,10 @@ var builtinManifests = []Manifest{
 		SessionArgs:        []string{"acp"},
 		ExecArgs:           []string{"run"},
 		ExecPermissionFlag: "--agent",
+		ConfigPath:         "~/.config/opencode/opencode.json",
+		AuthPath:           "~/.local/share/opencode/auth.json",
+		InstallCommand:     "npm install -g @opencode/cli",
+		LoginCommand:       "opencode auth login",
 	},
 	{
 		ID:                "codex",
@@ -100,6 +114,10 @@ var builtinManifests = []Manifest{
 		ExecArgs:           []string{"exec"},
 		ExecPermissionFlag: "--sandbox",
 		ModelLaunchConfig:  "model",
+		ConfigPath:         "~/.codex/config.toml",
+		AuthPath:           "~/.codex/auth.json",
+		InstallCommand:     "npm install -g @openai/codex",
+		LoginCommand:       "codex login",
 	},
 }
 

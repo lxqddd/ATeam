@@ -11,6 +11,7 @@ import (
 	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
+	"github.com/lxqddd/ATeam/internal/gateway"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
 	"github.com/lxqddd/ATeam/internal/security"
@@ -38,7 +39,13 @@ func newTestHandler(t *testing.T) (http.Handler, store.Store) {
 	registry := runtime.NewRegistry()
 	workspaces := workspace.New(t.TempDir())
 	sched := scheduler.New(st, hub, registry, workspaces, artifact.NewWriter(st, t.TempDir()), 1)
-	return New(st, hub, sched, registry, workspaces, "test", "", guard).Handler(), st
+	gw, err := gateway.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("gateway: %v", err)
+	}
+	api := New(st, hub, sched, registry, workspaces, "test", "", guard)
+	api.SetGateway(gw)
+	return api.Handler(), st
 }
 
 func call(handler http.Handler, method, path, origin string) *httptest.ResponseRecorder {

@@ -79,6 +79,17 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 	}, &run
 }
 
+func (f *fakeStore) SetRunRuntimeSessionID(_ context.Context, runID, sessionID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[runID]
+	if ok {
+		run.RuntimeSessionID = sessionID
+		f.runs[runID] = run
+	}
+	return nil
+}
+
 func (f *fakeStore) CountActiveRunsByAgent(_ context.Context, agentID string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -656,5 +667,25 @@ func TestAgentConcurrencyHoldsSecondRun(t *testing.T) {
 	})
 	if held := st.run(second.ID); held.QueueReason != "" {
 		t.Fatalf("queue reason should clear after execution, got %q", held.QueueReason)
+	}
+}
+
+func TestSchedulerSteerForwardsToActiveSession(t *testing.T) {
+	s := New(nil, nil, nil, nil, nil, 1)
+	steer := make(chan string, 1)
+	s.steers["run-1"] = steer
+	if !s.Steer("run-1", "hello") {
+		t.Fatal("steer should be accepted for an active session")
+	}
+	select {
+	case message := <-steer:
+		if message != "hello" {
+			t.Fatalf("message = %q", message)
+		}
+	default:
+		t.Fatal("steer message not delivered")
+	}
+	if s.Steer("run-2", "hello") {
+		t.Fatal("steer must fail without an active session")
 	}
 }

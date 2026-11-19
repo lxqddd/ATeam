@@ -183,7 +183,7 @@ func (a *OpenCodeAdapter) runExec(ctx context.Context, req Request, emit func(Ev
 	args, useStdin := buildOpenCodeArgs(req)
 	command := exec.Command(path, args...)
 	command.Dir = req.Workdir
-	command.Env = SanitizedEnv()
+	command.Env = RuntimeEnv(req.EnvOverrides)
 	configureProcessGroup(command)
 	if useStdin {
 		command.Stdin = strings.NewReader(req.Prompt)

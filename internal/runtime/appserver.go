@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 )
 
 // appServerDriver speaks Codex's app-server JSON-RPC protocol for one Run:
@@ -63,6 +62,12 @@ func (s *appServerState) result() (string, string) {
 	return s.stopReason, s.errMessage
 }
 
+func (s *appServerState) isFinished() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.finished
+}
+
 func (d *appServerDriver) Run(ctx context.Context, session SessionRequest, emit func(Event)) error {
 	req := session.Request
 	command, pipes, err := startHarnessProcess(d.manifest, req)
@@ -114,6 +119,7 @@ func (d *appServerDriver) Run(ctx context.Context, session SessionRequest, emit 
 		"capabilities": nil,
 	}); err != nil {
 		pipes.stop(command)
+		stopped = true
 		return d.failure(err, pipes, "app-server initialize failed")
 	}
 	_ = conn.notify("initialized", map[string]any{})
@@ -121,6 +127,7 @@ func (d *appServerDriver) Run(ctx context.Context, session SessionRequest, emit 
 	raw, err := conn.call(runCtx, "thread/start", map[string]any{"cwd": req.Workdir})
 	if err != nil {
 		pipes.stop(command)
+		stopped = true
 		return d.failure(err, pipes, "app-server thread/start failed")
 	}
 	var thread struct {
@@ -133,6 +140,9 @@ func (d *appServerDriver) Run(ctx context.Context, session SessionRequest, emit 
 		return &Error{Detail: "adapter_crash", Message: "app-server returned no thread"}
 	}
 	state.setThread(thread.Thread.ID)
+	if req.Control != nil && req.Control.ReportSession != nil {
+		req.Control.ReportSession(thread.Thread.ID)
+	}
 	safeEmit(Event{Type: "status", Message: "runtime initialized", Data: map[string]any{
 		"phase": "app_server_thread", "sessionId": thread.Thread.ID,
 	}, Source: "adapter"})
@@ -144,19 +154,58 @@ func (d *appServerDriver) Run(ctx context.Context, session SessionRequest, emit 
 	for key, value := range appServerPolicy(d.manifest, req) {
 		turnParams[key] = value
 	}
-	if _, err := conn.call(runCtx, "turn/start", turnParams); err != nil {
+	raw, err = conn.call(runCtx, "turn/start", turnParams)
+	if err != nil {
 		pipes.stop(command)
+		stopped = true
 		return d.failure(err, pipes, "app-server turn/start failed")
 	}
+	var started struct {
+		Turn struct {
+			ID string `json:"id"`
+		} `json:"turn"`
+	}
+	_ = json.Unmarshal(raw, &started)
+	turnID := started.Turn.ID
 
-	select {
-	case <-state.done:
-	case <-runCtx.Done():
-	case <-conn.closed:
-	case <-time.After(24 * time.Hour):
-		// Defensive upper bound; the run context normally carries the real
-		// timeout from the scheduler.
-		state.finish("timeout", "app-server turn did not finish")
+	var steerCh <-chan string
+	if req.Control != nil {
+		steerCh = req.Control.Steer
+	}
+	waiting := true
+	for waiting {
+		select {
+		case <-state.done:
+			waiting = false
+		case <-runCtx.Done():
+			waiting = false
+		case <-conn.closed:
+			waiting = false
+		case message, ok := <-steerCh:
+			if !ok {
+				steerCh = nil
+				continue
+			}
+			if strings.TrimSpace(message) == "" {
+				continue
+			}
+			if turnID == "" {
+				safeEmit(Event{Type: "status", Message: "steering ignored: turn is not ready", Source: "adapter", Level: "warn"})
+				continue
+			}
+			if _, err := conn.call(runCtx, "turn/steer", map[string]any{
+				"threadId":       thread.Thread.ID,
+				"expectedTurnId": turnID,
+				"input":          []any{map[string]any{"type": "text", "text": message, "text_elements": []any{}}},
+			}); err != nil {
+				safeEmit(Event{Type: "warning", Message: "steering message rejected: " + truncateMessage(err.Error(), 512), Source: "adapter", Level: "warn"})
+				continue
+			}
+			safeEmit(Event{Type: "status", Message: "steering message injected", Source: "adapter"})
+		}
+	}
+	if !state.isFinished() {
+		state.finish("failed", "app-server closed before the turn completed")
 	}
 
 	pipes.stop(command)

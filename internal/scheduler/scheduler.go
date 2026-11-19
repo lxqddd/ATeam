@@ -15,6 +15,7 @@ import (
 	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
+	"github.com/lxqddd/ATeam/internal/gateway"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/store"
 	"github.com/lxqddd/ATeam/internal/workspace"
@@ -26,10 +27,12 @@ type Scheduler struct {
 	registry   *runtime.Registry
 	workspaces *workspace.Manager
 	artifacts  *artifact.Writer
+	gateway    *gateway.Manager
 	queue      chan string
 	workers    int
 	mu         sync.Mutex
 	cancels    map[string]context.CancelFunc
+	steers     map[string]chan string
 	// occupancy counts claimed per-agent slots (preparing/running). The
 	// mutex makes admission atomic across workers; the DB cannot serve this
 	// check because a queued run flips to preparing only after claiming.
@@ -49,12 +52,17 @@ func New(st store.Store, hub *events.Hub, registry *runtime.Registry, workspaces
 		queue:      make(chan string, 256),
 		workers:    workers,
 		cancels:    make(map[string]context.CancelFunc),
+		steers:     make(map[string]chan string),
 		occupancy:  make(map[string]int),
 	}
 }
 
-func (s *Scheduler) Start(ctx context.Context) {
-	// Recover before serving: persisted queued runs are re-enqueued, and runs
+// SetGateway attaches the local model gateway used when a workspace opts in.
+func (s *Scheduler) SetGateway(manager *gateway.Manager) {
+	s.gateway = manager
+}
+
+func (s *Scheduler) Start(ctx context.Context) { // Recover before serving: persisted queued runs are re-enqueued, and runs
 	// interrupted mid-flight are failed with errorCode=interrupted so no run
 	// stays forever queued/preparing/running (PRD api-and-data G-02).
 	s.reconcile(ctx)
@@ -111,6 +119,24 @@ func (s *Scheduler) Enqueue(ctx context.Context, runID string) error {
 // running run has its context cancelled and the worker persists the terminal
 // state. Cancellation never resurrects a finished run because every write
 // goes through UpdateRunIfActive.
+// Steer forwards a user message to a running harness session. It returns
+// false when the run has no steerable session (queued, finished, or a
+// transport without mid-turn steering).
+func (s *Scheduler) Steer(runID, message string) bool {
+	s.mu.Lock()
+	steer := s.steers[runID]
+	s.mu.Unlock()
+	if steer == nil {
+		return false
+	}
+	select {
+	case steer <- message:
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Scheduler) Cancel(ctx context.Context, runID string) bool {
 	s.mu.Lock()
 	cancel, running := s.cancels[runID]
@@ -446,6 +472,9 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	// Code changing runs get an isolated git worktree; mock (non-code) runs
 	// only get a plain directory (PRD runtime-and-workspace §8.2).
 	codeChange := adapter.Name() != "mock"
+	sandboxMode := runtime.SandboxModeNone
+	var envOverrides map[string]string
+	var accountDirs []string
 	if codeChange {
 		workspaceRecord, err := s.store.GetWorkspace(ctx, run.WorkspaceID)
 		if err != nil || !workspaceRecord.Bound() {
@@ -454,6 +483,70 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 			return
 		}
 		settings = workspaceRecord.Settings.WithDefaults()
+		if profile := settings.AccountProfiles[agent.Runtime]; profile != "" {
+			manifest, ok := runtime.ManifestFor(agent.Runtime)
+			if !ok {
+				emit(runtime.Event{Type: "error", Message: "runtime does not support account profiles", Data: map[string]any{"errorCode": "invalid_agent_config"}, Level: "error"})
+				s.finishFailed(ctx, run, "invalid_agent_config", "invalid_account_profile", "runtime does not support account profiles")
+				return
+			}
+			env, dirs, err := runtime.AccountProfileEnv(manifest, profile)
+			if err != nil {
+				emit(runtime.Event{Type: "error", Message: err.Error(), Data: map[string]any{"errorCode": "invalid_agent_config"}, Level: "error"})
+				s.finishFailed(ctx, run, "invalid_agent_config", "invalid_account_profile", err.Error())
+				return
+			}
+			envOverrides, accountDirs = env, dirs
+			emit(runtime.Event{
+				Type: "status", Message: "Using account profile " + profile,
+				Data: map[string]any{"runtime": agent.Runtime, "profile": profile}, Source: "scheduler",
+			})
+		}
+		if settings.UseGateway {
+			if agent.Runtime != "claude" {
+				emit(runtime.Event{
+					Type: "warning", Message: "The model gateway only applies to the claude runtime",
+					Data: map[string]any{"runtime": agent.Runtime}, Source: "scheduler", Level: "warn",
+				})
+			} else if s.gateway == nil || !s.gateway.Configured() || s.gateway.BaseURL() == "" {
+				emit(runtime.Event{Type: "error", Message: "The model gateway has no provider configured", Data: map[string]any{"errorCode": "invalid_agent_config"}, Level: "error"})
+				s.finishFailed(ctx, run, "invalid_agent_config", "gateway_not_configured", "the model gateway has no provider configured")
+				return
+			} else {
+				if envOverrides == nil {
+					envOverrides = map[string]string{}
+				}
+				envOverrides["ANTHROPIC_BASE_URL"] = s.gateway.BaseURL()
+				envOverrides["ANTHROPIC_AUTH_TOKEN"] = s.gateway.Token()
+				emit(runtime.Event{
+					Type: "status", Message: "Routing Claude through the local model gateway",
+					Data: map[string]any{"baseUrl": s.gateway.BaseURL()}, Source: "scheduler",
+				})
+			}
+		}
+		if settings.SandboxMode == runtime.SandboxModeSeatbelt {
+			if !runtime.SeatbeltAvailable() {
+				if settings.AllowSandboxFallback {
+					emit(runtime.Event{
+						Type: "warning", Message: "Seatbelt sandbox is unavailable; running without it due to allowSandboxFallback",
+						Data: map[string]any{"code": "SANDBOX_FALLBACK", "sandbox": "seatbelt"}, Level: "warn",
+					})
+				} else {
+					emit(runtime.Event{
+						Type: "error", Message: "Seatbelt sandbox is unavailable and fallback is not allowed",
+						Data: map[string]any{"errorCode": "workspace_error", "failureDetail": "sandbox_unavailable"}, Level: "error",
+					})
+					s.finishFailed(ctx, run, "workspace_error", "sandbox_unavailable", "macOS Seatbelt sandbox is not available")
+					return
+				}
+			} else {
+				sandboxMode = runtime.SandboxModeSeatbelt
+				emit(runtime.Event{
+					Type: "status", Message: "Running under the macOS Seatbelt sandbox",
+					Data: map[string]any{"sandbox": "seatbelt"}, Source: "scheduler",
+				})
+			}
+		}
 		emit(runtime.Event{
 			Type:    "run.workspace.provisioning",
 			Message: "Provisioning run workspace",
@@ -528,12 +621,44 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 			AllowedCommands: agent.AllowedCommands,
 		}
 	}
+	steerCh := make(chan string, 8)
+	s.mu.Lock()
+	s.steers[run.ID] = steerCh
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.steers, run.ID)
+		s.mu.Unlock()
+	}()
+	var reportSession sync.Once
+	control := &runtime.SessionControl{
+		Steer: steerCh,
+		ReportSession: func(sessionID string) {
+			if sessionID == "" {
+				return
+			}
+			reportSession.Do(func() {
+				// Drivers report synchronously from Adapter.Run on this
+				// worker goroutine, so updating the in-memory run is safe and
+				// keeps later run writes from clearing the stored id.
+				run.RuntimeSessionID = sessionID
+				if err := s.store.SetRunRuntimeSessionID(context.WithoutCancel(ctx), run.ID, sessionID); err != nil {
+					slog.Warn("record runtime session id", "run", run.ID, "error", err)
+				}
+			})
+		},
+	}
+
 	err = adapter.Run(runCtx, runtime.Request{
 		Prompt:         prompt,
 		Workdir:        workdir,
 		Model:          model,
 		PermissionMode: permissionMode,
 		Policy:         policy,
+		Control:        control,
+		SandboxMode:    sandboxMode,
+		EnvOverrides:   envOverrides,
+		AccountDirs:    accountDirs,
 	}, emit)
 
 	if codeChange && workdir != "" {

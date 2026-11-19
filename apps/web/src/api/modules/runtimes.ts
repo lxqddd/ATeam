@@ -1,8 +1,12 @@
-import type { ModelTestResult, RuntimeInfo, RuntimeModel } from '@ateam/shared'
+import type { CLIHarnessInfo, ModelTestResult, RuntimeInfo, RuntimeModel } from '@ateam/shared'
 import { HttpClient } from '../http/client'
 
 interface RuntimeListResponse {
   runtimes: RuntimeInfo[]
+}
+
+interface CLIHarnessListResponse {
+  harnesses: CLIHarnessInfo[]
 }
 
 export class RuntimeApi {
@@ -33,5 +37,20 @@ export class RuntimeApi {
 
   static testModel(name: string, model: string): Promise<ModelTestResult> {
     return HttpClient.post<ModelTestResult>(`/runtimes/${encodeURIComponent(name)}/test`, { model })
+  }
+
+  static async cliHarnesses(): Promise<CLIHarnessInfo[]> {
+    const response = await HttpClient.get<CLIHarnessListResponse>('/cli-harnesses')
+    return response.harnesses
+  }
+
+  static createCLIAccount(
+    runtimeId: string,
+    name: string,
+  ): Promise<{ profile: { name: string; path: string; loginCommand: string } }> {
+    return HttpClient.post<{ profile: { name: string; path: string; loginCommand: string } }>(
+      `/cli-harnesses/${encodeURIComponent(runtimeId)}/accounts`,
+      { name },
+    )
   }
 }

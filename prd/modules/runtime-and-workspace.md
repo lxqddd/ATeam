@@ -358,6 +358,46 @@ Runtime 接入从「每个 CLI 一个硬编码适配器」演进为「清单（M
 - **回退规则**：主传输在**尚未产生任何事件**前失败（如旧版 CLI 没有该子命令）才允许回退到清单声明的回退传输；一旦产生事件则必须失败，禁止重复执行 prompt。回退必须在事件流中留下 `status` 记录。
 - **可复现**：`run_config_snapshots.configSnapshot` 增加 `transport` 字段，记录本次 Run 使用的会话协议；`mock` 记为 `builtin`，未知 Runtime 记为 `unknown`。
 - **Codex 模型**：通过启动参数 `-c model="<id>"` 传入；模型目录从 `CODEX_HOME/config.toml` 读取默认模型，至少提供该条目。
+- **会话编排（Phase 2）**：驱动在拿到 ACP `sessionId` 或 app-server `threadId` 后回报，调度器写入 `runs.runtime_session_id` 并保留在后续 Run 写入中。运行中的 Run 通过 `POST /runs/{id}/steer` 接收补充消息：ACP 走扩展方法 `_session/steering`，app-server 走 `turn/steer`；消息在首个 `session/update`/`item` 事件前到达时先排队，避免与 `session/prompt` 写入竞争。`stream-json` 与 `exec` 不支持中途 steer，必须以 `status` 事件明确提示。终态 Run 返回 `RUN_NOT_ACTIVE`，无活动会话返回 `RUN_NOT_STEERABLE`。
+
+### 6.4.3 CLI 环境清单（M2.5 Phase 3）
+
+`GET /api/v1/cli-harnesses` 返回本机 CLI 环境，供 Runtime 管理页展示安装与配置状态：
+
+- 清单来自内置 Manifest + PATH 探测；已安装但无适配器的 CLI 仍返回，`supported=false`。
+- 字段至少包含：`id`、`displayName`、`executable`、`path`、`version`、`transport`、`supported`、`installed`、`npmPackage`、`installCommand`、`configPath`、`authPath`、`configPresent`、`authPresent`。
+- `configPresent`/`authPresent` 只表示本地配置文件/登录产物是否存在，**不代表认证有效**；接口与 UI 不得读取、返回或记录凭据内容。
+- 安装命令仅作为指引，Phase 3 当前不自动执行安装/升级；账号导入/切换与 macOS Seatbelt 沙箱仍为后续工作。
+- 路径展开支持 `CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME`；展示时保留绝对路径，便于用户核对。
+
+### 6.4.4 沙箱与账号配置（M2.5 Phase 3）
+
+**macOS Seatbelt 沙箱**（Workspace 设置 `sandboxMode`）：
+
+- `sandboxMode` 取值 `none`（默认）或 `seatbelt`；`allowSandboxFallback` 默认 false。
+- Seatbelt 不可用（非 macOS 或缺少 `/usr/bin/sandbox-exec`）且未允许降级时，Run **失败关闭**：`errorCode=workspace_error`、`failureDetail=sandbox_unavailable`；允许降级时写 `SANDBOX_FALLBACK` 警告后无沙箱执行。
+- profile 采用 `deny default`：允许系统运行时目录、工作区、临时目录、CLI 状态目录、账号配置目录与 CLI 可执行文件目录读写；允许网络与子进程。必须显式允许 `(literal "/")`，否则路径解析会被拒绝。
+- 不授权主目录整体读取；`~/.ssh`、`~/.aws`、`~/.kube`、`~/.gnupg`、`~/.git-credentials`、`~/Library/Keychains`、浏览器数据等凭据目录不在允许列表内。
+- 沙箱包裹 CLI 进程（`sandbox-exec -p … -- <cli> …`），四类驱动（stream-json/ACP/app-server/exec）统一生效。
+
+**账号配置**（Workspace 设置 `accountProfiles`，runtime → profile）：
+
+- profile 根目录 `~/.ateam/accounts/<runtime>/<name>`；创建接口 `POST /api/v1/cli-harnesses/{id}/accounts`，只创建空目录并返回登录命令，不接触凭据。
+- 环境映射：`claude → CLAUDE_CONFIG_DIR`；`codex → CODEX_HOME`；`opencode → XDG_CONFIG_HOME/XDG_DATA_HOME/XDG_STATE_HOME/XDG_CACHE_HOME`。空 profile 表示使用 CLI 默认账号。
+- 登录/切换由用户在终端执行返回的命令完成；ATeam 不读取、不保存 API Key 或 token。Run 启动时只注入 profile 环境变量，并把 profile 目录加入沙箱读写白名单。
+- 账号配置选择写入 Workspace 设置，按 Runtime 生效；UI 在 Runtime 管理页展示 profile、登录状态（只读）与登录命令。
+
+### 6.4.5 统一模型网关（Phase 4 MVP）
+
+本机回环网关把 Claude Code 等 Anthropic 客户端接到 OpenAI 兼容供应商：
+
+- **端点**：`/gateway/v1/messages`、`/gateway/v1/messages/count_tokens`、`/gateway/v1/chat/completions`、`/gateway/v1/models`、`/gateway/health`。
+- **认证**：每个网关一个 `ateam-gw-…` Token；接受 `x-api-key` 或 `Authorization: Bearer`。Provider API Key 使用 AES-GCM 加密后写入 `gateway.json`（0600），密钥文件 `gateway.key`（0600）；API 只返回掩码，不返回明文。
+- **路由**：`providerId/model` 前缀选择供应商；否则使用默认供应商，再退到第一个；Provider 配置的 `model` 覆盖请求模型。供应商类型当前只支持 `openai`（OpenAI Chat Completions 兼容端点）。
+- **转换**：Anthropic Messages → OpenAI Chat，支持 system、文本、`tool_use`/`tool_result` 与 tools；响应反向转换为 Anthropic content blocks（含 `tool_use`）；流式响应把 OpenAI SSE 转换为 Anthropic `message_start` / `content_block_start` / `text_delta` / `input_json_delta` / `message_delta` / `message_stop`。
+- **接入 Run**：Workspace 设置 `useGateway=true` 时，Claude Run 注入 `ANTHROPIC_BASE_URL=<本机>/gateway` 与 `ANTHROPIC_AUTH_TOKEN=<网关 Token>`；未配置供应商时 Run 失败（`invalid_agent_config` / `gateway_not_configured`），非 Claude Runtime 只写警告。
+- **UI**：设置页展示网关地址、Token（复制/轮换）、供应商增删与默认选择、Claude 路由开关。
+- **限制**：当前不转换 OpenAI Responses / Gemini generateContent 入口，不做供应商健康探测与失败切换，不代理图片/音频；这些属于 Phase 4 后续。
 
 ### 6.5 Claude Code Adapter
 
@@ -858,6 +898,18 @@ Run 详情需要展示：当前阶段、已运行时长、最后事件时间、�
 | RUN-100 | Codex app-server 驱动必须完成 `initialize → thread/start → turn/start`，映射 `item/*`、权限审批与 `turn/completed`；模型经 `-c model="<id>"` 传入 | P0 | M2.5 Phase 1 | 已实现 |
 | RUN-101 | 主传输回退只允许发生在尚未产生任何事件时；一旦产生事件必须失败，且回退需在事件流中留下 `status` 记录 | P0 | M2.5 Phase 1 | 已实现 |
 | RUN-102 | `opencode` 与 `codex` 必须通过清单注册为可执行 Runtime；真实 OpenCode ACP Run 必须完成并产生提交与 diff | P0 | M2.5 Phase 1 | 已实现（OpenCode ACP 实测通过） |
+| RUN-120 | 驱动回报的 `sessionId`/`threadId` 必须写入 `runs.runtime_session_id`，且后续 Run 写入不得清空 | P0 | M2.5 Phase 2 | 已实现 |
+| RUN-121 | `POST /runs/{id}/steer` 只接受运行中的 Run；ACP 用 `_session/steering`、app-server 用 `turn/steer`，不支持时明确提示；终态/无会话返回可分类 409 | P0 | M2.5 Phase 2 | 已实现（OpenCode 实测 steer 成功） |
+| RUN-122 | CLI 环境清单返回安装命令、配置/登录产物路径与存在性；不得读取或返回凭据内容；无适配器的 CLI 以 `supported=false` 展示 | P1 | M2.5 Phase 3 | 已实现 |
+| RUN-123 | macOS Seatbelt 系统沙箱：deny-default profile、工作区/临时/CLI 状态目录白名单、凭据目录不可读、不可用时失败关闭 | P1 | M2.5 Phase 3 | 已实现（OpenCode 实跑通过） |
+| RUN-124 | 账号配置隔离：按 Runtime 创建 profile 目录、映射 CLI 配置环境、Workspace 选择生效；登录由终端完成，不读取凭据 | P2 | M2.5 Phase 3 | 已实现（profile 创建/选择实测） |
+| RUN-125 | 统一模型网关（Anthropic Messages / OpenAI Responses / Chat / Gemini 互转、路由与隐私模式） | P2 | Phase 4 | 部分实现（Messages ↔ Chat + Chat 直通；Responses/Gemini 未实现） |
+| RUN-126 | Seatbelt profile 必须允许 CLI 自身可执行文件、账号配置目录与工作区；不得包含主目录整体授权或凭据目录 | P0 | M2.5 Phase 3 | 已实现 |
+| RUN-127 | 账号 profile 名称必须拒绝路径分隔符与 `..`；创建接口只建目录并返回登录命令；Run 不得读取凭据 | P0 | M2.5 Phase 3 | 已实现 |
+| RUN-128 | 网关必须只监听回环、校验 Token；Provider Key 加密存储且 API 只返回掩码 | P0 | Phase 4 MVP | 已实现 |
+| RUN-129 | Anthropic Messages 与 OpenAI Chat 必须互转 system、文本、工具调用/结果与用量，流式工具参数必须以 `input_json_delta` 输出 | P0 | Phase 4 MVP | 已实现（含 SSE 测试） |
+| RUN-130 | `useGateway` 时 Claude Run 注入网关地址与 Token；无 Provider 时失败关闭；非 Claude Runtime 只警告 | P0 | Phase 4 MVP | 已实现（真实 Claude 经网关完成 Run） |
+| RUN-131 | 网关 UI 必须支持 Provider 增删、默认选择、Token 复制/轮换，并展示掩码 Key | P1 | Phase 4 MVP | 已实现 |
 | RUN-017 | Adapter 不得把 API Key、Token 或完整父进程环境写入事件、日志或数据库。 | P0 | M1 | 未实现 |
 | RUN-018 | Adapter 异常 panic 时由调度器恢复，Run 进入 failed，`errorCode=runtime_error`、`failureDetail=adapter_crash`，worker 不退出。 | P0 | M1 | 未实现 |
 | RUN-095 | Run 创建时固定 `agentVersionId`（见 `02-domain-model.md` §3.5）；执行期只读快照，排队期间修改 Agent 不影响该 Run。 | P0 | M1 | 未实现（调度时现取 Agent） |

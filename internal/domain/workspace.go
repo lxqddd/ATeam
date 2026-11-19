@@ -17,6 +17,19 @@ type WorkspaceSettings struct {
 	BranchTemplate       string   `json:"branchTemplate,omitempty"`
 	ProtectedBranches    []string `json:"protectedBranches,omitempty"`
 	VerificationCommands []string `json:"verificationCommands,omitempty"`
+	// SandboxMode is "none" (default) or "seatbelt" (macOS). Seatbelt runs
+	// the CLI under sandbox-exec with writes limited to the worktree, temp
+	// and CLI state directories.
+	SandboxMode string `json:"sandboxMode,omitempty"`
+	// AllowSandboxFallback permits running unsandboxed when seatbelt is
+	// unavailable. Default false: the run fails closed.
+	AllowSandboxFallback bool `json:"allowSandboxFallback,omitempty"`
+	// AccountProfiles selects an isolated CLI account profile per runtime.
+	// Empty means the CLI's default account.
+	AccountProfiles map[string]string `json:"accountProfiles,omitempty"`
+	// UseGateway points Anthropic-compatible runtimes at the local model
+	// gateway instead of the CLI's default endpoint.
+	UseGateway bool `json:"useGateway,omitempty"`
 }
 
 // Workspace binds a local git repository and owns Tasks, Agents and Runs.

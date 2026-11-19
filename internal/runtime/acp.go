@@ -55,6 +55,11 @@ func (d *acpDriver) Run(ctx context.Context, session SessionRequest, emit func(E
 		defer emitMu.Unlock()
 		emit(event)
 	}
+	// Steering is only valid while a turn is running. The first
+	// session/update proves the prompt was accepted; messages that arrive
+	// before that are queued instead of racing the prompt write.
+	turnStarted := make(chan struct{})
+	var turnStartedOnce sync.Once
 
 	var guard *PolicyGuard
 	runCtx := ctx
@@ -69,6 +74,7 @@ func (d *acpDriver) Run(ctx context.Context, session SessionRequest, emit func(E
 		if method != "session/update" {
 			return
 		}
+		turnStartedOnce.Do(func() { close(turnStarted) })
 		emitACPUpdate(params, safeEmit)
 	}, func(method string, params json.RawMessage) (any, *rpcError) {
 		if method != "session/request_permission" {
@@ -110,6 +116,9 @@ func (d *acpDriver) Run(ctx context.Context, session SessionRequest, emit func(E
 		return &Error{Detail: "adapter_crash", Message: "ACP agent returned no session"}
 	}
 	sessionID = created.SessionID
+	if req.Control != nil && req.Control.ReportSession != nil {
+		req.Control.ReportSession(sessionID)
+	}
 	safeEmit(Event{Type: "status", Message: "runtime initialized", Data: map[string]any{
 		"phase": "acp_session", "sessionId": sessionID,
 	}, Source: "adapter"})
@@ -130,10 +139,86 @@ func (d *acpDriver) Run(ctx context.Context, session SessionRequest, emit func(E
 		}
 	}
 
-	raw, promptErr = conn.call(runCtx, "session/prompt", map[string]any{
-		"sessionId": sessionID,
-		"prompt":    []any{map[string]any{"type": "text", "text": req.Prompt}},
-	})
+	type promptOutcome struct {
+		raw json.RawMessage
+		err error
+	}
+	promptCh := make(chan promptOutcome, 1)
+	go func() {
+		raw, err := conn.call(runCtx, "session/prompt", map[string]any{
+			"sessionId": sessionID,
+			"prompt":    []any{map[string]any{"type": "text", "text": req.Prompt}},
+		})
+		promptCh <- promptOutcome{raw: raw, err: err}
+	}()
+
+	var steerCh <-chan string
+	if req.Control != nil {
+		steerCh = req.Control.Steer
+	}
+	steeringSupported := true
+	turnReady := false
+	var pendingSteers []string
+	sendSteer := func(message string) {
+		if !steeringSupported {
+			safeEmit(Event{Type: "status", Message: "runtime does not support mid-turn steering", Source: "adapter", Level: "warn"})
+			return
+		}
+		steered, err := conn.call(runCtx, "_session/steering", map[string]any{
+			"sessionId": sessionID,
+			"prompt":    []any{map[string]any{"type": "text", "text": message}},
+		})
+		if err != nil {
+			if isRPCMethodNotFound(err) {
+				steeringSupported = false
+				safeEmit(Event{Type: "status", Message: "runtime does not support mid-turn steering", Source: "adapter", Level: "warn"})
+			} else {
+				safeEmit(Event{Type: "warning", Message: "steering message rejected: " + truncateMessage(err.Error(), 512), Source: "adapter", Level: "warn"})
+			}
+			return
+		}
+		var outcome struct {
+			Outcome string `json:"outcome"`
+			Reason  string `json:"reason"`
+		}
+		_ = json.Unmarshal(steered, &outcome)
+		if outcome.Outcome == "injected" {
+			safeEmit(Event{Type: "status", Message: "steering message injected", Source: "adapter"})
+		} else {
+			safeEmit(Event{Type: "status", Message: "steering ignored: no running turn", Source: "adapter", Level: "warn"})
+		}
+	}
+waitPrompt:
+	for {
+		select {
+		case outcome := <-promptCh:
+			raw, promptErr = outcome.raw, outcome.err
+			break waitPrompt
+		case <-turnStarted:
+			turnReady = true
+			turnStarted = nil
+			queued := pendingSteers
+			pendingSteers = nil
+			for _, message := range queued {
+				sendSteer(message)
+			}
+		case message, ok := <-steerCh:
+			if !ok {
+				steerCh = nil
+				continue
+			}
+			if strings.TrimSpace(message) == "" {
+				continue
+			}
+			if !turnReady {
+				pendingSteers = append(pendingSteers, message)
+				continue
+			}
+			sendSteer(message)
+		case <-runCtx.Done():
+			break waitPrompt
+		}
+	}
 
 	waitErr := pipes.stop(command)
 	stopped = true
@@ -318,6 +403,15 @@ func (d *acpDriver) failure(err error, pipes *harnessPipes, prefix string) error
 	return &Error{Detail: detail, Message: message}
 }
 
+func isRPCMethodNotFound(err error) bool {
+	var rpcErr *rpcError
+	if errors.As(err, &rpcErr) {
+		return rpcErr.Code == -32601
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "method not found") ||
+		strings.Contains(strings.ToLower(err.Error()), "unsupported")
+}
+
 // harnessPipes owns a running CLI's stdio plus its stderr tail.
 type harnessPipes struct {
 	stdin  io.WriteCloser
@@ -336,9 +430,13 @@ func startHarnessProcess(manifest Manifest, req Request) (*exec.Cmd, *harnessPip
 		args = append(args, "-c", manifest.ModelLaunchConfig+"=\""+req.Model+"\"")
 	}
 	args = append(args, manifest.SessionArgs...)
-	command := exec.Command(path, args...)
+	wrappedPath, wrappedArgs, err := wrapSandbox(manifest, req, path, args)
+	if err != nil {
+		return nil, nil, err
+	}
+	command := exec.Command(wrappedPath, wrappedArgs...)
 	command.Dir = req.Workdir
-	command.Env = SanitizedEnv()
+	command.Env = RuntimeEnv(req.EnvOverrides)
 	configureProcessGroup(command)
 	stdin, err := command.StdinPipe()
 	if err != nil {

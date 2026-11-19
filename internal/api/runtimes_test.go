@@ -324,3 +324,77 @@ func TestPatchRuntimeRevalidatesModel(t *testing.T) {
 		t.Fatalf("runtime switch with default model = %d, want 200: %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestCLIHarnessInventoryEndpoint(t *testing.T) {
+	handler, _ := newTestHandler(t)
+	recorder := callJSON(t, handler, http.MethodGet, "/api/v1/cli-harnesses", nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("cli-harnesses = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Harnesses []struct {
+			ID             string `json:"id"`
+			Supported      bool   `json:"supported"`
+			InstallCommand string `json:"installCommand"`
+		} `json:"harnesses"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(payload.Harnesses) < 3 {
+		t.Fatalf("harnesses = %#v", payload.Harnesses)
+	}
+	found := false
+	for _, harness := range payload.Harnesses {
+		if harness.ID == "codex" {
+			found = harness.InstallCommand != ""
+		}
+	}
+	if !found {
+		t.Fatalf("codex entry missing: %#v", payload.Harnesses)
+	}
+}
+
+func TestCreateCLIAccountProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	handler, _ := newTestHandler(t)
+	recorder := callJSON(t, handler, http.MethodPost, "/api/v1/cli-harnesses/claude/accounts", map[string]any{"name": "work"})
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("create account = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Profile struct {
+			Name         string `json:"name"`
+			Path         string `json:"path"`
+			LoginCommand string `json:"loginCommand"`
+		} `json:"profile"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload.Profile.Name != "work" || payload.Profile.Path == "" || !strings.Contains(payload.Profile.LoginCommand, "CLAUDE_CONFIG_DIR=") {
+		t.Fatalf("profile = %#v", payload.Profile)
+	}
+
+	recorder = callJSON(t, handler, http.MethodGet, "/api/v1/cli-harnesses", nil)
+	var list struct {
+		Harnesses []struct {
+			ID              string `json:"id"`
+			AccountProfiles []struct {
+				Name string `json:"name"`
+			} `json:"accountProfiles"`
+		} `json:"harnesses"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	found := false
+	for _, harness := range list.Harnesses {
+		if harness.ID == "claude" && len(harness.AccountProfiles) == 1 && harness.AccountProfiles[0].Name == "work" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("created profile missing from inventory: %#v", list.Harnesses)
+	}
+}

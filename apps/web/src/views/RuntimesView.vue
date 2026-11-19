@@ -3,12 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ChevronDownIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
-import type { RuntimeInfo, RuntimeModel } from '@ateam/shared'
+import type { CLIHarnessInfo, RuntimeInfo, RuntimeModel, Workspace } from '@ateam/shared'
+import { RuntimeApi, WorkspaceApi } from '../api'
 import { useRuntimesStore } from '../stores/runtimes'
 import EmptyState from '../components/EmptyState.vue'
 import RuntimeLogo from '../components/RuntimeLogo.vue'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
+import { Input } from '../components/ui/input'
 import { Loader } from '../components/ai-elements/loader'
 
 interface LocalModelDraft {
@@ -35,6 +37,96 @@ const saving = ref<Record<string, boolean>>({})
 const tests = ref<Record<string, TestState>>({})
 const testEpochs = ref<Record<string, number>>({})
 const expanded = ref<Record<string, boolean>>({})
+const clis = ref<CLIHarnessInfo[]>([])
+const clisLoading = ref(false)
+const clisError = ref('')
+const workspace = ref<Workspace | null>(null)
+const accountDraft = ref<Record<string, string>>({})
+const accountSaving = ref<Record<string, boolean>>({})
+const accountError = ref<Record<string, string>>({})
+const newAccountName = ref<Record<string, string>>({})
+const accountCreating = ref<Record<string, boolean>>({})
+
+function cliFor(runtimeId: string): CLIHarnessInfo | undefined {
+  return clis.value.find((cli) => cli.id === runtimeId)
+}
+
+function selectedProfile(runtimeId: string) {
+  const name = accountDraft.value[runtimeId]
+  return cliFor(runtimeId)?.accountProfiles?.find((profile) => profile.name === name)
+}
+
+async function loadWorkspace() {
+  try {
+    const items = await WorkspaceApi.list()
+    workspace.value = items.find((item) => item.id === 'default') ?? items[0] ?? null
+    accountDraft.value = { ...(workspace.value?.settings.accountProfiles ?? {}) }
+  } catch (error) {
+    clisError.value = error instanceof Error ? error.message : String(error)
+  }
+}
+
+async function saveAccount(runtimeId: string, value: string) {
+  if (!workspace.value) {
+    return
+  }
+  accountSaving.value = { ...accountSaving.value, [runtimeId]: true }
+  accountError.value = { ...accountError.value, [runtimeId]: '' }
+  try {
+    const profiles = { ...(workspace.value.settings.accountProfiles ?? {}) }
+    if (value) {
+      profiles[runtimeId] = value
+    } else {
+      delete profiles[runtimeId]
+    }
+    const updated = await WorkspaceApi.update(workspace.value.id, {
+      settings: { ...workspace.value.settings, accountProfiles: profiles },
+    })
+    workspace.value = updated
+    accountDraft.value = { ...(updated.settings.accountProfiles ?? {}) }
+  } catch (error) {
+    accountError.value = {
+      ...accountError.value,
+      [runtimeId]: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    accountSaving.value = { ...accountSaving.value, [runtimeId]: false }
+  }
+}
+
+async function createAccount(runtimeId: string) {
+  const name = (newAccountName.value[runtimeId] ?? '').trim()
+  if (!name || accountCreating.value[runtimeId]) {
+    return
+  }
+  accountCreating.value = { ...accountCreating.value, [runtimeId]: true }
+  accountError.value = { ...accountError.value, [runtimeId]: '' }
+  try {
+    await RuntimeApi.createCLIAccount(runtimeId, name)
+    newAccountName.value = { ...newAccountName.value, [runtimeId]: '' }
+    await loadCLIs()
+    await saveAccount(runtimeId, name)
+  } catch (error) {
+    accountError.value = {
+      ...accountError.value,
+      [runtimeId]: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    accountCreating.value = { ...accountCreating.value, [runtimeId]: false }
+  }
+}
+
+async function loadCLIs() {
+  clisLoading.value = true
+  clisError.value = ''
+  try {
+    clis.value = await RuntimeApi.cliHarnesses()
+  } catch (error) {
+    clisError.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    clisLoading.value = false
+  }
+}
 
 function panelId(runtimeName: string): string {
   return `runtime-panel-${runtimeName.replace(/[^A-Za-z0-9_-]/g, '-')}`
@@ -88,6 +180,8 @@ async function refresh() {
 
 onMounted(() => {
   void refresh()
+  void loadCLIs()
+  void loadWorkspace()
 })
 
 const showError = computed(() => !runtimes.loading && !!runtimes.error && runtimes.items.length === 0)
@@ -555,6 +649,49 @@ async function save(runtime: RuntimeInfo) {
               </el-radio-group>
             </section>
 
+            <section v-if="cliFor(runtime.name)">
+              <h3 class="text-label font-semibold">{{ $t('runtimes.accountTitle') }}</h3>
+              <p class="mt-1 text-caption text-fg-subtle">{{ $t('runtimes.accountHint') }}</p>
+              <el-select
+                :model-value="accountDraft[runtime.name] || ''"
+                :aria-label="$t('runtimes.accountTitle')"
+                style="width: 100%"
+                :disabled="accountSaving[runtime.name]"
+                @update:model-value="(value: string) => saveAccount(runtime.name, value)"
+              >
+                <el-option :label="$t('runtimes.accountDefault')" value="" />
+                <el-option
+                  v-for="profile in cliFor(runtime.name)?.accountProfiles || []"
+                  :key="profile.name"
+                  :label="profile.name"
+                  :value="profile.name"
+                />
+              </el-select>
+              <p v-if="selectedProfile(runtime.name)" class="mt-2 text-caption text-fg-subtle">
+                {{ $t('runtimes.accountLoginHint') }}:
+                <code class="font-mono">{{ selectedProfile(runtime.name)?.loginCommand }}</code>
+              </p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Input
+                  v-model="newAccountName[runtime.name]"
+                  :placeholder="$t('runtimes.accountNamePlaceholder')"
+                  class="max-w-[220px]"
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  :disabled="accountCreating[runtime.name] || !newAccountName[runtime.name]?.trim()"
+                  @click="createAccount(runtime.name)"
+                >
+                  <Loader v-if="accountCreating[runtime.name]" :size="14" />
+                  {{ $t('runtimes.accountCreate') }}
+                </Button>
+                <span v-if="accountError[runtime.name]" class="text-caption text-danger">
+                  {{ accountError[runtime.name] }}
+                </span>
+              </div>
+            </section>
+
             <div class="flex flex-wrap items-center gap-3">
               <Button :disabled="saving[runtime.name]" @click="save(runtime)">
                 <Loader v-if="saving[runtime.name]" :size="14" />
@@ -565,6 +702,57 @@ async function save(runtime: RuntimeInfo) {
               </span>
             </div>
           </div>
+          </div>
+        </section>
+
+        <section class="section-card">
+          <div class="section-card__body flex flex-col gap-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h2 class="text-subtitle font-semibold tracking-tight">{{ $t('runtimes.cliEnvTitle') }}</h2>
+              <Button variant="ghost" size="sm" :disabled="clisLoading" @click="loadCLIs">
+                <RefreshCwIcon class="size-3.5" />
+                {{ $t('common.refresh') }}
+              </Button>
+            </div>
+            <p class="text-caption text-fg-subtle">{{ $t('runtimes.cliEnvHint') }}</p>
+            <p v-if="clisError" class="text-caption text-danger">{{ clisError }}</p>
+            <div v-for="cli in clis" :key="cli.id" class="flex items-start gap-3 border-t border-border-subtle pt-3">
+              <RuntimeLogo :name="cli.id" />
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-label font-semibold">{{ cli.displayName }}</span>
+                  <Badge :tone="cli.installed ? 'success' : 'neutral'">
+                    {{ cli.installed ? $t('runtimes.installed') : $t('runtimes.notInstalled') }}
+                  </Badge>
+                  <Badge v-if="cli.version" tone="neutral">{{ cli.version }}</Badge>
+                  <Badge :tone="cli.supported ? 'info' : 'warning'">
+                    {{ cli.supported ? $t('runtimes.supported') : $t('runtimes.unsupported') }}
+                  </Badge>
+                  <Badge :tone="cli.authPresent || cli.configPresent ? 'success' : 'neutral'">
+                    {{ cli.authPresent || cli.configPresent ? $t('runtimes.authPresent') : $t('runtimes.authMissing') }}
+                  </Badge>
+                  <Badge v-if="cli.loginChecked" :tone="cli.loggedIn ? 'success' : 'neutral'">
+                    {{ cli.loggedIn ? $t('runtimes.loggedIn') : $t('runtimes.loggedOut') }}
+                  </Badge>
+                  <Badge v-else tone="neutral">{{ $t('runtimes.loginUnknown') }}</Badge>
+                </div>
+                <p v-if="cli.path" class="mt-1 truncate font-mono text-caption text-fg-subtle">{{ cli.path }}</p>
+                <p v-if="cli.configPath" class="mt-1 truncate text-caption text-fg-subtle">
+                  {{ $t('runtimes.configPath') }}: <span class="font-mono">{{ cli.configPath }}</span>
+                </p>
+                <p v-if="cli.providers?.length" class="mt-1 truncate text-caption text-fg-subtle">
+                  {{ $t('runtimes.providers') }}: <span class="font-mono">{{ cli.providers.join(' · ') }}</span>
+                </p>
+                <p v-if="cli.loginChecked && !cli.loggedIn && cli.loginCommand" class="mt-1 text-caption text-fg-muted">
+                  {{ $t('runtimes.loginCommand') }}:
+                  <code class="font-mono">{{ cli.loginCommand }}</code>
+                </p>
+                <p v-if="!cli.installed && cli.installCommand" class="mt-1 text-caption text-fg-muted">
+                  {{ $t('runtimes.installCommand') }}:
+                  <code class="font-mono">{{ cli.installCommand }}</code>
+                </p>
+              </div>
+            </div>
           </div>
         </section>
       </div>

@@ -27,9 +27,13 @@ func (d *streamJSONDriver) Run(ctx context.Context, session SessionRequest, emit
 	}
 
 	args, stdinPrompt := d.buildArgs(req)
+	path, args, err = wrapSandbox(d.manifest, req, path, args)
+	if err != nil {
+		return err
+	}
 	command := exec.Command(path, args...)
 	command.Dir = req.Workdir
-	command.Env = SanitizedEnv()
+	command.Env = RuntimeEnv(req.EnvOverrides)
 	configureProcessGroup(command)
 	if stdinPrompt != "" {
 		command.Stdin = strings.NewReader(stdinPrompt)
@@ -59,16 +63,50 @@ func (d *streamJSONDriver) Run(ctx context.Context, session SessionRequest, emit
 
 	stopWatcher := watchCancellation(runCtx, command)
 
+	var emitMu sync.Mutex
+	safeEmit := func(event Event) {
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		emit(event)
+	}
+	controlEmit := safeEmit
+	if req.Control != nil && req.Control.ReportSession != nil {
+		var reportOnce sync.Once
+		controlEmit = func(event Event) {
+			if sessionID, _ := event.Data["sessionId"].(string); sessionID != "" {
+				reportOnce.Do(func() { req.Control.ReportSession(sessionID) })
+			}
+			safeEmit(event)
+		}
+	}
+	if req.Control != nil && req.Control.Steer != nil {
+		go func() {
+			for {
+				select {
+				case message, ok := <-req.Control.Steer:
+					if !ok {
+						return
+					}
+					if strings.TrimSpace(message) != "" {
+						safeEmit(Event{Type: "status", Message: "stream-json runtime does not support mid-turn steering", Source: "adapter", Level: "warn"})
+					}
+				case <-runCtx.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	var waitGroup sync.WaitGroup
 	waitGroup.Add(2)
 	var stderrTail tailBuffer
 	go func() {
 		defer waitGroup.Done()
-		scanClaudeStdout(stdout, emit, guard)
+		scanClaudeStdout(stdout, controlEmit, guard)
 	}()
 	go func() {
 		defer waitGroup.Done()
-		scanClaudeStderr(stderr, &stderrTail, emit)
+		scanClaudeStderr(stderr, &stderrTail, safeEmit)
 	}()
 	waitGroup.Wait()
 	waitErr := command.Wait()

@@ -533,6 +533,44 @@ func (a *API) listRunEvents(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, runEvents)
 }
 
+type steerRunInput struct {
+	Message string `json:"message"`
+}
+
+// steerRun injects a user message into a running harness session. It is
+// best-effort orchestration: the scheduler accepts the message only while a
+// steerable session exists, and the driver reports whether it was injected.
+func (a *API) steerRun(w http.ResponseWriter, r *http.Request) {
+	run, err := a.store.GetRun(r.Context(), r.PathValue("id"))
+	if err != nil {
+		a.handleStoreError(w, err)
+		return
+	}
+	if run.Status.Terminal() {
+		a.writeAPIError(w, http.StatusConflict, "RUN_NOT_ACTIVE", "run is not active", map[string]any{"runId": run.ID})
+		return
+	}
+	var input steerRunInput
+	if err := decodeJSON(r, &input); err != nil {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error(), nil)
+		return
+	}
+	input.Message = strings.TrimSpace(input.Message)
+	if input.Message == "" {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "message is required", nil)
+		return
+	}
+	if len(input.Message) > 8000 {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "message is too long; maximum is 8000 bytes", nil)
+		return
+	}
+	if !a.scheduler.Steer(run.ID, input.Message) {
+		a.writeAPIError(w, http.StatusConflict, "RUN_NOT_STEERABLE", "run has no steerable session", map[string]any{"runId": run.ID})
+		return
+	}
+	a.writeJSON(w, http.StatusAccepted, map[string]any{"accepted": true, "runId": run.ID})
+}
+
 func (a *API) cancelRun(w http.ResponseWriter, r *http.Request) {
 	run, err := a.store.GetRun(r.Context(), r.PathValue("id"))
 	if err != nil {

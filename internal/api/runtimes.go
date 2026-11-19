@@ -163,6 +163,59 @@ func (a *API) listRuntimes(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, map[string]any{"runtimes": a.runtimeViews(r.Context())})
 }
 
+// listCLIHarnesses reports installed coding-agent CLIs, their install
+// commands and local config locations. It never reads credential contents.
+func (a *API) listCLIHarnesses(w http.ResponseWriter, r *http.Request) {
+	supported := map[string]bool{}
+	for _, name := range a.registry.Names() {
+		supported[name] = true
+	}
+	a.writeJSON(w, http.StatusOK, map[string]any{"harnesses": runtime.CLIInventory(r.Context(), supported)})
+}
+
+// createCLIAccount creates an isolated profile directory. Signing in still
+// happens in the user's terminal via the returned login command; ATeam never
+// handles credentials.
+func (a *API) createCLIAccount(w http.ResponseWriter, r *http.Request) {
+	manifest, ok := runtime.ManifestFor(r.PathValue("id"))
+	if !ok {
+		a.writeAPIError(w, http.StatusNotFound, "RUNTIME_NOT_FOUND", "runtime has no CLI manifest", nil)
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error(), nil)
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "account profile name is required", nil)
+		return
+	}
+	if len(input.Name) > 64 {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "account profile name is too long", nil)
+		return
+	}
+	_, dirs, err := runtime.AccountProfileEnv(manifest, input.Name)
+	if err != nil {
+		a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error(), nil)
+		return
+	}
+	path := ""
+	if len(dirs) > 0 {
+		path = dirs[0]
+	}
+	a.writeJSON(w, http.StatusCreated, map[string]any{
+		"profile": map[string]any{
+			"name":         input.Name,
+			"path":         path,
+			"loginCommand": runtime.ProfileLoginCommand(manifest, input.Name),
+		},
+	})
+}
+
 type runtimeModelsInput struct {
 	Models []domain.RuntimeModel `json:"models"`
 	// DefaultModel is a pointer so an omitted field (nil) can preserve the

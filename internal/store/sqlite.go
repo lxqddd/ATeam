@@ -849,6 +849,17 @@ func (s *SQLite) MarkRunCancelRequested(ctx context.Context, runID string) (bool
 	return affected > 0, nil
 }
 
+// SetRunRuntimeSessionID records the harness session/thread id reported by a
+// driver. It is independent of status so a late report after a fast finish is
+// still preserved for diagnostics.
+func (s *SQLite) SetRunRuntimeSessionID(ctx context.Context, runID, sessionID string) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE runs SET runtime_session_id = ? WHERE id = ?`, sessionID, runID)
+	if err != nil {
+		return fmt.Errorf("set run runtime session id: %w", err)
+	}
+	return ensureAffected(result, "run", runID)
+}
+
 // SetRunQueueReason records why a queued run is waiting without changing its
 // status (AGENT-017 per-agent concurrency admission).
 func (s *SQLite) SetRunQueueReason(ctx context.Context, runID, reason string) (bool, error) {

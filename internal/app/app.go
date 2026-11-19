@@ -15,6 +15,7 @@ import (
 	"github.com/lxqddd/ATeam/internal/api"
 	"github.com/lxqddd/ATeam/internal/artifact"
 	"github.com/lxqddd/ATeam/internal/events"
+	"github.com/lxqddd/ATeam/internal/gateway"
 	"github.com/lxqddd/ATeam/internal/runtime"
 	"github.com/lxqddd/ATeam/internal/scheduler"
 	"github.com/lxqddd/ATeam/internal/security"
@@ -55,6 +56,7 @@ type App struct {
 	scheduler *scheduler.Scheduler
 	guard     *security.Guard
 	api       *api.API
+	gateway   *gateway.Manager
 	server    *http.Server
 }
 
@@ -83,7 +85,13 @@ func New(cfg Config) (*App, error) {
 	registry := runtime.NewRegistry()
 	artifacts := artifact.NewWriter(st, cfg.DataDir)
 	sched := scheduler.New(st, hub, registry, workspaces, artifacts, cfg.Concurrency)
+	gatewayManager, err := gateway.New(filepath.Join(cfg.DataDir, "gateway"))
+	if err != nil {
+		return nil, fmt.Errorf("gateway: %w", err)
+	}
 	handler := api.New(st, hub, sched, registry, workspaces, cfg.Version, cfg.WebDir, guard)
+	handler.SetGateway(gatewayManager)
+	sched.SetGateway(gatewayManager)
 
 	return &App{
 		cfg:       cfg,
@@ -92,6 +100,7 @@ func New(cfg Config) (*App, error) {
 		scheduler: sched,
 		guard:     guard,
 		api:       handler,
+		gateway:   gatewayManager,
 	}, nil
 }
 
@@ -100,8 +109,6 @@ func (a *App) Handler() http.Handler {
 }
 
 func (a *App) Start(ctx context.Context) error {
-	go a.scheduler.Start(ctx)
-
 	listener, err := net.Listen("tcp", a.cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -110,6 +117,8 @@ func (a *App) Start(ctx context.Context) error {
 		_ = listener.Close()
 		return err
 	}
+	a.gateway.SetBaseURL("http://" + listener.Addr().String() + "/gateway")
+	go a.scheduler.Start(ctx)
 
 	server := &http.Server{Handler: a.Handler()}
 	a.server = server
@@ -146,6 +155,7 @@ func (a *App) StartLocal(ctx context.Context) (string, error) {
 
 	server := &http.Server{Handler: a.Handler()}
 	a.server = server
+	a.gateway.SetBaseURL("http://" + listener.Addr().String() + "/gateway")
 
 	go a.scheduler.Start(ctx)
 	go func() {
