@@ -1,16 +1,16 @@
 /*
- * Nomi design tokens（色彩依据「Nomi 视觉色彩系统规范 v1.0」）。
+ * ATeam design tokens.
  * 主题：浅色 light 是新安装默认（:root 基础值）。日落橙 sunset 是品牌主题，不是第二个默认。奶油 cream、冷雾 mist 为浅色；
  * 暖墨 ink、石墨 graphite 为深色。主题只改颜色令牌，不改尺寸、布局、字体与交互。
  * 「跟随系统」解析为 graphite（深）/ cream（浅）。
- * 规范语义 → 令牌：bg-canvas → bg，bg-sidebar → bg-subtle，bg-surface(-raised/-muted) → surface(-raised/-sunken)，
+ * 语义 → 令牌：bg-canvas → bg，bg-sidebar → bg-subtle，bg-surface(-raised/-muted) → surface(-raised/-sunken)，
  * bg-surface-hover → hover，bg-selected → selected-bg / active，text-primary/secondary/tertiary → text/text-muted/text-subtle，
  * action-primary(-hover/-pressed) → accent(-hover/-pressed)；文字 / 链接 / 图标上的强调色一律用 accent-strong。
- * 与规范的差异（WCAG AA，见 tests/theme-contrast.test.ts）：
- * - accent 是会承载文字的实底（主按钮、发送按钮、用户气泡）；日落橙 / 奶油的规范主色配白字不足 4.5:1，
- *   accent 微调到刚好达标，规范原色保留在 --cd-color-brand（开关、强调线、图表等非文字填充）；
- * - 焦点环用不透明的 border-focus（规范 20–32% 透明度的外环相对背景不足 3:1）；
- * - 标「微调」的令牌是规范值对比度不足、沿同一色相调亮 / 调深到刚好达标的值。
+ * 对比度取舍（WCAG AA，见 tests/theme-contrast.test.ts）：
+ * - accent 是会承载文字的实底（主按钮、发送按钮、用户气泡）；日落橙 / 奶油的主色配白字不足 4.5:1，
+ *   accent 微调到刚好达标，原色保留在 --cd-color-brand（开关、强调线、图表等非文字填充）；
+ * - 焦点环用不透明的 border-focus（半透明外环相对背景不足 3:1）；
+ * - 标「微调」的令牌是对比度不足、沿同一色相调亮 / 调深到刚好达标的值。
  */
 :root {
   --cd-image-viewer-backdrop: rgba(0, 0, 0, 0.9);

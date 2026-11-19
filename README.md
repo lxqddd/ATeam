@@ -9,7 +9,7 @@ Local-first AI coding cockpit. Electron shell, React renderer, and an OpenCode-b
 - Ant Design 6, Tailwind CSS 4
 - pnpm workspaces + Turborepo
 - `@ateam/shared` for shared domain types
-- Theme tokens under `apps/web/src/styles/nomi-tokens.css`
+- Theme tokens under `apps/web/src/styles/theme-tokens.css`
 - i18n: Simplified Chinese and English, switchable from Settings and persisted locally
 - UI: 7 built-in themes + follow-system, warm white/terracotta
   light palette, 12–22px type scale, 6/8/10/14/20 radii, icon rail + sidebar + chat workspace
