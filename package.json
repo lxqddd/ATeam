@@ -13,6 +13,7 @@
     "opencode:build": "node scripts/opencode/build.mjs"
   },
   "devDependencies": {
+    "tsx": "^4.23.15",
     "turbo": "^2.11.13",
     "typescript": "^7.0.2"
   }

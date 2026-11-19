@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/package",
+  "name": "@opencode/script",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {},
+  "devDependencies": {
+    "@types/bun": "catalog:"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./highlights": "./src/highlights.ts",
+    "./pack": "./src/pack.ts"
+  }
+}
