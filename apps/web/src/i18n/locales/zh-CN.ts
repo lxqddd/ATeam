@@ -28,6 +28,19 @@ const zhCN = {
     projects: { title: '项目', subtitle: '打开并管理本地代码仓库' },
     settings: { title: '设置', subtitle: '内核、模型与界面偏好' },
   },
+  kernel: {
+    ready: '内核已连接',
+    readyHint: '已连接本机 ATeam 内核',
+    starting: '内核启动中',
+    stopped: '内核未连接',
+    error: '内核不可用',
+    startingHint: '正在启动 ATeam 内核…',
+    stoppedHint: 'ATeam 内核尚未启动',
+    errorHint: '无法启动 ATeam 内核',
+    retry: '重试',
+    restart: '重启内核',
+    stop: '停止',
+  },
   header: {
     kernelDisconnected: '内核未连接',
     newSession: '新建会话',
@@ -47,7 +60,7 @@ const zhCN = {
     kernelModels: '模型与内核',
     permissionsSandbox: '权限与沙箱',
     kernelDisconnected: '内核未连接',
-    kernelHint: '配置 OpenCode 内核与模型后开始本地会话',
+    kernelHint: '配置 ATeam 内核与模型后开始本地会话',
     configureKernel: '配置内核',
   },
   sessions: {
@@ -80,9 +93,12 @@ const zhCN = {
     changes: '变更',
     noChanges: '还没有变更',
     noChangesDesc: '打开项目并运行会话后，这里会显示文件变更',
+    loadingMessages: '正在加载消息…',
+    toolCall: '工具调用',
+    sessionEmpty: '发送一条消息开始这次会话。',
   },
   overview: {
-    eyebrow: '本地优先 · Electron + OpenCode 内核',
+    eyebrow: '本地优先 · Electron + ATeam 内核',
     title: '把任务交给本地 Agent',
     description: '打开一个仓库，新建会话，让 Agent 在隔离的 worktree 里工作；每一处改动都由你审查后再合并。',
     kernelBadgeTitle: '本地内核',
@@ -103,9 +119,9 @@ const zhCN = {
         electron: 'Electron 外壳',
         react: 'React + Vite 渲染层',
         design: 'Ant Design + Tailwind',
-        opencode: 'OpenCode 内核适配',
+        opencode: 'ATeam 内核适配',
       },
-      note: 'OpenCode 适配是下一个里程碑：在独立 utility process 中运行 Agent，并把工具事件流式接入界面。',
+      note: '内核已由主进程托管：会话、工具调用与流式事件通过回环 API 与 IPC 接入界面。',
     },
     gateway: {
       title: '本地模型网关',
@@ -125,7 +141,7 @@ const zhCN = {
     },
     kernel: {
       title: '内核与模型',
-      desc: 'OpenCode 内核、模型供应商与本地网关会在后续里程碑接入。当前界面使用 nomi 2.4.0 的主题令牌，尚未连接真实 Agent。',
+      desc: 'ATeam 内核由 Electron 主进程托管，使用隔离的数据目录与回环 API；模型供应商配置将在后续里程碑提供。',
     },
     permissions: {
       title: '权限与沙箱',
@@ -144,7 +160,7 @@ const zhCN = {
   },
   placeholder: {
     title: '{{page}}还没有内容',
-    desc: '这个页面会在接入 OpenCode 内核后填充。',
+    desc: '这个页面会在接入 ATeam 内核后填充。',
   },
 } as const
 

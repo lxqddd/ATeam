@@ -35,3 +35,36 @@ export interface ToolCall {
   input?: unknown
   output?: string
 }
+
+export type KernelStatus = 'stopped' | 'starting' | 'ready' | 'error'
+
+export interface KernelState {
+  status: KernelStatus
+  port?: number
+  error?: string
+}
+
+export interface KernelSession {
+  id: string
+  title: string
+  directory: string
+  busy: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type KernelMessageRole = 'user' | 'assistant' | 'system' | 'tool' | 'error'
+
+export interface KernelMessage {
+  id: string
+  role: KernelMessageRole
+  text: string
+  createdAt?: string
+  toolName?: string
+}
+
+export interface KernelEvent {
+  id?: string
+  type: string
+  data?: unknown
+}

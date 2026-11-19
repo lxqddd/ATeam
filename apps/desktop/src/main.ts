@@ -1,8 +1,10 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { KernelManager, kernelWorkspace } from './kernel'
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
+let kernel: KernelManager | null = null
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -57,6 +59,33 @@ void app.whenReady().then(() => {
     platform: process.platform,
   }))
 
+  kernel = new KernelManager(kernelWorkspace())
+  kernel.onEvent((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send('kernel:event', event)
+    }
+  })
+  ipcMain.handle('kernel:status', () => kernel?.status() ?? { status: 'stopped' })
+  ipcMain.handle('kernel:sessions', () => kernel?.listSessions() ?? [])
+  ipcMain.handle('kernel:create-session', (_event, title: unknown) =>
+    kernel?.createSession(typeof title === 'string' ? title : 'ATeam session'),
+  )
+  ipcMain.handle('kernel:prompt', (_event, input: unknown) => {
+    const payload = input as { sessionId?: unknown; text?: unknown } | null
+    if (!payload || typeof payload.sessionId !== 'string' || typeof payload.text !== 'string') {
+      throw new Error('invalid prompt payload')
+    }
+    return kernel?.prompt(payload.sessionId, payload.text)
+  })
+  ipcMain.handle('kernel:messages', (_event, sessionId: unknown) =>
+    typeof sessionId === 'string' ? kernel?.messages(sessionId) : [],
+  )
+  ipcMain.handle('kernel:interrupt', (_event, sessionId: unknown) =>
+    typeof sessionId === 'string' ? kernel?.interrupt(sessionId) : undefined,
+  )
+  ipcMain.handle('kernel:restart', () => kernel?.restart())
+  void kernel.start()
+
   createWindow()
 
   app.on('activate', () => {
@@ -64,6 +93,10 @@ void app.whenReady().then(() => {
       createWindow()
     }
   })
+})
+
+app.on('before-quit', () => {
+  void kernel?.stop()
 })
 
 app.on('window-all-closed', () => {

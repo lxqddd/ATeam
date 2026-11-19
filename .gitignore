@@ -9,3 +9,6 @@ release/
 apps/desktop/dist/
 apps/web/dist/
 packages/shared/dist/
+.opencode-src/
+.opencode-build/
+apps/desktop/resources/opencode/

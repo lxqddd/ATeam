@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   ApiOutlined,
@@ -23,7 +23,8 @@ import {
   ThunderboltFilled,
 } from '@ant-design/icons'
 import { Avatar, Button, Empty, Progress, Tag, Tooltip } from 'antd'
-import { APP_NAME } from '@ateam/shared'
+import { APP_NAME, type KernelMessage } from '@ateam/shared'
+import { useKernel, type KernelController } from './kernel'
 import { SettingsView } from './views/SettingsView'
 
 type NavKey = 'sessions' | 'overview' | 'projects' | 'settings'
@@ -51,7 +52,7 @@ const kernelChecks = [
   { labelKey: 'overview.kernel.checks.electron', done: true },
   { labelKey: 'overview.kernel.checks.react', done: true },
   { labelKey: 'overview.kernel.checks.design', done: true },
-  { labelKey: 'overview.kernel.checks.opencode', done: false },
+  { labelKey: 'overview.kernel.checks.opencode', done: true },
 ]
 
 const suggestions = [
@@ -81,6 +82,7 @@ export function App() {
   const { t } = useTranslation()
   const [active, setActive] = useState<NavKey>('sessions')
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const kernel = useKernel()
   const meta = pageMeta[active]
   const pageTitle = t(meta.titleKey)
 
@@ -154,7 +156,16 @@ export function App() {
           </div>
         </nav>
 
-        {sidebarOpen && <Sidebar active={active} />}
+        {sidebarOpen && (
+          <Sidebar
+            active={active}
+            kernel={kernel}
+            onSelectSession={(sessionId) => {
+              kernel.selectSession(sessionId)
+              setActive('sessions')
+            }}
+          />
+        )}
 
         <main className="flex min-w-0 flex-1 flex-col bg-workspace">
           <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-line-subtle px-6">
@@ -168,9 +179,19 @@ export function App() {
               <p className="cd-caption truncate text-faint">{t(meta.subtitleKey)}</p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Tag className="!m-0 hidden !rounded-full !border-[var(--cd-color-warning-border)] !bg-warning-soft !px-2.5 !py-0.5 !text-[11px] !text-warning lg:inline-flex">
-                <span className="mr-1 inline-block size-1.5 rounded-full bg-warning align-middle" />
-                {t('header.kernelDisconnected')}
+              <Tag
+                color={
+                  kernel.state.status === 'ready'
+                    ? 'success'
+                    : kernel.state.status === 'error'
+                      ? 'error'
+                      : 'warning'
+                }
+                className="!m-0 hidden !rounded-full !px-2.5 !py-0.5 !text-[11px] lg:inline-flex"
+                title={kernel.state.error}
+              >
+                <span className="mr-1 inline-block size-1.5 rounded-full bg-current align-middle" />
+                {t(`kernel.${kernel.state.status}`)}
               </Tag>
               <Button
                 type="text"
@@ -178,7 +199,12 @@ export function App() {
                 aria-label={t('nav.settings')}
                 onClick={() => setActive('settings')}
               />
-              <Button type="primary" icon={<PlusOutlined />}>
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={kernel.state.status !== 'ready'}
+                onClick={() => void kernel.newSession(t('common.newSession'))}
+              >
                 {t('common.newSession')}
               </Button>
             </div>
@@ -186,7 +212,7 @@ export function App() {
 
           <div className={`min-h-0 flex-1 ${active === 'sessions' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
             {active === 'sessions' ? (
-              <SessionsView />
+              <SessionsView kernel={kernel} />
             ) : (
               <div className="mx-auto w-full max-w-[1080px] px-6 py-5">
                 {active === 'overview' ? (
@@ -205,7 +231,15 @@ export function App() {
   )
 }
 
-function Sidebar({ active }: { active: NavKey }) {
+function Sidebar({
+  active,
+  kernel,
+  onSelectSession,
+}: {
+  active: NavKey
+  kernel: KernelController
+  onSelectSession: (sessionId: string) => void
+}) {
   const { t } = useTranslation()
   const settingsItems = [
     { labelKey: 'sidebar.appearance', target: 'settings-appearance' },
@@ -264,6 +298,22 @@ function Sidebar({ active }: { active: NavKey }) {
               </button>
             ))}
           </div>
+        ) : kernel.sessions.length > 0 ? (
+          <div className="space-y-0.5">
+            {kernel.sessions.map((session) => (
+              <button
+                key={session.id}
+                type="button"
+                className="cd-sidebar-item"
+                data-active={kernel.activeSessionId === session.id}
+                onClick={() => onSelectSession(session.id)}
+              >
+                <MessageOutlined className="text-[13px]" />
+                <span className="truncate">{session.title}</span>
+                {session.busy && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-accent" />}
+              </button>
+            ))}
+          </div>
         ) : (
           <div className="px-2 py-3 text-[13px] text-faint">
             {active === 'sessions' ? t('sidebar.noSessions') : t('sidebar.noRecentSessions')}
@@ -274,12 +324,22 @@ function Sidebar({ active }: { active: NavKey }) {
       <div className="mt-auto p-2">
         <div className="cd-card p-3">
           <div className="flex items-center gap-2 text-[13px] font-medium">
-            <span className="size-1.5 rounded-full bg-warning" />
-            {t('sidebar.kernelDisconnected')}
+            <span
+              className={`size-1.5 rounded-full ${
+                kernel.state.status === 'ready'
+                  ? 'bg-success'
+                  : kernel.state.status === 'error'
+                    ? 'bg-danger'
+                    : 'bg-warning'
+              }`}
+            />
+            {t(`kernel.${kernel.state.status}`)}
           </div>
-          <p className="mt-1 text-[12px] leading-[18px] text-faint">{t('sidebar.kernelHint')}</p>
-          <Button block size="small" className="mt-2">
-            {t('sidebar.configureKernel')}
+          <p className="mt-1 line-clamp-2 text-[12px] leading-[18px] text-faint">
+            {kernel.state.error || t(`kernel.${kernel.state.status}Hint`)}
+          </p>
+          <Button block size="small" className="mt-2" onClick={() => void kernel.restart()}>
+            {kernel.state.status === 'ready' ? t('kernel.restart') : t('kernel.retry')}
           </Button>
         </div>
       </div>
@@ -287,39 +347,100 @@ function Sidebar({ active }: { active: NavKey }) {
   )
 }
 
-function SessionsView() {
+function SessionsView({ kernel }: { kernel: KernelController }) {
   const { t } = useTranslation()
   const [prompt, setPrompt] = useState('')
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const element = scrollRef.current
+    if (element) {
+      element.scrollTop = element.scrollHeight
+    }
+  }, [kernel.messages, kernel.activeSessionId])
+
+  const submit = async () => {
+    const text = prompt.trim()
+    if (!text || kernel.sending) {
+      return
+    }
+    setPrompt('')
+    await kernel.send(text)
+  }
+
+  const hasMessages = kernel.messages.length > 0
+  const ready = kernel.state.status === 'ready'
+  const dotClass = ready ? 'bg-success' : kernel.state.status === 'error' ? 'bg-danger' : 'bg-warning'
 
   return (
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col items-center justify-center px-6 py-10 text-center">
-            <div className="grid size-11 place-items-center rounded-[12px] bg-[var(--cd-color-text)] text-[17px] font-semibold text-[var(--cd-color-bg)]">
-              A
+        {kernel.activeSession && (
+          <div className="flex h-11 shrink-0 items-center justify-between border-b border-line-subtle px-6">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="cd-label truncate">{kernel.activeSession.title}</span>
+              {kernel.activeSession.busy && <span className="text-[12px] text-accent">…</span>}
             </div>
-            <h2 className="cd-display mt-4">{t('sessions.title')}</h2>
-            <p className="cd-body mt-2 max-w-[440px] text-muted">{t('sessions.description')}</p>
-            <div className="mt-6 grid w-full max-w-[620px] gap-2.5 sm:grid-cols-2">
-              {suggestions.map((item) => (
-                <button
-                  key={item.titleKey}
-                  type="button"
-                  className="cd-card group flex items-start gap-3 p-3 text-left transition hover:border-accent/40 hover:bg-canvas"
-                  onClick={() => setPrompt(t(item.titleKey) + ': ')}
-                >
-                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px] bg-accent-soft text-[14px] text-accent-strong">
-                    {item.icon}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-ink">{t(item.titleKey)}</span>
-                    <span className="mt-0.5 block text-[12px] leading-[18px] text-faint">{t(item.descKey)}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
+            {(kernel.activeSession.busy || kernel.sending) && (
+              <Button size="small" onClick={() => void kernel.interrupt()}>
+                {t('kernel.stop')}
+              </Button>
+            )}
           </div>
+        )}
+
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+          {kernel.error && (
+            <div className="mx-auto mt-4 max-w-[760px] rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[12px] text-danger">
+              {kernel.error}
+            </div>
+          )}
+          {hasMessages ? (
+            <div className="mx-auto w-full max-w-[760px] space-y-4 px-6 py-6">
+              {kernel.messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))}
+              {kernel.loadingMessages && (
+                <div className="text-center text-[12px] text-faint">{t('sessions.loadingMessages')}</div>
+              )}
+            </div>
+          ) : (
+            <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col items-center justify-center px-6 py-10 text-center">
+              <div className="grid size-11 place-items-center rounded-[12px] bg-[var(--cd-color-text)] text-[17px] font-semibold text-[var(--cd-color-bg)]">
+                A
+              </div>
+              <h2 className="cd-display mt-4">{t('sessions.title')}</h2>
+              <p className="cd-body mt-2 max-w-[440px] text-muted">{t('sessions.description')}</p>
+              <div className="mt-6 grid w-full max-w-[620px] gap-2.5 sm:grid-cols-2">
+                {suggestions.map((item) => (
+                  <button
+                    key={item.titleKey}
+                    type="button"
+                    className="cd-card group flex items-start gap-3 p-3 text-left transition hover:border-accent/40 hover:bg-canvas"
+                    onClick={() => setPrompt(t(item.titleKey) + ': ')}
+                  >
+                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-[8px] bg-accent-soft text-[14px] text-accent-strong">
+                      {item.icon}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">{t(item.titleKey)}</span>
+                      <span className="mt-0.5 block text-[12px] leading-[18px] text-faint">
+                        {t(item.descKey)}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {!ready && (
+                <div className="mt-5 flex max-w-[460px] flex-wrap items-center justify-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-[12px] text-faint">
+                  <span>{kernel.state.error || t(`kernel.${kernel.state.status}Hint`)}</span>
+                  <Button type="link" size="small" onClick={() => void kernel.restart()}>
+                    {t('kernel.retry')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="shrink-0 px-6 pb-4">
@@ -327,6 +448,12 @@ function SessionsView() {
             <textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  void submit()
+                }
+              }}
               rows={2}
               placeholder={t('sessions.composerPlaceholder')}
               className="w-full resize-none border-0 bg-transparent px-1 py-1 text-[14px] leading-[22px] text-ink outline-none placeholder:text-faint"
@@ -340,15 +467,16 @@ function SessionsView() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="flex items-center gap-1.5 text-[12px] text-faint">
-                  <span className="size-1.5 rounded-full bg-warning" />
-                  {t('sessions.kernelDisconnected')}
+                  <span className={`size-1.5 rounded-full ${dotClass}`} />
+                  {t(`kernel.${kernel.state.status}`)}
                 </span>
                 <Button
                   type="primary"
                   shape="circle"
                   size="small"
                   icon={<ArrowUpOutlined />}
-                  disabled={!prompt.trim()}
+                  disabled={!prompt.trim() || kernel.sending || !ready}
+                  onClick={() => void submit()}
                   aria-label={t('sessions.send')}
                 />
               </div>
@@ -375,6 +503,53 @@ function SessionsView() {
           />
         </div>
       </aside>
+    </div>
+  )
+}
+
+function MessageBubble({ message }: { message: KernelMessage }) {
+  const { t } = useTranslation()
+
+  if (message.role === 'user') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[78%] whitespace-pre-wrap rounded-[14px] bg-user-bubble px-3.5 py-2 text-[14px] leading-[22px] text-ink">
+          {message.text}
+        </div>
+      </div>
+    )
+  }
+  if (message.role === 'tool') {
+    return (
+      <div className="flex justify-start">
+        <div className="inline-flex items-center gap-1.5 rounded-md border border-line bg-sunken px-2.5 py-1 font-mono text-[12px] text-muted">
+          <span className="text-faint">{t('sessions.toolCall')}</span>
+          {message.toolName ?? message.text}
+        </div>
+      </div>
+    )
+  }
+  if (message.role === 'system') {
+    return (
+      <div className="flex justify-center">
+        <div className="max-w-[80%] text-center text-[12px] leading-[18px] text-faint">{message.text}</div>
+      </div>
+    )
+  }
+  if (message.role === 'error') {
+    return (
+      <div className="flex justify-start">
+        <div className="max-w-[86%] whitespace-pre-wrap rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-[12px] leading-[19px] text-danger">
+          {message.text}
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[86%] whitespace-pre-wrap text-[14px] leading-[23px] text-ink">
+        {message.text || '…'}
+      </div>
     </div>
   )
 }
@@ -447,9 +622,9 @@ function Overview() {
         <div className="cd-card p-4">
           <div className="flex items-center justify-between">
             <span className="cd-label">{t('overview.kernel.title')}</span>
-            <span className="text-[12px] text-faint">3 / 4</span>
+            <span className="text-[12px] text-faint">4 / 4</span>
           </div>
-          <Progress percent={75} showInfo={false} size={['100%', 6]} className="!mt-2" />
+          <Progress percent={100} showInfo={false} size={['100%', 6]} className="!mt-2" />
           <div className="mt-3 space-y-2">
             {kernelChecks.map((check) => (
               <div key={check.labelKey} className="flex items-center gap-2 text-[12px]">

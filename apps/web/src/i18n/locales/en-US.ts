@@ -28,6 +28,19 @@ const enUS = {
     projects: { title: 'Projects', subtitle: 'Open and manage local repositories' },
     settings: { title: 'Settings', subtitle: 'Kernel, models and interface preferences' },
   },
+  kernel: {
+    ready: 'Kernel ready',
+    readyHint: 'Connected to the local ATeam kernel',
+    starting: 'Kernel starting',
+    stopped: 'Kernel offline',
+    error: 'Kernel unavailable',
+    startingHint: 'Starting the ATeam kernel…',
+    stoppedHint: 'The ATeam kernel is not running',
+    errorHint: 'Could not start the ATeam kernel',
+    retry: 'Retry',
+    restart: 'Restart kernel',
+    stop: 'Stop',
+  },
   header: {
     kernelDisconnected: 'Kernel offline',
     newSession: 'New session',
@@ -47,7 +60,7 @@ const enUS = {
     kernelModels: 'Kernel & models',
     permissionsSandbox: 'Permissions & sandbox',
     kernelDisconnected: 'Kernel offline',
-    kernelHint: 'Configure the OpenCode kernel and a model to start a local session',
+    kernelHint: 'Configure the ATeam kernel and a model to start a local session',
     configureKernel: 'Configure kernel',
   },
   sessions: {
@@ -81,9 +94,12 @@ const enUS = {
     changes: 'Changes',
     noChanges: 'No changes yet',
     noChangesDesc: 'Open a project and run a session to see file changes here',
+    loadingMessages: 'Loading messages…',
+    toolCall: 'Tool call',
+    sessionEmpty: 'Send a message to start this session.',
   },
   overview: {
-    eyebrow: 'Local-first · Electron + OpenCode kernel',
+    eyebrow: 'Local-first · Electron + ATeam kernel',
     title: 'Hand the task to a local agent',
     description:
       'Open a repository, start a session and let the agent work in an isolated worktree. Review every change before it lands.',
@@ -105,9 +121,9 @@ const enUS = {
         electron: 'Electron shell',
         react: 'React + Vite renderer',
         design: 'Ant Design + Tailwind',
-        opencode: 'OpenCode kernel adapter',
+        opencode: 'ATeam kernel adapter',
       },
-      note: 'The OpenCode adapter is the next milestone: run the agent in an isolated utility process and stream tool events into this UI.',
+      note: 'The kernel is managed by the main process: sessions, tool calls and streamed events reach this UI through the loopback API and IPC.',
     },
     gateway: {
       title: 'Local model gateway',
@@ -127,7 +143,7 @@ const enUS = {
     },
     kernel: {
       title: 'Kernel & models',
-      desc: 'The OpenCode kernel, model providers and local gateway arrive in later milestones. This UI uses nomi 2.4.0 tokens and is not connected to a real agent yet.',
+      desc: 'The ATeam kernel is managed by the Electron main process with isolated data directories and a loopback API. Model provider configuration arrives in a later milestone.',
     },
     permissions: {
       title: 'Permissions & sandbox',
@@ -146,7 +162,7 @@ const enUS = {
   },
   placeholder: {
     title: 'No {{page}} content yet',
-    desc: 'This page will fill in once the OpenCode kernel is connected.',
+    desc: 'This page will fill in once the ATeam kernel is connected.',
   },
 } as const
 

@@ -21,7 +21,8 @@
     "electron": "^45.4.1",
     "electron-builder": "^26.18.0",
     "typescript": "^7.0.2",
-    "wait-on": "^9.5.1"
+    "wait-on": "^9.5.1",
+    "@ateam/shared": "workspace:*"
   },
   "build": {
     "appId": "com.ateam.desktop",
@@ -43,7 +44,16 @@
     },
     "linux": {
       "target": "AppImage"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "resources/opencode",
+        "to": "opencode",
+        "filter": [
+          "opencode"
+        ]
+      }
+    ]
   },
   "author": "ATeam"
 }

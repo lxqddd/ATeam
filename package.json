@@ -9,7 +9,8 @@
     "dev:desktop": "pnpm --filter @ateam/desktop dev",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "package": "pnpm --filter @ateam/desktop package"
+    "package": "pnpm --filter @ateam/desktop package",
+    "opencode:build": "node scripts/opencode/build.mjs"
   },
   "devDependencies": {
     "turbo": "^2.11.13",
