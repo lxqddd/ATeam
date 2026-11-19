@@ -65,6 +65,13 @@ watch(() => runtimes.items, syncDrafts, { immediate: true })
 
 async function refresh() {
   await runtimes.fetchAll()
+  if (runtimes.error) {
+    return
+  }
+  // The catalog was just replaced; results from the previous one are stale.
+  for (const runtime of runtimes.items) {
+    clearTests(runtime.name)
+  }
 }
 
 onMounted(() => {
@@ -133,8 +140,8 @@ function testState(runtimeName: string, modelId: string): TestState | undefined 
   return tests.value[testKey(runtimeName, modelId)]
 }
 
-function runtimeHeadingId(runtimeName: string): string {
-  return `runtime-heading-${runtimeName.replace(/[^A-Za-z0-9_-]/g, '-')}`
+function defaultModelHeadingId(runtimeName: string): string {
+  return `default-model-${runtimeName.replace(/[^A-Za-z0-9_-]/g, '-')}`
 }
 
 // Drop stale test results for one runtime; bumping its epoch also discards
@@ -189,6 +196,11 @@ async function testModel(runtime: RuntimeInfo, modelId: string) {
 }
 
 async function save(runtime: RuntimeInfo) {
+  // Re-entry guard: a fast double-click can fire before the disabled state
+  // re-renders, which would send two PUTs.
+  if (saving.value[runtime.name]) {
+    return
+  }
   const draft = draftFor(runtime)
   const models = draft.locals.map((model) => ({ id: model.id.trim(), label: model.label.trim() }))
   if (models.some((model) => !model.id)) {
@@ -261,7 +273,6 @@ async function save(runtime: RuntimeInfo) {
             </Badge>
           </template>
 
-          <h2 :id="runtimeHeadingId(runtime.name)" class="sr-only">{{ runtime.name }}</h2>
           <p v-if="runtime.detail" class="text-caption text-fg-subtle">{{ runtime.detail }}</p>
 
           <template v-if="!runtime.supported">
@@ -405,11 +416,13 @@ async function save(runtime: RuntimeInfo) {
             </section>
 
             <section>
-              <h3 class="text-label font-semibold">{{ $t('runtimes.defaultModel') }}</h3>
+              <h3 :id="defaultModelHeadingId(runtime.name)" class="text-label font-semibold">
+                {{ $t('runtimes.defaultModel') }}
+              </h3>
               <el-radio-group
                 v-model="draftFor(runtime).defaultModel"
                 class="mt-2 flex flex-col items-start gap-2"
-                :aria-labelledby="runtimeHeadingId(runtime.name)"
+                :aria-labelledby="defaultModelHeadingId(runtime.name)"
               >
                 <el-radio value="">{{ $t('runtimes.defaultNone') }}</el-radio>
                 <el-radio v-for="model in catalogModels(runtime)" :key="model.id" :value="model.id">
