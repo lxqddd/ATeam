@@ -11,7 +11,7 @@ import { Global } from "@opencode/util/global"
 import { Npm } from "@opencode/util/npm"
 import { Host } from "@opencode/plugin/host"
 import { fileURLToPath } from "node:url"
-import { discoverPluginTargets, localPluginDirectories, localSource } from "@opencode/tui/plugin/discovery"
+import { discoverPluginTargets, localPluginDirectories, localSource } from "../../../plugin/discovery"
 
 export default Runtime.handler(
   Commands.commands.plugin.commands.list,

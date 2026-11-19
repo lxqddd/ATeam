@@ -4,6 +4,7 @@ release/
 .turbo/
 .DS_Store
 *.log
+*.tsbuildinfo
 .env
 .env.local
 apps/desktop/dist/

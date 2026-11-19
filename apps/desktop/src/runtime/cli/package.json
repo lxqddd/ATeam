@@ -12,7 +12,6 @@
     "bin"
   ],
   "exports": {
-    "./vite-host": "./dev/host.js",
     "./server-process": "./src/server-process.ts"
   },
   "scripts": {
@@ -31,11 +30,11 @@
     "@clack/prompts": "1.0.0-alpha.1",
     "@effect/platform-node": "catalog:",
     "@opencode/client": "workspace:*",
+    "@opencode/config": "workspace:*",
     "@opencode/plugin": "workspace:*",
     "@opencode/pty": "0.6.0",
     "@opencode/schema": "workspace:*",
     "@opencode/server": "workspace:*",
-    "@opencode/tui": "workspace:*",
     "@opencode/util": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/solid": "catalog:",

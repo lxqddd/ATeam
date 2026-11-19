@@ -232,7 +232,7 @@ export const oauthLogin = Effect.fn("cli.auth.login.oauth")(function* (
 })
 
 const commandLogin = Effect.fn("cli.auth.login.command")(function* (
-  client: ATeamClient,
+  client: OpenCodeClient,
   integration: IntegrationInfo,
   method: Extract<ConnectMethod, { type: "command" }>,
 ) {

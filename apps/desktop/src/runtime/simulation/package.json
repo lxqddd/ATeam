@@ -18,8 +18,6 @@
   "exports": {
     "./backend": "./src/backend/index.ts",
     "./backend/*": "./src/backend/*.ts",
-    "./frontend": "./src/frontend/simulation.ts",
-    "./frontend/*": "./src/frontend/*.ts",
     "./protocol": "./src/protocol/index.ts",
     "./recording": "./src/recording.ts"
   },
