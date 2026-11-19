@@ -1,0 +1,221 @@
+@import "tailwindcss";
+@import "./styles/nomi-tokens.css";
+
+/* Nomi 2.4.0 tokens are vendored in styles/nomi-tokens.css. */
+@theme inline {
+  --color-canvas: var(--cd-color-bg);
+  --color-workspace: var(--cd-workspace-bg);
+  --color-subtle: var(--cd-color-bg-subtle);
+  --color-surface: var(--cd-color-surface);
+  --color-raised: var(--cd-color-surface-raised);
+  --color-sunken: var(--cd-color-surface-sunken);
+  --color-hover: var(--cd-color-hover);
+  --color-ink: var(--cd-color-text);
+  --color-muted: var(--cd-color-text-muted);
+  --color-faint: var(--cd-color-text-subtle);
+  --color-line: var(--cd-color-border);
+  --color-line-subtle: var(--cd-color-border-subtle);
+  --color-line-strong: var(--cd-color-border-strong);
+  --color-accent: var(--cd-color-accent);
+  --color-accent-strong: var(--cd-color-accent-strong);
+  --color-accent-pressed: var(--cd-color-accent-pressed);
+  --color-accent-soft: var(--cd-color-accent-soft);
+  --color-user-bubble: var(--cd-color-user-msg);
+  --color-success: var(--cd-color-success);
+  --color-success-soft: var(--cd-color-success-soft);
+  --color-warning: var(--cd-color-warning);
+  --color-warning-soft: var(--cd-color-warning-soft);
+  --color-danger: var(--cd-color-danger);
+  --color-danger-soft: var(--cd-color-danger-soft);
+  --font-sans: var(--cd-font-sans);
+  --font-mono: var(--cd-font-mono);
+}
+
+html,
+body,
+#root,
+.ant-app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--cd-color-bg);
+  color: var(--cd-color-text);
+  font: 400 var(--cd-font-size-md) / var(--cd-line-height-md) var(--cd-font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--cd-color-accent-soft);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--cd-color-text) 18%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.cd-display {
+  font: 600 var(--cd-font-size-2xl) / var(--cd-line-height-2xl) var(--cd-font-sans);
+  letter-spacing: var(--cd-tracking-tight);
+}
+
+.cd-title {
+  font: 600 var(--cd-font-size-xl) / var(--cd-line-height-xl) var(--cd-font-sans);
+  letter-spacing: var(--cd-tracking-tight);
+}
+
+.cd-subtitle {
+  font: 600 var(--cd-font-size-lg) / var(--cd-line-height-lg) var(--cd-font-sans);
+  letter-spacing: var(--cd-tracking-tight);
+}
+
+.cd-body {
+  font: 400 var(--cd-font-size-md) / var(--cd-line-height-md) var(--cd-font-sans);
+}
+
+.cd-label {
+  font: 500 var(--cd-font-size-sm) / var(--cd-line-height-sm) var(--cd-font-sans);
+}
+
+.cd-caption {
+  font: 400 var(--cd-font-size-xs) / var(--cd-line-height-xs) var(--cd-font-sans);
+}
+
+.cd-card {
+  background: var(--cd-color-surface);
+  border: 1px solid var(--cd-color-border);
+  border-radius: var(--cd-radius-lg);
+  box-shadow: var(--cd-shadow-sm), var(--cd-highlight-inset);
+}
+
+.cd-muted {
+  color: var(--cd-color-text-muted);
+}
+
+.cd-faint {
+  color: var(--cd-color-text-subtle);
+}
+
+.cd-titlebar {
+  height: 40px;
+  background: var(--cd-color-bg-subtle);
+  border-bottom: 1px solid var(--cd-color-border);
+}
+
+.cd-rail {
+  width: 48px;
+  background: var(--cd-color-bg-subtle);
+  border-right: 1px solid var(--cd-color-border);
+}
+
+.cd-rail-item {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--cd-radius-md);
+  color: var(--cd-color-text-subtle);
+  font-size: 18px;
+  transition: var(--cd-transition);
+}
+
+.cd-rail-item:hover {
+  background: var(--cd-color-nav-bg);
+  color: var(--cd-color-text);
+}
+
+.cd-rail-item[data-active="true"] {
+  background: var(--cd-color-accent-soft);
+  color: var(--cd-color-accent);
+}
+
+.cd-sidebar {
+  width: 240px;
+  background: var(--cd-color-bg-subtle);
+  border-right: 1px solid var(--cd-color-border);
+}
+
+.cd-sidebar-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--cd-radius-md);
+  color: var(--cd-color-text-muted);
+  font: 400 var(--cd-font-size-sm) / var(--cd-line-height-sm) var(--cd-font-sans);
+  transition: var(--cd-transition);
+}
+
+.cd-sidebar-item:hover {
+  background: var(--cd-color-hover);
+  color: var(--cd-color-text);
+}
+
+.cd-sidebar-item[data-active="true"] {
+  background: var(--cd-color-selected-bg);
+  color: var(--cd-color-selected-text);
+}
+
+.cd-divider {
+  height: 1px;
+  background: var(--cd-color-border-subtle);
+}
+
+/* Ant Design light surfaces aligned with Nomi tokens. */
+.ant-layout,
+.ant-layout-content {
+  background: transparent !important;
+}
+
+.ant-card {
+  background: var(--cd-color-surface) !important;
+  border-color: var(--cd-color-border) !important;
+  border-radius: var(--cd-radius-lg) !important;
+  box-shadow: var(--cd-shadow-sm);
+}
+
+.ant-card-head {
+  border-bottom-color: var(--cd-color-border-subtle) !important;
+  color: var(--cd-color-text) !important;
+  min-height: 44px !important;
+  padding: 0 16px !important;
+}
+
+.ant-card-body {
+  color: var(--cd-color-text);
+}
+
+.ant-btn {
+  box-shadow: none !important;
+}
+
+.ant-menu {
+  background: transparent !important;
+  border-inline-end: none !important;
+}
+
+.ant-empty-description {
+  color: var(--cd-color-text-subtle) !important;
+}
+
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+.turbo/
+.DS_Store
+*.log
+.env
+.env.local
+apps/desktop/dist/
+apps/web/dist/
+packages/shared/dist/

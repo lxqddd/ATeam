@@ -1,0 +1,49 @@
+{
+  "name": "@ateam/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ATeam desktop shell",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "pnpm build:main && concurrently -k -n main,electron \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"wait-on http://localhost:5173 dist/main.js && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "build:main": "tsc -p tsconfig.json",
+    "build": "pnpm build:main && node scripts/copy-web.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package": "pnpm build && electron-builder --dir",
+    "package:mac": "pnpm build && electron-builder --mac",
+    "package:win": "pnpm build && electron-builder --win",
+    "package:linux": "pnpm build && electron-builder --linux"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^10.0.7",
+    "cross-env": "^10.1.0",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "typescript": "^7.0.2",
+    "wait-on": "^9.5.1"
+  },
+  "build": {
+    "appId": "com.ateam.desktop",
+    "productName": "ATeam",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "author": "ATeam"
+}
