@@ -32,19 +32,21 @@ type AssigneeType string
 const AssigneeAgent AssigneeType = "agent"
 
 type Task struct {
-	ID            string       `json:"id"`
-	WorkspaceID   string       `json:"workspaceId"`
-	Title         string       `json:"title"`
-	Description   string       `json:"description"`
-	Status        TaskStatus   `json:"status"`
-	Priority      int          `json:"priority"`
-	AssigneeType  AssigneeType `json:"assigneeType"`
-	AssigneeID    string       `json:"assigneeId"`
-	ParentID      string       `json:"parentId,omitempty"`
-	Labels        []string     `json:"labels"`
-	BlockedReason string       `json:"blockedReason,omitempty"`
-	CreatedAt     time.Time    `json:"createdAt"`
-	UpdatedAt     time.Time    `json:"updatedAt"`
+	ID                   string       `json:"id"`
+	WorkspaceID          string       `json:"workspaceId"`
+	Title                string       `json:"title"`
+	Description          string       `json:"description"`
+	Status               TaskStatus   `json:"status"`
+	Priority             int          `json:"priority"`
+	AssigneeType         AssigneeType `json:"assigneeType"`
+	AssigneeID           string       `json:"assigneeId"`
+	ParentID             string       `json:"parentId,omitempty"`
+	Labels               []string     `json:"labels"`
+	BlockedReason        string       `json:"blockedReason,omitempty"`
+	OriginConversationID string       `json:"originConversationId,omitempty"`
+	OriginMessageID      string       `json:"originMessageId,omitempty"`
+	CreatedAt            time.Time    `json:"createdAt"`
+	UpdatedAt            time.Time    `json:"updatedAt"`
 }
 
 // TaskDependency is a finish_to_start edge: taskId may start only after
@@ -191,4 +193,99 @@ func NewID() string {
 
 func Now() time.Time {
 	return time.Now().UTC()
+}
+
+// --- M2.3 Agent teams and conversations ---
+
+const (
+	AgentTeamActive   = "active"
+	AgentTeamArchived = "archived"
+
+	ConversationActive   = "active"
+	ConversationArchived = "archived"
+
+	MessageRoleUser   = "user"
+	MessageRoleAgent  = "agent"
+	MessageRoleSystem = "system"
+
+	MessageStatusPending   = "pending"
+	MessageStatusCompleted = "completed"
+	MessageStatusFailed    = "failed"
+	MessageStatusCancelled = "cancelled"
+
+	RoutingModeAuto    = "auto"
+	RoutingModeMention = "mention"
+
+	RouteSourceRules   = "router_rules"
+	RouteSourceMention = "mention"
+)
+
+type AgentTeamMember struct {
+	AgentID      string    `json:"agentId"`
+	Name         string    `json:"name"`
+	Role         string    `json:"role"`
+	RoleOverride string    `json:"roleOverride,omitempty"`
+	Position     int       `json:"position"`
+	JoinedAt     time.Time `json:"joinedAt"`
+}
+
+type AgentTeam struct {
+	ID          string            `json:"id"`
+	WorkspaceID string            `json:"workspaceId"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Status      string            `json:"status"`
+	Revision    int               `json:"revision"`
+	Members     []AgentTeamMember `json:"members"`
+	CreatedAt   time.Time         `json:"createdAt"`
+	UpdatedAt   time.Time         `json:"updatedAt"`
+	ArchivedAt  *time.Time        `json:"archivedAt,omitempty"`
+}
+
+type Conversation struct {
+	ID            string     `json:"id"`
+	TeamID        string     `json:"teamId"`
+	WorkspaceID   string     `json:"workspaceId"`
+	Title         string     `json:"title"`
+	Status        string     `json:"status"`
+	Revision      int        `json:"revision"`
+	LastMessageAt *time.Time `json:"lastMessageAt,omitempty"`
+	CreatedAt     time.Time  `json:"createdAt"`
+	UpdatedAt     time.Time  `json:"updatedAt"`
+	ArchivedAt    *time.Time `json:"archivedAt,omitempty"`
+}
+
+type RoutingCandidate struct {
+	AgentID string `json:"agentId"`
+	Name    string `json:"name"`
+	Role    string `json:"role"`
+}
+
+type ConversationRoutingDecision struct {
+	ID              string             `json:"id"`
+	ConversationID  string             `json:"conversationId"`
+	MessageID       string             `json:"messageId"`
+	Mode            string             `json:"mode"`
+	Source          string             `json:"source"`
+	Candidates      []RoutingCandidate `json:"candidates"`
+	SelectedAgentID string             `json:"selectedAgentId,omitempty"`
+	Rationale       string             `json:"rationale,omitempty"`
+	CreatedAt       time.Time          `json:"createdAt"`
+}
+
+type ConversationMessage struct {
+	ID             string                       `json:"id"`
+	ConversationID string                       `json:"conversationId"`
+	Seq            int64                        `json:"seq"`
+	Role           string                       `json:"role"`
+	AgentID        string                       `json:"agentId,omitempty"`
+	Status         string                       `json:"status"`
+	Content        string                       `json:"content"`
+	ErrorMessage   string                       `json:"errorMessage,omitempty"`
+	Usage          map[string]any               `json:"usage,omitempty"`
+	Routing        *ConversationRoutingDecision `json:"routing,omitempty"`
+	ReplyToID      string                       `json:"replyToId,omitempty"`
+	TaskID         string                       `json:"taskId,omitempty"`
+	CreatedAt      time.Time                    `json:"createdAt"`
+	UpdatedAt      time.Time                    `json:"updatedAt"`
 }

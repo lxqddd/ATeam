@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/lxqddd/ATeam/internal/domain"
 	"github.com/lxqddd/ATeam/internal/events"
@@ -18,15 +20,17 @@ import (
 )
 
 type API struct {
-	store      store.Store
-	hub        *events.Hub
-	scheduler  *scheduler.Scheduler
-	registry   *runtime.Registry
-	workspaces *workspace.Manager
-	version    string
-	webDir     string
-	guard      *security.Guard
-	gateway    *gateway.Manager
+	store               store.Store
+	hub                 *events.Hub
+	scheduler           *scheduler.Scheduler
+	registry            *runtime.Registry
+	workspaces          *workspace.Manager
+	version             string
+	webDir              string
+	guard               *security.Guard
+	gateway             *gateway.Manager
+	conversationMu      sync.Mutex
+	conversationReplies map[string]context.CancelFunc
 }
 
 func New(st store.Store, hub *events.Hub, scheduler *scheduler.Scheduler, registry *runtime.Registry, workspaces *workspace.Manager, version, webDir string, guard *security.Guard) *API {
@@ -91,6 +95,23 @@ func (a *API) registerRoutes(mux *http.ServeMux, prefix string) {
 	mux.HandleFunc("GET "+prefix+"/runtimes", a.listRuntimes)
 	mux.HandleFunc("GET "+prefix+"/cli-harnesses", a.listCLIHarnesses)
 	mux.HandleFunc("POST "+prefix+"/cli-harnesses/{id}/accounts", a.createCLIAccount)
+	mux.HandleFunc("GET "+prefix+"/agent-teams", a.listAgentTeams)
+	mux.HandleFunc("POST "+prefix+"/agent-teams", a.createAgentTeam)
+	mux.HandleFunc("GET "+prefix+"/agent-teams/{id}", a.getAgentTeam)
+	mux.HandleFunc("PATCH "+prefix+"/agent-teams/{id}", a.updateAgentTeam)
+	mux.HandleFunc("POST "+prefix+"/agent-teams/{id}/archive", a.archiveAgentTeam)
+	mux.HandleFunc("GET "+prefix+"/agent-teams/{id}/members", a.listAgentTeamMembers)
+	mux.HandleFunc("POST "+prefix+"/agent-teams/{id}/members", a.addAgentTeamMember)
+	mux.HandleFunc("DELETE "+prefix+"/agent-teams/{id}/members/{agentId}", a.removeAgentTeamMember)
+	mux.HandleFunc("GET "+prefix+"/agent-teams/{id}/conversations", a.listConversations)
+	mux.HandleFunc("POST "+prefix+"/agent-teams/{id}/conversations", a.createConversation)
+	mux.HandleFunc("GET "+prefix+"/conversations/{id}", a.getConversation)
+	mux.HandleFunc("PATCH "+prefix+"/conversations/{id}", a.updateConversation)
+	mux.HandleFunc("GET "+prefix+"/conversations/{id}/messages", a.listConversationMessages)
+	mux.HandleFunc("POST "+prefix+"/conversations/{id}/messages", a.sendConversationMessage)
+	mux.HandleFunc("POST "+prefix+"/conversations/{id}/messages/{messageId}/cancel", a.cancelConversationReply)
+	mux.HandleFunc("POST "+prefix+"/messages/{id}/convert-to-task", a.convertMessageToTask)
+
 	mux.HandleFunc("GET "+prefix+"/gateway/status", a.gatewayStatus)
 	mux.HandleFunc("GET "+prefix+"/gateway/providers", a.listGatewayProviders)
 	mux.HandleFunc("POST "+prefix+"/gateway/providers", a.createGatewayProvider)

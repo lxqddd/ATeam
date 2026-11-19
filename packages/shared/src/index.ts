@@ -400,3 +400,73 @@ export interface GatewayProviderInput {
   model?: string
   default?: boolean
 }
+
+export interface AgentTeamMember {
+  agentId: string
+  name: string
+  role: string
+  roleOverride?: string
+  position: number
+  joinedAt: string
+}
+
+export interface AgentTeam {
+  id: string
+  workspaceId: string
+  name: string
+  description: string
+  status: string
+  revision: number
+  members: AgentTeamMember[]
+  createdAt: string
+  updatedAt: string
+  archivedAt?: string
+}
+
+export interface Conversation {
+  id: string
+  teamId: string
+  workspaceId: string
+  title: string
+  status: string
+  revision: number
+  lastMessageAt?: string
+  createdAt: string
+  updatedAt: string
+  archivedAt?: string
+}
+
+export interface RoutingCandidate {
+  agentId: string
+  name: string
+  role: string
+}
+
+export interface ConversationRoutingDecision {
+  id: string
+  conversationId: string
+  messageId: string
+  mode: string
+  source: string
+  candidates: RoutingCandidate[]
+  selectedAgentId?: string
+  rationale?: string
+  createdAt: string
+}
+
+export interface ConversationMessage {
+  id: string
+  conversationId: string
+  seq: number
+  role: 'user' | 'agent' | 'system'
+  agentId?: string
+  status: string
+  content: string
+  errorMessage?: string
+  usage?: Record<string, unknown>
+  routing?: ConversationRoutingDecision
+  replyToId?: string
+  taskId?: string
+  createdAt: string
+  updatedAt: string
+}

@@ -345,7 +345,7 @@ func emitACPUpdate(params json.RawMessage, emit func(Event)) {
 	switch updateType {
 	case "agent_message_chunk":
 		if text := acpContentText(payload.Update["content"]); strings.TrimSpace(text) != "" {
-			emit(Event{Type: "log", Message: truncateMessage(text), Source: "assistant"})
+			emit(Event{Type: "log", Message: truncateMessage(text), Source: "assistant", Data: map[string]any{"delta": true}})
 		}
 	case "agent_thought_chunk":
 		if text := acpContentText(payload.Update["content"]); strings.TrimSpace(text) != "" {

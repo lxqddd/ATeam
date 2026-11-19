@@ -8,6 +8,7 @@ import RunsView from './views/RunsView.vue'
 import RuntimesView from './views/RuntimesView.vue'
 import SettingsView from './views/SettingsView.vue'
 import TaskView from './views/TaskView.vue'
+import TeamsView from './views/TeamsView.vue'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -15,6 +16,7 @@ export const router = createRouter({
     { path: '/', name: 'board', component: BoardView },
     { path: '/tasks/:id', name: 'task', component: TaskView, props: true },
     { path: '/agents', name: 'agents', component: AgentsView },
+    { path: '/teams', name: 'teams', component: TeamsView },
     { path: '/agents/:id/work', name: 'agent-work', component: AgentWorkView, props: true },
     { path: '/runs', name: 'runs', component: RunsView },
     { path: '/runs/:id', name: 'run', component: RunDetailView, props: true },

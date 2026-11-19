@@ -114,7 +114,7 @@ func (s *SQLite) Close() error {
 	return s.db.Close()
 }
 
-const taskColumns = `id, workspace_id, title, description, status, priority, assignee_type, assignee_id, parent_id, labels, blocked_reason, created_at, updated_at`
+const taskColumns = `id, workspace_id, title, description, status, priority, assignee_type, assignee_id, parent_id, labels, blocked_reason, origin_conversation_id, origin_message_id, created_at, updated_at`
 
 func scanTask(s scanner) (*domain.Task, error) {
 	var (
@@ -137,6 +137,8 @@ func scanTask(s scanner) (*domain.Task, error) {
 		&task.ParentID,
 		&labels,
 		&task.BlockedReason,
+		&task.OriginConversationID,
+		&task.OriginMessageID,
 		&created,
 		&updated,
 	); err != nil {
@@ -169,7 +171,7 @@ func (s *SQLite) CreateTask(ctx context.Context, task *domain.Task) error {
 	}
 	task.UpdatedAt = now
 
-	_, err := s.db.ExecContext(ctx, `INSERT INTO tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO tasks (`+taskColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		task.ID,
 		task.WorkspaceID,
 		task.Title,
@@ -181,6 +183,8 @@ func (s *SQLite) CreateTask(ctx context.Context, task *domain.Task) error {
 		task.ParentID,
 		mustJSON(task.Labels),
 		task.BlockedReason,
+		task.OriginConversationID,
+		task.OriginMessageID,
 		millis(task.CreatedAt),
 		millis(task.UpdatedAt),
 	)
@@ -221,7 +225,7 @@ func (s *SQLite) GetTask(ctx context.Context, id string) (*domain.Task, error) {
 
 func (s *SQLite) UpdateTask(ctx context.Context, task *domain.Task) error {
 	task.UpdatedAt = domain.Now()
-	result, err := s.db.ExecContext(ctx, `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, assignee_type = ?, assignee_id = ?, parent_id = ?, labels = ?, blocked_reason = ?, updated_at = ? WHERE id = ?`,
+	result, err := s.db.ExecContext(ctx, `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, assignee_type = ?, assignee_id = ?, parent_id = ?, labels = ?, blocked_reason = ?, origin_conversation_id = ?, origin_message_id = ?, updated_at = ? WHERE id = ?`,
 		task.Title,
 		task.Description,
 		string(task.Status),
@@ -231,6 +235,8 @@ func (s *SQLite) UpdateTask(ctx context.Context, task *domain.Task) error {
 		task.ParentID,
 		mustJSON(task.Labels),
 		task.BlockedReason,
+		task.OriginConversationID,
+		task.OriginMessageID,
 		millis(task.UpdatedAt),
 		task.ID,
 	)

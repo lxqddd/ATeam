@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Grid, Cpu, DataLine, Connection, Setting, Monitor } from '@element-plus/icons-vue'
+import { Grid, Cpu, DataLine, Connection, Setting, Monitor, ChatDotRound } from '@element-plus/icons-vue'
 import { ChevronRightIcon } from '@lucide/vue'
 import { useTasksStore } from '../stores/tasks'
 import { useAgentsStore } from '../stores/agents'
@@ -22,6 +22,7 @@ const ui = useUiStore()
 const navItems: { path: string; icon: Component; labelKey: string }[] = [
   { path: '/', icon: Grid, labelKey: 'sidebar.nav.board' },
   { path: '/agents', icon: Cpu, labelKey: 'sidebar.nav.agents' },
+  { path: '/teams', icon: ChatDotRound, labelKey: 'sidebar.nav.teams' },
   { path: '/runs', icon: DataLine, labelKey: 'sidebar.nav.runs' },
   { path: '/runtimes', icon: Connection, labelKey: 'sidebar.nav.runtimes' },
   { path: '/settings', icon: Setting, labelKey: 'sidebar.nav.settings' },
@@ -36,10 +37,11 @@ const settingsSections = [
   { id: 'settings-about', labelKey: 'settings.about' },
 ]
 
-type Section = 'tasks' | 'agents' | 'runs' | 'runtimes' | 'settings'
+type Section = 'tasks' | 'agents' | 'teams' | 'runs' | 'runtimes' | 'settings'
 
 const section = computed<Section>(() => {
   if (route.path.startsWith('/agents')) return 'agents'
+  if (route.path.startsWith('/teams')) return 'teams'
   if (route.path.startsWith('/runs')) return 'runs'
   if (route.path.startsWith('/runtimes')) return 'runtimes'
   if (route.path.startsWith('/settings')) return 'settings'
@@ -51,6 +53,7 @@ const sectionTitleKey = computed(
     ({
       tasks: 'sidebar.nav.board',
       agents: 'sidebar.nav.agents',
+      teams: 'sidebar.nav.teams',
       runs: 'sidebar.nav.runs',
       runtimes: 'sidebar.nav.runtimes',
       settings: 'sidebar.nav.settings',

@@ -43,6 +43,31 @@ type Store interface {
 	GetRuntimeModelConfig(context.Context, string) (*domain.RuntimeModelConfig, error)
 	SetRuntimeModelConfig(context.Context, string, []domain.RuntimeModel, string) (*domain.RuntimeModelConfig, error)
 
+	// M2.3 Agent teams and conversations.
+	CreateAgentTeam(context.Context, *domain.AgentTeam) error
+	ListAgentTeams(context.Context, string, string, int, int) ([]domain.AgentTeam, error)
+	GetAgentTeam(context.Context, string) (*domain.AgentTeam, error)
+	UpdateAgentTeam(context.Context, *domain.AgentTeam, int) (bool, error)
+	ArchiveAgentTeam(context.Context, string) error
+	AddAgentTeamMember(context.Context, string, domain.AgentTeamMember) error
+	RemoveAgentTeamMember(context.Context, string, string) error
+	ListAgentTeamMembers(context.Context, string) ([]domain.AgentTeamMember, error)
+
+	CreateConversation(context.Context, *domain.Conversation) error
+	ListConversations(context.Context, string, string, int, int) ([]domain.Conversation, error)
+	GetConversation(context.Context, string) (*domain.Conversation, error)
+	UpdateConversation(context.Context, *domain.Conversation, int) (bool, error)
+
+	AppendConversationMessage(context.Context, *domain.ConversationMessage) error
+	ListConversationMessages(context.Context, string, int64, int) ([]domain.ConversationMessage, error)
+	GetConversationMessage(context.Context, string) (*domain.ConversationMessage, error)
+	UpdateConversationMessage(context.Context, *domain.ConversationMessage) error
+
+	CreateRoutingDecision(context.Context, *domain.ConversationRoutingDecision) error
+	GetRoutingDecisionForMessage(context.Context, string) (*domain.ConversationRoutingDecision, error)
+
+	FindTaskByOriginMessage(context.Context, string) (*domain.Task, error)
+
 	CreateRun(context.Context, *domain.Run) error
 	ListRuns(context.Context) ([]domain.Run, error)
 	ListRunsByTask(context.Context, string) ([]domain.Run, error)
