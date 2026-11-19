@@ -21,7 +21,7 @@ import { FileMutation } from "../file-mutation.js"
 import { FileWrite } from "../file-write.js"
 import { Location } from "../location.js"
 import { Permission } from "../permission.js"
-import { CodeModeBun } from "./bun.js"
+import { CodeModeFs } from "./fs.js"
 import { CodeModeCatalog } from "./catalog.js"
 import { CodeModeExecution } from "./execution.js"
 import { CodeModeFetch } from "./fetch.js"
@@ -74,8 +74,8 @@ class Run extends Context.Service<
   }
 >()("@opencode/CodeModeTool/Run") {}
 
-/** The session's Location and file services, which a run with the experimental `path` and `Bun` globals acts through. */
-export type Services = Location.Service | CodeModeBun.Services
+/** The session's Location and file services, which a run with the experimental `path` and `fs` globals acts through. */
+export type Services = Location.Service | CodeModeFs.Services
 
 /** Those services alone, so a run they are given to keeps its own scope and the rest of its context. */
 export const services = Effect.map(
@@ -89,13 +89,13 @@ export type Inventory = {
 }
 
 // Invariant model-facing guidance; the changing tool catalog is delivered through Instructions. With `full_codemode`,
-// the runtime also has Bun's file APIs.
+// the runtime also has Node-style file APIs.
 const description = (full: boolean) =>
   [
     "Run JavaScript in a confined Code Mode runtime to script tool calls and HTTP requests and compose their results.",
     "Write plain JavaScript and send it exactly as written: no code fence, and no JSON or other wrapper around it.",
     full
-      ? "`fetch` is available for HTTP requests, and Bun's file APIs (`Bun.file`, `Bun.write`, `Bun.Glob`) for files, in place of Node's `fs`. Imports and timers are unavailable: there is no `setTimeout` or sleep. All other external access goes through `tools`."
+      ? "`fetch` is available for HTTP requests, and a Node-style `fs` global (`fs.readFile`, `fs.writeFile`, `fs.stat`, `fs.exists`, `fs.glob`) for files. Imports and timers are unavailable: there is no `setTimeout` or sleep. All other external access goes through `tools`."
       : "`fetch` is available for HTTP requests. Imports, direct filesystem access, and timers are unavailable: there is no `setTimeout` or sleep. All other external access goes through `tools`.",
     "Inside `execute`, the only callable tools are those explicitly listed in the Code Mode catalog instructions or returned by the `search` function. Ignore tools shown outside the Code Mode catalog. They are not available in the Code Mode runtime.",
     'Call tools through `tools` using only exact paths and signatures from the catalog. Do not infer or normalize tool names; preserve bracket notation such as `tools.<namespace>["tool-name"](input)`.',
@@ -107,7 +107,7 @@ export const create = (
   inventory: Inventory,
   executeTool: (name: string, tool: Info, input: unknown, context: ToolContext) => Effect.Effect<Result, Error>,
   permission: Permission.Interface,
-  /** With `full_codemode`, the session's services, which turn on the experimental `path` and `Bun` globals. */
+  /** With `full_codemode`, the session's services, which turn on the experimental `path` and `fs` globals. */
   services?: Context.Context<Services>,
 ) => {
   return {
@@ -146,7 +146,7 @@ export const create = (
         const result = yield* runtime(inventory)
           .execute(code, undefined, {
             extensions: services
-              ? [CodeModeFetch.extension, CodeModePath.extension, CodeModeBun.extension]
+              ? [CodeModeFetch.extension, CodeModePath.extension, CodeModeFs.extension]
               : [CodeModeFetch.extension],
           })
           .pipe(
@@ -249,8 +249,8 @@ function progressHooks(record: (update: (items: Array<ExecuteCall>) => Array<Exe
         case "fetch":
           return start(call, { tool: call.name, status: "running", input: CodeModeFetch.display(call.args) })
         default:
-          if (call.extension === "bun")
-            return start(call, { tool: "Bun", status: "running", input: CodeModeBun.display(call.name, call.args) })
+          if (call.extension === "fs")
+            return start(call, { tool: "fs", status: "running", input: CodeModeFs.display(call.name, call.args) })
           return Effect.void
       }
     },
@@ -317,10 +317,10 @@ function runtime(inventory: Inventory) {
   // Every extension a run may get; `create` picks each run's.
   const created = CodeMode.make<
     typeof tools,
-    [typeof CodeModeFetch.extension, typeof CodeModePath.extension, typeof CodeModeBun.extension]
+    [typeof CodeModeFetch.extension, typeof CodeModePath.extension, typeof CodeModeFs.extension]
   >({
     tools,
-    extensions: [CodeModeFetch.extension, CodeModePath.extension, CodeModeBun.extension],
+    extensions: [CodeModeFetch.extension, CodeModePath.extension, CodeModeFs.extension],
     hooks: runHooks,
   })
   runtimes.set(inventory, created)

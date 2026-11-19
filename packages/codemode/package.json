@@ -28,8 +28,8 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
-    "@typescript/native": "catalog:"
+    "@typescript/native": "catalog:",
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:"
   }
 }

@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises"
+import { pathToFileURL } from "node:url"
 import { Schema } from "effect"
 import { Config } from "../src/config.js"
 
@@ -10,9 +12,9 @@ interface JsonSchema {
 // both. The V2 shape is generated from Config.Info; V1 is frozen in config-v1.json, the last schema the V1 runtime
 // published. Fields only V1 understands are marked deprecated.
 export async function generate() {
-  const legacy: { $defs: Record<string, JsonSchema> } = await Bun.file(
-    new URL("./config-v1.json", import.meta.url),
-  ).json()
+  const legacy: { $defs: Record<string, JsonSchema> } = JSON.parse(
+    await readFile(new URL("./config-v1.json", import.meta.url), "utf8"),
+  )
   const { root: current, definitions } = document(Config.Info)
   const { Config: previous, ...legacyDefinitions } = legacy.$defs
   const shared = Object.keys(legacyDefinitions).filter((key) => key in definitions)
@@ -79,8 +81,8 @@ function combine(current: JsonSchema, previous: JsonSchema): JsonSchema {
   return { ...current, description }
 }
 
-if (import.meta.main) {
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const target = process.argv[2]
   if (!target) throw new Error("A schema output path is required")
-  await Bun.write(target, JSON.stringify(await generate(), null, 2) + "\n")
+  await writeFile(target, JSON.stringify(await generate(), null, 2) + "\n")
 }

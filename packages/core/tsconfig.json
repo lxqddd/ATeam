@@ -1,11 +1,13 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@tsconfig/bun/tsconfig.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun"],
+    "types": [
+      "node",
+      "mime-types"
+    ],
     "noUnusedLocals": true,
     "composite": true,
-    "declaration": true,
     "emitDeclarationOnly": true,
     "incremental": true,
     "noEmit": false,
@@ -14,5 +16,7 @@
     "rootDir": "src",
     "tsBuildInfoFile": "node_modules/.ts-dist/source.tsbuildinfo"
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

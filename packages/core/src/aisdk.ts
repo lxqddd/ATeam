@@ -171,8 +171,8 @@ function prepareOptions(model: RuntimeInfo, pkg: string, outbound: Fetch) {
     const middleware = httpMiddleware.getStore()
     const res = await (
       middleware
-        ? throughMiddleware(middleware, send, input, { ...opts, timeout: false })
-        : send(input, { ...opts, timeout: false })
+        ? throughMiddleware(middleware, send, input, { ...opts, timeout: false } as RequestInit)
+        : send(input, { ...opts, timeout: false } as RequestInit)
     ).finally(() => clearTimeout(headerTimer))
     if (timeouts.chunkTimeout === false) return res
     return wrapSSE(res, timeouts.chunkTimeout, chunks)
@@ -181,7 +181,7 @@ function prepareOptions(model: RuntimeInfo, pkg: string, outbound: Fetch) {
   return options
 }
 
-type Fetch = (input: Parameters<typeof fetch>[0], init?: BunFetchRequestInit) => Promise<Response>
+type Fetch = (input: Parameters<typeof fetch>[0], init?: RequestInit) => Promise<Response>
 
 const isFetch = (value: unknown): value is Fetch => typeof value === "function"
 
@@ -193,7 +193,7 @@ function throughMiddleware(
   store: { http: HttpMiddleware; context: Context.Context<never> },
   send: Fetch,
   input: Parameters<typeof fetch>[0],
-  init: BunFetchRequestInit,
+  init: RequestInit,
 ) {
   const toError = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)))
   const request = input instanceof Request ? new Request(input, init) : new Request(String(input), init)

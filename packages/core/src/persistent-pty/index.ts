@@ -208,7 +208,7 @@ const makeLayer = (options: Options = {}) =>
         options.root ?? path.join(global.state, "pty"),
         crypto.randomUUID(),
         () =>
-          (binary ??= resolveBinary(global.bin).catch((error) => {
+          (binary ??= resolveBinary().catch((error) => {
             binary = undefined
             throw error
           })),

@@ -20,6 +20,10 @@ run(process.execPath, ['--import', 'tsx', 'script/build-node.ts', '--single'], {
 const binary = path.join(cliDir, 'dist', 'node', `cli-node-${platform}-${arch}`, 'bin', 'opencode2-node')
 await fs.access(binary)
 await fs.mkdir(outputDir, { recursive: true })
-await fs.copyFile(binary, path.join(outputDir, 'opencode'))
-await fs.chmod(path.join(outputDir, 'opencode'), 0o755)
-console.log(`ATeam kernel built: ${path.join(outputDir, 'opencode')}`)
+// Replace rather than overwrite in place: macOS caches code-signing state per inode, and an
+// overwritten ad-hoc-signed binary can be killed on launch.
+const destination = path.join(outputDir, 'opencode')
+await fs.rm(destination, { force: true })
+await fs.copyFile(binary, destination)
+await fs.chmod(destination, 0o755)
+console.log(`ATeam kernel built: ${destination}`)

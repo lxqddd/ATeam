@@ -7,14 +7,12 @@
   "scripts": {
     "typecheck": "tsc -b",
     "typecheck:tsc": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
-    "generate": "node --import tsx script/icon-name.ts"
+    "build": "tsc -p tsconfig.build.json"
   },
   "exports": {
     ".": "./src/promise/index.ts",
     "./effect": "./src/effect/index.ts",
     "./host": "./src/host.ts",
-    "./runtime": "./src/runtime.ts",
     "./tui": "./src/tui/index.ts",
     "./gui": "./src/gui/index.ts",
     "./gui/main": "./src/gui/main.ts",
@@ -30,7 +28,6 @@
   },
   "imports": {
     "#plugin-source": {
-      "bun": "./src/source.bun.ts",
       "node": "./src/source.node.ts",
       "default": "./src/source.node.ts"
     }
@@ -83,15 +80,14 @@
     "@opencode/theme": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/solid": "catalog:",
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "electron": "44.9.1",
     "solid-js": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plugin-solid": "catalog:",
-    "@typescript/native": "catalog:"
+    "@typescript/native": "catalog:",
+    "@tsconfig/node22": "catalog:"
   },
   "repository": {
     "type": "git",

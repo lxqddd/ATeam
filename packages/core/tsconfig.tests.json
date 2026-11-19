@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@tsconfig/bun/tsconfig.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun"],
+    "types": ["node"],
     "noUnusedLocals": true,
     "incremental": true,
     "noUncheckedIndexedAccess": false,

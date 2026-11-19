@@ -1,5 +1,7 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
+import { spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -41,20 +43,23 @@ async function generate() {
     const name = generated[0]
     if (name) {
       const target = path.join(tsDir, `${name}.ts`)
-      if (await Bun.file(target).exists()) throw new Error(`Database migration already exists: ${name}`)
-      await Bun.write(
+      if (existsSync(target)) throw new Error(`Database migration already exists: ${name}`)
+      await fs.writeFile(
         target,
         await formatTypescript(
-          renderMigration(name, await Bun.file(path.join(incremental, name, "migration.sql")).text()),
+          renderMigration(name, await fs.readFile(path.join(incremental, name, "migration.sql"), "utf8")),
         ),
       )
-      await Bun.write(snapshot, await formatJson(await Bun.file(path.join(incremental, name, "snapshot.json")).text()))
+      await fs.writeFile(
+        snapshot,
+        await formatJson(await fs.readFile(path.join(incremental, name, "snapshot.json"), "utf8")),
+      )
     }
 
     await fs.mkdir(full)
     await drizzle(temporary, full, "schema")
-    await Bun.write(schema, await formatTypescript(renderSchema(await generatedSql(full))))
-    await Bun.write(registry, await formatTypescript(renderRegistry(await typescriptMigrations())))
+    await fs.writeFile(schema, await formatTypescript(renderSchema(await generatedSql(full))))
+    await fs.writeFile(registry, await formatTypescript(renderRegistry(await typescriptMigrations())))
   } finally {
     await fs.rm(temporary, { recursive: true, force: true })
   }
@@ -71,19 +76,19 @@ async function check() {
     await drizzle(temporary, incremental)
     if ((await generatedMigrations(incremental)).length > 0) {
       throw new Error(
-        "Core schema has ungenerated database migrations. Run `bun script/migration.ts` from packages/core.",
+        "Core schema has ungenerated database migrations. Run `node --import tsx script/migration.ts` from packages/core.",
       )
     }
 
     await fs.mkdir(full)
     await drizzle(temporary, full, "schema")
-    if ((await Bun.file(schema).text()) !== (await formatTypescript(renderSchema(await generatedSql(full))))) {
-      throw new Error("Current database schema is stale. Run `bun script/migration.ts` from packages/core.")
+    if ((await fs.readFile(schema, "utf8")) !== (await formatTypescript(renderSchema(await generatedSql(full))))) {
+      throw new Error("Current database schema is stale. Run `node --import tsx script/migration.ts` from packages/core.")
     }
 
     const migrations = await typescriptMigrations()
-    if ((await Bun.file(registry).text()) !== (await formatTypescript(renderRegistry(migrations)))) {
-      throw new Error("Database migration registry is stale. Run `bun script/migration.ts` from packages/core.")
+    if ((await fs.readFile(registry, "utf8")) !== (await formatTypescript(renderRegistry(migrations)))) {
+      throw new Error("Database migration registry is stale. Run `node --import tsx script/migration.ts` from packages/core.")
     }
   } finally {
     await fs.rm(temporary, { recursive: true, force: true })
@@ -92,39 +97,45 @@ async function check() {
 
 async function drizzle(temporary: string, output: string, name?: string) {
   const config = path.join(temporary, `${path.basename(output)}.config.ts`)
-  await Bun.write(
+  await fs.writeFile(
     config,
     `import config from ${JSON.stringify(pathToFileURL(path.join(root, "packages/core/drizzle.config.ts")).href)}
 
 export default { ...config, out: ${JSON.stringify(output)} }
 `,
   )
-  const child = Bun.spawn(["bun", "drizzle-kit", "generate", "--config", config, ...(name ? ["--name", name] : [])], {
-    cwd: path.join(root, "packages/core"),
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  })
-  const exit = await child.exited
-  if (exit !== 0) throw new Error(`Drizzle generation failed with exit code ${exit}.`)
+  const child = spawnSync(
+    "pnpm",
+    ["exec", "drizzle-kit", "generate", "--config", config, ...(name ? ["--name", name] : [])],
+    {
+      cwd: path.join(root, "packages/core"),
+      stdio: "inherit",
+    },
+  )
+  if (child.status !== 0) throw new Error(`Drizzle generation failed with exit code ${child.status}.`)
 }
 
 async function generatedMigrations(directory: string) {
-  return (await Array.fromAsync(new Bun.Glob("*/migration.sql").scan({ cwd: directory })))
-    .map((file) => file.split("/")[0])
-    .filter((name): name is string => name !== undefined)
-    .sort()
+  const entries = await fs.readdir(directory, { withFileTypes: true })
+  const found: string[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    if (await fs.access(path.join(directory, entry.name, "migration.sql")).then(() => true, () => false))
+      found.push(entry.name)
+  }
+  return found.sort()
 }
 
 async function generatedSql(directory: string) {
   const generated = await generatedMigrations(directory)
   if (generated.length !== 1) throw new Error(`Expected one full schema migration, found ${generated.length}.`)
-  return Bun.file(path.join(directory, generated[0]!, "migration.sql")).text()
+  return fs.readFile(path.join(directory, generated[0]!, "migration.sql"), "utf8")
 }
 
 async function typescriptMigrations() {
-  return (await Array.fromAsync(new Bun.Glob("*.ts").scan({ cwd: tsDir })))
-    .map((file) => path.basename(file, ".ts"))
+  return (await fs.readdir(tsDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .map((entry) => path.basename(entry.name, ".ts"))
     .sort()
 }
 

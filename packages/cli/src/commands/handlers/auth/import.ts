@@ -1,4 +1,5 @@
 import { EOL } from "node:os"
+import { readFile } from "node:fs/promises"
 import { isConflictError, type CredentialCreateInput } from "@opencode/client"
 import { CredentialLegacy } from "@opencode/schema/credential-legacy"
 import { Effect, Option, Schema } from "effect"
@@ -15,7 +16,7 @@ export default Runtime.handler(
       const file = Option.getOrUndefined(input.file)
       if (!file && process.stdin.isTTY)
         return yield* Effect.fail(new Error("Pipe auth export output into stdin or pass a file to import"))
-      const text = yield* request(() => (file ? Bun.file(file).text() : readStdin()))
+      const text = yield* request(() => (file ? readFile(file, "utf8") : readStdin()))
       const credentials = yield* Schema.decodeUnknownEffect(
         Schema.fromJsonString(Schema.Array(CredentialLegacy.Entry)),
       )(text)

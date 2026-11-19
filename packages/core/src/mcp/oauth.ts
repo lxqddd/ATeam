@@ -57,7 +57,7 @@ export const loggedFetch = (fields: { readonly server: string; readonly director
     const fetch = yield* FetchHttpClient.Fetch
     // Bun's idle deadline is off because a tool call can stay silent for minutes; the MCP execution timeout still
     // applies. Requests use `FetchHttpClient.Fetch`, which an embedder can replace, rather than the global fetch.
-    const send: FetchLike = (url, init) => fetch(url, { ...init, timeout: false } as BunFetchRequestInit)
+    const send: FetchLike = (url, init) => fetch(url, { ...init, timeout: false } as RequestInit)
     const request: FetchLike = (url, init) => {
       const grant = init?.body instanceof URLSearchParams ? init.body.get("grant_type") : undefined
       const operation = grant === "refresh_token" ? "refresh" : grant === "authorization_code" ? "exchange" : undefined

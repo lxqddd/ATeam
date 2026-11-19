@@ -49,10 +49,10 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@modelcontextprotocol/client": "2.4.0",
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
     "@typescript/native": "catalog:",
     "effect": "catalog:",
-    "solid-js": "catalog:"
+    "solid-js": "catalog:",
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:"
   }
 }

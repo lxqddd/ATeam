@@ -36,9 +36,9 @@
     "ws": "8.21.0"
   },
   "devDependencies": {
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
     "@types/ws": "8.18.1",
-    "@typescript/native": "catalog:"
+    "@typescript/native": "catalog:",
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:"
   }
 }

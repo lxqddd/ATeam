@@ -1,6 +1,5 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
-import { ensurePluginRuntime } from "@opencode/plugin/runtime"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Cause, Effect } from "effect"
 import { defaultTeardown, getErrorReported } from "effect/Runtime"
@@ -31,8 +30,6 @@ const noProxy = [
 
 process.env.NO_PROXY = noProxy
 process.env.no_proxy = noProxy
-
-ensurePluginRuntime()
 
 if (process.env.OPENCODE_SSH_ASKPASS_PORT) {
   const { askpass } = await import("./ssh-askpass")

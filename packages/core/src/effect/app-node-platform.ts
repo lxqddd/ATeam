@@ -14,7 +14,7 @@ const withoutBunTimeout = Layer.effect(
     const client = yield* HttpClient.HttpClient
     return HttpClient.transformResponse(
       client,
-      Effect.provideService(FetchHttpClient.RequestInit, { timeout: false } as BunFetchRequestInit),
+      Effect.provideService(FetchHttpClient.RequestInit, { timeout: false } as RequestInit),
     )
   }),
 )

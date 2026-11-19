@@ -26,9 +26,8 @@
     },
     "#runtime-import": {
       "workerd": "./src/runtime/import.workerd.ts",
-      "bun": "./src/runtime/import.bun.ts",
       "node": "./src/runtime/import.node.ts",
-      "default": "./src/runtime/import.bun.ts"
+      "default": "./src/runtime/import.node.ts"
     }
   },
   "scripts": {
@@ -61,9 +60,9 @@
     "pacote": "21.5.1"
   },
   "devDependencies": {
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
+    "@tsconfig/node22": "catalog:",
     "@types/cross-spawn": "catalog:",
+    "@types/mime-types": "3.0.1",
     "@types/node": "catalog:",
     "@types/npm-package-arg": "6.1.4",
     "@types/npmcli__arborist": "6.3.3",

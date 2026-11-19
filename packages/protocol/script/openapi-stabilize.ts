@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto"
+
 type Document = { components: { schemas: Record<string, unknown> } }
 
 const prefix = "#/components/schemas/"
@@ -51,7 +53,7 @@ export function stabilizeOpenApi(source: object) {
   )
   const renames = new Map(
     [...anonymous].map(([name, schema]) => {
-      const hash = new Bun.CryptoHasher("sha256").update(shape(schema, anonymous)).digest("hex").slice(0, 12)
+      const hash = createHash("sha256").update(shape(schema, anonymous)).digest("hex").slice(0, 12)
       return [name, `${name.replace(/_\d*$/, "")}_${hash}`] as const
     }),
   )

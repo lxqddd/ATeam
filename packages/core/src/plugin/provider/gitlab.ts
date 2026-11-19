@@ -97,11 +97,8 @@ export const GitLabPlugin = define({
             {
               instanceUrl,
               getHeaders: () => headers,
-              fetch: Object.assign(
-                (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
-                  fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }),
-                { preconnect: fetch.preconnect },
-              ),
+              fetch: (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+                fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal }),
             },
             { workingDirectory: ctx.location.directory, cacheKey: stored.id },
           )

@@ -23,7 +23,7 @@
     "solid-js": "catalog:"
   },
   "devDependencies": {
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:"
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:"
   }
 }

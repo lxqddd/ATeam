@@ -48,8 +48,6 @@
   "devDependencies": {
     "@opencode/script": "workspace:*",
     "@opencode/protocol": "workspace:*",
-    "@tsconfig/bun": "catalog:",
-    "@types/bun": "catalog:",
     "@typescript/native": "catalog:",
     "@lydell/node-pty-darwin-arm64": "1.2.0-beta.12",
     "@lydell/node-pty-darwin-x64": "1.2.0-beta.12",
@@ -74,7 +72,9 @@
     "@parcel/watcher-win32-x64": "2.5.1",
     "solid-refresh": "0.6.3",
     "vite": "catalog:",
-    "vite-plugin-solid": "catalog:"
+    "vite-plugin-solid": "catalog:",
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:"
   },
   "repository": {
     "type": "git",

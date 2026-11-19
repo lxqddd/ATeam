@@ -1,9 +1,11 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 
 // Compiles the built-in sources (the prelude, the VM's internal helpers) ahead of time into src/language/prelude/bytecode.json,
 // which a process loads instead of parsing and compiling them (see src/language/prelude/bytecode.ts). Run it after changing
 // either source or the compiler; test/prelude-bytecode.test.ts fails until then.
 
+import { writeFile } from "node:fs/promises"
+import { pathToFileURL } from "node:url"
 import { parse } from "acorn"
 import { Source } from "../src/language/runtime/source.js"
 import { saveCodes } from "../src/language/prelude/bytecode.js"
@@ -22,9 +24,6 @@ export const compileBuiltins = () =>
     }),
   )
 
-if (import.meta.main) {
-  await Bun.write(
-    new URL("../src/language/prelude/bytecode.json", import.meta.url),
-    `${JSON.stringify(compileBuiltins())}\n`,
-  )
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await writeFile(new URL("../src/language/prelude/bytecode.json", import.meta.url), `${JSON.stringify(compileBuiltins())}\n`)
 }

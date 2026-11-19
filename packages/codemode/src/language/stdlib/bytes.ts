@@ -235,7 +235,7 @@ export class TextDecoderObj extends Obj {
 
   constructor(
     proto: Obj,
-    readonly decoder: TextDecoder,
+    readonly decoder: InstanceType<typeof TextDecoder>,
     readonly ignoreBOM: boolean,
   ) {
     super(proto)

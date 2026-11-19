@@ -30,9 +30,9 @@ catalogs:
     '@standard-schema/spec':
       specifier: 1.1.0
       version: 1.1.0
-    '@tsconfig/bun':
-      specifier: 1.0.9
-      version: 1.0.9
+    '@tsconfig/node22':
+      specifier: 22.0.2
+      version: 22.0.2
     '@types/cross-spawn':
       specifier: 6.0.6
       version: 6.0.6
@@ -73,16 +73,13 @@ overrides:
   '@opentui/keymap': 0.8.4
   '@opentui/solid': 0.8.4
   '@effect/platform-node-shared': 4.1.0
-  '@types/bun': 1.4.3
   '@types/node': 24.12.2
-  bun-types: 1.4.4
   effect: 4.1.0
   open: 11.0.4
   solid-js: 1.9.17
 
 patchedDependencies:
   '@ai-sdk/openai-compatible@2.0.41': b26cf35cfbeb627144c9d03eb1cd3f101022970e8e011071aae5d3e65d353acb
-  '@ff-labs/fff-bun@0.10.5': d4650123a98a1c979f992ac562fc9e4115edc90611958f1b5764a40cb0d7edf6
   '@modelcontextprotocol/client@2.4.0': 63fadffa5f669824004ee92cf9aa62bda7b196d9f6b0917b547a7e73a058a4fc
   '@npmcli/agent@4.0.2': 6c3354fde497bc6a310b15e87b3c5675f066b738235ebffa82e0da90e2cfff84
   '@silvia-odwyer/photon-node@0.3.4': d4d3ec8c8a08fa8d9a33b432c22a739180e7e441e52d39f7e010784c8e68a3bd
@@ -206,12 +203,12 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.1.0(effect@4.1.0)(redis@6.3.1(@opentelemetry/api@1.10.0))
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -348,12 +345,12 @@ importers:
       '@parcel/watcher-win32-x64':
         specifier: 2.5.1
         version: 2.5.1
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -397,12 +394,12 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 2.4.0
         version: 2.4.0(patch_hash=63fadffa5f669824004ee92cf9aa62bda7b196d9f6b0917b547a7e73a058a4fc)
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -422,12 +419,12 @@ importers:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -456,12 +453,12 @@ importers:
         specifier: 1.9.17
         version: 1.9.17(patch_hash=8c25ae5b542df14000ecc3b2a5f3571f6153b8ed3ad15ab8c63a1dd6e60d31e4)
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
 
   packages/core:
     dependencies:
@@ -480,9 +477,6 @@ importers:
       '@effect/sql-sqlite-node':
         specifier: 'catalog:'
         version: 4.1.0(effect@4.1.0)
-      '@ff-labs/fff-bun':
-        specifier: 0.10.5
-        version: 0.10.5(patch_hash=d4650123a98a1c979f992ac562fc9e4115edc90611958f1b5764a40cb0d7edf6)
       '@ff-labs/fff-node':
         specifier: 0.10.5
         version: 0.10.5
@@ -528,9 +522,6 @@ importers:
       '@standard-schema/spec':
         specifier: 'catalog:'
         version: 1.1.0
-      bun-pty:
-        specifier: 0.4.11
-        version: 0.4.11
       diff:
         specifier: 'catalog:'
         version: 8.0.4
@@ -613,12 +604,12 @@ importers:
       '@parcel/watcher-win32-x64':
         specifier: 2.5.1
         version: 2.5.1
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/mime-types':
+        specifier: 3.0.1
+        version: 3.0.1
       '@types/node':
         specifier: 24.12.2
         version: 24.12.2
@@ -631,6 +622,9 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 4.9.0
+      prettier:
+        specifier: 3.6.2
+        version: 3.6.2
 
   packages/plugin:
     dependencies:
@@ -665,12 +659,9 @@ importers:
       '@opentui/solid':
         specifier: 0.8.4
         version: 0.8.4(@typescript/typescript6@6.0.2)(solid-js@1.9.17(patch_hash=8c25ae5b542df14000ecc3b2a5f3571f6153b8ed3ad15ab8c63a1dd6e60d31e4))(web-tree-sitter@0.25.10)
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
       '@types/node':
         specifier: 24.12.2
         version: 24.12.2
@@ -705,12 +696,12 @@ importers:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -727,12 +718,12 @@ importers:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -752,12 +743,12 @@ importers:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -767,9 +758,9 @@ importers:
 
   packages/script:
     devDependencies:
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
 
   packages/server:
     dependencies:
@@ -807,12 +798,12 @@ importers:
       '@opencode/pty':
         specifier: 0.6.0
         version: 0.6.0
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -853,12 +844,12 @@ importers:
         specifier: 8.21.0
         version: 8.21.0
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
@@ -875,12 +866,12 @@ importers:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
+      '@types/node':
+        specifier: 24.12.2
+        version: 24.12.2
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.1.0-beta
@@ -957,15 +948,15 @@ importers:
         specifier: 21.5.1
         version: 21.5.1(patch_hash=a79e5adfb1d2117ec76b982a49cd39984538753ef979a7db334db1eb3d3966bc)
     devDependencies:
-      '@tsconfig/bun':
+      '@tsconfig/node22':
         specifier: 'catalog:'
-        version: 1.0.9
-      '@types/bun':
-        specifier: 1.4.3
-        version: 1.4.3
+        version: 22.0.2
       '@types/cross-spawn':
         specifier: 'catalog:'
         version: 6.0.6
+      '@types/mime-types':
+        specifier: 3.0.1
+        version: 3.0.1
       '@types/node':
         specifier: 24.12.2
         version: 24.12.2
@@ -1836,12 +1827,6 @@ packages:
     resolution: {integrity: sha512-EvCWb7wLrtCvkziksAnTVxcGa0roaWNC978t4nG3ESKEty/Mvrj8kaLAzqWfuA2Xk+gTW+qisJYxa4FqFnqR0Q==}
     cpu: [x64]
     os: [win32]
-
-  '@ff-labs/fff-bun@0.10.5':
-    resolution: {integrity: sha512-n4t5e4mzbEAXO6SyPHx8ajECGvfTZ/y4TNCqvKSwROpcTqfobaq2T+MdsfsKyA+j+B11NmpCVLjVhCTel8iB8Q==}
-    engines: {bun: '>=1.0.0'}
-    cpu: [x64, arm64]
-    os: [darwin, linux, win32, android]
 
   '@ff-labs/fff-node@0.10.5':
     resolution: {integrity: sha512-O4KZoO9lZluTqdHUYgd23xpEX/u7G87qQTgUIgtJ4BFTh1x/p243/M6AU2HdSHYWK+vrMRAdDXDzeUW/9rjk3Q==}
@@ -3171,8 +3156,8 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tsconfig/bun@1.0.9':
-    resolution: {integrity: sha512-4M0/Ivfwcpz325z6CwSifOBZYji3DFOEpY6zEUt0+Xi2qRhzwvmqQN9XAHJh3OVvRJuAqVTLU2abdCplvp6mwQ==}
+  '@tsconfig/node22@22.0.2':
+    resolution: {integrity: sha512-Kmwj4u8sDRDrMYRoN9FDEcXD8UpBSaPQQ24Gz+Gamqfm7xxn+GBR7ge/Z7pK8OXNGyUzbSwJj+TH6B+DS/epyA==}
 
   '@tufjs/canonical-json@2.0.0':
     resolution: {integrity: sha512-yVtV8zsdo8qFHe+/3kw81dSLyF7D576A5cCFCi4X7B39tWT7SekaEFUnvnWJHz+9qO7qJTah1JbrDjWKqFtdWA==}
@@ -3227,9 +3212,6 @@ packages:
   '@types/babel__traverse@7.28.0':
     resolution: {integrity: sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q==}
 
-  '@types/bun@1.4.3':
-    resolution: {integrity: sha512-N67Pqy8JXbAY/j0tNraS3V5mubGvc6rrrNDmDCtZLlFzccbUJPDb0tvgUBC5q4m8ybkP93Jcn1QB+RYQ6PvBhw==}
-
   '@types/cacache@20.0.1':
     resolution: {integrity: sha512-QlKW3AFoFr/hvPHwFHMIVUH/ZCYeetBNou3PCmxu5LaNDvrtBlPJtIA6uhmU9JRt9oxj7IYoqoLcpxtzpPiTcw==}
 
@@ -3247,6 +3229,9 @@ packages:
 
   '@types/glob@7.2.0':
     resolution: {integrity: sha512-ZUxbzKl0IfJILTS6t7ip5fQQM/J3TJYubDm3nMbgubNNYS62eXeUpoLUC8/7fJNiFYHTrGPQn7hspDUzIHX3UA==}
+
+  '@types/mime-types@3.0.1':
+    resolution: {integrity: sha512-xRMsfuQbnRq1Ef+C+RKaENOxXX87Ygl38W1vDfPHRku02TgQr+Qd8iivLtAMcR0KF5/29xlnFihkTlbqFrGOVQ==}
 
   '@types/minimatch@6.0.0':
     resolution: {integrity: sha512-zmPitbQ8+6zNutpwgcQuLcsEpn/Cj54Kbn7L5pX0Os5kdWplB7xPgEh/g+SWOB/qmows2gpuCaPyduq8ZZRnxA==}
@@ -3877,10 +3862,6 @@ packages:
     peerDependencies:
       typescript: ^5
 
-  bun-pty@0.4.11:
-    resolution: {integrity: sha512-DpBfXCoWbcDziqL4gT3sFw/O6vfe2Gm1LmsnjfGjpqNhmsPjBcVorTrRv7OVATsy88PiXfn486vp0w4x3/Q84g==}
-    engines: {bun: '>=1.0.0'}
-
   bun-types@1.4.4:
     resolution: {integrity: sha512-yjrJh5oGX7mMPKGd19YXyIjmEuj4G4zNC30bs7PM9Az7NQ3ndF3j6hbeRdvJTRQEhJ/FYQwW0a2moweEi2hMxQ==}
 
@@ -4167,7 +4148,7 @@ packages:
       '@xata.io/client': '*'
       arktype: '>=2.0.0'
       better-sqlite3: '>=9.3.0'
-      bun-types: 1.4.4
+      bun-types: '*'
       effect: 4.1.0
       expo-sqlite: '>=14.0.0'
       mssql: ^11.0.1
@@ -7176,18 +7157,6 @@ snapshots:
 
   '@ff-labs/fff-bin-win32-x64@0.10.5': {}
 
-  '@ff-labs/fff-bun@0.10.5(patch_hash=d4650123a98a1c979f992ac562fc9e4115edc90611958f1b5764a40cb0d7edf6)':
-    optionalDependencies:
-      '@ff-labs/fff-bin-android-arm64': 0.10.5
-      '@ff-labs/fff-bin-darwin-arm64': 0.10.5
-      '@ff-labs/fff-bin-darwin-x64': 0.10.5
-      '@ff-labs/fff-bin-linux-arm64-gnu': 0.10.5
-      '@ff-labs/fff-bin-linux-arm64-musl': 0.10.5
-      '@ff-labs/fff-bin-linux-x64-gnu': 0.10.5
-      '@ff-labs/fff-bin-linux-x64-musl': 0.10.5
-      '@ff-labs/fff-bin-win32-arm64': 0.10.5
-      '@ff-labs/fff-bin-win32-x64': 0.10.5
-
   '@ff-labs/fff-node@0.10.5':
     dependencies:
       ffi-rs: 1.3.7
@@ -8522,7 +8491,7 @@ snapshots:
       tailwindcss: 4.3.5
       vite: 8.3.8(@types/node@24.12.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)
 
-  '@tsconfig/bun@1.0.9': {}
+  '@tsconfig/node22@22.0.2': {}
 
   '@tufjs/canonical-json@2.0.0': {}
 
@@ -8575,10 +8544,6 @@ snapshots:
     dependencies:
       '@babel/types': 7.29.14
 
-  '@types/bun@1.4.3':
-    dependencies:
-      bun-types: 1.4.4
-
   '@types/cacache@20.0.1':
     dependencies:
       '@types/node': 24.12.2
@@ -8603,6 +8568,8 @@ snapshots:
       '@types/minimatch': 6.0.0
       '@types/node': 24.12.2
     optional: true
+
+  '@types/mime-types@3.0.1': {}
 
   '@types/minimatch@6.0.0':
     dependencies:
@@ -9188,12 +9155,11 @@ snapshots:
     dependencies:
       typescript: 7.0.2
 
-  bun-pty@0.4.11: {}
-
   bun-types@1.4.4:
     dependencies:
       '@types/node': 24.12.2
       undici-types: 7.24.6
+    optional: true
 
   bundle-name@4.1.1:
     dependencies:
@@ -11333,7 +11299,8 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  undici-types@7.24.6: {}
+  undici-types@7.24.6:
+    optional: true
 
   undici@6.29.1: {}
 

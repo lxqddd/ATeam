@@ -1,11 +1,26 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@tsconfig/bun/tsconfig.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun"],
+    "types": [
+      "node"
+    ],
     "noUnusedLocals": true,
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "noUncheckedIndexedAccess": false
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "noUncheckedIndexedAccess": false,
+    "outDir": "dist",
+    "rootDir": "src"
   },
-  "references": [{ "path": "../core" }]
+  "references": [
+    {
+      "path": "../core"
+    }
+  ],
+  "include": [
+    "src"
+  ]
 }

@@ -1,14 +1,33 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "@tsconfig/bun/tsconfig.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun"],
+    "types": [
+      "node"
+    ],
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid",
-    "lib": ["ESNext", "DOM", "DOM.Iterable", "DOM.AsyncIterable"],
+    "lib": [
+      "ESNext",
+      "DOM",
+      "DOM.Iterable",
+      "DOM.AsyncIterable"
+    ],
     "noUncheckedIndexedAccess": false,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "outDir": "dist",
+    "rootDir": "src"
   },
-  "exclude": ["dist", "dist-node"],
-  "references": [{ "path": "../core" }]
+  "exclude": [
+    "dist",
+    "dist-node"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    }
+  ],
+  "include": [
+    "src"
+  ]
 }

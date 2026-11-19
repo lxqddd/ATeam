@@ -134,9 +134,9 @@
 
 **工作项**：
 
-- 固定 Bun 版本（`BUN_BIN` / `.tool-versions` / CI 安装脚本）
+- 固定 Node 版本（`.tool-versions` / CI 安装脚本）
 - 构建脚本校验 `SOURCE_COMMIT`、品牌化结果与产物版本
-- CI 构建 macOS arm64/x64（后续 Windows/Linux），缓存 Bun 依赖
+- CI 构建 macOS arm64/x64（后续 Windows/Linux），缓存 pnpm 依赖
 - 产物校验和、许可证/NOTICE 随包
 - 明确源码更新流程：替换 `apps/desktop/src/runtime` → 重新品牌化 → 构建 → 回归
 

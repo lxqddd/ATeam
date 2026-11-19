@@ -109,7 +109,7 @@ export const cryptoGlobal = <R>(ctx: Interpreter<R>) => {
         if (!(args[0] instanceof Bytes)) {
           throw typeError(`crypto.getRandomValues expects a Uint8Array, received ${describeValue(args[0])}.`)
         }
-        crypto.getRandomValues(args[0].bytes)
+        crypto.getRandomValues(args[0].bytes as Uint8Array<ArrayBuffer>)
         return args[0]
       },
     ],

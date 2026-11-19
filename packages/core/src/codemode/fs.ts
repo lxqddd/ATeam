@@ -1,4 +1,4 @@
-export * as CodeModeBun from "./bun.js"
+export * as CodeModeFs from "./fs.js"
 
 import { Extension } from "@opencode/codemode"
 import { Glob } from "@opencode/util/glob"
@@ -31,14 +31,10 @@ type Range = { readonly offset: number; readonly length: number }
 // the part of the file a slice covers.
 type Handle = { readonly name: string; readonly target: FileAccess.Target; readonly range?: Range }
 
-// A BunFile reaches a program as a copy and comes back as another, but its functions come back as themselves: its
-// `bytes` function says which file a value passed to `Bun.write` is.
-const handles = new WeakMap<Function, Handle>()
-
 // A run gets `Bun` only with the session's file services (see `CodeModeTool.create`).
 const service = <I, S>(key: Context.Key<I, S>) =>
   Effect.flatMap(Effect.serviceOption(key), (found) =>
-    Option.isSome(found) ? Effect.succeed(found.value) : Effect.die("Code Mode Bun needs the session's file services."),
+    Option.isSome(found) ? Effect.succeed(found.value) : Effect.die("Code Mode fs needs the session's file services."),
   )
 
 // One file operation, acting for the execute call as a tool does. A permission error reaches the program as core
@@ -54,11 +50,11 @@ const call = <A, E>(syscall: string, name: string, body: (host: Host) => Effect.
     })
   }).pipe(Effect.mapError((error) => nodeError(error, syscall, name)))
 
-// `Bun.file` asks read permission, and external-directory approval outside the project, once: the file's own reads
-// don't ask again, and its writes ask only edit. Bun reads `size` and `lastModified` when a program asks for them. A
-// program's copy of the file can't ask later, so they are read here. A missing file has Bun's values for one.
-const open = (input: string | URL, options?: { readonly type?: string }) => {
-  supports("Bun.file", options, ["type"])
+// `fs.readFile` and `fs.stat` ask read permission, and external-directory approval outside the project, once: the
+// file's own reads don't ask again, and its writes ask only edit. Size and modification time are read here because a
+// program's copy of the file can't ask later. A missing file has the values one reports.
+const resolve = (input: string | URL, options?: { readonly type?: string }) => {
+  supports("fs.readFile", options, ["type"])
   const name = toPath(input)
   return call("stat", name, (host) =>
     Effect.gen(function* () {
@@ -66,68 +62,9 @@ const open = (input: string | URL, options?: { readonly type?: string }) => {
       const info = yield* followed(target.environment.files, target.absolute).pipe(
         Effect.catchTag("Environment.NotFound", () => Effect.undefined),
       )
-      return file(
-        { name, target },
-        options?.type ?? mime(name),
-        info?.size ?? 0,
-        Math.trunc(info?.mtimeMs ?? 2 ** 52 - 1),
-      )
+      return { handle: { name, target } as Handle, info, type: options?.type ?? mime(name) }
     }),
   )
-}
-
-// A BunFile's own asynchronous function. A function inside a result is called synchronously, and would make the
-// program wait for its Effect and throw its failure. Handing the Effect back still pending gives the program a
-// promise instead, which a failure rejects.
-const later =
-  <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
-  (...args: Args) =>
-    Effect.succeed(run(...args))
-
-// The part of Bun's BunFile that is implemented.
-const file = (handle: Handle, type: string, size: number, lastModified: number) => {
-  const bytes = later(() => read(handle))
-  handles.set(bytes, handle)
-  const unlink = later(() => remove(handle))
-  // As Blob.slice: a negative index counts from the end, and a string in any position is the new type.
-  const index = (value: number | string | undefined, fallback: number) => {
-    if (typeof value !== "number") return fallback
-    return value < 0 ? Math.max(size + value, 0) : Math.min(value, size)
-  }
-  return {
-    name: handle.name,
-    type,
-    size,
-    lastModified,
-    text: later(() => read(handle).pipe(Effect.map(decode))),
-    // The program catches the SyntaxError JSON.parse throws, as it would from Bun.
-    json: later(() =>
-      read(handle).pipe(
-        Effect.flatMap((bytes) =>
-          Effect.try({ try: (): unknown => JSON.parse(decode(bytes)), catch: (error) => error }),
-        ),
-      ),
-    ),
-    bytes,
-    // The runtime has no ArrayBuffer: one crosses to a program as a Uint8Array.
-    arrayBuffer: later(() => read(handle)),
-    exists: later(() => exists(handle)),
-    stat: later(() => stat(handle)),
-    slice: (...args: ReadonlyArray<number | string | undefined>): unknown => {
-      const start = index(args[0], 0)
-      const length = Math.max(index(args[1], size) - start, 0)
-      return file(
-        { ...handle, range: { offset: (handle.range?.offset ?? 0) + start, length } },
-        args.find((item) => typeof item === "string") ?? type,
-        length,
-        lastModified,
-      )
-    },
-    write: later((data: unknown) => write(handle, data)),
-    delete: unlink,
-    unlink,
-    writer: (options?: { readonly highWaterMark?: number }) => writer(handle, options),
-  }
 }
 
 const read = (handle: Handle) =>
@@ -173,48 +110,30 @@ const followed = (files: Environment.Files, absolute: string) =>
         ),
   )
 
-// As in Bun, `delete` removes a file, never a directory. It holds the file's mutation lock, as a patch that deletes
-// a file does.
-const remove = (handle: Handle) =>
-  call("unlink", handle.name, (host) =>
-    Effect.gen(function* () {
-      const info = yield* handle.target.environment.files.stat(handle.target.absolute)
-      if (info.type === "directory")
-        return yield* new Environment.WrongKind({ path: handle.target.absolute, actual: info.type })
-      yield* host.fileWrite.authorize(handle.target, host.context)
-      yield* handle.target.environment.files.remove(handle.target.absolute)
-    }).pipe(host.fileMutation.withLock([handle.target.absolute])),
-  )
-
-// `Bun.write`: the bytes written. The destination is a path or a BunFile; the data is text, bytes, a BunFile to copy,
-// or a response, whose body is read here. Like Bun, it creates missing parent directories unless `createPath` is false.
+// `fs.writeFile`: the bytes written. The destination is a path; the data is text, bytes, or a file handle to copy.
+// Like Node with `recursive: true`, it creates missing parent directories unless `createPath` is false.
 const writeTo = (destination: unknown, data: unknown, options?: { readonly createPath?: boolean }) => {
-  supports("Bun.write", options, ["createPath"])
-  const to = typeof destination === "string" || destination instanceof URL ? toPath(destination) : handleOf(destination)
-  if (to === undefined) throw new TypeError("Bun.write expects a path or a BunFile to write to.")
-  return write(to, data, options?.createPath !== false)
+  supports("fs.writeFile", options, ["createPath"])
+  if (typeof destination !== "string" && !(destination instanceof URL))
+    throw new TypeError("fs.writeFile expects a path to write to.")
+  return write(toPath(destination), data, options?.createPath !== false)
 }
 
-const write = (to: string | Handle, data: unknown, parents = true) => {
-  const from = handleOf(data)
-  // A copy asks edit without a diff of the file.
-  return (from ? read(from) : contents(data)).pipe(
-    Effect.flatMap((bytes) => put(to, bytes, { parents, diff: from === undefined })),
-  )
-}
+const write = (to: string, data: unknown, parents = true) =>
+  contents(data).pipe(Effect.flatMap((bytes) => put(to, bytes, { parents, diff: true })))
 
 // Writes exactly these bytes, with no formatting and no BOM handling, after asking edit permission. The request shows
 // the change as a diff when both sides are text, like the write tool's. An append never reads the file: its diff
 // shows only what it adds. Like an edit, it holds the file's mutation lock from reading the file to writing it, and
 // writes through `FileMutation`.
 const put = (
-  to: string | Handle,
+  to: string,
   bytes: Uint8Array,
   options: { readonly parents?: boolean; readonly diff?: boolean; readonly append?: boolean },
 ) =>
-  call("open", typeof to === "string" ? to : to.name, (host) =>
+  call("open", to, (host) =>
     Effect.gen(function* () {
-      const target = typeof to === "string" ? yield* host.fileWrite.target(to, host.context) : to.target
+      const target = yield* host.fileWrite.target(to, host.context)
       return yield* Effect.gen(function* () {
         const type = yield* typeOf(target.environment.files, target.absolute)
         if (type === "directory") return yield* new Environment.WrongKind({ path: target.absolute, actual: type })
@@ -254,13 +173,6 @@ const typeOf = (files: Environment.Files, absolute: string) =>
 const text = (bytes: Uint8Array) =>
   isUtf8(bytes) ? Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString() : undefined
 
-const handleOf = (value: unknown) => {
-  const bytes = method(value, "bytes")
-  return bytes && handles.get(bytes)
-}
-
-// Only a host function crosses back from a program, so a `bytes`, `arrayBuffer` or `text` function here is one a host
-// value came with, such as a `fetch` response's.
 const contents = (data: unknown) => {
   const given = toBytes(data)
   if (given) return Effect.succeed(given)
@@ -299,37 +211,6 @@ const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes)
 // it, so a long write asks edit once per flush, with what that flush adds, not once per chunk. Bun's own sink writes
 // over the start of an existing file without truncating it; this one replaces the file. As in Bun, a missing parent
 // directory fails the flush.
-const writer = (handle: Handle, options?: { readonly highWaterMark?: number }) => {
-  supports("A file writer", options, ["highWaterMark"])
-  const chunks: Array<Uint8Array> = []
-  let buffered = 0
-  let started = false
-  const flush = () =>
-    Effect.suspend(() => {
-      if (chunks.length === 0) return Effect.succeed(0)
-      return put(handle, Buffer.concat(chunks), { diff: true, append: started }).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            started = true
-            chunks.length = 0
-            buffered = 0
-          }),
-        ),
-      )
-    })
-  return {
-    write: (chunk: unknown) => {
-      const bytes = typeof chunk === "string" || chunk instanceof Uint8Array ? toBytes(chunk) : undefined
-      if (!bytes) throw new TypeError("A file writer takes a string or a Uint8Array.")
-      chunks.push(bytes)
-      buffered += bytes.byteLength
-      return buffered < (options?.highWaterMark ?? Infinity) ? bytes.byteLength : Effect.as(flush(), bytes.byteLength)
-    },
-    flush,
-    end: flush,
-  }
-}
-
 type ScanOptions = {
   readonly cwd?: string
   readonly dot?: boolean
@@ -341,7 +222,7 @@ type ScanOptions = {
 // look inside: only `onlyFiles: false` lists one.
 const scan = (pattern: string, input?: string | ScanOptions) => {
   const options = typeof input === "string" ? { cwd: input } : input
-  supports("A Bun.Glob scan", options, ["cwd", "dot", "absolute", "onlyFiles"])
+  supports("fs.glob", options, ["cwd", "dot", "absolute", "onlyFiles"])
   const cwd = options?.cwd ?? "."
   return call("scandir", cwd, (host) =>
     Effect.gen(function* () {
@@ -498,33 +379,34 @@ const types = Object.fromEntries(
 
 const mime = (name: string) => types[path.extname(name).slice(1).toLowerCase()] ?? "application/octet-stream"
 
-/** A subset of Bun's file APIs, over the session's files and with the permissions the file tools ask. */
+// `fs.readFile`: text with an encoding, else the file's bytes.
+const readFile = (input: string | URL, options?: { readonly encoding?: string; readonly type?: string }) => {
+  supports("fs.readFile", options, ["encoding", "type"])
+  return resolve(input, { type: options?.type }).pipe(
+    Effect.flatMap(({ handle }) => read(handle)),
+    Effect.map((bytes) => (options?.encoding ? decode(bytes) : bytes)),
+  )
+}
+
+const statPath = (input: string | URL) => resolve(input).pipe(Effect.flatMap(({ handle }) => stat(handle)))
+const existsPath = (input: string | URL) => resolve(input).pipe(Effect.flatMap(({ handle }) => exists(handle)))
+
+/** A subset of Node's promise-based fs API, over the session's files and with the permissions the file tools ask. */
 export const extension = Extension.make({
-  name: "bun",
-  modules: { bun: "Bun" },
+  name: "fs",
   globals: {
-    Bun: {
-      file: open,
-      write: Extension.async(writeTo),
-      Glob: Extension.constructible((pattern: string) => {
-        if (typeof pattern !== "string") throw new TypeError("Bun.Glob expects a pattern string.")
-        return {
-          scan: (options?: string | ScanOptions) => scan(pattern, options),
-          scanSync: (options?: string | ScanOptions) => scan(pattern, options),
-          // As in Bun, `match` takes a dot file that a scan without `dot` leaves out.
-          match: (name: string) => Glob.match(pattern, name),
-        }
-      }),
+    fs: {
+      readFile,
+      writeFile: Extension.async(writeTo),
+      stat: statPath,
+      exists: existsPath,
+      glob: scan,
     },
   },
 })
 
-/** What to show for a Bun call: the function, its path or pattern, and the file a write copies. */
-export const display = (name: string, args: ReadonlyArray<unknown>) => {
-  const from = name === "Bun.write" ? handleOf(args[1])?.name : undefined
-  return {
-    method: name.slice(name.lastIndexOf(".") + 1),
-    path: handleOf(args[0])?.name ?? String(args[0]),
-    ...(from === undefined ? {} : { from }),
-  }
-}
+/** What to show for an fs call: the function, its path or pattern, and the file a write copies. */
+export const display = (name: string, args: ReadonlyArray<unknown>) => ({
+  method: name.slice(name.lastIndexOf(".") + 1),
+  path: String(args[0]),
+})
