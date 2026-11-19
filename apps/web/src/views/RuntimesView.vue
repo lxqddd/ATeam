@@ -2,14 +2,13 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
+import { ChevronDownIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from '@lucide/vue'
 import type { RuntimeInfo, RuntimeModel } from '@ateam/shared'
 import { useRuntimesStore } from '../stores/runtimes'
-import SectionCard from '../components/SectionCard.vue'
 import EmptyState from '../components/EmptyState.vue'
+import RuntimeLogo from '../components/RuntimeLogo.vue'
 import { Badge } from '../components/ui/badge'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
 import { Loader } from '../components/ai-elements/loader'
 
 interface LocalModelDraft {
@@ -35,6 +34,19 @@ const drafts = ref<Record<string, RuntimeDraft>>({})
 const saving = ref<Record<string, boolean>>({})
 const tests = ref<Record<string, TestState>>({})
 const testEpochs = ref<Record<string, number>>({})
+const expanded = ref<Record<string, boolean>>({})
+
+function panelId(runtimeName: string): string {
+  return `runtime-panel-${runtimeName.replace(/[^A-Za-z0-9_-]/g, '-')}`
+}
+
+function isExpanded(runtime: RuntimeInfo): boolean {
+  return expanded.value[runtime.name] ?? false
+}
+
+function togglePanel(runtime: RuntimeInfo) {
+  expanded.value = { ...expanded.value, [runtime.name]: !isExpanded(runtime) }
+}
 
 function createDraft(runtime: RuntimeInfo): RuntimeDraft {
   return {
@@ -120,6 +132,64 @@ function isProbeDefault(runtime: RuntimeInfo, modelId: string): boolean {
 
 function addLocalModel(runtime: RuntimeInfo) {
   draftFor(runtime).locals.push({ id: '', label: '' })
+}
+
+function hasAddableModels(runtime: RuntimeInfo): boolean {
+  return modelIdOptions(runtime, draftFor(runtime).locals.length).length > 0
+}
+
+// Model IDs and display labels are chosen from the runtime's own catalog so
+// a saved entry always matches a model the runtime can actually resolve.
+function modelIdOptions(runtime: RuntimeInfo, index: number): RuntimeModel[] {
+  const draft = draftFor(runtime)
+  const used = new Set(
+    draft.locals
+      .filter((_, position) => position !== index)
+      .map((model) => model.id.trim())
+      .filter(Boolean),
+  )
+  const options: RuntimeModel[] = []
+  const seen = new Set<string>()
+  for (const model of runtime.models) {
+    if (!model.id || used.has(model.id) || seen.has(model.id)) {
+      continue
+    }
+    seen.add(model.id)
+    options.push(model)
+  }
+  const current = draft.locals[index]?.id.trim()
+  if (current && !seen.has(current)) {
+    options.unshift({
+      id: current,
+      label: draft.locals[index].label.trim() || current,
+      source: 'settings',
+      default: false,
+      status: 'unverified',
+    })
+  }
+  return options
+}
+
+function modelLabelOptions(runtime: RuntimeInfo): string[] {
+  const labels = new Set<string>()
+  for (const model of runtime.models) {
+    const label = (model.label || '').trim()
+    if (label) {
+      labels.add(label)
+    }
+  }
+  return [...labels]
+}
+
+function onModelIdChange(runtime: RuntimeInfo, index: number, modelId: string) {
+  const draft = draftFor(runtime)
+  const model = runtime.models.find((candidate) => candidate.id === modelId)
+  draft.locals[index].id = modelId
+  if (model) {
+    const label = (model.label || '').trim()
+    draft.locals[index].label = label && label !== model.id ? label : ''
+  }
+  clearTests(runtime.name)
 }
 
 function removeLocalModel(runtime: RuntimeInfo, index: number) {
@@ -254,25 +324,46 @@ async function save(runtime: RuntimeInfo) {
           {{ runtimes.error }}
         </p>
 
-        <SectionCard
-          v-for="runtime in runtimes.items"
-          :key="runtime.name"
-          :title="runtime.name"
-          :description="capabilitiesLabel(runtime)"
-        >
-          <template #actions>
-            <Badge v-if="runtime.version">{{ $t('runtimes.version') }} {{ runtime.version }}</Badge>
-            <Badge :tone="runtime.installed ? 'success' : 'neutral'">
-              {{ runtime.installed ? $t('runtimes.installed') : $t('runtimes.notInstalled') }}
-            </Badge>
-            <Badge :tone="runtime.available ? 'success' : 'warning'">
-              {{ runtime.available ? $t('runtimes.available') : $t('runtimes.unavailable') }}
-            </Badge>
-            <Badge :tone="runtime.supported ? 'info' : 'warning'">
-              {{ runtime.supported ? $t('runtimes.supported') : $t('runtimes.unsupported') }}
-            </Badge>
-          </template>
+        <section v-for="runtime in runtimes.items" :key="runtime.name" class="section-card runtime-panel">
+          <h2 class="runtime-panel__heading">
+            <button
+              type="button"
+              class="runtime-panel__trigger"
+              :aria-expanded="isExpanded(runtime)"
+              :aria-controls="panelId(runtime.name)"
+              @click="togglePanel(runtime)"
+            >
+              <RuntimeLogo :name="runtime.name" />
+              <span class="min-w-0 flex-1 text-left">
+                <span class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span class="truncate text-subtitle font-semibold tracking-tight">{{ runtime.name }}</span>
+                  <span class="flex flex-wrap items-center gap-1.5">
+                    <Badge v-if="runtime.version">{{ $t('runtimes.version') }} {{ runtime.version }}</Badge>
+                    <Badge v-if="runtime.installed" class="hidden sm:inline-flex" tone="success">
+                      {{ $t('runtimes.installed') }}
+                    </Badge>
+                    <Badge v-else tone="neutral">{{ $t('runtimes.notInstalled') }}</Badge>
+                    <Badge class="hidden md:inline-flex" :tone="runtime.available ? 'success' : 'warning'">
+                      {{ runtime.available ? $t('runtimes.available') : $t('runtimes.unavailable') }}
+                    </Badge>
+                    <Badge :tone="runtime.supported ? 'info' : 'warning'">
+                      {{ runtime.supported ? $t('runtimes.supported') : $t('runtimes.unsupported') }}
+                    </Badge>
+                  </span>
+                </span>
+                <span v-if="capabilitiesLabel(runtime)" class="mt-1 block truncate text-caption text-fg-subtle">
+                  {{ capabilitiesLabel(runtime) }}
+                </span>
+              </span>
+              <ChevronDownIcon
+                class="runtime-panel__chevron size-4 shrink-0"
+                :class="{ 'runtime-panel__chevron--open': isExpanded(runtime) }"
+                aria-hidden="true"
+              />
+            </button>
+          </h2>
 
+          <div v-show="isExpanded(runtime)" :id="panelId(runtime.name)" class="section-card__body">
           <p v-if="runtime.detail" class="text-caption text-fg-subtle">{{ runtime.detail }}</p>
 
           <template v-if="!runtime.supported">
@@ -335,52 +426,73 @@ async function save(runtime: RuntimeInfo) {
                 {{ $t('runtimes.localModels') }}
               </h4>
               <div v-for="(model, index) in draftFor(runtime).locals" :key="`${runtime.name}-local-${index}`" class="mt-2">
-                <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] items-center gap-2">
-                  <Input
-                    v-model="model.id"
-                    :placeholder="$t('runtimes.modelId')"
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] sm:items-center">
+                  <el-select
+                    :model-value="model.id"
+                    filterable
+                    :placeholder="$t('runtimes.modelIdPlaceholder')"
                     :aria-label="`${$t('runtimes.modelId')} ${index + 1}`"
-                    @input="clearTests(runtime.name)"
-                  />
-                  <Input
-                    v-model="model.label"
-                    :placeholder="$t('runtimes.modelLabel')"
-                    :aria-label="`${$t('runtimes.modelLabel')} ${index + 1}`"
-                    @input="clearTests(runtime.name)"
-                  />
-                  <Button
-                    size="icon-sm"
-                    variant="destructive"
-                    :title="$t('runtimes.remove')"
-                    :aria-label="$t('runtimes.remove')"
-                    @click="removeLocalModel(runtime, index)"
+                    style="width: 100%"
+                    @update:model-value="(value: string) => onModelIdChange(runtime, index, value)"
                   >
-                    <Trash2Icon class="size-3.5" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    :disabled="
-                      !isTestableModel(runtime, model.id) ||
-                      testState(runtime.name, model.id.trim())?.status === 'testing'
-                    "
-                    :title="
-                      model.id.trim() && !isTestableModel(runtime, model.id)
-                        ? $t('runtimes.saveBeforeTest')
-                        : undefined
-                    "
-                    @click="testModel(runtime, model.id)"
-                  >
-                    <Loader
-                      v-if="testState(runtime.name, model.id.trim())?.status === 'testing'"
-                      :size="12"
+                    <el-option
+                      v-for="option in modelIdOptions(runtime, index)"
+                      :key="option.id"
+                      :label="option.label && option.label !== option.id ? `${option.label} · ${option.id}` : option.id"
+                      :value="option.id"
                     />
-                    {{
-                      testState(runtime.name, model.id.trim())?.status === 'testing'
-                        ? $t('runtimes.testing')
-                        : $t('runtimes.test')
-                    }}
-                  </Button>
+                  </el-select>
+                  <el-select
+                    v-model="model.label"
+                    filterable
+                    :placeholder="$t('runtimes.modelLabelPlaceholder')"
+                    :aria-label="`${$t('runtimes.modelLabel')} ${index + 1}`"
+                    style="width: 100%"
+                    @update:model-value="clearTests(runtime.name)"
+                  >
+                    <el-option :label="$t('runtimes.useModelId')" value="" />
+                    <el-option
+                      v-for="label in modelLabelOptions(runtime)"
+                      :key="label"
+                      :label="label"
+                      :value="label"
+                    />
+                  </el-select>
+                  <div class="flex items-center gap-2 sm:contents">
+                    <Button
+                      size="icon-sm"
+                      variant="destructive"
+                      :title="$t('runtimes.remove')"
+                      :aria-label="$t('runtimes.remove')"
+                      @click="removeLocalModel(runtime, index)"
+                    >
+                      <Trash2Icon class="size-3.5" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      :disabled="
+                        !isTestableModel(runtime, model.id) ||
+                        testState(runtime.name, model.id.trim())?.status === 'testing'
+                      "
+                      :title="
+                        model.id.trim() && !isTestableModel(runtime, model.id)
+                          ? $t('runtimes.saveBeforeTest')
+                          : undefined
+                      "
+                      @click="testModel(runtime, model.id)"
+                    >
+                      <Loader
+                        v-if="testState(runtime.name, model.id.trim())?.status === 'testing'"
+                        :size="12"
+                      />
+                      {{
+                        testState(runtime.name, model.id.trim())?.status === 'testing'
+                          ? $t('runtimes.testing')
+                          : $t('runtimes.test')
+                      }}
+                    </Button>
+                  </div>
                 </div>
                 <div
                   v-if="
@@ -408,10 +520,19 @@ async function save(runtime: RuntimeInfo) {
                 </div>
               </div>
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <Button variant="ghost" size="sm" @click="addLocalModel(runtime)">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :disabled="!hasAddableModels(runtime)"
+                  :title="hasAddableModels(runtime) ? undefined : $t('runtimes.noMoreModels')"
+                  @click="addLocalModel(runtime)"
+                >
                   <PlusIcon class="size-3.5" />
                   {{ $t('runtimes.addModel') }}
                 </Button>
+                <span v-if="!hasAddableModels(runtime)" class="text-caption text-fg-subtle">
+                  {{ $t('runtimes.noMoreModels') }}
+                </span>
               </div>
             </section>
 
@@ -421,7 +542,7 @@ async function save(runtime: RuntimeInfo) {
               </h3>
               <el-radio-group
                 v-model="draftFor(runtime).defaultModel"
-                class="mt-2 flex flex-col items-start gap-2"
+                class="runtime-default-model mt-2 flex flex-col items-start gap-2"
                 :aria-labelledby="defaultModelHeadingId(runtime.name)"
               >
                 <el-radio value="">{{ $t('runtimes.defaultNone') }}</el-radio>
@@ -444,8 +565,64 @@ async function save(runtime: RuntimeInfo) {
               </span>
             </div>
           </div>
-        </SectionCard>
+          </div>
+        </section>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.runtime-panel__heading {
+  margin: 0;
+  font: inherit;
+}
+
+.runtime-panel__trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--cd-space-3);
+  padding: var(--cd-space-3) var(--cd-space-4);
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+}
+
+.runtime-panel__trigger:hover {
+  background: color-mix(in srgb, var(--cd-color-surface-raised) 55%, transparent);
+}
+
+.runtime-panel__trigger:focus-visible {
+  outline: 2px solid var(--cd-color-accent);
+  outline-offset: -2px;
+}
+
+.runtime-panel__chevron {
+  color: var(--cd-color-text-subtle);
+  transition: transform 150ms ease;
+}
+
+.runtime-panel__chevron--open {
+  transform: rotate(180deg);
+}
+
+.runtime-default-model :deep(.el-radio) {
+  height: auto;
+  margin-right: 0;
+  align-items: flex-start;
+  white-space: normal;
+}
+
+.runtime-default-model :deep(.el-radio__label) {
+  white-space: normal;
+  word-break: break-all;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .runtime-panel__chevron {
+    transition: none;
+  }
+}
+</style>

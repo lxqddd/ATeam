@@ -356,14 +356,6 @@ const isTaskRoute = computed(() => route.name === 'task')
           {{ $t('common.empty') }}
         </p>
       </div>
-
-      <div class="mt-auto rounded-lg border border-border-subtle bg-surface-raised/60 px-3 py-2.5">
-        <div class="flex items-center gap-2 text-caption text-fg-muted">
-          <span class="size-1.5 rounded-full bg-success" />
-          {{ $t('sidebar.localFirst') }}
-        </div>
-        <div class="mt-0.5 text-caption text-fg-subtle">v0.1.0</div>
-      </div>
     </div>
 
     <div

@@ -114,6 +114,12 @@ func (a *API) runtimeViews(ctx context.Context) []runtimeView {
 	views := make([]runtimeView, 0, len(a.registry.Names()))
 	seen := map[string]bool{}
 	for _, name := range a.registry.Names() {
+		// mock stays registered for tests, the demo script and legacy mock
+		// agents, but it is not a product runtime: keep it out of the
+		// catalog and every runtime selector surface.
+		if name == "mock" {
+			continue
+		}
 		if view, ok := a.runtimeView(ctx, name); ok {
 			views = append(views, view)
 			seen[name] = true

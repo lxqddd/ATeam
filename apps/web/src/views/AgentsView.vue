@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { PencilIcon, PlusIcon, Trash2Icon } from '@lucide/vue'
@@ -17,7 +17,6 @@ import { Loader } from '../components/ai-elements/loader'
 import { workTone } from '../lib/status'
 
 const { t } = useI18n()
-const DEFAULT_MODEL = '__default__'
 const agents = useAgentsStore()
 const showCreate = ref(false)
 const editingId = ref<string | null>(null)
@@ -25,16 +24,11 @@ const saving = ref(false)
 const runtimes = ref<RuntimeInfo[]>([])
 const runtimeLoading = ref(false)
 const runtimeError = ref('')
-const testState = ref<{ status: 'idle' | 'testing' | 'success' | 'error'; message: string }>({
-  status: 'idle',
-  message: '',
-})
 const form = reactive({
   name: '',
   description: '',
   instructions: '',
-  runtime: 'mock',
-  model: DEFAULT_MODEL,
+  runtime: '',
   role: 'general',
   permissionMode: 'controlled_edit',
   maxConcurrency: 1,
@@ -43,13 +37,9 @@ const form = reactive({
   allowedCommands: '',
 })
 
-const selectedRuntime = computed(() => runtimes.value.find((runtime) => runtime.name === form.runtime))
-const modelOptions = computed(() => selectedRuntime.value?.models ?? [])
-const unavailableModel = computed(() =>
-  form.model !== DEFAULT_MODEL && !modelOptions.value.some((model) => model.id === form.model)
-    ? form.model
-    : '',
-)
+function defaultRuntimeName(): string {
+  return runtimes.value.find((runtime) => runtime.supported)?.name ?? ''
+}
 
 function runtimeLabel(runtime: RuntimeInfo): string {
   const version = runtime.version ? ` · ${runtime.version}` : ''
@@ -61,6 +51,9 @@ async function loadRuntimes() {
   try {
     runtimes.value = await RuntimeApi.list()
     runtimeError.value = ''
+    if (!editingId.value && !runtimes.value.some((runtime) => runtime.name === form.runtime && runtime.supported)) {
+      form.runtime = defaultRuntimeName()
+    }
   } catch (err) {
     runtimeError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -72,15 +65,13 @@ function resetForm() {
   form.name = ''
   form.description = ''
   form.instructions = ''
-  form.runtime = 'mock'
-  form.model = DEFAULT_MODEL
+  form.runtime = defaultRuntimeName()
   form.role = 'general'
   form.permissionMode = 'controlled_edit'
   form.maxConcurrency = 1
   form.timeoutMinutes = 60
   form.allowedPaths = ''
   form.allowedCommands = ''
-  testState.value = { status: 'idle', message: '' }
 }
 
 function openCreate() {
@@ -95,74 +86,26 @@ function openEdit(agent: Agent) {
   form.description = agent.description
   form.instructions = agent.instructions
   form.runtime = agent.runtime
-  form.model = agent.model || DEFAULT_MODEL
   form.role = agent.role || 'general'
   form.permissionMode = agent.permissionMode || 'controlled_edit'
   form.maxConcurrency = agent.maxConcurrency
   form.timeoutMinutes = agent.timeoutMinutes
   form.allowedPaths = agent.allowedPaths.join(', ')
   form.allowedCommands = agent.allowedCommands.join(', ')
-  testState.value = { status: 'idle', message: '' }
   showCreate.value = true
 }
-
-watch(
-  () => form.runtime,
-  () => {
-    if (form.model === DEFAULT_MODEL) {
-      return
-    }
-    if (!modelOptions.value.some((model) => model.id === form.model)) {
-      form.model = DEFAULT_MODEL
-      ElMessage.warning(t('agents.form.modelReset'))
-    }
-  },
-)
-
-watch([() => form.runtime, () => form.model], () => {
-  testState.value = { status: 'idle', message: '' }
-})
 
 onMounted(() => {
   void agents.fetchAll()
   void loadRuntimes()
 })
 
-async function testConnection() {
-  if (!selectedRuntime.value?.supported) {
-    return
-  }
-  testState.value = { status: 'testing', message: '' }
-  try {
-    const result = await RuntimeApi.testModel(
-      form.runtime,
-      form.model === DEFAULT_MODEL ? '' : form.model,
-    )
-    if (result.ok) {
-      testState.value = {
-        status: 'success',
-        message: t('agents.form.testSuccess', { ms: result.latencyMs }),
-      }
-    } else {
-      testState.value = {
-        status: 'error',
-        message: result.error || t('agents.form.testFailed'),
-      }
-    }
-  } catch (err) {
-    testState.value = {
-      status: 'error',
-      message: err instanceof Error ? err.message : String(err),
-    }
-  }
-}
-
 async function submitAgent() {
   if (!form.name.trim()) {
     return
   }
-  if (form.model !== DEFAULT_MODEL && !modelOptions.value.some((model) => model.id === form.model)) {
-    ElMessage.error(t('agents.form.modelInvalid'))
+  if (!form.runtime) {
+    ElMessage.error(t('agents.form.runtimeRequired'))
     return
   }
   const input = {
@@ -170,7 +113,9 @@ async function submitAgent() {
     description: form.description,
     instructions: form.instructions,
     runtime: form.runtime,
-    model: form.model === DEFAULT_MODEL ? '' : form.model,
+    // Model selection lives in Runtime management; editing an older agent
+    // clears any pinned model so it inherits the runtime default.
+    model: '',
     role: form.role,
     permissionMode: form.permissionMode,
     maxConcurrency: form.maxConcurrency,
@@ -285,12 +230,8 @@ async function deleteAgent(agent: Agent) {
 
           <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-fg-subtle">
             <span>{{ agent.runtime }}</span>
-            <span v-if="agent.model">{{ agent.model }}</span>
             <span>{{ $t('agents.card.concurrency', { n: agent.maxConcurrency }) }}</span>
             <span>{{ $t('agents.card.timeout', { n: agent.timeoutMinutes }) }}</span>
-            <Badge v-if="agent.modelStatus === 'unavailable'" tone="danger">
-              {{ $t('agents.card.modelUnavailable') }}
-            </Badge>
             <Badge v-if="agent.workStatus" :tone="workTone(agent.workStatus)" class="ml-auto">
               {{ $t(`work.status.${agent.workStatus}`) }}
             </Badge>
@@ -334,7 +275,14 @@ async function deleteAgent(agent: Agent) {
                 :value="runtime.name"
                 :disabled="!runtime.supported"
               />
+              <el-option
+                v-if="form.runtime && !runtimes.some((runtime) => runtime.name === form.runtime)"
+                :label="`${form.runtime} · ${$t('agents.form.runtimeRemoved')}`"
+                :value="form.runtime"
+                disabled
+              />
             </el-select>
+            <p v-if="runtimeError" class="text-caption text-danger">{{ runtimeError }}</p>
           </Field>
           <Field :label="$t('agents.form.role')" for="agent-role">
             <el-select id="agent-role" v-model="form.role" style="width: 100%">
@@ -347,69 +295,6 @@ async function deleteAgent(agent: Agent) {
             </el-select>
           </Field>
         </div>
-
-        <Field :label="$t('agents.form.model')" for="agent-model">
-          <el-select
-            id="agent-model"
-            v-model="form.model"
-            :loading="runtimeLoading"
-            :disabled="!form.runtime || runtimeLoading"
-            style="width: 100%"
-          >
-            <el-option :label="$t('agents.form.defaultModel')" :value="DEFAULT_MODEL" />
-            <el-option
-              v-for="model in modelOptions"
-              :key="model.id"
-              :label="model.label || model.id"
-              :value="model.id"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <span>{{ model.label || model.id }}</span>
-                <span class="text-caption text-fg-subtle">
-                  {{
-                    model.source === 'runtime'
-                      ? $t('agents.form.modelSourceRuntime')
-                      : $t('agents.form.modelSourceSettings')
-                  }}
-                </span>
-              </div>
-            </el-option>
-            <el-option
-              v-if="unavailableModel"
-              :key="unavailableModel"
-              :label="`${unavailableModel} · ${$t('agents.card.modelUnavailable')}`"
-              :value="unavailableModel"
-              disabled
-            />
-          </el-select>
-          <div class="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              :disabled="!selectedRuntime?.supported || runtimeLoading || testState.status === 'testing'"
-              @click="testConnection"
-            >
-              <Loader v-if="testState.status === 'testing'" :size="12" />
-              {{ $t('agents.form.testConnection') }}
-            </Button>
-            <span v-if="testState.status === 'success'" class="text-caption text-success">
-              {{ testState.message }}
-            </span>
-            <span v-else-if="testState.status === 'error'" class="text-caption text-danger">
-              {{ testState.message }}
-            </span>
-            <span v-else class="text-caption text-fg-subtle">{{ $t('agents.form.testHint') }}</span>
-          </div>
-          <p v-if="runtimeError" class="text-caption text-danger">{{ runtimeError }}</p>
-          <p v-else-if="!modelOptions.length && selectedRuntime?.modelsError" class="text-caption text-fg-subtle">
-            {{ selectedRuntime.modelsError }}
-            <router-link class="underline" to="/settings">{{ $t('agents.form.configureModels') }}</router-link>
-          </p>
-          <p v-else-if="!modelOptions.length" class="text-caption text-fg-subtle">
-            {{ $t('agents.form.noModels') }}
-            <router-link class="underline" to="/settings">{{ $t('agents.form.configureModels') }}</router-link>
-          </p>
-        </Field>
 
         <div class="grid grid-cols-2 gap-3">
           <Field :label="$t('agents.form.maxConcurrency')" for="agent-concurrency">

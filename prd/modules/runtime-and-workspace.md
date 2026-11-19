@@ -304,7 +304,7 @@ M0 的 Adapter 契约非常小：`Name()` 返回稳定标识，`Run(ctx, Request
 
 | Runtime | 状态 | 适用场景 | 关键限制 |
 | --- | --- | --- | --- |
-| `mock` | 已实现（M0） | 演示、UI 联调、自动化测试、无 CLI 环境 | 不产生真实修改，不可作为交付证据 |
+| `mock` | 已实现（M0） | 演示、UI 联调、自动化测试、无 CLI 环境 | 不产生真实修改，不可作为交付证据；保留注册但**不在 Runtime 管理页与 Agent Runtime 下拉中展示**，legacy mock Agent 仍可运行 |
 | `claude` | 已实现（M1 完整版） | 使用本机 Claude Code CLI 执行真实编码任务 | 模型目录来自本地 `modelPicker`/`ANTHROPIC_*_MODEL`，CLI 不枚举模型 |
 | `opencode` | 已实现（M2.1） | 使用本机 OpenCode CLI 与其配置的任意模型（DeepSeek、GLM、MiniMax 等） | 权限边界弱于 Claude：read_only 用 plan agent，无路径级拦截；依赖 worktree 隔离 |
 | `codex` | 计划（M2） | 使用本机 Codex CLI 作为替代 Runtime | 协议与参数不同，需要独立 adapter 与能力声明 |
@@ -344,6 +344,20 @@ Agent 的模型选择不再是自由文本，而是所选 Runtime 的**模型目
 - Agent 保存时按目录校验；Run 启动时若目录可用则再次校验，不可用时交由 Adapter 返回 `runtime_error`，不得静默改用默认模型。
 
 **Runtime 列表的发现规则**：`GET /runtimes` 除已注册 Adapter 外，还必须扫描 PATH 中已知的 harness CLI（至少 `claude`、`codex`、`opencode`、`cursor-agent`，可扩展 `gemini`、`qwen`、`aider`）。已安装但没有执行适配器的 CLI 必须以 `supported=false` 返回并展示，禁止把它当作可执行 Runtime；UI 下拉中禁用并标注「暂不支持执行」。有适配器的 Runtime 才允许创建 Agent 与启动 Run。
+
+### 6.4.2 CLI 清单与会话驱动（M2.5 Phase 1）
+
+Runtime 接入从「每个 CLI 一个硬编码适配器」演进为「清单（Manifest）+ 会话驱动（Driver）」两层。该分层为 clean-room 自研（参考同类产品的插件化思路，不复制其代码）：
+
+- **清单**：声明 `id`、显示名、可执行文件、npm 包、会话传输（`stream-json` / `acp` / `app-server` / `exec`）、回退传输、权限模式映射（read_only/controlled_edit/full_access → CLI 原生模式）、只读禁用的工具集、探测必需参数与各传输的启动参数。内置 `claude`、`opencode`、`codex`；清单是唯一事实源，调用方不得按 CLI 名字分支。
+- **驱动**：按传输实现进程启动、协议/JSONL 解析、事件归一化、取消与权限拦截。Phase 1 已实现四种驱动：
+  - `stream-json`：Claude；argv 与权限参数全部来自清单。
+  - `acp`：OpenCode 等；`initialize → session/new → session/set_config_option(model) → session/set_mode → session/prompt`，把 `session/update` 映射为文本、工具调用/结果与用量；`session/request_permission` 交给 ATeam 策略判定（允许选 `allow_once`，拒绝选 `reject_once`），取消时发送 `session/cancel`。
+  - `app-server`：Codex；`initialize → thread/start → turn/start`，`item/*` 与 `turn/completed` 映射为工具、文件变更与完成事件；`item/commandExecution/requestApproval`、`item/fileChange/requestApproval` 交给 ATeam 策略判定后返回 accept/decline。
+  - `exec`：最后一次尝试的纯文本执行；无结构化工具事件，路径与命令边界由运行后审计兜底。
+- **回退规则**：主传输在**尚未产生任何事件**前失败（如旧版 CLI 没有该子命令）才允许回退到清单声明的回退传输；一旦产生事件则必须失败，禁止重复执行 prompt。回退必须在事件流中留下 `status` 记录。
+- **可复现**：`run_config_snapshots.configSnapshot` 增加 `transport` 字段，记录本次 Run 使用的会话协议；`mock` 记为 `builtin`，未知 Runtime 记为 `unknown`。
+- **Codex 模型**：通过启动参数 `-c model="<id>"` 传入；模型目录从 `CODEX_HOME/config.toml` 读取默认模型，至少提供该条目。
 
 ### 6.5 Claude Code Adapter
 
@@ -837,6 +851,13 @@ Run 详情需要展示：当前阶段、已运行时长、最后事件时间、�
 | RUN-014 | Claude Code adapter 的取消先优雅终止、宽限 10 秒后强制终止进程树。 | P0 | M1 | 部分实现（直接 kill） |
 | RUN-015 | Codex adapter 提供与 Claude adapter 等价的事件、取消与超时契约，并声明能力差异。 | P0 | M2 | 未实现 |
 | RUN-016 | `GET /api/v1/runtimes` 返回每个 Runtime 的可用性、版本、能力、模型目录与所需凭据状态；模型目录包含 `id`、`label`、`source`、`default`、`status`、`deprecated`；探测失败返回 `modelsError` 与本地配置列表 | P1 | M1 基础探测；M2.1 模型目录 | 未实现 |
+| RUN-096 | 每个内置 Runtime 必须有完整清单：id 唯一、可执行文件非空、会话传输属于 `stream-json`/`acp`/`app-server`/`exec`；权限模式必须映射到 CLI 原生模式 | P0 | M2.5 Phase 0 | 已实现（claude/opencode/codex 清单） |
+| RUN-097 | `stream-json` 驱动只从清单构建 argv 与权限参数，不按 CLI 名字分支；Claude 的既有参数与事件行为保持不变 | P0 | M2.5 Phase 0 | 已实现 |
+| RUN-098 | Run 配置快照记录 `transport`；未实现的传输必须显式失败，不得回退到其他传输或 mock | P1 | M2.5 Phase 0 | 已实现 |
+| RUN-099 | ACP 驱动必须完成 `initialize → session/new → 模型/模式选择 → session/prompt`，映射文本、工具调用/结果、用量；权限请求经 ATeam 策略判定；取消发送 `session/cancel` | P0 | M2.5 Phase 1 | 已实现 |
+| RUN-100 | Codex app-server 驱动必须完成 `initialize → thread/start → turn/start`，映射 `item/*`、权限审批与 `turn/completed`；模型经 `-c model="<id>"` 传入 | P0 | M2.5 Phase 1 | 已实现 |
+| RUN-101 | 主传输回退只允许发生在尚未产生任何事件时；一旦产生事件必须失败，且回退需在事件流中留下 `status` 记录 | P0 | M2.5 Phase 1 | 已实现 |
+| RUN-102 | `opencode` 与 `codex` 必须通过清单注册为可执行 Runtime；真实 OpenCode ACP Run 必须完成并产生提交与 diff | P0 | M2.5 Phase 1 | 已实现（OpenCode ACP 实测通过） |
 | RUN-017 | Adapter 不得把 API Key、Token 或完整父进程环境写入事件、日志或数据库。 | P0 | M1 | 未实现 |
 | RUN-018 | Adapter 异常 panic 时由调度器恢复，Run 进入 failed，`errorCode=runtime_error`、`failureDetail=adapter_crash`，worker 不退出。 | P0 | M1 | 未实现 |
 | RUN-095 | Run 创建时固定 `agentVersionId`（见 `02-domain-model.md` §3.5）；执行期只读快照，排队期间修改 Agent 不影响该 Run。 | P0 | M1 | 未实现（调度时现取 Agent） |

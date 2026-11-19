@@ -131,7 +131,46 @@ func buildOpenCodeArgs(req Request) (args []string, useStdin bool) {
 // Run executes one non-interactive opencode session and maps its JSONL
 // output to normalized events. Cancellation terminates the whole process
 // group (SIGTERM, then SIGKILL after the grace period).
+// Run prefers the ACP session transport and falls back to the legacy
+// `opencode run --format json` invocation only when the CLI cannot start an
+// ACP session at all (older versions). Once any event has been emitted, a
+// failure is returned instead of replaying the prompt through another
+// transport.
 func (a *OpenCodeAdapter) Run(ctx context.Context, req Request, emit func(Event)) error {
+	manifest, ok := ManifestFor("opencode")
+	if !ok {
+		return &Error{Detail: "adapter_crash", Message: "opencode manifest is not registered"}
+	}
+	if _, err := exec.LookPath(manifest.Executable); err != nil {
+		return &Error{Detail: "runtime_missing", Message: manifest.Executable + " CLI not found in PATH"}
+	}
+	probe := a.Probe(ctx)
+	if !probe.Compatible {
+		return &Error{Detail: "runtime_version_unsupported", Message: probe.Detail}
+	}
+	driver, ok := NewDriver(manifest)
+	if ok {
+		emitted := false
+		err := driver.Run(ctx, SessionRequest{Manifest: manifest, Request: req}, func(event Event) {
+			// Stderr diagnostics from a failed handshake do not count as
+			// work: the prompt was never accepted, so a fallback is safe.
+			if !(event.Type == "log" && event.Source == "stderr") {
+				emitted = true
+			}
+			emit(event)
+		})
+		if err == nil || emitted || ctx.Err() != nil {
+			return err
+		}
+		emit(Event{
+			Type: "status", Message: "ACP session unavailable; falling back to opencode run",
+			Source: "adapter", Level: "warn",
+		})
+	}
+	return a.runExec(ctx, req, emit)
+}
+
+func (a *OpenCodeAdapter) runExec(ctx context.Context, req Request, emit func(Event)) error {
 	path, err := exec.LookPath("opencode")
 	if err != nil {
 		return &Error{Detail: "runtime_missing", Message: "opencode CLI not found in PATH"}

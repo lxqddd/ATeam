@@ -35,7 +35,14 @@ type claudeProbeCacheEntry struct {
 
 var claudeProbeCache sync.Map
 
-var requiredClaudeFlags = []string{"--output-format", "--permission-mode", "--verbose"}
+var requiredClaudeFlags = claudeProbeFlags()
+
+func claudeProbeFlags() []string {
+	if manifest, ok := ManifestFor("claude"); ok && len(manifest.RequiredProbeFlags) > 0 {
+		return manifest.RequiredProbeFlags
+	}
+	return []string{"--output-format", "--permission-mode", "--verbose"}
+}
 
 func probeClaude(ctx context.Context) ProbeInfo {
 	info := ProbeInfo{Name: "claude", Capabilities: map[string]bool{}}

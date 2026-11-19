@@ -96,6 +96,7 @@ func NewRegistry() *Registry {
 	registry.Register(&MockAdapter{})
 	registry.Register(&ClaudeAdapter{})
 	registry.Register(&OpenCodeAdapter{})
+	registry.Register(&CodexAdapter{})
 	return registry
 }
 

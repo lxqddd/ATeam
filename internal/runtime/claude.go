@@ -5,13 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -39,121 +36,27 @@ func killGracePeriod() time.Duration {
 	return time.Duration(killGraceNanos.Load())
 }
 
-// Run executes Claude Code in non-interactive stream-json mode, maps its
-// JSONL output to normalized events, and terminates the whole process group
-// on cancellation: SIGTERM first, SIGKILL after the grace period
-// (PRD M1-local-loop §5.4.1, M1-RUNTIME-009).
+// Run executes Claude Code through the stream-json session driver, mapping
+// its JSONL output to normalized events and terminating the whole process
+// group on cancellation (PRD M1-local-loop §5.4.1, M1-RUNTIME-009). The argv
+// contract comes from the runtime manifest, not from this adapter.
 func (a *ClaudeAdapter) Run(ctx context.Context, req Request, emit func(Event)) error {
-	path, err := exec.LookPath("claude")
-	if err != nil {
-		return &Error{Detail: "runtime_missing", Message: "claude CLI not found in PATH"}
+	manifest, ok := ManifestFor("claude")
+	if !ok {
+		return &Error{Detail: "adapter_crash", Message: "claude manifest is not registered"}
 	}
-
+	if _, err := exec.LookPath(manifest.Executable); err != nil {
+		return &Error{Detail: "runtime_missing", Message: manifest.Executable + " CLI not found in PATH"}
+	}
 	probe := a.Probe(ctx)
 	if !probe.Compatible {
 		return &Error{Detail: "runtime_version_unsupported", Message: probe.Detail}
 	}
-
-	args, stdinPrompt := buildClaudeArgs(req)
-	command := exec.Command(path, args...)
-	command.Dir = req.Workdir
-	command.Env = SanitizedEnv()
-	configureProcessGroup(command)
-	if stdinPrompt != "" {
-		command.Stdin = strings.NewReader(stdinPrompt)
+	driver, ok := NewDriver(manifest)
+	if !ok {
+		return &Error{Detail: "adapter_crash", Message: "no driver for transport " + string(manifest.Transport)}
 	}
-
-	runCtx := ctx
-	stopPolicy := func() {}
-	var guard *PolicyGuard
-	if req.Policy != nil {
-		runCtx, stopPolicy = context.WithCancel(ctx)
-		defer stopPolicy()
-		guard = NewPolicyGuard(req.Policy, req.Workdir, stopPolicy)
-	}
-
-	stdout, err := command.StdoutPipe()
-	if err != nil {
-		return &Error{Detail: "adapter_crash", Message: "failed to open the runtime stdout pipe"}
-	}
-	stderr, err := command.StderrPipe()
-	if err != nil {
-		return &Error{Detail: "adapter_crash", Message: "failed to open the runtime stderr pipe"}
-	}
-
-	if err := command.Start(); err != nil {
-		return &Error{Detail: "runtime_missing", Message: "failed to start the claude CLI"}
-	}
-
-	stopWatcher := watchCancellation(runCtx, command)
-
-	var waitGroup sync.WaitGroup
-	waitGroup.Add(2)
-	var stderrTail tailBuffer
-	go func() {
-		defer waitGroup.Done()
-		scanClaudeStdout(stdout, emit, guard)
-	}()
-	go func() {
-		defer waitGroup.Done()
-		scanClaudeStderr(stderr, &stderrTail, emit)
-	}()
-	waitGroup.Wait()
-	waitErr := command.Wait()
-	stopWatcher()
-
-	if guard != nil {
-		if violated, detail := guard.Violated(); violated {
-			return &Error{Detail: PermissionFailureDetail(detail), Message: "permission denied: " + detail}
-		}
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if waitErr != nil {
-		detail := classifyClaudeExit(waitErr, stderrTail.String())
-		message := fmt.Sprintf("claude exited: %v", waitErr)
-		if tail := sanitizeSummary(stderrTail.String()); tail != "" {
-			message += ": " + tail
-		}
-		return &Error{Detail: detail, Message: message}
-	}
-	return nil
-}
-
-// buildClaudeArgs fixes the invocation contract. Long prompts travel over
-// stdin; arguments are passed as an array, never through a shell.
-func buildClaudeArgs(req Request) ([]string, string) {
-	args := []string{"-p"}
-	stdinPrompt := ""
-	if len(req.Prompt) > maxPromptArgBytes {
-		stdinPrompt = req.Prompt
-	} else {
-		args = append(args, req.Prompt)
-	}
-	args = append(args, "--output-format", "stream-json", "--verbose")
-	if req.Model != "" {
-		args = append(args, "--model", req.Model)
-	}
-	args = append(args, "--permission-mode", permissionModeFlag(req.PermissionMode))
-	if req.PermissionMode == "read_only" {
-		args = append(args, "--disallowedTools", "Write,Edit,NotebookEdit,Bash")
-	}
-	if req.MaxTurns > 0 {
-		args = append(args, "--max-turns", strconv.Itoa(req.MaxTurns))
-	}
-	return args, stdinPrompt
-}
-
-func permissionModeFlag(mode string) string {
-	switch mode {
-	case "read_only":
-		return "plan"
-	case "full_access":
-		return "bypassPermissions"
-	default:
-		return "acceptEdits"
-	}
+	return driver.Run(ctx, SessionRequest{Manifest: manifest, Request: req}, emit)
 }
 
 // SanitizedEnv returns the environment forwarded to runtime subprocesses and

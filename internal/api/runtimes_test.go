@@ -89,7 +89,7 @@ func TestRuntimeModelCatalogMergesLocalSettings(t *testing.T) {
 func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 	handler, _ := newTestHandler(t)
 
-	recorder := callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+	recorder := callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/claude/models", map[string]any{
 		"models":       []map[string]string{{"id": "m1"}},
 		"defaultModel": "m1",
 	})
@@ -103,8 +103,8 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
 		t.Fatalf("decode runtime: %v", err)
 	}
-	if view.Name != "mock" || view.DefaultModel != "m1" {
-		t.Fatalf("runtime view = %#v, want mock/m1", view)
+	if view.Name != "claude" || view.DefaultModel != "m1" {
+		t.Fatalf("runtime view = %#v, want claude/m1", view)
 	}
 
 	recorder = callJSON(t, handler, http.MethodGet, "/api/v1/runtimes", nil)
@@ -114,7 +114,7 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 	}
 	found := false
 	for _, runtime := range payload.Runtimes {
-		if runtime.Name == "mock" {
+		if runtime.Name == "claude" {
 			found = true
 			if runtime.DefaultModel != "m1" {
 				t.Fatalf("persisted default model = %q, want m1", runtime.DefaultModel)
@@ -122,10 +122,10 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("mock runtime missing")
+		t.Fatal("claude runtime missing")
 	}
 
-	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/claude/models", map[string]any{
 		"models":       []map[string]string{{"id": "m1"}},
 		"defaultModel": "nope",
 	})
@@ -144,7 +144,7 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 
 	// The default must resolve against the catalog submitted with this
 	// request, not a model that only existed in the previous save.
-	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/claude/models", map[string]any{
 		"models":       []map[string]string{{"id": "m2"}},
 		"defaultModel": "m1",
 	})
@@ -155,7 +155,7 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 	// An omitted defaultModel preserves the stored default (clients such as the
 	// Settings model editor do not send the field), even though this PUT no
 	// longer lists m1.
-	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/claude/models", map[string]any{
 		"models": []map[string]string{{"id": "m2"}},
 	})
 	if recorder.Code != http.StatusOK {
@@ -169,7 +169,7 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 	}
 
 	// An explicit empty string clears the stored default.
-	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/claude/models", map[string]any{
 		"models":       []map[string]string{{"id": "m2"}},
 		"defaultModel": "",
 	})
@@ -187,13 +187,13 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 		t.Fatalf("decode runtimes: %v", err)
 	}
 	for _, runtime := range payload.Runtimes {
-		if runtime.Name == "mock" && runtime.DefaultModel != "" {
+		if runtime.Name == "claude" && runtime.DefaultModel != "" {
 			t.Fatalf("persisted default model after clear = %q, want empty", runtime.DefaultModel)
 		}
 	}
 
 	// A default model longer than 100 characters is rejected.
-	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/claude/models", map[string]any{
 		"models":       []map[string]string{{"id": "m2"}},
 		"defaultModel": strings.Repeat("m", 101),
 	})

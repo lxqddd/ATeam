@@ -322,7 +322,7 @@ Agent 提议，人决定。所有高风险动作必须经过人工审批，所�
 
 ### 8.5 可替换 Runtime
 
-Runtime 通过 Adapter 接口接入，领域模型不依赖任何具体 CLI。新增 Runtime 不应修改 Task、Agent、Run 的核心字段与 HTTP handler；Runtime 特有参数应封装在适配器配置中。M0 新增适配器仍需实现 `Adapter` 接口并在 `internal/runtime/runtime.go` 的 Registry 中登记；M4 插件 API 只为非 Runtime 扩展提供不修改核心的加载机制，不提供第三方 Agent Runtime 适配器。mock Runtime 必须长期保留，用于开发、测试与演示。
+Runtime 通过 Adapter 接口接入，领域模型不依赖任何具体 CLI。新增 Runtime 不应修改 Task、Agent、Run 的核心字段与 HTTP handler；Runtime 特有参数应封装在适配器配置中。M0 新增适配器仍需实现 `Adapter` 接口并在 `internal/runtime/runtime.go` 的 Registry 中登记；M4 插件 API 只为非 Runtime 扩展提供不修改核心的加载机制，不提供第三方 Agent Runtime 适配器。mock Runtime 必须长期保留，用于开发、测试与演示，但作为非产品 Runtime 不在 Runtime 管理页与 Agent Runtime 下拉中展示（legacy mock Agent 仍可运行）。
 
 ### 8.6 显式协作而非自由聊天
 
@@ -444,7 +444,7 @@ Run 失败、取消或超时后，Task 的下一步必须可解释。M0 只更�
 | PROD-011 | 渐进式采用 | 每个里程碑可独立使用；M1 用户无需配置团队、权限或远程 Runner 即可完成本地闭环 | M0-M4 |
 | PROD-012 | 可扩展性 | 新增 Runtime 适配器或模板不需要修改核心领域模型；扩展点有文档与示例；M4 插件 API 仅覆盖非 Runtime 扩展，不提供第三方 Agent Runtime 适配器 | M0：接口存在，新增适配器仍需在核心注册表登记，无扩展文档。M1：适配器文档与示例。M2：模板扩展文档。M4：插件 API 支持非 Runtime 扩展的不修改核心加载 |
 | PROD-013 | 数据主权 | 默认不上传代码、任务内容与 Run 日志；任何外发功能必须显式配置并说明用途 | M0 已实现 |
-| PROD-014 | 开源与原创 | 核心以 Apache-2.0 发布；仓库不包含第三方产品的代码、文档、截图、图标或品牌资产 | M0 已实现 |
+| PROD-014 | 开源与原创 | 核心以 Apache-2.0 发布；仓库不包含第三方产品的代码、文档、截图、图标或品牌资产。Runtime 官方 Logo 通过开源图标包（simple-icons，CC0 SVG path 数据）以依赖形式渲染，不把品牌资产复制进仓库；商标归各自所有者 | M0 已实现；M2.1 增补 Logo 依赖口径 |
 | PROD-015 | 取消与超时 | 运行中的 Run 可被取消并在有限时间内停止；Agent.timeoutMinutes 大于 0 时超时后 Run 以 timeout 分类结束并保留现场 | M1（M0 部分实现：运行中 context 取消与超时存在；排队取消失效、状态回写竞态、超时统一 failed，见 §14.2.1） |
 | PROD-016 | 可移植性 | macOS 为首要平台；Windows 与 Linux 的打包在 M4 提供；Web UI 在浏览器中可独立使用 | M0 Web UI 可用，M4 打包与跨平台 |
 | PROD-017 | 删除保护 | 删除 Task/Agent 前检查活跃与排队 Run，存在时阻止并提示先取消或完成；M1 的删除是确认 + 阻止 + 归档；M2.1 起进入 30 天恢复窗口；删除 Workspace 需要 Approval（M3） | M1 归档保护；M2.1 恢复窗口；M3 Workspace 删除审批 |

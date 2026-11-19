@@ -328,7 +328,10 @@ func TestMetaListsRuntimes(t *testing.T) {
 			t.Fatalf("runtime entry missing compatible: %#v", entry)
 		}
 	}
-	if !names["mock"] || !names["claude"] {
+	if names["mock"] {
+		t.Fatalf("mock must stay out of the product runtime catalog: %v", names)
+	}
+	if !names["claude"] {
 		t.Fatalf("meta runtimes = %v", names)
 	}
 }

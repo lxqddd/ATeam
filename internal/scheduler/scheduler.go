@@ -406,6 +406,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	promptSum := sha256.Sum256([]byte(prompt))
 	configJSON, err := json.Marshal(map[string]any{
 		"runtime":         agent.Runtime,
+		"transport":       runtime.TransportFor(agent.Runtime),
 		"model":           model,
 		"workspaceMode":   agent.WorkspaceMode,
 		"permissionMode":  permissionMode,
