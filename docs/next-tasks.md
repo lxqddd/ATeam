@@ -9,7 +9,7 @@
 
 - pnpm + Turborepo monorepo：`apps/desktop`、`apps/web`、`packages/shared`
 - Electron 主进程、preload、contextIsolation、CSP、electron-builder 打包
-- Nomi 2.4.0 主题令牌、7 套主题 + 跟随系统、AntD 同步换肤
+- 主题令牌、7 套主题 + 跟随系统、AntD 同步换肤
 - 简体中文 / English，AntD locale 与 `<html lang>` 同步，设置页可切换并持久化
 - OpenCode 源码内置在 `apps/desktop/src/runtime`（41 MB，裁剪到构建闭包，已品牌化为 ATeam）
 - Electron `KernelManager` 启动内置 `opencode serve`，回环 HTTP + SSE、Basic Auth、隔离 XDG 数据目录
