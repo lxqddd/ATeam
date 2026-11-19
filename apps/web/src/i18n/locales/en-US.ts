@@ -131,6 +131,19 @@ const enUS = {
     },
   },
   settings: {
+    provider: {
+      title: 'Model provider',
+      desc: 'Connect models with an OpenCode Go API key. The key is stored in the system keychain and read by the kernel from the environment, never in plaintext.',
+      model: 'Model ID',
+      modelHint: 'An OpenCode Go model ID, for example deepseek-v4.1-flash.',
+      apiKey: 'API key',
+      apiKeyPlaceholder: 'oc_sk_…',
+      apiKeySaved: 'Saved — leave empty to keep it',
+      apiKeyHint: 'Stored in the local keychain only. Saving restarts the kernel so the change applies.',
+      save: 'Save and restart kernel',
+      test: 'Test connection',
+      saved: 'Saved — restarting the kernel',
+    },
     appearance: {
       title: 'Appearance',
       desc: 'Pick an interface theme. Themes only change colors, not layout or type. Follow system switches with macOS light and dark.',

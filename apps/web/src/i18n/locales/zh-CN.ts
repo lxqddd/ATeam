@@ -129,6 +129,19 @@ const zhCN = {
     },
   },
   settings: {
+    provider: {
+      title: '模型供应商',
+      desc: '使用 OpenCode Go 订阅的 API Key 连接模型。密钥保存在系统钥匙串中，内核启动时通过环境变量读取，不落明文。',
+      model: '模型 ID',
+      modelHint: 'OpenCode Go 的模型 ID，例如 deepseek-v4.1-flash。',
+      apiKey: 'API Key',
+      apiKeyPlaceholder: 'oc_sk_…',
+      apiKeySaved: '已保存，留空则保持不变',
+      apiKeyHint: '只保存在本机钥匙串；保存后会自动重启内核使配置生效。',
+      save: '保存并重启内核',
+      test: '测试连接',
+      saved: '已保存，内核正在重启',
+    },
     appearance: {
       title: '外观',
       desc: '选择界面主题。主题只改变颜色，不改变布局与字号；跟随系统会随 macOS 在浅色与深色之间切换。',

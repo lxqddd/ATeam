@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { KernelManager, kernelWorkspace } from './kernel'
+import { providerConfig, saveProvider } from './settings'
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL)
 let kernel: KernelManager | null = null
@@ -84,6 +85,21 @@ void app.whenReady().then(() => {
     typeof sessionId === 'string' ? kernel?.interrupt(sessionId) : undefined,
   )
   ipcMain.handle('kernel:restart', () => kernel?.restart())
+  ipcMain.handle('provider:get', () => providerConfig())
+  ipcMain.handle('provider:set', async (_event, input: unknown) => {
+    const payload = input as { kind?: unknown; model?: unknown; apiKey?: unknown } | null
+    if (!payload || payload.kind !== 'opencode-go' || typeof payload.model !== 'string' || !payload.model.trim()) {
+      throw new Error('invalid provider payload')
+    }
+    const saved = saveProvider({
+      kind: 'opencode-go',
+      model: payload.model.trim(),
+      apiKey: typeof payload.apiKey === 'string' ? payload.apiKey : undefined,
+    })
+    await kernel?.restart()
+    return saved
+  })
+  ipcMain.handle('provider:test', () => kernel?.testProvider() ?? { ok: false, message: '内核未启动' })
   void kernel.start()
 
   createWindow()

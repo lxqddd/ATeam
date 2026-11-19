@@ -18,4 +18,10 @@ contextBridge.exposeInMainWorld('ateam', {
       return () => ipcRenderer.removeListener('kernel:event', listener)
     },
   },
+  provider: {
+    get: () => ipcRenderer.invoke('provider:get'),
+    set: (input: { kind: 'opencode-go'; model: string; apiKey?: string }) =>
+      ipcRenderer.invoke('provider:set', input),
+    test: () => ipcRenderer.invoke('provider:test'),
+  },
 })

@@ -14,5 +14,14 @@ interface Window {
       restart(): Promise<import('@ateam/shared').KernelState>
       onEvent(callback: (event: import('@ateam/shared').KernelEvent) => void): () => void
     }
+    provider?: {
+      get(): Promise<import('@ateam/shared').ProviderConfig | null>
+      set(input: {
+        kind: import('@ateam/shared').ProviderKind
+        model: string
+        apiKey?: string
+      }): Promise<import('@ateam/shared').ProviderConfig>
+      test(): Promise<import('@ateam/shared').ProviderTestResult>
+    }
   }
 }

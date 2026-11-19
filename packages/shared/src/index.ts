@@ -68,3 +68,18 @@ export interface KernelEvent {
   type: string
   data?: unknown
 }
+
+export type ProviderKind = 'opencode-go'
+
+export interface ProviderConfig {
+  kind: ProviderKind
+  /** Model id without the provider prefix, e.g. `deepseek-v4.1-flash`. */
+  model: string
+  hasApiKey: boolean
+}
+
+export interface ProviderTestResult {
+  ok: boolean
+  message: string
+  modelCount?: number
+}

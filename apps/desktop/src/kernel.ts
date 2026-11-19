@@ -9,7 +9,9 @@ import type {
   KernelMessage,
   KernelSession,
   KernelState,
+  ProviderTestResult,
 } from '@ateam/shared' with { "resolution-mode": "import" }
+import { kernelConfig, kernelEnv, providerConfig } from './settings'
 
 interface RawSession {
   id: string
@@ -83,10 +85,12 @@ export class KernelManager {
         throw new Error('ATeam kernel binary not found; run pnpm opencode:build or set OPENCODE_BIN')
       }
       const port = await freePort()
+      writeKernelConfig(this.dataRoot)
       const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
         cwd: this.workspace,
         env: {
           ...process.env,
+          ...kernelEnv(),
           XDG_DATA_HOME: path.join(this.dataRoot, 'data'),
           XDG_CONFIG_HOME: path.join(this.dataRoot, 'config'),
           XDG_STATE_HOME: path.join(this.dataRoot, 'state'),
@@ -193,6 +197,35 @@ export class KernelManager {
 
   async interrupt(sessionID: string): Promise<void> {
     await this.request(`/api/session/${encodeURIComponent(sessionID)}/interrupt`, { method: 'POST' })
+  }
+
+  async testProvider(): Promise<ProviderTestResult> {
+    const config = providerConfig()
+    if (!config) return { ok: false, message: '尚未配置模型供应商' }
+    if (this.state.status !== 'ready') return { ok: false, message: 'ATeam 内核未就绪' }
+    try {
+      // The catalog settles shortly after startup; give it a few seconds before failing.
+      let models: Array<{ id: string; providerID?: string }> = []
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const response = await this.request<{ data?: Array<{ id: string; providerID?: string }> }>('/api/model')
+        models = response.data ?? []
+        if (models.length > 0) break
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+      }
+      const match = models.some(
+        (model) => model.id === config.model && (!model.providerID || model.providerID === config.kind),
+      )
+      if (!match) {
+        return {
+          ok: false,
+          message: `未找到模型 ${config.kind}/${config.model}，请检查 API Key 与模型 ID`,
+          modelCount: models.length,
+        }
+      }
+      return { ok: true, message: `连接成功，共 ${models.length} 个可用模型`, modelCount: models.length }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   private async request<T>(pathname: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -492,4 +525,25 @@ function freePort(): Promise<number> {
 
 export function kernelWorkspace(): string {
   return path.join(app.getPath('userData'), 'workspace')
+}
+
+function writeKernelConfig(dataRoot: string) {
+  const dir = path.join(dataRoot, 'config', 'opencode')
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, 'opencode.json')
+  const current = (() => {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
+    } catch {
+      return {}
+    }
+  })()
+  const configured = kernelConfig()
+  if (configured) {
+    current.model = configured.model
+  } else {
+    delete current.model
+  }
+  fs.writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`)
 }
