@@ -21,6 +21,6 @@
     "src"
   ],
   "exclude": [
-    "src/runtime/opencode"
+    "src/runtime"
   ]
 }

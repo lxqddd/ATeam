@@ -33,7 +33,7 @@ SOFTWARE.
 
 ## OpenCode
 
-- Source: https://github.com/anomalyco/opencode (vendored under `apps/desktop/src/runtime/opencode`, commit in `SOURCE_COMMIT`)
+- Source: https://github.com/anomalyco/opencode (vendored under `apps/desktop/src/runtime`, commit in `SOURCE_COMMIT`)
 - License: MIT
 - Modifications: ATeam branding applied to user-facing copy and system prompts.
 

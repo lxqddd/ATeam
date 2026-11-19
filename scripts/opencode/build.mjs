@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { applyBranding } from './branding.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const vendoredSource = path.join(repoRoot, 'apps/desktop/src/runtime/opencode')
+const vendoredSource = path.join(repoRoot, 'apps/desktop/src/runtime')
 const sourceDir =
   process.env.OPENCODE_SOURCE ||
   (fsSync.existsSync(vendoredSource) ? vendoredSource : path.join(repoRoot, '.opencode-src'))
@@ -65,7 +65,7 @@ run(
   [
     'run',
     '--cwd',
-    'packages/cli',
+    'cli',
     'build',
     '--single',
     '--skip-web-ui',

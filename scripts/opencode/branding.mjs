@@ -93,7 +93,7 @@ async function walk(dir) {
 
 export async function applyBranding(sourceDir) {
   const roots = ['cli', 'core', 'server', 'tui', 'app', 'ui'].map((name) =>
-    path.join(sourceDir, 'packages', name, 'src'),
+    path.join(sourceDir, name, 'src'),
   )
   for (const root of roots) {
     try {
@@ -107,7 +107,7 @@ export async function applyBranding(sourceDir) {
 
   // Product identity used in prompts, user agents, assistant self-description
   // and the CLI's user-facing name.
-  const buildFile = path.join(sourceDir, 'packages', 'cli', 'script', 'build.ts')
+  const buildFile = path.join(sourceDir, 'cli', 'script', 'build.ts')
   try {
     let source = await fs.readFile(buildFile, 'utf8')
     source = source.replace('OPENCODE_CLI_NAME: "\'opencode\'"', 'OPENCODE_CLI_NAME: "\'ateam\'"')
@@ -118,7 +118,7 @@ export async function applyBranding(sourceDir) {
     }
   }
 
-  const appFile = path.join(sourceDir, 'packages', 'core', 'src', 'app.ts')
+  const appFile = path.join(sourceDir, 'core', 'src', 'app.ts')
   try {
     let source = await fs.readFile(appFile, 'utf8')
     source = source.replace(

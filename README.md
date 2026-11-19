@@ -57,12 +57,12 @@ event stream. Build it with:
 pnpm opencode:build
 ```
 
-The source is vendored under `apps/desktop/src/runtime/opencode` (see `SOURCE_COMMIT`), trimmed
+The source is vendored under `apps/desktop/src/runtime` (see `SOURCE_COMMIT`), trimmed
 to the harness/server dependency closure; app/desktop/gui/session-ui/stories, tests,
 docs and examples are removed. The build command applies ATeam branding to the
 vendored source and builds `apps/desktop/resources/opencode/opencode` with Bun.
 Electron packages that binary through `extraResources`; `OPENCODE_BIN` can
-override it for development. To update, replace `apps/desktop/src/runtime/opencode` with a
+override it for development. To update, replace `apps/desktop/src/runtime` with a
 newer `anomalyco/opencode` `dev` checkout and run the build again.
 
 Requirements: Bun >= 1.4.4. Set `BUN_BIN` to a specific Bun executable if it is

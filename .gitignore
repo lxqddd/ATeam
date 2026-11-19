@@ -12,3 +12,5 @@ packages/shared/dist/
 .opencode-src/
 .opencode-build/
 apps/desktop/resources/opencode/
+apps/desktop/src/runtime/cli/dist-node/
+apps/desktop/src/runtime/cli/.cache/

@@ -11,7 +11,7 @@
 - Electron 主进程、preload、contextIsolation、CSP、electron-builder 打包
 - Nomi 2.4.0 主题令牌、7 套主题 + 跟随系统、AntD 同步换肤
 - 简体中文 / English，AntD locale 与 `<html lang>` 同步，设置页可切换并持久化
-- OpenCode 源码内置在 `apps/desktop/src/runtime/opencode`（41 MB，裁剪到构建闭包，已品牌化为 ATeam）
+- OpenCode 源码内置在 `apps/desktop/src/runtime`（41 MB，裁剪到构建闭包，已品牌化为 ATeam）
 - Electron `KernelManager` 启动内置 `opencode serve`，回环 HTTP + SSE、Basic Auth、隔离 XDG 数据目录
 - 会话创建、prompt、消息读取、停止、错误展示、内核重启
 - 打包验证：内置内核从 `Contents/Resources/opencode/opencode` 启动
@@ -138,7 +138,7 @@
 - 构建脚本校验 `SOURCE_COMMIT`、品牌化结果与产物版本
 - CI 构建 macOS arm64/x64（后续 Windows/Linux），缓存 Bun 依赖
 - 产物校验和、许可证/NOTICE 随包
-- 明确源码更新流程：替换 `apps/desktop/src/runtime/opencode` → 重新品牌化 → 构建 → 回归
+- 明确源码更新流程：替换 `apps/desktop/src/runtime` → 重新品牌化 → 构建 → 回归
 
 **验收**：干净 clone + `pnpm install` + `pnpm opencode:build` 可复现内核；CI 通过。
 
