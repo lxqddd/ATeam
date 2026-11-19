@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode/client",
+  "name": "@ateam/client",
   "version": "2.3.0",
   "type": "module",
   "license": "MIT",
@@ -31,8 +31,8 @@
     "typecheck:tsc": "tsc --noEmit"
   },
   "dependencies": {
-    "@opencode/schema": "workspace:*",
-    "@opencode/protocol": "workspace:*"
+    "@ateam/schema": "workspace:*",
+    "@ateam/protocol": "workspace:*"
   },
   "peerDependencies": {
     "effect": "catalog:",

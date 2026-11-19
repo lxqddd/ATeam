@@ -1,9 +1,9 @@
 import { EOL } from "os"
 import { Effect } from "effect"
-import { OpenCode } from "@opencode/client"
+import { OpenCode } from "@ateam/client"
 import { Commands } from "../../commands"
 import { Runtime } from "../../../framework/runtime"
-import { Service } from "@opencode/client/effect/service"
+import { Service } from "@ateam/client/effect/service"
 import { ServerConnection } from "../../../services/server-connection"
 import { waitForPlugins } from "../../../services/plugin-startup"
 

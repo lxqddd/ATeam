@@ -1,7 +1,7 @@
 export * as WebSearchTool from "./websearch.js"
 
-import type { Context } from "@opencode/plugin/effect/plugin"
-import { ToolFailure } from "@opencode/ai/effect"
+import type { Context } from "@ateam/plugin/effect/plugin"
+import { ToolFailure } from "@ateam/ai/effect"
 import { Effect, Schema, Semaphore } from "effect"
 import { HttpClientError } from "effect/http"
 import { Config } from "../../config.js"

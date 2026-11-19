@@ -1,5 +1,5 @@
-import { Service, type Endpoint, type EnsureOptions } from "@opencode/client/effect/service"
-import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client/promise"
+import { Service, type Endpoint, type EnsureOptions } from "@ateam/client/effect/service"
+import { ClientError, isUnauthorizedError, OpenCode } from "@ateam/client/promise"
 import { OPENCODE_VERSION } from "../version"
 import { Effect, Option, Redacted } from "effect"
 import { Server as ServerFlag, Standalone as StandaloneFlag } from "../commands/commands"

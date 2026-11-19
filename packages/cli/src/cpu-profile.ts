@@ -1,6 +1,6 @@
 export * as CpuProfile from "./cpu-profile"
 
-import { Global } from "@opencode/util/global"
+import { Global } from "@ateam/util/global"
 import { Effect, FileSystem, Queue } from "effect"
 import { writeFile } from "node:fs/promises"
 import { Session } from "node:inspector"

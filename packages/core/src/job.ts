@@ -15,7 +15,7 @@ import {
   Scope,
   SynchronizedRef,
 } from "effect"
-import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { makeGlobalNode } from "@ateam/util/effect/app-node"
 import { Database } from "./database/database.js"
 import { JobList } from "./job/list.js"
 import { type Recovery, RecoverySchema } from "./job/recovery.js"
@@ -26,7 +26,7 @@ import { SessionSchema } from "./session/schema.js"
 export type { Recovery }
 
 /** A session-wide background request releases the outer blocker; its nested waits keep their own deadlines. */
-export const BlockingParent = Context.Reference<string | undefined>("@opencode/Job/BlockingParent", {
+export const BlockingParent = Context.Reference<string | undefined>("@ateam/Job/BlockingParent", {
   defaultValue: () => undefined,
 })
 
@@ -184,7 +184,7 @@ export interface Interface {
   readonly deleteBackgroundRow: (notificationID: SessionMessage.ID) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Job") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/Job") {}
 
 function snapshot(job: Active): Info {
   return {

@@ -1,6 +1,6 @@
-import { Global } from "@opencode/util/global"
-import { AppProcess } from "@opencode/util/process"
-import { EffectFlock } from "@opencode/util/effect-flock"
+import { Global } from "@ateam/util/global"
+import { AppProcess } from "@ateam/util/process"
+import { EffectFlock } from "@ateam/util/effect-flock"
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Context, Duration, Effect, FileSystem, Layer, Option, Ref, Schema } from "effect"
 import { ChildProcess } from "effect/process"
@@ -122,7 +122,7 @@ export interface Interface {
   ) => { readonly command: ReadonlyArray<string>; readonly run: Effect.Effect<void, Error> } | undefined
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/cli/Updater") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/cli/Updater") {}
 
 export function decodePolicy(text: string): Policy | undefined {
   // The CLI only projects this host-level preference instead of initializing

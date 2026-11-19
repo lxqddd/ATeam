@@ -45,7 +45,7 @@ export interface Interface {
   readonly which: (pkg: string, bin?: string) => Effect.Effect<string | undefined>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Npm") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/Npm") {}
 
 const illegal = process.platform === "win32" ? new Set(["<", ">", ":", '"', "|", "?", "*"]) : undefined
 

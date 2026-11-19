@@ -230,10 +230,10 @@ For questions about connecting an application to ATeam over the network,
 fetch the full [client guide](https://opencode.ai/docs/build/client) before
 answering.
 
-`@opencode/client` is the generated TypeScript client for the ATeam HTTP
+`@ateam/client` is the generated TypeScript client for the ATeam HTTP
 API. Its methods and types come from the same contract as the API reference.
 The default entrypoint exposes Promise-based resource clients and async
-iterables for streaming endpoints. The `@opencode/client/effect` entrypoint
+iterables for streaming endpoints. The `@ateam/client/effect` entrypoint
 exposes typed Effects, Streams, and decoded ATeam schema values. Its
 `Service` API can discover, start, stop, and authenticate with the local
 background service from a Node application.

@@ -1,9 +1,9 @@
 export * as Browser from "./rpc.js"
 
 import { Schema } from "effect"
-import { Rpc } from "@opencode/schema/rpc"
-import { Session } from "@opencode/schema/session"
-import { optional } from "@opencode/schema/schema"
+import { Rpc } from "@ateam/schema/rpc"
+import { Session } from "@ateam/schema/session"
+import { optional } from "@ateam/schema/schema"
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024
 export const TUNNEL_CHUNK_BYTES = 64 * 1024

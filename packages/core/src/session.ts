@@ -2,15 +2,15 @@ export * as Session from "./session.js"
 export * from "./session/schema.js"
 
 import { DateTime, Effect, Layer, Context, Option, Stream } from "effect"
-import { LLMClient } from "@opencode/ai/effect"
-import { ListAnchor, ListCursor, ListFilter } from "@opencode/schema/session"
+import { LLMClient } from "@ateam/ai/effect"
+import { ListAnchor, ListCursor, ListFilter } from "@ateam/schema/session"
 import { and, desc, eq } from "drizzle-orm"
 import { Project } from "./project.js"
-import { Model } from "@opencode/schema/model"
+import { Model } from "@ateam/schema/model"
 import { Location } from "./location.js"
 import type { FileSystem } from "./filesystem.js"
 import { SessionMessage } from "./session/message.js"
-import { PromptInput } from "@opencode/schema/prompt-input"
+import { PromptInput } from "@ateam/schema/prompt-input"
 import { Bus } from "./bus.js"
 import { Instance } from "./instance/service.js"
 import { Plugin } from "./plugin/service.js"
@@ -21,8 +21,8 @@ import { SessionMessageTable } from "./session/sql.js"
 import { SessionBlob } from "./session/blob.js"
 import { SessionSchema } from "./session/schema.js"
 import { RelativePath } from "./schema.js"
-import { Agent } from "@opencode/schema/agent"
-import type { Permission } from "@opencode/schema/permission"
+import { Agent } from "@ateam/schema/agent"
+import type { Permission } from "@ateam/schema/permission"
 import { App } from "./app.js"
 import { Slug } from "./util/slug.js"
 import path from "path"
@@ -43,8 +43,8 @@ import {
   SkillNotFoundError,
   SyntheticConflictError,
 } from "./session/error.js"
-import { Node } from "@opencode/util/effect/app-node"
-import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Node } from "@ateam/util/effect/app-node"
+import { LayerNode } from "@ateam/util/effect/layer-node"
 import { SessionEvent } from "./session/event.js"
 import { SessionInbox } from "./session/inbox.js"
 import { InstructionState } from "./session/instruction-state.js"
@@ -62,9 +62,9 @@ import { Snapshot } from "./snapshot.js"
 import { Session } from "./session/session.js"
 import { SessionDiff, TurnRangeError } from "./session/diff.js"
 import { LocationServiceMap } from "./location-service-map.js"
-import { FSUtil } from "@opencode/util/fs-util"
-import type { EventLog } from "@opencode/schema/event-log"
-import type { FileDiff } from "@opencode/schema/file-diff"
+import { FSUtil } from "@ateam/util/fs-util"
+import type { EventLog } from "@ateam/schema/event-log"
+import type { FileDiff } from "@ateam/schema/file-diff"
 import { Job } from "./job.js"
 import type { Command } from "./command.js"
 import { SessionEnvironment } from "./session/environment.js"
@@ -264,7 +264,7 @@ export interface Interface {
   }
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Session") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/Session") {}
 
 const layer = Layer.effect(
   Service,

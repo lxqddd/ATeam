@@ -1,4 +1,4 @@
-# @opencode/codemode
+# @ateam/codemode
 
 - `src/language/` is the language layer (compiler, VM, runtime, stdlib, prelude, scheduler, snapshots, and the Effect driver); `src/codemode/` is Code Mode, built on it (tools, schemas, catalog, `search`, `scanTools`, OpenAPI, hooks, `maxToolCalls`). Nothing in `src/language/` imports from the rest of `src` (`test/language-boundary.test.ts`), and the language never knows what a tool is: Code Mode gives programs its functions through `Host` and `Runtime.make`.
 - `interpreter-support.md` is a checklist, not a changelog: check off newly added support and add unchecked items for significant gaps. Leave it alone for fixes and refactors.

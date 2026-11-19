@@ -1,3 +1,3 @@
-# @opencode/core
+# @ateam/core
 
 Core runtime services for OpenCode.

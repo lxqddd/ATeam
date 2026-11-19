@@ -1,5 +1,5 @@
-import { define } from "@opencode/plugin/effect/plugin"
-import { Form } from "@opencode/schema/form"
+import { define } from "@ateam/plugin/effect/plugin"
+import { Form } from "@ateam/schema/form"
 import { Clock, Deferred, Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { App } from "../../app.js"

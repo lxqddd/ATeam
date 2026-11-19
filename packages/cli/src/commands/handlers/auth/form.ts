@@ -1,8 +1,8 @@
 import { confirm, log, multiselect, password, select, text, type Option } from "@clack/prompts"
 import { Effect, Schema } from "effect"
-import { Form } from "@opencode/schema/form"
+import { Form } from "@ateam/schema/form"
 import { formValidateValue } from "../../../util/form"
-import type { FormAnswer, FormField, FormFields } from "@opencode/client"
+import type { FormAnswer, FormField, FormFields } from "@ateam/client"
 import { openUrl, prompt, requireInteractive } from "../../../ui/prompt"
 
 const skip = Symbol("skip")

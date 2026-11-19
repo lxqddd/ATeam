@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode/config",
+  "name": "@ateam/config",
   "version": "2.3.0",
   "type": "module",
   "license": "MIT",
@@ -14,8 +14,8 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@opencode/client": "workspace:*",
-    "@opencode/schema": "workspace:*",
+    "@ateam/client": "workspace:*",
+    "@ateam/schema": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",

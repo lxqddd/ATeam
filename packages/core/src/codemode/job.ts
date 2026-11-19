@@ -1,6 +1,6 @@
 export * as CodeModeJob from "./job.js"
 
-import { Identifier } from "@opencode/schema/identifier"
+import { Identifier } from "@ateam/schema/identifier"
 import { Cause, Context, Deferred, Effect, Exit, Option, type Scope, Semaphore } from "effect"
 import { extension } from "mime-types"
 import { Flag } from "../flag.js"
@@ -23,7 +23,7 @@ type Execute = (context: Tool.Context) => Effect.Effect<Tool.NormalizedResult, T
 type Run = (context: Tool.Context, execute: Execute) => ReturnType<Execute>
 
 /** Only a session drain can hand off work and report its result. */
-export const Current = Context.Reference<Run | undefined>("@opencode/CodeModeJob", { defaultValue: () => undefined })
+export const Current = Context.Reference<Run | undefined>("@ateam/CodeModeJob", { defaultValue: () => undefined })
 
 export const make = Effect.fnUntraced(function* (
   jobs: Job.Interface,

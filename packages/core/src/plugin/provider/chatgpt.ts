@@ -1,6 +1,6 @@
-import type { IntegrationOAuthMethodRegistration } from "@opencode/plugin/effect/integration"
-import type { Context } from "@opencode/plugin/effect/plugin"
-import { define } from "@opencode/plugin/effect/plugin"
+import type { IntegrationOAuthMethodRegistration } from "@ateam/plugin/effect/integration"
+import type { Context } from "@ateam/plugin/effect/plugin"
+import { define } from "@ateam/plugin/effect/plugin"
 // import { Deferred, Duration, Effect, Option, Schema, Semaphore, Stream } from "effect"
 import { Deferred, Effect, Equal, Option, Schema, Semaphore } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
@@ -450,7 +450,7 @@ function deriveModel(remote: RemoteModel, previous: Model.Info): Model.Info {
   return {
     ...previous,
     name: previous.id === previous.modelID ? remote.display_name : previous.name,
-    package: previous.package ?? "@opencode/ai/providers/openai",
+    package: previous.package ?? "@ateam/ai/providers/openai",
     capabilities: {
       ...previous.capabilities,
       input: remote.input_modalities.filter((modality) => modality === "text" || modality === "image"),

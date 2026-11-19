@@ -175,12 +175,12 @@ importers:
 
   packages/ai:
     dependencies:
+      '@ateam/schema':
+        specifier: workspace:*
+        version: link:../schema
       '@aws-sdk/credential-providers':
         specifier: 3.1057.0
         version: 3.1057.0
-      '@opencode/schema':
-        specifier: workspace:*
-        version: link:../schema
       '@smithy/eventstream-codec':
         specifier: 4.2.14
         version: 4.2.14
@@ -221,6 +221,24 @@ importers:
       '@agentclientprotocol/sdk':
         specifier: 1.6.0
         version: 1.6.0(zod@4.6.7)
+      '@ateam/client':
+        specifier: workspace:*
+        version: link:../client
+      '@ateam/config':
+        specifier: workspace:*
+        version: link:../config
+      '@ateam/plugin':
+        specifier: workspace:*
+        version: link:../plugin
+      '@ateam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@ateam/server':
+        specifier: workspace:*
+        version: link:../server
+      '@ateam/util':
+        specifier: workspace:*
+        version: link:../util
       '@clack/core':
         specifier: 1.0.0-alpha.1
         version: 1.0.0-alpha.1
@@ -230,27 +248,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.1.0(effect@4.1.0)(redis@6.3.1(@opentelemetry/api@1.10.0))
-      '@opencode/client':
-        specifier: workspace:*
-        version: link:../client
-      '@opencode/config':
-        specifier: workspace:*
-        version: link:../config
-      '@opencode/plugin':
-        specifier: workspace:*
-        version: link:../plugin
       '@opencode/pty':
         specifier: 0.6.0
         version: 0.6.0
-      '@opencode/schema':
-        specifier: workspace:*
-        version: link:../schema
-      '@opencode/server':
-        specifier: workspace:*
-        version: link:../server
-      '@opencode/util':
-        specifier: workspace:*
-        version: link:../util
       '@opentui/core':
         specifier: 0.8.4
         version: 0.8.4(typescript@7.0.2)(web-tree-sitter@0.25.10)
@@ -291,6 +291,12 @@ importers:
         specifier: 8.21.0
         version: 8.21.0
     devDependencies:
+      '@ateam/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@ateam/script':
+        specifier: workspace:*
+        version: link:../script
       '@ff-labs/fff-bin-darwin-arm64':
         specifier: 0.10.5
         version: 0.10.5
@@ -324,12 +330,6 @@ importers:
       '@lydell/node-pty-win32-x64':
         specifier: 1.2.0-beta.12
         version: 1.2.0-beta.12
-      '@opencode/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@opencode/script':
-        specifier: workspace:*
-        version: link:../script
       '@parcel/watcher-darwin-arm64':
         specifier: 2.5.1
         version: 2.5.1
@@ -381,10 +381,10 @@ importers:
 
   packages/client:
     dependencies:
-      '@opencode/protocol':
+      '@ateam/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@opencode/schema':
+      '@ateam/schema':
         specifier: workspace:*
         version: link:../schema
     devDependencies:
@@ -431,10 +431,10 @@ importers:
 
   packages/config:
     dependencies:
-      '@opencode/client':
+      '@ateam/client':
         specifier: workspace:*
         version: link:../client
-      '@opencode/schema':
+      '@ateam/schema':
         specifier: workspace:*
         version: link:../schema
       '@opentui/core':
@@ -465,6 +465,24 @@ importers:
       '@ai-sdk/provider':
         specifier: 3.0.19
         version: 3.0.19
+      '@ateam/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@ateam/codemode':
+        specifier: workspace:*
+        version: link:../codemode
+      '@ateam/plugin':
+        specifier: workspace:*
+        version: link:../plugin
+      '@ateam/plugin-browser':
+        specifier: workspace:*
+        version: link:../plugin-browser
+      '@ateam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@ateam/util':
+        specifier: workspace:*
+        version: link:../util
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.1.0(effect@4.1.0)(redis@6.3.1(@opentelemetry/api@1.10.0))
@@ -492,27 +510,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.4.0
         version: 2.4.0
-      '@opencode/ai':
-        specifier: workspace:*
-        version: link:../ai
-      '@opencode/codemode':
-        specifier: workspace:*
-        version: link:../codemode
-      '@opencode/plugin':
-        specifier: workspace:*
-        version: link:../plugin
-      '@opencode/plugin-browser':
-        specifier: workspace:*
-        version: link:../plugin-browser
       '@opencode/pty':
         specifier: 0.6.0
         version: 0.6.0
-      '@opencode/schema':
-        specifier: workspace:*
-        version: link:../schema
-      '@opencode/util':
-        specifier: workspace:*
-        version: link:../util
       '@parcel/watcher':
         specifier: 2.5.1
         version: 2.5.1
@@ -631,26 +631,26 @@ importers:
       '@ai-sdk/provider':
         specifier: 3.0.8
         version: 3.0.8
-      '@opencode/ai':
+      '@ateam/ai':
         specifier: workspace:*
         version: link:../ai
-      '@opencode/client':
+      '@ateam/client':
         specifier: workspace:*
         version: link:../client
-      '@opencode/protocol':
+      '@ateam/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@opencode/schema':
+      '@ateam/schema':
         specifier: workspace:*
         version: link:../schema
-      '@opencode/util':
+      '@ateam/util':
         specifier: workspace:*
         version: link:../util
       effect:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@opencode/theme':
+      '@ateam/theme':
         specifier: workspace:*
         version: link:../theme
       '@opentui/core':
@@ -686,10 +686,10 @@ importers:
 
   packages/plugin-browser:
     dependencies:
-      '@opencode/plugin':
+      '@ateam/plugin':
         specifier: workspace:*
         version: link:../plugin
-      '@opencode/schema':
+      '@ateam/schema':
         specifier: workspace:*
         version: link:../schema
       effect:
@@ -711,7 +711,7 @@ importers:
 
   packages/protocol:
     dependencies:
-      '@opencode/schema':
+      '@ateam/schema':
         specifier: workspace:*
         version: link:../schema
       effect:
@@ -764,35 +764,35 @@ importers:
 
   packages/server:
     dependencies:
+      '@ateam/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ateam/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@ateam/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@ateam/simulation':
+        specifier: workspace:*
+        version: link:../simulation
+      '@ateam/util':
+        specifier: workspace:*
+        version: link:../util
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.1.0(effect@4.1.0)(redis@6.3.1(@opentelemetry/api@1.10.0))
       '@effect/platform-node-shared':
         specifier: 4.1.0
         version: 4.1.0(effect@4.1.0)
-      '@opencode/core':
-        specifier: workspace:*
-        version: link:../core
-      '@opencode/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@opencode/schema':
-        specifier: workspace:*
-        version: link:../schema
-      '@opencode/simulation':
-        specifier: workspace:*
-        version: link:../simulation
-      '@opencode/util':
-        specifier: workspace:*
-        version: link:../util
       effect:
         specifier: 4.1.0
         version: 4.1.0
     devDependencies:
-      '@opencode/client':
+      '@ateam/client':
         specifier: workspace:*
         version: link:../client
-      '@opencode/plugin':
+      '@ateam/plugin':
         specifier: workspace:*
         version: link:../plugin
       '@opencode/pty':
@@ -819,19 +819,19 @@ importers:
 
   packages/simulation:
     dependencies:
-      '@opencode/ai':
+      '@ateam/ai':
         specifier: workspace:*
         version: link:../ai
-      '@opencode/core':
+      '@ateam/core':
         specifier: workspace:*
         version: link:../core
-      '@opencode/plugin':
+      '@ateam/plugin':
         specifier: workspace:*
         version: link:../plugin
-      '@opencode/protocol':
+      '@ateam/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@opencode/util':
+      '@ateam/util':
         specifier: workspace:*
         version: link:../util
       '@opentui/core':

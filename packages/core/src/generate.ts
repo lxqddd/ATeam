@@ -11,19 +11,19 @@ import {
   type VideoAspectRatio,
   type VideoModel,
   type VideoStatus,
-} from "@opencode/ai/effect"
+} from "@ateam/ai/effect"
 import type {
   DecisionRequest,
   DecisionResult,
   ImageRequest,
   ImageResult,
   VideoRequest,
-} from "@opencode/schema/generate"
-import { Money } from "@opencode/schema/money"
-import { SessionID } from "@opencode/schema/session-id"
+} from "@ateam/schema/generate"
+import { Money } from "@ateam/schema/money"
+import { SessionID } from "@ateam/schema/session-id"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
-import { RequestExecutor } from "@opencode/ai/route"
-import { makeLocationNode } from "@opencode/util/effect/app-node"
+import { RequestExecutor } from "@ateam/ai/route"
+import { makeLocationNode } from "@ateam/util/effect/app-node"
 import { llmClient, requestExecutor } from "./effect/app-node-platform.js"
 import { Integration } from "./integration.js"
 import { ModelResolver } from "./model-resolver.js"
@@ -134,7 +134,7 @@ export interface Interface {
   }
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Generate") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/Generate") {}
 
 // Image and decision clients are built here, on the shared request executor, so only Generate depends on them.
 export const layer = Layer.effect(

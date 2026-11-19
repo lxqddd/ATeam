@@ -1,6 +1,6 @@
 export * as CopilotModels from "./models.js"
 
-import { Money } from "@opencode/schema/money"
+import { Money } from "@ateam/schema/money"
 import { Effect, Option, Schema } from "effect"
 import { Headers, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { Model } from "../model.js"
@@ -219,9 +219,9 @@ function build(id: Model.ID, remote: UsableModel, baseURL: string, previous?: Mo
 type Endpoint = "messages" | "responses" | "chat"
 
 const PACKAGES = {
-  messages: "@opencode/ai/providers/anthropic",
-  responses: "@opencode/ai/providers/openai-compatible-responses",
-  chat: "@opencode/ai/providers/openai-compatible",
+  messages: "@ateam/ai/providers/anthropic",
+  responses: "@ateam/ai/providers/openai-compatible-responses",
+  chat: "@ateam/ai/providers/openai-compatible",
 } as const satisfies Record<Endpoint, string>
 
 /** The native package and base URL for the Copilot API that serves a model. */

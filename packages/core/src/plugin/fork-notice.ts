@@ -1,7 +1,7 @@
 export * as ForkNoticePlugin from "./fork-notice.js"
 
-import { define } from "@opencode/plugin/effect/plugin"
-import { SessionMessage } from "@opencode/schema/session-message"
+import { define } from "@ateam/plugin/effect/plugin"
+import { SessionMessage } from "@ateam/schema/session-message"
 import { Effect } from "effect"
 
 const notice = `<fork-notice>

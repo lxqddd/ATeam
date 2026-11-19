@@ -1,7 +1,7 @@
 export * as McpEventTools from "./mcp-events.js"
 
-import { ToolFailure } from "@opencode/ai/effect"
-import type { Context } from "@opencode/plugin/effect/plugin"
+import { ToolFailure } from "@ateam/ai/effect"
+import type { Context } from "@ateam/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
 import { Flag } from "../../flag.js"
 import { Mcp } from "../../mcp/index.js"

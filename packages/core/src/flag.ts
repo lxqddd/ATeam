@@ -1,9 +1,9 @@
 export * as Flag from "./flag.js"
 
 import { Context, Effect, Layer, Record } from "effect"
-import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { ConfigFlag } from "@opencode/schema/config/flag"
-import type { Document, Entry } from "@opencode/schema/config"
+import { makeLocationNode } from "@ateam/util/effect/app-node"
+import { ConfigFlag } from "@ateam/schema/config/flag"
+import type { Document, Entry } from "@ateam/schema/config"
 import { App } from "./app.js"
 import { Config } from "./config.js"
 
@@ -21,13 +21,13 @@ export interface Interface {
   readonly enabled: (key: Key) => Effect.Effect<boolean>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Flag") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/Flag") {}
 
 /**
  * `OPENCODE_FLAGS`, a comma-separated list such as `automations,-media_blob`; a leading `-` turns a flag off, and
  * `all` enables all flags except opt-in-only flags and any disabled in the same list, as in `all,-media_blob`.
  */
-export const Overrides = Context.Reference<string | undefined>("@opencode/Flag/Overrides", {
+export const Overrides = Context.Reference<string | undefined>("@ateam/Flag/Overrides", {
   defaultValue: () => process.env.OPENCODE_FLAGS,
 })
 

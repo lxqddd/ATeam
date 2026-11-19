@@ -1,7 +1,7 @@
 export * as AutomationCode from "./code.js"
 
-import { CodeMode } from "@opencode/codemode"
-import { Automation } from "@opencode/schema/automation"
+import { CodeMode } from "@ateam/codemode"
+import { Automation } from "@ateam/schema/automation"
 import { Array, Effect, Option, Result, Schema } from "effect"
 import { Agent } from "../agent.js"
 import { CodeModeTool } from "../codemode/tool.js"

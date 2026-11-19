@@ -1,4 +1,4 @@
-# @opencode/codemode
+# @ateam/codemode
 
 This is our take on code mode: a lightweight, pure interpreter for a JavaScript-like language built around calling
 tools. It supports familiar JavaScript syntax with a few key differences and limitations. See the
@@ -39,7 +39,7 @@ Nothing in `src/language/` imports from `src/codemode/`; a test checks it. The p
 ## Quick Start
 
 ```ts
-import { CodeMode, Namespace, Tool } from "@opencode/codemode"
+import { CodeMode, Namespace, Tool } from "@ateam/codemode"
 import { Effect, Schema } from "effect"
 
 const lookupOrder = Tool.make({

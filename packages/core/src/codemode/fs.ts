@@ -1,7 +1,7 @@
 export * as CodeModeFs from "./fs.js"
 
-import { Extension } from "@opencode/codemode"
-import { Glob } from "@opencode/util/glob"
+import { Extension } from "@ateam/codemode"
+import { Glob } from "@ateam/util/glob"
 import { isUtf8 } from "buffer"
 import { Context, Effect, Option } from "effect"
 import { constants } from "os"

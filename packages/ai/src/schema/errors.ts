@@ -1,6 +1,6 @@
 import { Schema } from "effect"
-import { NonNegativeInt } from "@opencode/schema"
-import { Tool } from "@opencode/schema/tool"
+import { NonNegativeInt } from "@ateam/schema"
+import { Tool } from "@ateam/schema/tool"
 import { ProviderID, RouteID } from "./ids.js"
 import type { LLMResponse } from "./events.js"
 import { awsErrorType, providerCodes } from "../utils/provider-codes.js"

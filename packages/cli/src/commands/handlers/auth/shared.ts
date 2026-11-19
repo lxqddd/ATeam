@@ -1,6 +1,6 @@
 import { Effect } from "effect"
-import { OpenCode, type IntegrationInfo, type IntegrationMethod, type OpenCodeClient } from "@opencode/client"
-import { Service } from "@opencode/client/effect/service"
+import { OpenCode, type IntegrationInfo, type IntegrationMethod, type OpenCodeClient } from "@ateam/client"
+import { Service } from "@ateam/client/effect/service"
 import { ServerConnection } from "../../../services/server-connection"
 import { waitForPlugins } from "../../../services/plugin-startup"
 

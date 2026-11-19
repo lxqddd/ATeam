@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode/server",
+  "name": "@ateam/server",
   "version": "2.3.0",
   "type": "module",
   "license": "MIT",
@@ -25,17 +25,17 @@
   "dependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/platform-node-shared": "catalog:",
-    "@opencode/core": "workspace:*",
-    "@opencode/protocol": "workspace:*",
-    "@opencode/schema": "workspace:*",
-    "@opencode/simulation": "workspace:*",
-    "@opencode/util": "workspace:*",
+    "@ateam/core": "workspace:*",
+    "@ateam/protocol": "workspace:*",
+    "@ateam/schema": "workspace:*",
+    "@ateam/simulation": "workspace:*",
+    "@ateam/util": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@opencode/pty": "0.6.0",
-    "@opencode/client": "workspace:*",
-    "@opencode/plugin": "workspace:*",
+    "@ateam/client": "workspace:*",
+    "@ateam/plugin": "workspace:*",
     "@typescript/native": "catalog:",
     "fast-check": "catalog:",
     "@tsconfig/node22": "catalog:",

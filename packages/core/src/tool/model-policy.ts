@@ -1,4 +1,4 @@
-import type { Model } from "@opencode/schema/model"
+import type { Model } from "@ateam/schema/model"
 
 const codeModeBuiltIns = ["read", "write", "edit", "patch", "shell", "websearch"] as const
 

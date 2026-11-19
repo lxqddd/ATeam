@@ -30,9 +30,9 @@ import {
   type VersionNegotiationOptions,
 } from "@modelcontextprotocol/client"
 import { Cause, Clock, Duration, Effect, Exit, PlatformError, Queue, Schedule, Schema, Stream } from "effect"
-import { ConfigMCP } from "@opencode/schema/config/mcp"
-import type { Session } from "@opencode/schema/session"
-import { isRecord } from "@opencode/util/record"
+import { ConfigMCP } from "@ateam/schema/config/mcp"
+import type { Session } from "@ateam/schema/session"
+import { isRecord } from "@ateam/util/record"
 import { McpStdio } from "./stdio.js"
 import { EventStreamRejectedError, EventStreamTerminatedError } from "./event-errors.js"
 

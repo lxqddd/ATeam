@@ -1,8 +1,8 @@
 export * as ArtifactTools from "./artifact.js"
 
-import { ToolFailure } from "@opencode/ai/effect"
-import type { Context } from "@opencode/plugin/effect/plugin"
-import { optional } from "@opencode/schema/schema"
+import { ToolFailure } from "@ateam/ai/effect"
+import type { Context } from "@ateam/plugin/effect/plugin"
+import { optional } from "@ateam/schema/schema"
 import { Effect, Schema, Stream } from "effect"
 import { Artifact } from "../../artifact.js"
 import { Config } from "../../config.js"

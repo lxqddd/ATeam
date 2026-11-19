@@ -1,7 +1,7 @@
 export * as OpencodeArtifacts from "./opencode-artifacts.js"
 
 import { createHash } from "node:crypto"
-import type { Context } from "@opencode/plugin/effect/plugin"
+import type { Context } from "@ateam/plugin/effect/plugin"
 import { Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { ConsoleAccess } from "../../console-access.js"

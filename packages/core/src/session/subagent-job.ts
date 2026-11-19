@@ -1,8 +1,8 @@
 export * as SubagentJob from "./subagent-job.js"
 
 import { Context, Effect, Layer } from "effect"
-import { Node } from "@opencode/util/effect/app-node"
-import type { LayerNode } from "@opencode/util/effect/layer-node"
+import { Node } from "@ateam/util/effect/app-node"
+import type { LayerNode } from "@ateam/util/effect/layer-node"
 import { Job } from "../job.js"
 import { SessionExecution } from "./execution.js"
 
@@ -12,7 +12,7 @@ export interface Interface {
   readonly start: (recovery: Recovery) => Effect.Effect<Job.Info>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/SubagentJob") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/SubagentJob") {}
 
 export function start(
   jobs: Job.Interface,

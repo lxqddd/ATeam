@@ -6,10 +6,10 @@ import {
   LLMClient,
   isContextOverflowFailure,
   type ToolCall,
-} from "@opencode/ai/effect"
-import type { Agent } from "@opencode/schema/agent"
+} from "@ateam/ai/effect"
+import type { Agent } from "@ateam/schema/agent"
 import { Cause, Clock, Data, Deferred, Effect, Exit, Fiber, Option, Stream } from "effect"
-import { SessionError } from "@opencode/schema/session-error"
+import { SessionError } from "@ateam/schema/session-error"
 import { Bus } from "../../bus.js"
 import { Permission } from "../../permission.js"
 import { Snapshot } from "../../snapshot.js"

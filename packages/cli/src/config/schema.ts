@@ -1,4 +1,4 @@
-import { Config } from "@opencode/config"
+import { Config } from "@ateam/config"
 import { Schema } from "effect"
 
 export const SchemaURL = "https://opencode.ai/v2/cli.json"

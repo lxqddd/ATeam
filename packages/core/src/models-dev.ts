@@ -1,16 +1,16 @@
 import { Cause, Context, Duration, Effect, Layer, Option, Result, Schedule, Schema, Semaphore } from "effect"
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http"
-import { ConfigProvider } from "@opencode/schema/config/provider"
-import { MaxTokensField, MediaInput } from "@opencode/schema/model-compatibility"
-import { ModelsDev } from "@opencode/schema/models-dev"
-import { Money } from "@opencode/schema/money"
-import { FreeformFormat } from "@opencode/schema/tool"
+import { ConfigProvider } from "@ateam/schema/config/provider"
+import { MaxTokensField, MediaInput } from "@ateam/schema/model-compatibility"
+import { ModelsDev } from "@ateam/schema/models-dev"
+import { Money } from "@ateam/schema/money"
+import { FreeformFormat } from "@ateam/schema/tool"
 import { App } from "./app.js"
-import { Hash } from "@opencode/util/hash"
-import { FSUtil } from "@opencode/util/fs-util"
+import { Hash } from "@ateam/util/hash"
+import { FSUtil } from "@ateam/util/fs-util"
 import { Bus } from "./bus.js"
-import { makeGlobalNode } from "@opencode/util/effect/app-node"
-import { httpClient } from "@opencode/util/effect/app-node-platform"
+import { makeGlobalNode } from "@ateam/util/effect/app-node"
+import { httpClient } from "@ateam/util/effect/app-node-platform"
 import { Model } from "./model.js"
 import { AISDKNative } from "./aisdk-native.js"
 import { Provider } from "./provider.js"
@@ -162,19 +162,19 @@ type Route = {
 // These packages build their URL from provider settings (region, resource, account, project…), which
 // only happens when no baseURL is set. The catalog's URL for them is a template or SDK default.
 const BUILDS_OWN_URL = new Set([
-  "@opencode/ai/providers/amazon-bedrock",
-  "@opencode/ai/providers/azure/chat",
-  "@opencode/ai/providers/azure/images",
-  "@opencode/ai/providers/azure/messages",
-  "@opencode/ai/providers/azure/responses",
-  "@opencode/ai/providers/cloudflare-ai-gateway",
-  "@opencode/ai/providers/cloudflare-ai-gateway/decisions",
-  "@opencode/ai/providers/cloudflare-workers-ai",
-  "@opencode/ai/providers/cloudflare-workers-ai/decisions",
-  "@opencode/ai/providers/cloudflare-workers-ai/images",
-  "@opencode/ai/providers/google-vertex/gemini",
-  "@opencode/ai/providers/google-vertex/images",
-  "@opencode/ai/providers/google-vertex/messages",
+  "@ateam/ai/providers/amazon-bedrock",
+  "@ateam/ai/providers/azure/chat",
+  "@ateam/ai/providers/azure/images",
+  "@ateam/ai/providers/azure/messages",
+  "@ateam/ai/providers/azure/responses",
+  "@ateam/ai/providers/cloudflare-ai-gateway",
+  "@ateam/ai/providers/cloudflare-ai-gateway/decisions",
+  "@ateam/ai/providers/cloudflare-workers-ai",
+  "@ateam/ai/providers/cloudflare-workers-ai/decisions",
+  "@ateam/ai/providers/cloudflare-workers-ai/images",
+  "@ateam/ai/providers/google-vertex/gemini",
+  "@ateam/ai/providers/google-vertex/images",
+  "@ateam/ai/providers/google-vertex/messages",
   "aisdk:@jerome-benoit/sap-ai-provider-v2",
   "aisdk:watsonx-ai-provider",
 ])
@@ -288,10 +288,10 @@ function route(providerID: Provider.ID, model: SourceModel, unknown: Set<string>
   }
 }
 
-// Newer catalogs may name @opencode/ai entrypoints that older builds don't ship, so those count as no package.
+// Newer catalogs may name @ateam/ai entrypoints that older builds don't ship, so those count as no package.
 function loadable(opencodeai: string | undefined, unknown: Set<string>) {
   const name = Provider.packageName(opencodeai)
-  if (!name?.startsWith("@opencode/ai/") || Provider.builtinPackages.has(name)) return opencodeai
+  if (!name?.startsWith("@ateam/ai/") || Provider.builtinPackages.has(name)) return opencodeai
   unknown.add(name)
   return undefined
 }
@@ -310,7 +310,7 @@ function released(date: string) {
   return Number.isFinite(time) ? time : 0
 }
 
-const COMPATIBLE = new Set(["@opencode/ai/providers/openai-compatible", "@opencode/ai/providers/anthropic-compatible"])
+const COMPATIBLE = new Set(["@ateam/ai/providers/openai-compatible", "@ateam/ai/providers/anthropic-compatible"])
 
 const zero = Money.USDPerMillionTokens.zero
 
@@ -471,7 +471,7 @@ function modelInfo(
   }
 }
 
-export { Event } from "@opencode/schema/models-dev"
+export { Event } from "@ateam/schema/models-dev"
 
 export interface Interface {
   readonly get: () => Effect.Effect<readonly Snapshot[]>
@@ -486,7 +486,7 @@ export const Options = Schema.Struct({
 })
 export type Options = typeof Options.Type
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/ModelsDev") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/ModelsDev") {}
 
 const CatalogJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
 const decodeCatalog = (text: string) => Schema.decodeUnknownEffect(CatalogJson)(text)

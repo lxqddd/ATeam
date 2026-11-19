@@ -3,7 +3,7 @@ export * as PersistentPty from "./index.js"
 import { stat } from "node:fs/promises"
 import path from "node:path"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
-import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { makeGlobalNode } from "@ateam/util/effect/app-node"
 import {
   Added,
   Handoff,
@@ -12,12 +12,12 @@ import {
   Removed,
   Updated,
   type ReadResult,
-} from "@opencode/schema/persistent-pty"
-import { Session } from "@opencode/schema/session"
-import { SessionEvent } from "@opencode/schema/session-event"
+} from "@ateam/schema/persistent-pty"
+import { Session } from "@ateam/schema/session"
+import { SessionEvent } from "@ateam/schema/session-event"
 import { Bus } from "../bus.js"
-import { Pty } from "@opencode/schema/pty"
-import { Global } from "@opencode/util/global"
+import { Pty } from "@ateam/schema/pty"
+import { Global } from "@ateam/util/global"
 import { ShellSelect } from "../shell/select.js"
 import {
   makeDaemonTransport,
@@ -35,7 +35,7 @@ import {
 import { resolveBinary } from "#persistent-pty-binary"
 
 export type { Metadata, Role, Signal, StreamEvent } from "./daemon.js"
-export { Handoff } from "@opencode/schema/persistent-pty"
+export { Handoff } from "@ateam/schema/persistent-pty"
 export { available } from "#persistent-pty-binary"
 
 export const Options = Schema.Struct({
@@ -193,7 +193,7 @@ export interface Interface {
   readonly listPipes: () => Effect.Effect<PipeInfo[], UnavailableError | RequestError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/PersistentPty") {}
+export class Service extends Context.Service<Service, Interface>()("@ateam/PersistentPty") {}
 
 const makeLayer = (options: Options = {}) =>
   Layer.effect(

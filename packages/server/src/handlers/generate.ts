@@ -1,9 +1,9 @@
-import { Flag } from "@opencode/core/flag"
-import { Generate } from "@opencode/core/generate"
-import { VideoGeneration } from "@opencode/core/video-generation"
-import { Location } from "@opencode/core/location"
-import { LocationServiceMap } from "@opencode/core/location-services"
-import { AbsolutePath } from "@opencode/core/schema"
+import { Flag } from "@ateam/core/flag"
+import { Generate } from "@ateam/core/generate"
+import { VideoGeneration } from "@ateam/core/video-generation"
+import { Location } from "@ateam/core/location"
+import { LocationServiceMap } from "@ateam/core/location-services"
+import { AbsolutePath } from "@ateam/core/schema"
 import {
   ForbiddenError,
   VideoNotFoundError,
@@ -12,10 +12,10 @@ import {
   ProviderRequestError,
   ServiceUnavailableError,
   UnsupportedModelError,
-} from "@opencode/protocol/errors"
-import type { DecisionRequest, VideoID, ImageRequest, VideoRequest } from "@opencode/schema/generate"
-import { Global } from "@opencode/util/global"
-import { Model } from "@opencode/schema/model"
+} from "@ateam/protocol/errors"
+import type { DecisionRequest, VideoID, ImageRequest, VideoRequest } from "@ateam/schema/generate"
+import { Global } from "@ateam/util/global"
+import { Model } from "@ateam/schema/model"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/http-api"
 import { Api } from "../api"

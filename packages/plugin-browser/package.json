@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode/plugin-browser",
+  "name": "@ateam/plugin-browser",
   "version": "2.3.0",
   "description": "OpenCode's desktop browser plugin",
   "type": "module",
@@ -27,8 +27,8 @@
     "typecheck:tsc": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
-    "@opencode/plugin": "workspace:*",
-    "@opencode/schema": "workspace:*",
+    "@ateam/plugin": "workspace:*",
+    "@ateam/schema": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
