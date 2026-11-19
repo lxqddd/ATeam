@@ -33,14 +33,15 @@ SOFTWARE.
 
 ## OpenCode
 
-- Source: https://github.com/anomalyco/opencode (vendored under `apps/desktop/src/runtime`, commit in `SOURCE_COMMIT`)
+- Source: https://github.com/anomalyco/opencode (vendored under `packages/*`, commit in `SOURCE_COMMIT`)
 - License: MIT
+- Full license text: `THIRD_PARTY_LICENSES/opencode/LICENSE`
 - Modifications: ATeam branding applied to user-facing copy and system prompts.
 
 ```
 MIT License
 
-Copyright (c) 2026 anomalyco and contributors
+Copyright (c) 2025 opencode
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
