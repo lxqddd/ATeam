@@ -323,7 +323,7 @@ const isTaskRoute = computed(() => route.name === 'task')
           >
             <span
               class="size-1.5 shrink-0 rounded-full"
-              :class="runtime.available ? 'bg-success' : 'bg-fg-subtle/60'"
+              :class="toneClass(runtime.available ? 'available' : 'unavailable')"
             />
             <span class="text-label truncate">{{ runtime.name }}</span>
             <span v-if="runtime.version" class="ml-auto text-caption text-fg-subtle shrink-0">

@@ -142,6 +142,8 @@ const enUS = {
     addModel: 'Add local model',
     remove: 'Remove',
     test: 'Test connection',
+    testing: 'Testing…',
+    saveBeforeTest: 'Save models before testing this model.',
     testSuccess: 'Connected',
     testFailed: 'Connection failed',
     latency: '{ms}ms',

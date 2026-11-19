@@ -34,6 +34,7 @@ const runtimes = useRuntimesStore()
 const drafts = ref<Record<string, RuntimeDraft>>({})
 const saving = ref<Record<string, boolean>>({})
 const tests = ref<Record<string, TestState>>({})
+const testEpochs = ref<Record<string, number>>({})
 
 function createDraft(runtime: RuntimeInfo): RuntimeDraft {
   return {
@@ -45,34 +46,25 @@ function createDraft(runtime: RuntimeInfo): RuntimeDraft {
   }
 }
 
-function resetDrafts() {
+// Keep unsaved edits: existing drafts survive a refresh, new runtimes get a
+// fresh draft, and drafts for runtimes that disappeared are dropped.
+function syncDrafts(items: RuntimeInfo[]) {
   const next: Record<string, RuntimeDraft> = {}
-  for (const runtime of runtimes.items) {
-    next[runtime.name] = createDraft(runtime)
+  for (const runtime of items) {
+    next[runtime.name] = drafts.value[runtime.name] ?? createDraft(runtime)
   }
   drafts.value = next
 }
 
-// Lazily materialize a draft so template access and v-model never see an
-// undefined entry between the list refresh and the next render.
+// Pure getter; drafts are materialized by the watcher before render.
 function draftFor(runtime: RuntimeInfo): RuntimeDraft {
-  const existing = drafts.value[runtime.name]
-  if (existing) {
-    return existing
-  }
-  const created = createDraft(runtime)
-  drafts.value = { ...drafts.value, [runtime.name]: created }
-  return created
+  return drafts.value[runtime.name] ?? createDraft(runtime)
 }
 
-watch(
-  () => runtimes.items,
-  () => resetDrafts(),
-)
+watch(() => runtimes.items, syncDrafts, { immediate: true })
 
 async function refresh() {
   await runtimes.fetchAll()
-  resetDrafts()
 }
 
 onMounted(() => {
@@ -130,6 +122,7 @@ function removeLocalModel(runtime: RuntimeInfo, index: number) {
   if (id && draft.defaultModel === id && !catalogModels(runtime).some((model) => model.id === id)) {
     draft.defaultModel = ''
   }
+  clearTests(runtime.name)
 }
 
 function testKey(runtimeName: string, modelId: string): string {
@@ -140,11 +133,43 @@ function testState(runtimeName: string, modelId: string): TestState | undefined 
   return tests.value[testKey(runtimeName, modelId)]
 }
 
+function runtimeHeadingId(runtimeName: string): string {
+  return `runtime-heading-${runtimeName.replace(/[^A-Za-z0-9_-]/g, '-')}`
+}
+
+// Drop stale test results for one runtime; bumping its epoch also discards
+// results from test requests that are still in flight.
+function clearTests(runtimeName: string) {
+  testEpochs.value = {
+    ...testEpochs.value,
+    [runtimeName]: (testEpochs.value[runtimeName] ?? 0) + 1,
+  }
+  const prefix = `${runtimeName}::`
+  tests.value = Object.fromEntries(
+    Object.entries(tests.value).filter(([key]) => !key.startsWith(prefix)),
+  )
+}
+
+// Only models already in the saved/probe catalog can be tested; an unsaved
+// local model id would always fail server-side validation.
+function isTestableModel(runtime: RuntimeInfo, modelId: string): boolean {
+  const id = modelId.trim()
+  return !!id && runtime.models.some((model) => model.id === id)
+}
+
 async function testModel(runtime: RuntimeInfo, modelId: string) {
-  const key = testKey(runtime.name, modelId)
+  const id = modelId.trim()
+  if (!isTestableModel(runtime, id)) {
+    return
+  }
+  const key = testKey(runtime.name, id)
+  const epoch = testEpochs.value[runtime.name] ?? 0
   tests.value = { ...tests.value, [key]: { status: 'testing', message: '' } }
   try {
-    const result = await runtimes.testModel(runtime.name, modelId)
+    const result = await runtimes.testModel(runtime.name, id)
+    if ((testEpochs.value[runtime.name] ?? 0) !== epoch) {
+      return
+    }
     const next: TestState = result.ok
       ? {
           status: 'success',
@@ -153,6 +178,9 @@ async function testModel(runtime: RuntimeInfo, modelId: string) {
       : { status: 'error', message: result.error || t('runtimes.testFailed') }
     tests.value = { ...tests.value, [key]: next }
   } catch (err) {
+    if ((testEpochs.value[runtime.name] ?? 0) !== epoch) {
+      return
+    }
     tests.value = {
       ...tests.value,
       [key]: { status: 'error', message: err instanceof Error ? err.message : String(err) },
@@ -178,10 +206,9 @@ async function save(runtime: RuntimeInfo) {
   }
   saving.value = { ...saving.value, [runtime.name]: true }
   try {
-    await runtimes.saveModels(runtime.name, models, draft.defaultModel)
-    draft.error = ''
-    await runtimes.fetchAll()
-    resetDrafts()
+    const updated = await runtimes.saveModels(runtime.name, models, draft.defaultModel)
+    drafts.value = { ...drafts.value, [runtime.name]: createDraft(updated) }
+    clearTests(runtime.name)
     ElMessage.success(t('runtimes.saved'))
   } catch (err) {
     draft.error = err instanceof Error ? err.message : String(err)
@@ -234,11 +261,15 @@ async function save(runtime: RuntimeInfo) {
             </Badge>
           </template>
 
+          <h2 :id="runtimeHeadingId(runtime.name)" class="sr-only">{{ runtime.name }}</h2>
           <p v-if="runtime.detail" class="text-caption text-fg-subtle">{{ runtime.detail }}</p>
 
-          <p v-if="!runtime.supported" class="text-caption text-fg-subtle">
-            {{ runtime.modelsError || $t('runtimes.unsupportedHint') }}
-          </p>
+          <template v-if="!runtime.supported">
+            <p class="text-caption text-fg-subtle">{{ $t('runtimes.unsupportedHint') }}</p>
+            <p v-if="runtime.modelsError" class="text-caption text-fg-subtle opacity-70">
+              {{ runtime.modelsError }}
+            </p>
+          </template>
 
           <div v-else class="flex flex-col gap-5">
             <section>
@@ -267,7 +298,11 @@ async function save(runtime: RuntimeInfo) {
                       @click="testModel(runtime, model.id)"
                     >
                       <Loader v-if="testState(runtime.name, model.id)?.status === 'testing'" :size="12" />
-                      {{ $t('runtimes.test') }}
+                      {{
+                        testState(runtime.name, model.id)?.status === 'testing'
+                          ? $t('runtimes.testing')
+                          : $t('runtimes.test')
+                      }}
                     </Button>
                     <span
                       v-if="testState(runtime.name, model.id)"
@@ -290,8 +325,18 @@ async function save(runtime: RuntimeInfo) {
               </h4>
               <div v-for="(model, index) in draftFor(runtime).locals" :key="`${runtime.name}-local-${index}`" class="mt-2">
                 <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] items-center gap-2">
-                  <Input v-model="model.id" :placeholder="$t('runtimes.modelId')" />
-                  <Input v-model="model.label" :placeholder="$t('runtimes.modelLabel')" />
+                  <Input
+                    v-model="model.id"
+                    :placeholder="$t('runtimes.modelId')"
+                    :aria-label="`${$t('runtimes.modelId')} ${index + 1}`"
+                    @input="clearTests(runtime.name)"
+                  />
+                  <Input
+                    v-model="model.label"
+                    :placeholder="$t('runtimes.modelLabel')"
+                    :aria-label="`${$t('runtimes.modelLabel')} ${index + 1}`"
+                    @input="clearTests(runtime.name)"
+                  />
                   <Button
                     size="icon-sm"
                     variant="destructive"
@@ -304,17 +349,36 @@ async function save(runtime: RuntimeInfo) {
                   <Button
                     size="sm"
                     variant="outline"
-                    :disabled="!model.id.trim() || testState(runtime.name, model.id.trim())?.status === 'testing'"
-                    @click="testModel(runtime, model.id.trim())"
+                    :disabled="
+                      !isTestableModel(runtime, model.id) ||
+                      testState(runtime.name, model.id.trim())?.status === 'testing'
+                    "
+                    :title="
+                      model.id.trim() && !isTestableModel(runtime, model.id)
+                        ? $t('runtimes.saveBeforeTest')
+                        : undefined
+                    "
+                    @click="testModel(runtime, model.id)"
                   >
                     <Loader
                       v-if="testState(runtime.name, model.id.trim())?.status === 'testing'"
                       :size="12"
                     />
-                    {{ $t('runtimes.test') }}
+                    {{
+                      testState(runtime.name, model.id.trim())?.status === 'testing'
+                        ? $t('runtimes.testing')
+                        : $t('runtimes.test')
+                    }}
                   </Button>
                 </div>
-                <div v-if="isProbeDefault(runtime, model.id) || testState(runtime.name, model.id.trim())" class="mt-1 flex flex-wrap items-center gap-2">
+                <div
+                  v-if="
+                    isProbeDefault(runtime, model.id) ||
+                    testState(runtime.name, model.id.trim()) ||
+                    (model.id.trim() && !isTestableModel(runtime, model.id))
+                  "
+                  class="mt-1 flex flex-wrap items-center gap-2"
+                >
                   <Badge v-if="isProbeDefault(runtime, model.id)" tone="brand">
                     {{ $t('runtimes.default') }}
                   </Badge>
@@ -326,6 +390,9 @@ async function save(runtime: RuntimeInfo) {
                     "
                   >
                     {{ testState(runtime.name, model.id.trim())?.message }}
+                  </span>
+                  <span v-if="model.id.trim() && !isTestableModel(runtime, model.id)" class="text-caption text-fg-subtle">
+                    {{ $t('runtimes.saveBeforeTest') }}
                   </span>
                 </div>
               </div>
@@ -342,6 +409,7 @@ async function save(runtime: RuntimeInfo) {
               <el-radio-group
                 v-model="draftFor(runtime).defaultModel"
                 class="mt-2 flex flex-col items-start gap-2"
+                :aria-labelledby="runtimeHeadingId(runtime.name)"
               >
                 <el-radio value="">{{ $t('runtimes.defaultNone') }}</el-radio>
                 <el-radio v-for="model in catalogModels(runtime)" :key="model.id" :value="model.id">

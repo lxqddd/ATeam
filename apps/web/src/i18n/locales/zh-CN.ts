@@ -144,6 +144,8 @@ const zhCN: typeof enUS = {
     addModel: '添加本地模型',
     remove: '移除',
     test: '测试连接',
+    testing: '测试中…',
+    saveBeforeTest: '请先保存模型，再测试连接。',
     testSuccess: '连接成功',
     testFailed: '连接失败',
     latency: '{ms}ms',

@@ -7,17 +7,27 @@ export const useRuntimesStore = defineStore('runtimes', () => {
   const items = ref<RuntimeInfo[]>([])
   const loading = ref(false)
   const error = ref('')
+  let pendingFetch: Promise<void> | null = null
 
   async function fetchAll() {
-    loading.value = true
-    try {
-      items.value = await RuntimeApi.list()
-      error.value = ''
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err)
-    } finally {
-      loading.value = false
+    // The sidebar and the runtimes view both request the list on mount; share
+    // one in-flight request instead of issuing duplicate GETs.
+    if (pendingFetch) {
+      return pendingFetch
     }
+    loading.value = true
+    pendingFetch = (async () => {
+      try {
+        items.value = await RuntimeApi.list()
+        error.value = ''
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : String(err)
+      } finally {
+        loading.value = false
+        pendingFetch = null
+      }
+    })()
+    return pendingFetch
   }
 
   async function saveModels(
