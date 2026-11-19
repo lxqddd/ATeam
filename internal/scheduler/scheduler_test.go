@@ -1,7 +1,10 @@
 package scheduler
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -21,16 +24,17 @@ import (
 // are never called by these tests.
 type fakeStore struct {
 	store.Store
-	mu            sync.Mutex
-	runs          map[string]domain.Run
-	tasks         map[string]domain.Task
-	agents        map[string]domain.Agent
-	workspaces    map[string]domain.Workspace
-	snapshots     map[string]domain.RunConfigSnapshot
-	artifacts     map[string]domain.Artifact
-	runtimeModels map[string]domain.RuntimeModelConfig
-	events        int
-	eventTypes    []string
+	mu              sync.Mutex
+	runs            map[string]domain.Run
+	tasks           map[string]domain.Task
+	agents          map[string]domain.Agent
+	workspaces      map[string]domain.Workspace
+	snapshots       map[string]domain.RunConfigSnapshot
+	artifacts       map[string]domain.Artifact
+	runtimeModels   map[string]domain.RuntimeModelConfig
+	runtimeModelErr error
+	events          int
+	eventTypes      []string
 }
 
 func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain.Run) {
@@ -276,6 +280,9 @@ func (f *fakeStore) GetAgent(_ context.Context, id string) (*domain.Agent, error
 func (f *fakeStore) GetRuntimeModelConfig(_ context.Context, runtimeName string) (*domain.RuntimeModelConfig, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.runtimeModelErr != nil {
+		return nil, f.runtimeModelErr
+	}
 	config, ok := f.runtimeModels[runtimeName]
 	if !ok {
 		return nil, store.ErrNotFound
@@ -532,6 +539,29 @@ func TestResolveRunModel(t *testing.T) {
 	agent.Model = ""
 	if model := sched.resolveRunModel(ctx, agent); model != "spaced-default" {
 		t.Fatalf("spaced default model = %q, want spaced-default", model)
+	}
+}
+
+// TestResolveRunModelLogsLookupError checks that a store failure other than
+// ErrNotFound is logged (with the runtime and error) while the run still falls
+// back to letting the runtime CLI choose the model.
+func TestResolveRunModelLogsLookupError(t *testing.T) {
+	ctx := context.Background()
+	st, _ := newFakeStore(t, domain.RunQueued)
+	st.runtimeModelErr = errors.New("database is locked")
+	sched := newTestScheduler(t, st)
+
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+
+	if model := sched.resolveRunModel(ctx, &domain.Agent{Runtime: "claude"}); model != "" {
+		t.Fatalf("model on lookup error = %q, want empty fallback", model)
+	}
+	logged := buf.String()
+	if !strings.Contains(logged, "level=WARN") || !strings.Contains(logged, "runtime=claude") || !strings.Contains(logged, "database is locked") {
+		t.Fatalf("lookup error not logged with runtime and error: %q", logged)
 	}
 }
 

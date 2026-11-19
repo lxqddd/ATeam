@@ -158,8 +158,11 @@ func (a *API) listRuntimes(w http.ResponseWriter, r *http.Request) {
 }
 
 type runtimeModelsInput struct {
-	Models       []domain.RuntimeModel `json:"models"`
-	DefaultModel string                `json:"defaultModel"`
+	Models []domain.RuntimeModel `json:"models"`
+	// DefaultModel is a pointer so an omitted field (nil) can preserve the
+	// stored default instead of clearing it. Older clients such as the
+	// Settings model editor do not send the field at all.
+	DefaultModel *string `json:"defaultModel"`
 }
 
 type modelTestInput struct {
@@ -248,24 +251,47 @@ func (a *API) updateRuntimeModels(w http.ResponseWriter, r *http.Request) {
 		seen[id] = true
 		models = append(models, domain.RuntimeModel{ID: id, Label: label})
 	}
-	// A default model must resolve against the catalog the runtime will see
-	// after this save: probed models plus the submitted local models.
-	defaultModel := strings.TrimSpace(input.DefaultModel)
-	if defaultModel != "" {
-		probeView, _ := a.runtimeProbeView(r.Context(), name)
-		available := make(map[string]bool, len(probeView.Models)+len(models))
-		for _, model := range probeView.Models {
-			available[model.ID] = true
+	// The default model is optional in the request. An omitted field preserves
+	// the stored default so clients that do not know about it (the Settings
+	// model editor) never clear it as a side effect; an explicitly empty string
+	// clears it.
+	defaultModel := ""
+	if input.DefaultModel == nil {
+		config, err := a.store.GetRuntimeModelConfig(r.Context(), name)
+		switch {
+		case err == nil:
+			defaultModel = strings.TrimSpace(config.DefaultModel)
+		case err != store.ErrNotFound:
+			a.writeError(w, http.StatusInternalServerError, err.Error())
+			return
 		}
-		for _, model := range models {
-			available[model.ID] = true
-		}
-		if !available[defaultModel] {
-			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "default model "+defaultModel+" is not available for runtime "+name, map[string]any{
+	} else {
+		// A default model must resolve against the catalog the runtime will see
+		// after this save: probed models plus the submitted local models.
+		defaultModel = strings.TrimSpace(*input.DefaultModel)
+		if len(defaultModel) > 100 {
+			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "default model must be at most 100 characters", map[string]any{
 				"runtime":      name,
 				"defaultModel": defaultModel,
 			})
 			return
+		}
+		if defaultModel != "" {
+			probeView, _ := a.runtimeProbeView(r.Context(), name)
+			available := make(map[string]bool, len(probeView.Models)+len(models))
+			for _, model := range probeView.Models {
+				available[model.ID] = true
+			}
+			for _, model := range models {
+				available[model.ID] = true
+			}
+			if !available[defaultModel] {
+				a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "default model "+defaultModel+" is not available for runtime "+name, map[string]any{
+					"runtime":      name,
+					"defaultModel": defaultModel,
+				})
+				return
+			}
 		}
 	}
 	if _, err := a.store.SetRuntimeModelConfig(r.Context(), name, models, defaultModel); err != nil {

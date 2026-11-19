@@ -620,7 +620,13 @@ func (s *Scheduler) resolveRunModel(ctx context.Context, agent *domain.Agent) st
 		return ""
 	}
 	config, err := s.store.GetRuntimeModelConfig(ctx, agent.Runtime)
-	if err != nil || config == nil {
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			slog.Warn("load runtime model config", "runtime", agent.Runtime, "error", err)
+		}
+		return ""
+	}
+	if config == nil {
 		return ""
 	}
 	return strings.TrimSpace(config.DefaultModel)

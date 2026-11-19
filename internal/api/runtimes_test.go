@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,15 @@ func TestRuntimeModelCatalogMergesLocalSettings(t *testing.T) {
 	})
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("put models = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var putView struct {
+		DefaultModel string `json:"defaultModel"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &putView); err != nil {
+		t.Fatalf("decode runtime: %v", err)
+	}
+	if putView.DefaultModel != "" {
+		t.Fatalf("default model with no stored config = %q, want empty", putView.DefaultModel)
 	}
 
 	recorder = callJSON(t, handler, http.MethodGet, "/api/v1/runtimes", nil)
@@ -142,7 +152,9 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 		t.Fatalf("stale default model = %d, want 400: %s", recorder.Code, recorder.Body.String())
 	}
 
-	// defaultModel stays optional for backward compatibility.
+	// An omitted defaultModel preserves the stored default (clients such as the
+	// Settings model editor do not send the field), even though this PUT no
+	// longer lists m1.
 	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
 		"models": []map[string]string{{"id": "m2"}},
 	})
@@ -152,8 +164,47 @@ func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
 		t.Fatalf("decode runtime: %v", err)
 	}
+	if view.DefaultModel != "m1" {
+		t.Fatalf("default model after omission = %q, want stored m1 preserved", view.DefaultModel)
+	}
+
+	// An explicit empty string clears the stored default.
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+		"models":       []map[string]string{{"id": "m2"}},
+		"defaultModel": "",
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("clear default model = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
+		t.Fatalf("decode runtime: %v", err)
+	}
 	if view.DefaultModel != "" {
-		t.Fatalf("default model after omission = %q, want empty", view.DefaultModel)
+		t.Fatalf("default model after explicit clear = %q, want empty", view.DefaultModel)
+	}
+	recorder = callJSON(t, handler, http.MethodGet, "/api/v1/runtimes", nil)
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode runtimes: %v", err)
+	}
+	for _, runtime := range payload.Runtimes {
+		if runtime.Name == "mock" && runtime.DefaultModel != "" {
+			t.Fatalf("persisted default model after clear = %q, want empty", runtime.DefaultModel)
+		}
+	}
+
+	// A default model longer than 100 characters is rejected.
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+		"models":       []map[string]string{{"id": "m2"}},
+		"defaultModel": strings.Repeat("m", 101),
+	})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("too-long default model = %d, want 400: %s", recorder.Code, recorder.Body.String())
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "VALIDATION_FAILED" {
+		t.Fatalf("too-long default model code = %q, want VALIDATION_FAILED", body.Code)
 	}
 }
 
