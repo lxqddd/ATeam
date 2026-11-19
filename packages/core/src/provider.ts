@@ -203,6 +203,8 @@ export const loadPackage = Effect.fn("Provider.loadPackage")(function* (input: s
   const resolved = yield* Effect.sync(() => {
     if (specifier.startsWith("file://") || specifier.startsWith("@ateam/ai/")) return specifier
     try {
+      // Node SEA exposes a reduced `import.meta`; resolve only where it exists.
+      if (typeof import.meta.resolve !== "function") return undefined
       return import.meta.resolve(specifier)
     } catch {
       return undefined

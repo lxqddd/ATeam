@@ -11,8 +11,9 @@ export function packageName(value: string): string
 export function packageName(value: undefined): undefined
 export function packageName(value: string | undefined): string | undefined
 export function packageName(value: string | undefined) {
-  // Native provider entrypoints can persist in user configuration across the npm scope migration.
+  // Native provider entrypoints can persist in user configuration and remote catalogs across package renames.
   if (value?.startsWith("@opencode-ai/ai/")) return value.replace("@opencode-ai/", "@ateam/")
+  if (value?.startsWith("@opencode/ai/")) return value.replace("@opencode/", "@ateam/")
   if (value === undefined || !isAISDK(value)) return value
   return value.slice(AISDK_PREFIX.length)
 }

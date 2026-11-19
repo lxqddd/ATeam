@@ -1,5 +1,5 @@
 import { Script, constants } from "node:vm"
-import { registerHooks } from "node:module"
+import { createRequire, registerHooks } from "node:module"
 import { statSync } from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
@@ -28,7 +28,12 @@ export function resolveModule(specifier: string, directory: string) {
   })
   try {
     const resolve = (target: string) => {
-      const resolved = import.meta.resolve(path.isAbsolute(target) ? pathToFileURL(target).href : target)
+      const request = path.isAbsolute(target) ? pathToFileURL(target).href : target
+      // Node SEA exposes a reduced `import.meta`; fall back to the CommonJS resolver there.
+      const resolved =
+        typeof import.meta.resolve === "function"
+          ? import.meta.resolve(request)
+          : pathToFileURL(createRequire(path.join(directory, "package.json")).resolve(request)).href
       if (resolved.startsWith("file:")) statSync(new URL(resolved))
       return resolved
     }
