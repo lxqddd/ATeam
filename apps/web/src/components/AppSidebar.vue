@@ -2,11 +2,12 @@
 import { computed, nextTick, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { Grid, Cpu, DataLine, Setting, Monitor } from '@element-plus/icons-vue'
+import { Grid, Cpu, DataLine, Connection, Setting, Monitor } from '@element-plus/icons-vue'
 import { ChevronRightIcon } from '@lucide/vue'
 import { useTasksStore } from '../stores/tasks'
 import { useAgentsStore } from '../stores/agents'
 import { useRunsStore } from '../stores/runs'
+import { useRuntimesStore } from '../stores/runtimes'
 import { useUiStore } from '../stores/ui'
 
 const route = useRoute()
@@ -15,12 +16,14 @@ const { t } = useI18n()
 const tasks = useTasksStore()
 const agents = useAgentsStore()
 const runs = useRunsStore()
+const runtimes = useRuntimesStore()
 const ui = useUiStore()
 
 const navItems: { path: string; icon: Component; labelKey: string }[] = [
   { path: '/', icon: Grid, labelKey: 'sidebar.nav.board' },
   { path: '/agents', icon: Cpu, labelKey: 'sidebar.nav.agents' },
   { path: '/runs', icon: DataLine, labelKey: 'sidebar.nav.runs' },
+  { path: '/runtimes', icon: Connection, labelKey: 'sidebar.nav.runtimes' },
   { path: '/settings', icon: Setting, labelKey: 'sidebar.nav.settings' },
 ]
 
@@ -33,11 +36,12 @@ const settingsSections = [
   { id: 'settings-about', labelKey: 'settings.about' },
 ]
 
-type Section = 'tasks' | 'agents' | 'runs' | 'settings'
+type Section = 'tasks' | 'agents' | 'runs' | 'runtimes' | 'settings'
 
 const section = computed<Section>(() => {
   if (route.path.startsWith('/agents')) return 'agents'
   if (route.path.startsWith('/runs')) return 'runs'
+  if (route.path.startsWith('/runtimes')) return 'runtimes'
   if (route.path.startsWith('/settings')) return 'settings'
   return 'tasks'
 })
@@ -48,6 +52,7 @@ const sectionTitleKey = computed(
       tasks: 'sidebar.nav.board',
       agents: 'sidebar.nav.agents',
       runs: 'sidebar.nav.runs',
+      runtimes: 'sidebar.nav.runtimes',
       settings: 'sidebar.nav.settings',
     })[section.value],
 )
@@ -55,6 +60,7 @@ const sectionTitleKey = computed(
 const panelCount = computed(() => {
   if (section.value === 'agents') return agents.items.length
   if (section.value === 'runs') return runs.items.length
+  if (section.value === 'runtimes') return runtimes.items.length
   if (section.value === 'tasks') return tasks.items.length
   return settingsSections.length
 })
@@ -73,6 +79,7 @@ const sectionOpen = computed({
 async function ensureData() {
   if (section.value === 'tasks' && tasks.items.length === 0) await tasks.fetchAll()
   if (section.value === 'agents' && agents.items.length === 0) await agents.fetchAll()
+  if (section.value === 'runtimes' && runtimes.items.length === 0) await runtimes.fetchAll()
   if (section.value === 'runs') {
     if (runs.items.length === 0) await runs.fetchAll()
     if (tasks.items.length === 0) await tasks.fetchAll()
@@ -82,6 +89,8 @@ async function ensureData() {
 watch(section, () => { void ensureData() }, { immediate: true })
 
 const TONE_CLASSES: Record<string, string> = {
+  available: 'bg-success',
+  unavailable: 'bg-fg-subtle/60',
   done: 'bg-success',
   completed: 'bg-success',
   failed: 'bg-danger',
@@ -125,6 +134,7 @@ const collapsedItems = computed(() => {
       status: '' as const,
       statusLabel: '',
       path: `/agents/${agent.id}/work`,
+      active: route.path === `/agents/${agent.id}/work`,
     }))
   }
   if (section.value === 'runs') {
@@ -134,6 +144,19 @@ const collapsedItems = computed(() => {
       status: run.status,
       statusLabel: t(`common.status.run.${run.status}`),
       path: `/runs/${run.id}`,
+      active: route.path === `/runs/${run.id}`,
+    }))
+  }
+  if (section.value === 'runtimes') {
+    return runtimes.items.slice(0, RAIL_ITEM_LIMIT).map((runtime) => ({
+      id: runtime.name,
+      title: runtime.name,
+      status: runtime.available ? 'available' : 'unavailable',
+      statusLabel: runtime.available ? t('runtimes.available') : t('runtimes.unavailable'),
+      path: '/runtimes',
+      // Every runtime entry opens the same page; the nav icon already marks
+      // the section, so the rail does not single one out as current.
+      active: false,
     }))
   }
   if (section.value === 'tasks') {
@@ -143,6 +166,7 @@ const collapsedItems = computed(() => {
       status: task.status,
       statusLabel: t(`common.status.task.${task.status}`),
       path: `/tasks/${task.id}`,
+      active: route.path === `/tasks/${task.id}`,
     }))
   }
   return []
@@ -190,13 +214,13 @@ const isTaskRoute = computed(() => route.name === 'task')
           :to="entry.path"
           class="size-8 rounded-[10px] flex items-center justify-center text-caption"
           :class="
-            route.path === entry.path
+            entry.active
               ? 'bg-[var(--cd-color-selected-bg)] text-foreground'
               : 'bg-[var(--cd-color-surface-raised)] text-fg-muted hover:bg-[var(--cd-color-hover)] hover:text-foreground'
           "
           :title="entry.title"
           :aria-label="entry.title"
-          :aria-current="route.path === entry.path ? 'page' : undefined"
+          :aria-current="entry.active ? 'page' : undefined"
           @mouseenter="showPeek(entry, $event)"
           @mouseleave="hidePeek"
           @focus="showPeek(entry, $event)"
@@ -289,6 +313,25 @@ const isTaskRoute = computed(() => route.name === 'task')
           </button>
         </template>
 
+        <template v-else-if="section === 'runtimes'">
+          <button
+            v-for="runtime in runtimes.items"
+            :key="runtime.name"
+            type="button"
+            class="w-full h-8 flex items-center gap-2 rounded-[10px] px-2.5 text-left text-fg-muted transition-colors hover:bg-[var(--cd-color-nav-bg)] hover:text-foreground"
+            @click="router.push('/runtimes')"
+          >
+            <span
+              class="size-1.5 shrink-0 rounded-full"
+              :class="runtime.available ? 'bg-success' : 'bg-fg-subtle/60'"
+            />
+            <span class="text-label truncate">{{ runtime.name }}</span>
+            <span v-if="runtime.version" class="ml-auto text-caption text-fg-subtle shrink-0">
+              {{ runtime.version }}
+            </span>
+          </button>
+        </template>
+
         <template v-else>
           <button
             v-for="item in settingsSections"
@@ -305,7 +348,8 @@ const isTaskRoute = computed(() => route.name === 'task')
           v-if="
             (section === 'tasks' && tasks.items.length === 0) ||
             (section === 'agents' && agents.items.length === 0) ||
-            (section === 'runs' && runs.items.length === 0)
+            (section === 'runs' && runs.items.length === 0) ||
+            (section === 'runtimes' && runtimes.items.length === 0)
           "
           class="px-2.5 py-2 text-caption text-fg-subtle"
         >

@@ -81,6 +81,7 @@ export interface RuntimeInfo {
   detail?: string
   capabilities?: Record<string, boolean>
   models: RuntimeModel[]
+  defaultModel?: string
   modelsError?: string
 }
 

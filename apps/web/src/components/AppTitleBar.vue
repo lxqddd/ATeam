@@ -18,6 +18,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
   agents: 'agents.title',
   runs: 'runs.title',
   run: 'runDetail.title',
+  runtimes: 'runtimes.title',
   settings: 'settings.title',
 }
 

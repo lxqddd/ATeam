@@ -11,10 +11,24 @@ export class RuntimeApi {
     return response.runtimes
   }
 
-  static updateModels(name: string, models: Pick<RuntimeModel, 'id' | 'label'>[]): Promise<RuntimeInfo> {
-    return HttpClient.put<RuntimeInfo>(`/runtimes/${encodeURIComponent(name)}/models`, {
+  static updateModels(
+    name: string,
+    models: Pick<RuntimeModel, 'id' | 'label'>[],
+    defaultModel?: string,
+  ): Promise<RuntimeInfo> {
+    const body: {
+      models: { id: string; label?: string }[]
+      defaultModel?: string
+    } = {
       models: models.map((model) => ({ id: model.id, label: model.label || undefined })),
-    })
+    }
+    // Omit the field entirely when the caller does not manage the default
+    // model: the backend then preserves the stored value. An explicit empty
+    // string clears it.
+    if (defaultModel !== undefined) {
+      body.defaultModel = defaultModel
+    }
+    return HttpClient.put<RuntimeInfo>(`/runtimes/${encodeURIComponent(name)}/models`, body)
   }
 
   static testModel(name: string, model: string): Promise<ModelTestResult> {
