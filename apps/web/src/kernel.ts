@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KernelEvent, KernelMessage, KernelSession, KernelState } from '@ateam/shared'
+import type { KernelEvent, KernelMessage, KernelModel, KernelSession, KernelState } from '@ateam/shared'
 
 export interface KernelController {
   state: KernelState
   sessions: KernelSession[]
+  models: KernelModel[]
   activeSessionId: string
   activeSession: KernelSession | null
   messages: KernelMessage[]
@@ -12,6 +13,7 @@ export interface KernelController {
   error: string
   newSession: (title: string) => Promise<void>
   selectSession: (sessionId: string) => void
+  switchModel: (model: { id: string; providerID: string }) => Promise<void>
   send: (text: string) => Promise<void>
   interrupt: () => Promise<void>
   restart: () => Promise<void>
@@ -23,6 +25,7 @@ const bridge = () => window.ateam?.kernel
 export function useKernel(): KernelController {
   const [state, setState] = useState<KernelState>({ status: 'stopped' })
   const [sessions, setSessions] = useState<KernelSession[]>([])
+  const [models, setModels] = useState<KernelModel[]>([])
   const [activeSessionId, setActiveSessionId] = useState('')
   const [messages, setMessages] = useState<KernelMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -116,12 +119,49 @@ export function useKernel(): KernelController {
   }, [loadMessages, refresh])
 
   useEffect(() => {
+    if (state.status !== 'ready') {
+      setModels([])
+      return
+    }
+    let cancelled = false
+    // The catalog settles shortly after the kernel reports ready; retry until it does.
+    const load = async (attempt: number) => {
+      const next = (await bridge()?.models()) ?? []
+      if (cancelled) return
+      if (next.length > 0 || attempt >= 10) {
+        setModels(next)
+        return
+      }
+      window.setTimeout(() => void load(attempt + 1), 1000)
+    }
+    void load(0)
+    return () => {
+      cancelled = true
+    }
+  }, [state.status])
+
+  useEffect(() => {
     if (activeSessionId) {
       void loadMessages(activeSessionId)
     } else {
       setMessages([])
     }
   }, [activeSessionId, loadMessages])
+
+  const switchModel = useCallback(async (model: { id: string; providerID: string }) => {
+    const kernel = bridge()
+    const sessionId = activeRef.current
+    if (!kernel || !sessionId) return
+    try {
+      await kernel.switchModel(sessionId, model)
+      setSessions((current) =>
+        current.map((session) => (session.id === sessionId ? { ...session, model } : session)),
+      )
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
 
   const selectSession = useCallback((sessionId: string) => {
     setActiveSessionId(sessionId)
@@ -210,6 +250,7 @@ export function useKernel(): KernelController {
   return {
     state,
     sessions,
+    models,
     activeSessionId,
     activeSession,
     messages,
@@ -218,6 +259,7 @@ export function useKernel(): KernelController {
     error,
     newSession,
     selectSession,
+    switchModel,
     send,
     interrupt,
     restart,

@@ -12,6 +12,8 @@ interface Window {
       messages(sessionId: string): Promise<import('@ateam/shared').KernelMessage[]>
       interrupt(sessionId: string): Promise<void>
       restart(): Promise<import('@ateam/shared').KernelState>
+      models(): Promise<import('@ateam/shared').KernelModel[]>
+      switchModel(sessionId: string, model: { id: string; providerID: string }): Promise<void>
       onEvent(callback: (event: import('@ateam/shared').KernelEvent) => void): () => void
     }
     provider?: {

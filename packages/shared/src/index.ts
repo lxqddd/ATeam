@@ -51,6 +51,14 @@ export interface KernelSession {
   busy: boolean
   createdAt?: string
   updatedAt?: string
+  model?: { id: string; providerID: string }
+}
+
+export interface KernelModel {
+  id: string
+  providerID: string
+  name: string
+  context?: number
 }
 
 export type KernelMessageRole = 'user' | 'assistant' | 'system' | 'tool' | 'error'

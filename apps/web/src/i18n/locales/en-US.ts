@@ -86,6 +86,7 @@ const enUS = {
       },
     },
     composerPlaceholder: 'Type a message…',
+    modelPlaceholder: 'Select model',
     attach: 'Attach',
     autoEdit: 'Auto-edit files',
     kernelDisconnected: 'Kernel offline',

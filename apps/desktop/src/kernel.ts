@@ -7,6 +7,7 @@ import path from 'node:path'
 import type {
   KernelEvent,
   KernelMessage,
+  KernelModel,
   KernelSession,
   KernelState,
   ProviderTestResult,
@@ -17,6 +18,7 @@ interface RawSession {
   id: string
   title?: string
   location?: { directory?: string }
+  model?: { id?: string; providerID?: string }
   time?: { created?: number; updated?: number; busy?: number; idle?: number }
 }
 
@@ -32,6 +34,14 @@ interface RawMessage {
   outcome?: string
   error?: { message?: string }
   content?: unknown[]
+}
+
+interface RawModel {
+  id: string
+  providerID?: string
+  name?: string
+  type?: string
+  limit?: { context?: number }
 }
 
 type EventListener = (event: KernelEvent) => void
@@ -199,6 +209,27 @@ export class KernelManager {
     await this.request(`/api/session/${encodeURIComponent(sessionID)}/interrupt`, { method: 'POST' })
   }
 
+  async listModels(): Promise<KernelModel[]> {
+    if (this.state.status !== 'ready') return []
+    const response = await this.request<{ data?: RawModel[] }>('/api/model')
+    return (response.data ?? [])
+      .filter((model) => (!model.type || model.type === 'chat') && Boolean(model.providerID))
+      .map((model) => ({
+        id: model.id,
+        providerID: model.providerID ?? '',
+        name: model.name ?? model.id,
+        ...(model.limit?.context ? { context: model.limit.context } : {}),
+      }))
+      .sort((left, right) => left.providerID.localeCompare(right.providerID) || left.name.localeCompare(right.name))
+  }
+
+  async switchModel(sessionID: string, model: { id: string; providerID: string }): Promise<void> {
+    await this.request(`/api/session/${encodeURIComponent(sessionID)}/model`, {
+      method: 'POST',
+      body: { model },
+    })
+  }
+
   async testProvider(): Promise<ProviderTestResult> {
     const config = providerConfig()
     if (!config) return { ok: false, message: '尚未配置模型供应商' }
@@ -324,6 +355,9 @@ function mapSession(raw: RawSession, fallbackDirectory: string): KernelSession {
     title: raw.title ?? 'ATeam session',
     directory: raw.location?.directory ?? fallbackDirectory,
     busy,
+    ...(raw.model?.id && raw.model.providerID
+      ? { model: { id: raw.model.id, providerID: raw.model.providerID } }
+      : {}),
     createdAt: time.created ? new Date(time.created).toISOString() : undefined,
     updatedAt: time.updated ? new Date(time.updated).toISOString() : undefined,
   }

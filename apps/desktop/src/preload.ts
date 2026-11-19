@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld('ateam', {
     messages: (sessionId: string) => ipcRenderer.invoke('kernel:messages', sessionId),
     interrupt: (sessionId: string) => ipcRenderer.invoke('kernel:interrupt', sessionId),
     restart: () => ipcRenderer.invoke('kernel:restart'),
+    models: () => ipcRenderer.invoke('kernel:models'),
+    switchModel: (sessionId: string, model: { id: string; providerID: string }) =>
+      ipcRenderer.invoke('kernel:switch-model', { sessionId, model }),
     onEvent: (callback: (event: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload)
       ipcRenderer.on('kernel:event', listener)

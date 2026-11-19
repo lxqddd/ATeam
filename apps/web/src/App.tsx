@@ -22,7 +22,7 @@ import {
   SettingOutlined,
   ThunderboltFilled,
 } from '@ant-design/icons'
-import { Avatar, Button, Empty, Progress, Tag, Tooltip } from 'antd'
+import { Avatar, Button, Empty, Progress, Select, Tag, Tooltip } from 'antd'
 import { APP_NAME, type KernelMessage } from '@ateam/shared'
 import { useKernel, type KernelController } from './kernel'
 import { SettingsView } from './views/SettingsView'
@@ -77,6 +77,35 @@ const suggestions = [
     descKey: 'sessions.suggestions.review.desc',
   },
 ]
+
+function ModelPicker({ kernel }: { kernel: KernelController }) {
+  const { t } = useTranslation()
+  const current = kernel.activeSession?.model
+  const value = current ? `${current.providerID}/${current.id}` : undefined
+  const groups = new Map<string, { label: string; value: string }[]>()
+  for (const model of kernel.models) {
+    const options = groups.get(model.providerID) ?? []
+    options.push({ value: `${model.providerID}/${model.id}`, label: model.name })
+    groups.set(model.providerID, options)
+  }
+  if (!kernel.activeSession || kernel.models.length === 0) return null
+  return (
+    <Select
+      size="small"
+      className="min-w-[190px]"
+      value={value}
+      placeholder={t('sessions.modelPlaceholder')}
+      options={Array.from(groups, ([label, options]) => ({ label, options }))}
+      showSearch
+      optionFilterProp="label"
+      onChange={(next: string) => {
+        const separator = next.indexOf('/')
+        if (separator <= 0) return
+        void kernel.switchModel({ providerID: next.slice(0, separator), id: next.slice(separator + 1) })
+      }}
+    />
+  )
+}
 
 export function App() {
   const { t } = useTranslation()
@@ -381,11 +410,14 @@ function SessionsView({ kernel }: { kernel: KernelController }) {
               <span className="cd-label truncate">{kernel.activeSession.title}</span>
               {kernel.activeSession.busy && <span className="text-[12px] text-accent">…</span>}
             </div>
-            {(kernel.activeSession.busy || kernel.sending) && (
-              <Button size="small" onClick={() => void kernel.interrupt()}>
-                {t('kernel.stop')}
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              <ModelPicker kernel={kernel} />
+              {(kernel.activeSession.busy || kernel.sending) && (
+                <Button size="small" onClick={() => void kernel.interrupt()}>
+                  {t('kernel.stop')}
+                </Button>
+              )}
+            </div>
           </div>
         )}
 

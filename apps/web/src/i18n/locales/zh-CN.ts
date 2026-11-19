@@ -85,6 +85,7 @@ const zhCN = {
       },
     },
     composerPlaceholder: '输入消息…',
+    modelPlaceholder: '选择模型',
     attach: '添加附件',
     autoEdit: '自动改文件',
     kernelDisconnected: '内核未连接',

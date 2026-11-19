@@ -85,6 +85,22 @@ void app.whenReady().then(() => {
     typeof sessionId === 'string' ? kernel?.interrupt(sessionId) : undefined,
   )
   ipcMain.handle('kernel:restart', () => kernel?.restart())
+  ipcMain.handle('kernel:models', () => kernel?.listModels() ?? [])
+  ipcMain.handle('kernel:switch-model', (_event, input: unknown) => {
+    const payload = input as
+      | { sessionId?: unknown; model?: { id?: unknown; providerID?: unknown } }
+      | null
+    if (
+      !payload ||
+      typeof payload.sessionId !== 'string' ||
+      !payload.model ||
+      typeof payload.model.id !== 'string' ||
+      typeof payload.model.providerID !== 'string'
+    ) {
+      throw new Error('invalid model payload')
+    }
+    return kernel?.switchModel(payload.sessionId, { id: payload.model.id, providerID: payload.model.providerID })
+  })
   ipcMain.handle('provider:get', () => providerConfig())
   ipcMain.handle('provider:set', async (_event, input: unknown) => {
     const payload = input as { kind?: unknown; model?: unknown; apiKey?: unknown } | null
