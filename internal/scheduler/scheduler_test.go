@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,15 +21,16 @@ import (
 // are never called by these tests.
 type fakeStore struct {
 	store.Store
-	mu         sync.Mutex
-	runs       map[string]domain.Run
-	tasks      map[string]domain.Task
-	agents     map[string]domain.Agent
-	workspaces map[string]domain.Workspace
-	snapshots  map[string]domain.RunConfigSnapshot
-	artifacts  map[string]domain.Artifact
-	events     int
-	eventTypes []string
+	mu            sync.Mutex
+	runs          map[string]domain.Run
+	tasks         map[string]domain.Task
+	agents        map[string]domain.Agent
+	workspaces    map[string]domain.Workspace
+	snapshots     map[string]domain.RunConfigSnapshot
+	artifacts     map[string]domain.Artifact
+	runtimeModels map[string]domain.RuntimeModelConfig
+	events        int
+	eventTypes    []string
 }
 
 func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain.Run) {
@@ -67,8 +69,9 @@ func newFakeStore(t *testing.T, runStatus domain.RunStatus) (*fakeStore, *domain
 		workspaces: map[string]domain.Workspace{
 			domain.DefaultWorkspaceID: {ID: domain.DefaultWorkspaceID, Name: "Default", DefaultBranch: "main", Status: domain.WorkspaceActive},
 		},
-		snapshots: map[string]domain.RunConfigSnapshot{},
-		artifacts: map[string]domain.Artifact{},
+		snapshots:     map[string]domain.RunConfigSnapshot{},
+		artifacts:     map[string]domain.Artifact{},
+		runtimeModels: map[string]domain.RuntimeModelConfig{},
 	}, &run
 }
 
@@ -268,6 +271,24 @@ func (f *fakeStore) GetAgent(_ context.Context, id string) (*domain.Agent, error
 		return nil, store.ErrNotFound
 	}
 	return &agent, nil
+}
+
+func (f *fakeStore) GetRuntimeModelConfig(_ context.Context, runtimeName string) (*domain.RuntimeModelConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	config, ok := f.runtimeModels[runtimeName]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return &config, nil
+}
+
+func (f *fakeStore) SetRuntimeModelConfig(_ context.Context, runtimeName string, models []domain.RuntimeModel, defaultModel string) (*domain.RuntimeModelConfig, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	config := domain.RuntimeModelConfig{Runtime: runtimeName, Models: models, DefaultModel: defaultModel}
+	f.runtimeModels[runtimeName] = config
+	return &config, nil
 }
 
 func (f *fakeStore) UpdateRun(_ context.Context, run *domain.Run) error {
@@ -476,6 +497,88 @@ func (f *fakeStore) countEventsOfType(eventType string) int {
 		}
 	}
 	return count
+}
+
+func TestResolveRunModel(t *testing.T) {
+	ctx := context.Background()
+	st, _ := newFakeStore(t, domain.RunQueued)
+	sched := newTestScheduler(t, st)
+
+	agent := &domain.Agent{Runtime: "mock"}
+	if model := sched.resolveRunModel(ctx, agent); model != "" {
+		t.Fatalf("missing runtime config model = %q, want empty", model)
+	}
+
+	if _, err := st.SetRuntimeModelConfig(ctx, "mock", nil, "runtime-default"); err != nil {
+		t.Fatalf("set runtime default model: %v", err)
+	}
+	if model := sched.resolveRunModel(ctx, agent); model != "runtime-default" {
+		t.Fatalf("runtime default model = %q, want runtime-default", model)
+	}
+
+	agent.Model = "pinned-model"
+	if model := sched.resolveRunModel(ctx, agent); model != "pinned-model" {
+		t.Fatalf("pinned model = %q, want pinned-model", model)
+	}
+
+	agent.Model = "   "
+	if model := sched.resolveRunModel(ctx, agent); model != "runtime-default" {
+		t.Fatalf("whitespace model = %q, want runtime-default", model)
+	}
+
+	if _, err := st.SetRuntimeModelConfig(ctx, "mock", nil, "  spaced-default  "); err != nil {
+		t.Fatalf("set spaced default model: %v", err)
+	}
+	agent.Model = ""
+	if model := sched.resolveRunModel(ctx, agent); model != "spaced-default" {
+		t.Fatalf("spaced default model = %q, want spaced-default", model)
+	}
+}
+
+type modelCapturingAdapter struct {
+	fakeAdapter
+	model string
+}
+
+func (a *modelCapturingAdapter) Run(_ context.Context, req runtime.Request, emit func(runtime.Event)) error {
+	a.model = req.Model
+	emit(runtime.Event{Type: "log", Message: "captured model " + req.Model})
+	return nil
+}
+
+// TestExecuteRecordsResolvedDefaultModel checks that the scheduler passes the
+// runtime default model to the adapter and records it in the run snapshot.
+func TestExecuteRecordsResolvedDefaultModel(t *testing.T) {
+	st, run := newFakeStore(t, domain.RunQueued)
+	agent := st.agents[run.AgentID]
+	agent.Model = ""
+	st.agents[agent.ID] = agent
+	if _, err := st.SetRuntimeModelConfig(context.Background(), "mock", nil, "runtime-default"); err != nil {
+		t.Fatalf("set runtime default model: %v", err)
+	}
+
+	dataDir := t.TempDir()
+	hub := events.NewHub(security.NewGuard())
+	registry := runtime.NewRegistry()
+	captured := &modelCapturingAdapter{fakeAdapter: fakeAdapter{name: "mock"}}
+	registry.Register(captured)
+	sched := New(st, hub, registry, workspace.New(dataDir), artifact.NewWriter(st, dataDir), 1)
+
+	startRun(t, sched, run.ID)
+	waitFor(t, "run to complete", 5*time.Second, func() bool {
+		return st.runStatus(run.ID) == domain.RunCompleted
+	})
+
+	if captured.model != "runtime-default" {
+		t.Fatalf("adapter model = %q, want runtime-default", captured.model)
+	}
+	snapshot, ok := st.snapshot(run.ID)
+	if !ok {
+		t.Fatal("expected a run configuration snapshot")
+	}
+	if !strings.Contains(snapshot.ConfigSnapshot, `"model":"runtime-default"`) {
+		t.Fatalf("snapshot missing resolved model: %s", snapshot.ConfigSnapshot)
+	}
 }
 
 // TestAgentConcurrencyHoldsSecondRun covers AGENT-017: with maxConcurrency 1

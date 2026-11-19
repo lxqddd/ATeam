@@ -31,12 +31,13 @@ type runtimeView struct {
 	Detail       string             `json:"detail,omitempty"`
 	Capabilities map[string]bool    `json:"capabilities,omitempty"`
 	Models       []runtimeModelView `json:"models"`
+	DefaultModel string             `json:"defaultModel"`
 	ModelsError  string             `json:"modelsError,omitempty"`
 }
 
-// runtimeView builds the merged model catalog for one runtime. Runtime probe
-// entries win over local settings entries with the same ID (PRD §5.17).
-func (a *API) runtimeView(ctx context.Context, name string) (runtimeView, bool) {
+// runtimeProbeView builds the model catalog discovered by probing the runtime
+// itself, without the installation's local settings entries.
+func (a *API) runtimeProbeView(ctx context.Context, name string) (runtimeView, bool) {
 	adapter, ok := a.registry.Get(name)
 	if !ok {
 		return runtimeView{}, false
@@ -75,6 +76,16 @@ func (a *API) runtimeView(ctx context.Context, name string) (runtimeView, bool) 
 			Deprecated: model.Deprecated,
 		})
 	}
+	return view, true
+}
+
+// runtimeView builds the merged model catalog for one runtime. Runtime probe
+// entries win over local settings entries with the same ID (PRD §5.17).
+func (a *API) runtimeView(ctx context.Context, name string) (runtimeView, bool) {
+	view, ok := a.runtimeProbeView(ctx, name)
+	if !ok {
+		return runtimeView{}, false
+	}
 
 	config, err := a.store.GetRuntimeModelConfig(ctx, name)
 	if err != nil && err != store.ErrNotFound {
@@ -83,6 +94,7 @@ func (a *API) runtimeView(ctx context.Context, name string) (runtimeView, bool) 
 		}
 	}
 	if err == nil {
+		view.DefaultModel = config.DefaultModel
 		for _, model := range config.Models {
 			if model.ID == "" || containsModel(view.Models, model.ID) {
 				continue
@@ -146,7 +158,8 @@ func (a *API) listRuntimes(w http.ResponseWriter, r *http.Request) {
 }
 
 type runtimeModelsInput struct {
-	Models []domain.RuntimeModel `json:"models"`
+	Models       []domain.RuntimeModel `json:"models"`
+	DefaultModel string                `json:"defaultModel"`
 }
 
 type modelTestInput struct {
@@ -235,7 +248,27 @@ func (a *API) updateRuntimeModels(w http.ResponseWriter, r *http.Request) {
 		seen[id] = true
 		models = append(models, domain.RuntimeModel{ID: id, Label: label})
 	}
-	if _, err := a.store.SetRuntimeModelConfig(r.Context(), name, models); err != nil {
+	// A default model must resolve against the catalog the runtime will see
+	// after this save: probed models plus the submitted local models.
+	defaultModel := strings.TrimSpace(input.DefaultModel)
+	if defaultModel != "" {
+		probeView, _ := a.runtimeProbeView(r.Context(), name)
+		available := make(map[string]bool, len(probeView.Models)+len(models))
+		for _, model := range probeView.Models {
+			available[model.ID] = true
+		}
+		for _, model := range models {
+			available[model.ID] = true
+		}
+		if !available[defaultModel] {
+			a.writeAPIError(w, http.StatusBadRequest, "VALIDATION_FAILED", "default model "+defaultModel+" is not available for runtime "+name, map[string]any{
+				"runtime":      name,
+				"defaultModel": defaultModel,
+			})
+			return
+		}
+	}
+	if _, err := a.store.SetRuntimeModelConfig(r.Context(), name, models, defaultModel); err != nil {
 		a.writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

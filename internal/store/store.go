@@ -41,7 +41,7 @@ type Store interface {
 	// Runtime model configuration is local to the installation: it holds
 	// model IDs the user added for a runtime that the CLI cannot enumerate.
 	GetRuntimeModelConfig(context.Context, string) (*domain.RuntimeModelConfig, error)
-	SetRuntimeModelConfig(context.Context, string, []domain.RuntimeModel) (*domain.RuntimeModelConfig, error)
+	SetRuntimeModelConfig(context.Context, string, []domain.RuntimeModel, string) (*domain.RuntimeModelConfig, error)
 
 	CreateRun(context.Context, *domain.Run) error
 	ListRuns(context.Context) ([]domain.Run, error)

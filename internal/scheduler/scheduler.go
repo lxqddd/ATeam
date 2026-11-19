@@ -220,6 +220,9 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 		s.finishFailed(ctx, run, "internal_error", "scheduler_internal", "failed to load the agent")
 		return
 	}
+	// A pinned agent model wins; otherwise fall back to the runtime default
+	// chosen on the runtime management page (empty = let the runtime CLI pick).
+	model := s.resolveRunModel(ctx, agent)
 
 	// Per-agent concurrency admission (AGENT-017): claim one of the agent's
 	// maxConcurrency slots atomically; without a free slot the run stays
@@ -403,7 +406,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	promptSum := sha256.Sum256([]byte(prompt))
 	configJSON, err := json.Marshal(map[string]any{
 		"runtime":         agent.Runtime,
-		"model":           agent.Model,
+		"model":           model,
 		"workspaceMode":   agent.WorkspaceMode,
 		"permissionMode":  permissionMode,
 		"timeoutMinutes":  agent.TimeoutMinutes,
@@ -527,7 +530,7 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	err = adapter.Run(runCtx, runtime.Request{
 		Prompt:         prompt,
 		Workdir:        workdir,
-		Model:          agent.Model,
+		Model:          model,
 		PermissionMode: permissionMode,
 		Policy:         policy,
 	}, emit)
@@ -600,6 +603,27 @@ func (s *Scheduler) execute(ctx context.Context, runID string) {
 	if !s.writeActiveRun(ctx, run, "run.updated") {
 		slog.Info("run already terminal; keeping stored state", "run", run.ID)
 	}
+}
+
+// resolveRunModel returns the model a run should use. A model pinned on the
+// agent wins; an agent without one inherits the runtime default, and an empty
+// runtime default leaves the choice to the runtime CLI.
+func (s *Scheduler) resolveRunModel(ctx context.Context, agent *domain.Agent) string {
+	if agent == nil {
+		return ""
+	}
+	model := strings.TrimSpace(agent.Model)
+	if model != "" {
+		return model
+	}
+	if strings.TrimSpace(agent.Runtime) == "" {
+		return ""
+	}
+	config, err := s.store.GetRuntimeModelConfig(ctx, agent.Runtime)
+	if err != nil || config == nil {
+		return ""
+	}
+	return strings.TrimSpace(config.DefaultModel)
 }
 
 func (s *Scheduler) finishCancelled(ctx context.Context, run *domain.Run) {

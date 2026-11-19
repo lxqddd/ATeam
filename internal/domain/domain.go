@@ -111,10 +111,11 @@ type RuntimeModel struct {
 }
 
 type RuntimeModelConfig struct {
-	Runtime   string
-	Models    []RuntimeModel
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Runtime      string
+	Models       []RuntimeModel
+	DefaultModel string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type RunStatus string

@@ -8,10 +8,11 @@ import (
 
 type runtimeCatalogTestResponse struct {
 	Runtimes []struct {
-		Name        string `json:"name"`
-		Available   bool   `json:"available"`
-		ModelsError string `json:"modelsError"`
-		Models      []struct {
+		Name         string `json:"name"`
+		Available    bool   `json:"available"`
+		DefaultModel string `json:"defaultModel"`
+		ModelsError  string `json:"modelsError"`
+		Models       []struct {
 			ID     string `json:"id"`
 			Label  string `json:"label"`
 			Source string `json:"source"`
@@ -39,10 +40,11 @@ func TestRuntimeModelCatalogMergesLocalSettings(t *testing.T) {
 		t.Fatalf("decode runtimes: %v", err)
 	}
 	var claude *struct {
-		Name        string `json:"name"`
-		Available   bool   `json:"available"`
-		ModelsError string `json:"modelsError"`
-		Models      []struct {
+		Name         string `json:"name"`
+		Available    bool   `json:"available"`
+		DefaultModel string `json:"defaultModel"`
+		ModelsError  string `json:"modelsError"`
+		Models       []struct {
 			ID     string `json:"id"`
 			Label  string `json:"label"`
 			Source string `json:"source"`
@@ -71,6 +73,87 @@ func TestRuntimeModelCatalogMergesLocalSettings(t *testing.T) {
 	})
 	if duplicate.Code != http.StatusBadRequest {
 		t.Fatalf("duplicate models = %d, want 400", duplicate.Code)
+	}
+}
+
+func TestRuntimeDefaultModelRoundTrip(t *testing.T) {
+	handler, _ := newTestHandler(t)
+
+	recorder := callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+		"models":       []map[string]string{{"id": "m1"}},
+		"defaultModel": "m1",
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("put default model = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var view struct {
+		Name         string `json:"name"`
+		DefaultModel string `json:"defaultModel"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
+		t.Fatalf("decode runtime: %v", err)
+	}
+	if view.Name != "mock" || view.DefaultModel != "m1" {
+		t.Fatalf("runtime view = %#v, want mock/m1", view)
+	}
+
+	recorder = callJSON(t, handler, http.MethodGet, "/api/v1/runtimes", nil)
+	var payload runtimeCatalogTestResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode runtimes: %v", err)
+	}
+	found := false
+	for _, runtime := range payload.Runtimes {
+		if runtime.Name == "mock" {
+			found = true
+			if runtime.DefaultModel != "m1" {
+				t.Fatalf("persisted default model = %q, want m1", runtime.DefaultModel)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("mock runtime missing")
+	}
+
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+		"models":       []map[string]string{{"id": "m1"}},
+		"defaultModel": "nope",
+	})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unknown default model = %d, want 400: %s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if body.Code != "VALIDATION_FAILED" {
+		t.Fatalf("code = %q, want VALIDATION_FAILED", body.Code)
+	}
+
+	// The default must resolve against the catalog submitted with this
+	// request, not a model that only existed in the previous save.
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+		"models":       []map[string]string{{"id": "m2"}},
+		"defaultModel": "m1",
+	})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("stale default model = %d, want 400: %s", recorder.Code, recorder.Body.String())
+	}
+
+	// defaultModel stays optional for backward compatibility.
+	recorder = callJSON(t, handler, http.MethodPut, "/api/v1/runtimes/mock/models", map[string]any{
+		"models": []map[string]string{{"id": "m2"}},
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("omit default model = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &view); err != nil {
+		t.Fatalf("decode runtime: %v", err)
+	}
+	if view.DefaultModel != "" {
+		t.Fatalf("default model after omission = %q, want empty", view.DefaultModel)
 	}
 }
 

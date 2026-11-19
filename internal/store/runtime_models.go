@@ -17,8 +17,8 @@ func (s *SQLite) GetRuntimeModelConfig(ctx context.Context, runtimeName string) 
 		createdAt int64
 		updatedAt int64
 	)
-	err := s.db.QueryRowContext(ctx, `SELECT runtime, models, created_at, updated_at FROM runtime_model_configs WHERE runtime = ?`, runtimeName).
-		Scan(&config.Runtime, &models, &createdAt, &updatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT runtime, models, default_model, created_at, updated_at FROM runtime_model_configs WHERE runtime = ?`, runtimeName).
+		Scan(&config.Runtime, &models, &config.DefaultModel, &createdAt, &updatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrNotFound
@@ -33,7 +33,10 @@ func (s *SQLite) GetRuntimeModelConfig(ctx context.Context, runtimeName string) 
 	return &config, nil
 }
 
-func (s *SQLite) SetRuntimeModelConfig(ctx context.Context, runtimeName string, models []domain.RuntimeModel) (*domain.RuntimeModelConfig, error) {
+// SetRuntimeModelConfig replaces the runtime's local model catalog and its
+// optional default model. An empty default model means the runtime CLI
+// decides which model to use.
+func (s *SQLite) SetRuntimeModelConfig(ctx context.Context, runtimeName string, models []domain.RuntimeModel, defaultModel string) (*domain.RuntimeModelConfig, error) {
 	runtimeName = strings.TrimSpace(runtimeName)
 	if runtimeName == "" {
 		return nil, fmt.Errorf("runtime is required")
@@ -41,15 +44,16 @@ func (s *SQLite) SetRuntimeModelConfig(ctx context.Context, runtimeName string, 
 	if models == nil {
 		models = []domain.RuntimeModel{}
 	}
+	defaultModel = strings.TrimSpace(defaultModel)
 	encoded, err := json.Marshal(models)
 	if err != nil {
 		return nil, fmt.Errorf("encode runtime model config: %w", err)
 	}
 	now := domain.Now()
-	_, err = s.db.ExecContext(ctx, `INSERT INTO runtime_model_configs (runtime, models, created_at, updated_at)
-		VALUES (?, ?, ?, ?)
-		ON CONFLICT(runtime) DO UPDATE SET models = excluded.models, updated_at = excluded.updated_at`,
-		runtimeName, string(encoded), millis(now), millis(now))
+	_, err = s.db.ExecContext(ctx, `INSERT INTO runtime_model_configs (runtime, models, default_model, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(runtime) DO UPDATE SET models = excluded.models, default_model = excluded.default_model, updated_at = excluded.updated_at`,
+		runtimeName, string(encoded), defaultModel, millis(now), millis(now))
 	if err != nil {
 		return nil, fmt.Errorf("set runtime model config: %w", err)
 	}
