@@ -1,3 +1,4 @@
+import { Menu } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import LanguageSettings from '../components/settings/LanguageSettings'
@@ -45,31 +46,19 @@ function SettingsPage(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden" data-testid="settings-page">
-      <nav
-        aria-label={t('settings.title')}
-        className="flex w-[216px] flex-none flex-col gap-0.5 border-r border-border-subtle px-2 py-3"
-      >
-        {SETTINGS_SECTIONS.map((item) => {
-          const active = item.id === section
-          return (
-            <button
-              key={item.id}
-              type="button"
-              aria-current={active ? 'page' : undefined}
-              data-testid={`settings-nav-${item.id}`}
-              onClick={() => selectSection(item.id)}
-              className={[
-                'flex h-8 w-full items-center rounded-md px-2 text-left text-label font-medium transition-colors',
-                active
-                  ? 'bg-hover font-semibold text-foreground'
-                  : 'text-muted hover:bg-hover hover:text-foreground'
-              ].join(' ')}
-            >
-              {t(item.labelKey)}
-            </button>
-          )
-        })}
-      </nav>
+      <div className="flex w-[216px] flex-none flex-col border-r border-border-subtle px-2 py-3">
+        <Menu
+          mode="inline"
+          aria-label={t('settings.title')}
+          selectedKeys={[section]}
+          onClick={({ key }) => selectSection(key as SettingsSection)}
+          items={SETTINGS_SECTIONS.map((item) => ({
+            key: item.id,
+            label: t(item.labelKey)
+          }))}
+          className="border-none bg-transparent"
+        />
+      </div>
       <section className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl px-6 py-7 lg:px-10">
           <header className="mb-6">
