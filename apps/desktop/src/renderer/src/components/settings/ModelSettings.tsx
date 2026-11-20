@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Alert, Button, List, Popconfirm, Select, Spin, Tag, Typography } from 'antd'
 import type {
   AgentInfo,
   ModelCreateInput,
@@ -41,8 +42,6 @@ function ModelSettings(): React.JSX.Element {
   const [mutationError, setMutationError] = useState<string | null>(null)
   const [providerForm, setProviderForm] = useState<ProviderFormState | null>(null)
   const [modelForm, setModelForm] = useState<ModelFormState | null>(null)
-  const [deletingProvider, setDeletingProvider] = useState<string | null>(null)
-  const [deletingModel, setDeletingModel] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [tests, setTests] = useState<Record<string, TestState>>({})
 
@@ -95,7 +94,6 @@ function ModelSettings(): React.JSX.Element {
     setMutationError(null)
     try {
       await apply(() => window.api.models.deleteProvider(id))
-      setDeletingProvider(null)
       setProviderForm(null)
       setModelForm(null)
     } catch (error) {
@@ -110,7 +108,6 @@ function ModelSettings(): React.JSX.Element {
     setMutationError(null)
     try {
       await apply(() => window.api.models.deleteModel(id))
-      setDeletingModel(null)
       setModelForm(null)
     } catch (error) {
       setMutationError(modelErrorMessage((key) => t(key), error))
@@ -156,24 +153,28 @@ function ModelSettings(): React.JSX.Element {
 
   if (!config) {
     return (
-      <div className="rounded-lg border border-border bg-surface-raised px-5 py-4">
+      <div className="rounded-lg border border-border bg-surface-raised px-5 py-8">
         {loadError ? (
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-label text-danger">
-              {t('settings.loadFailed')} {loadError}
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                void load()
-              }}
-              className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground hover:bg-accent-hover"
-            >
-              {t('chat.retry')}
-            </button>
-          </div>
+          <Alert
+            type="error"
+            showIcon
+            message={`${t('settings.loadFailed')} ${loadError}`}
+            action={
+              <Button
+                size="small"
+                onClick={() => {
+                  void load()
+                }}
+              >
+                {t('chat.retry')}
+              </Button>
+            }
+          />
         ) : (
-          <p className="text-label text-muted">{t('settings.loading')}</p>
+          <div className="flex items-center justify-center gap-2">
+            <Spin size="small" />
+            <Typography.Text type="secondary">{t('settings.loading')}</Typography.Text>
+          </div>
         )}
       </div>
     )
@@ -185,53 +186,50 @@ function ModelSettings(): React.JSX.Element {
   const providerName = (providerId: string): string =>
     config.providers.find((provider) => provider.id === providerId)?.name ?? providerId
 
+  const defaultOptions = [
+    { label: t('settings.noDefaultModel'), value: '' },
+    ...config.providers
+      .map((provider) => ({
+        label: provider.name,
+        options: config.models
+          .filter((model) => model.providerId === provider.id)
+          .map((model) => ({
+            label: `${model.name} (${model.modelId})`,
+            value: `${provider.id}\u0000${model.modelId}`
+          }))
+      }))
+      .filter((group) => group.options.length > 0)
+  ]
+
   const addButtonClass =
     'h-7 rounded-md border border-border bg-surface px-2.5 text-caption font-medium text-foreground transition-colors hover:bg-hover disabled:opacity-50'
-  const rowButtonClass =
-    'h-7 rounded-md px-2 text-caption font-medium text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50'
 
   return (
     <div className="flex flex-col gap-5">
       {!config.encryptionAvailable && (
-        <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-caption text-warning">
-          {t('settings.encryptionUnavailable')}
-        </div>
+        <Alert type="warning" showIcon message={t('settings.encryptionUnavailable')} />
       )}
-
-      {mutationError && (
-        <div className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-caption text-danger">
-          {mutationError}
-        </div>
-      )}
+      {mutationError && <Alert type="error" showIcon message={mutationError} />}
 
       <SettingsGroup
         title={t('settings.defaultModel')}
         description={t('settings.defaultModelDescription')}
       >
-        <select
-          aria-label={t('settings.defaultModel')}
-          value={defaultValue}
-          onChange={(event) => {
-            void changeDefault(event.target.value)
-          }}
-          disabled={config.models.length === 0}
-          className="h-9 w-full max-w-md rounded-md border border-border bg-surface px-3 text-body text-foreground disabled:opacity-60"
-        >
-          <option value="">{t('settings.noDefaultModel')}</option>
-          {config.providers.map((provider) => {
-            const models = config.models.filter((model) => model.providerId === provider.id)
-            if (models.length === 0) return null
-            return (
-              <optgroup key={provider.id} label={provider.name}>
-                {models.map((model) => (
-                  <option key={model.id} value={`${provider.id}\u0000${model.modelId}`}>
-                    {model.name} ({model.modelId})
-                  </option>
-                ))}
-              </optgroup>
-            )
-          })}
-        </select>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="default-model" className="sr-only">
+            {t('settings.defaultModel')}
+          </label>
+          <Select
+            id="default-model"
+            value={defaultValue}
+            onChange={(value) => {
+              void changeDefault(value)
+            }}
+            options={defaultOptions}
+            disabled={config.models.length === 0}
+            className="w-full max-w-md"
+          />
+        </div>
       </SettingsGroup>
 
       <SettingsGroup
@@ -243,7 +241,6 @@ function ModelSettings(): React.JSX.Element {
             className={addButtonClass}
             onClick={() => {
               setProviderForm({})
-              setDeletingProvider(null)
             }}
           >
             + {t('settings.addProvider')}
@@ -257,88 +254,56 @@ function ModelSettings(): React.JSX.Element {
             onCancel={() => setProviderForm(null)}
           />
         )}
-        {config.providers.length === 0 ? (
-          <p className="py-2 text-label text-muted">{t('settings.noProviders')}</p>
-        ) : (
-          <ul className="flex flex-col">
-            {config.providers.map((provider) => (
-              <li
-                key={provider.id}
-                className="flex items-center gap-3 border-b border-border-subtle py-2.5 last:border-b-0"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-body font-medium text-foreground">
-                      {provider.name}
-                    </span>
-                    <span className="rounded-full border border-border bg-background-subtle px-2 py-0.5 text-caption text-muted">
-                      {t(`providerTypes.${provider.type}`)}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted">
-                    {provider.baseURL && (
-                      <span className="max-w-[420px] truncate font-mono text-[11px]">
-                        {provider.baseURL}
-                      </span>
-                    )}
-                    <span>
-                      {provider.hasApiKey ? t('settings.hasApiKey') : t('settings.noApiKey')}
-                    </span>
-                  </div>
+        <List
+          dataSource={config.providers}
+          locale={{ emptyText: t('settings.noProviders') }}
+          split={false}
+          renderItem={(provider) => (
+            <List.Item
+              actions={[
+                <Button
+                  key="edit"
+                  type="text"
+                  size="small"
+                  onClick={() => {
+                    setProviderForm({ provider })
+                  }}
+                >
+                  {t('settings.editProvider')}
+                </Button>,
+                <Popconfirm
+                  key="delete"
+                  title={t('settings.confirmDeleteProvider')}
+                  onConfirm={() => removeProvider(provider.id)}
+                  okButtonProps={{ loading: busyId === provider.id }}
+                >
+                  <Button type="text" size="small" danger>
+                    {t('settings.delete')}
+                  </Button>
+                </Popconfirm>
+              ]}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-body font-medium text-foreground">
+                    {provider.name}
+                  </span>
+                  <Tag>{t(`providerTypes.${provider.type}`)}</Tag>
                 </div>
-                <div className="flex flex-none items-center gap-1">
-                  {deletingProvider === provider.id ? (
-                    <>
-                      <span className="text-caption text-danger">
-                        {t('settings.confirmDeleteProvider')}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={busyId === provider.id}
-                        onClick={() => {
-                          void removeProvider(provider.id)
-                        }}
-                        className="h-7 rounded-md bg-danger/10 px-2 text-caption font-medium text-danger hover:bg-danger/15 disabled:opacity-50"
-                      >
-                        {t('settings.delete')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeletingProvider(null)}
-                        className={rowButtonClass}
-                      >
-                        {t('settings.cancel')}
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setProviderForm({ provider })
-                          setDeletingProvider(null)
-                        }}
-                        className={rowButtonClass}
-                      >
-                        {t('settings.editProvider')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeletingProvider(provider.id)
-                          setDeletingModel(null)
-                        }}
-                        className={rowButtonClass}
-                      >
-                        {t('settings.delete')}
-                      </button>
-                    </>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted">
+                  {provider.baseURL && (
+                    <span className="max-w-[420px] truncate font-mono text-[11px]">
+                      {provider.baseURL}
+                    </span>
                   )}
+                  <span>
+                    {provider.hasApiKey ? t('settings.hasApiKey') : t('settings.noApiKey')}
+                  </span>
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
+              </div>
+            </List.Item>
+          )}
+        />
       </SettingsGroup>
 
       <SettingsGroup
@@ -350,7 +315,6 @@ function ModelSettings(): React.JSX.Element {
             className={addButtonClass}
             onClick={() => {
               setModelForm({})
-              setDeletingModel(null)
             }}
           >
             + {t('settings.addModel')}
@@ -365,113 +329,76 @@ function ModelSettings(): React.JSX.Element {
             onCancel={() => setModelForm(null)}
           />
         )}
-        {config.models.length === 0 ? (
-          <p className="py-2 text-label text-muted">{t('settings.noModels')}</p>
-        ) : (
-          <ul className="flex flex-col">
-            {config.models.map((model) => {
-              const test = tests[model.id]
-              return (
-                <li
-                  key={model.id}
-                  className="flex items-center gap-3 border-b border-border-subtle py-2.5 last:border-b-0"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate text-body font-medium text-foreground">
-                        {model.name}
-                      </span>
-                      <span className="truncate font-mono text-[11px] text-muted">
-                        {model.modelId}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-muted">
-                      <span>{providerName(model.providerId)}</span>
-                      {test && (
-                        <span
-                          className={
-                            test.running
-                              ? 'text-muted'
-                              : test.result?.ok
-                                ? 'text-success'
-                                : 'text-danger'
-                          }
-                        >
-                          {test.running
-                            ? t('settings.testing')
-                            : test.result?.ok
-                              ? `${t('settings.testSuccess')}${
-                                  test.result.latencyMs ? ` · ${test.result.latencyMs}ms` : ''
-                                }`
-                              : `${t('settings.testFailure')}: ${test.result?.message ?? ''}`}
-                        </span>
-                      )}
-                    </div>
+        <List
+          dataSource={config.models}
+          locale={{ emptyText: t('settings.noModels') }}
+          split={false}
+          renderItem={(model) => {
+            const test = tests[model.id]
+            return (
+              <List.Item
+                actions={[
+                  <Button
+                    key="test"
+                    type="text"
+                    size="small"
+                    loading={test?.running}
+                    onClick={() => {
+                      void testModel(model)
+                    }}
+                  >
+                    {test?.running ? t('settings.testing') : t('settings.test')}
+                  </Button>,
+                  <Button
+                    key="edit"
+                    type="text"
+                    size="small"
+                    onClick={() => {
+                      setModelForm({ model })
+                    }}
+                  >
+                    {t('settings.editModel')}
+                  </Button>,
+                  <Popconfirm
+                    key="delete"
+                    title={t('settings.confirmDeleteModel')}
+                    onConfirm={() => removeModel(model.id)}
+                    okButtonProps={{ loading: busyId === model.id }}
+                  >
+                    <Button type="text" size="small" danger>
+                      {t('settings.deleteModel')}
+                    </Button>
+                  </Popconfirm>
+                ]}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-body font-medium text-foreground">
+                      {model.name}
+                    </span>
+                    <span className="truncate font-mono text-[11px] text-muted">
+                      {model.modelId}
+                    </span>
                   </div>
-                  <div className="flex flex-none items-center gap-1">
-                    {deletingModel === model.id ? (
-                      <>
-                        <span className="text-caption text-danger">
-                          {t('settings.confirmDeleteModel')}
-                        </span>
-                        <button
-                          type="button"
-                          disabled={busyId === model.id}
-                          onClick={() => {
-                            void removeModel(model.id)
-                          }}
-                          className="h-7 rounded-md bg-danger/10 px-2 text-caption font-medium text-danger hover:bg-danger/15 disabled:opacity-50"
-                        >
-                          {t('settings.delete')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeletingModel(null)}
-                          className={rowButtonClass}
-                        >
-                          {t('settings.cancel')}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled={test?.running}
-                          onClick={() => {
-                            void testModel(model)
-                          }}
-                          className={rowButtonClass}
-                        >
-                          {test?.running ? t('settings.testing') : t('settings.test')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setModelForm({ model })
-                            setDeletingModel(null)
-                          }}
-                          className={rowButtonClass}
-                        >
-                          {t('settings.editModel')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeletingModel(model.id)
-                            setDeletingProvider(null)
-                          }}
-                          className={rowButtonClass}
-                        >
-                          {t('settings.deleteModel')}
-                        </button>
-                      </>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2 text-caption text-muted">
+                    <span>{providerName(model.providerId)}</span>
+                    {test && (
+                      <Tag color={test.running ? 'default' : test.result?.ok ? 'success' : 'error'}>
+                        {test.running
+                          ? t('settings.testing')
+                          : test.result?.ok
+                            ? `${t('settings.testSuccess')}${
+                                test.result.latencyMs ? ` · ${test.result.latencyMs}ms` : ''
+                              }`
+                            : `${t('settings.testFailure')}: ${test.result?.message ?? ''}`}
+                      </Tag>
                     )}
                   </div>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+                </div>
+              </List.Item>
+            )
+          }}
+        />
       </SettingsGroup>
 
       <SettingsGroup

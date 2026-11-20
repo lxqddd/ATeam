@@ -63,7 +63,7 @@ describe('ModelSettings', () => {
     expect(screen.getByText('Sonnet')).toBeInTheDocument()
     expect(screen.getByText('Opus')).toBeInTheDocument()
     expect(screen.getByText('Key configured')).toBeInTheDocument()
-    expect(screen.getByLabelText('Default model')).toHaveValue('p1\u0000claude-sonnet-5')
+    expect(screen.getByTitle('Sonnet (claude-sonnet-5)')).toBeInTheDocument()
     expect(screen.getByText('/tmp/workspace')).toBeInTheDocument()
   })
 
@@ -83,8 +83,9 @@ describe('ModelSettings', () => {
     const user = userEvent.setup()
     render(<ModelSettings />)
 
-    const select = await screen.findByLabelText('Default model')
-    await user.selectOptions(select, 'p1\u0000claude-opus-5')
+    const select = await screen.findByRole('combobox', { name: 'Default model' })
+    await user.click(select)
+    await user.click(await screen.findByTitle('Opus (claude-opus-5)'))
 
     await waitFor(() =>
       expect(mock.api.models.setDefault).toHaveBeenCalledWith({
@@ -121,8 +122,8 @@ describe('ModelSettings', () => {
 
     const row = rowFor('Acme')
     await user.click(within(row).getByRole('button', { name: 'Delete' }))
-    expect(screen.getByText('Delete this provider and its models?')).toBeInTheDocument()
-    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    expect(await screen.findByText('Delete this provider and its models?')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'OK' }))
 
     await waitFor(() => expect(mock.api.models.deleteProvider).toHaveBeenCalledWith('p1'))
   })
@@ -152,8 +153,8 @@ describe('ModelSettings', () => {
 
     const row = rowFor('Sonnet')
     await user.click(within(row).getByRole('button', { name: 'Delete model' }))
-    expect(screen.getByText('Delete this model?')).toBeInTheDocument()
-    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    expect(await screen.findByText('Delete this model?')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'OK' }))
 
     await waitFor(() => expect(mock.api.models.deleteModel).toHaveBeenCalledWith('m1'))
   })
@@ -216,7 +217,7 @@ describe('ModelSettings edge cases', () => {
 
     const row = rowFor('Acme')
     await user.click(within(row).getByRole('button', { name: 'Delete' }))
-    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    await user.click(await screen.findByRole('button', { name: 'OK' }))
 
     expect(await screen.findByText('The provider no longer exists.')).toBeInTheDocument()
   })
@@ -229,7 +230,7 @@ describe('ModelSettings edge cases', () => {
 
     const row = rowFor('Sonnet')
     await user.click(within(row).getByRole('button', { name: 'Delete model' }))
-    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    await user.click(await screen.findByRole('button', { name: 'OK' }))
 
     expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
   })
@@ -239,8 +240,9 @@ describe('ModelSettings edge cases', () => {
     const user = userEvent.setup()
     render(<ModelSettings />)
 
-    const select = await screen.findByLabelText('Default model')
-    await user.selectOptions(select, 'p1\u0000claude-opus-5')
+    const select = await screen.findByRole('combobox', { name: 'Default model' })
+    await user.click(select)
+    await user.click(await screen.findByTitle('Opus (claude-opus-5)'))
 
     expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
   })
@@ -288,7 +290,7 @@ describe('ModelSettings edge cases', () => {
 
     expect(await screen.findByText('Mystery')).toBeInTheDocument()
     expect(screen.getByText('ghost')).toBeInTheDocument()
-    expect(screen.getByLabelText('Default model')).toHaveValue('')
+    expect(screen.getByText('No model selected')).toBeInTheDocument()
   })
 
   it('cancels a provider form', async () => {
@@ -310,9 +312,11 @@ describe('ModelSettings edge cases', () => {
 
     const row = rowFor('Acme')
     await user.click(within(row).getByRole('button', { name: 'Delete' }))
-    await user.click(within(row).getByRole('button', { name: 'Cancel' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
 
-    expect(screen.queryByText('Delete this provider and its models?')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'OK' })).not.toBeInTheDocument()
+    )
     expect(within(row).getByRole('button', { name: 'Edit provider' })).toBeInTheDocument()
   })
 
@@ -377,9 +381,11 @@ describe('ModelSettings edge cases', () => {
 
     const row = rowFor('Sonnet')
     await user.click(within(row).getByRole('button', { name: 'Delete model' }))
-    await user.click(within(row).getByRole('button', { name: 'Cancel' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
 
-    expect(screen.queryByText('Delete this model?')).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'OK' })).not.toBeInTheDocument()
+    )
     expect(within(row).getByRole('button', { name: 'Test connection' })).toBeInTheDocument()
   })
 
@@ -420,8 +426,9 @@ describe('ModelSettings edge cases', () => {
     const user = userEvent.setup()
     render(<ModelSettings />)
 
-    const select = await screen.findByLabelText('Default model')
-    await user.selectOptions(select, '')
+    const select = await screen.findByRole('combobox', { name: 'Default model' })
+    await user.click(select)
+    await user.click(await screen.findByTitle('No model selected'))
 
     await waitFor(() => expect(mock.api.models.setDefault).toHaveBeenCalledWith(null))
   })
