@@ -14,7 +14,8 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "package": "pnpm --filter @ateam/desktop package",
-    "opencode:build": "node scripts/opencode/build.mjs"
+    "kernel:build": "node scripts/kernel/build.mjs",
+    "brand:check": "node scripts/brand/check.mjs"
   },
   "devDependencies": {
     "tsx": "^4.23.15",

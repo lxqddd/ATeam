@@ -55,21 +55,21 @@ The desktop app loads the Vite dev server in development and the bundled
 - build the linux-x64 and macOS arm64 kernels, verifying each against `SHA256SUMS`
 - upload each kernel binary and checksum file as a build artifact
 
-## OpenCode source kernel
+## ATeam runtime kernel
 
-The Electron main process starts a kernel built from OpenCode source on a random
-loopback port with isolated XDG data directories, using its HTTP API and SSE
-event stream. Build it with:
+The Electron main process starts the ATeam runtime kernel — built from the vendored
+OpenCode source — on a random loopback port with isolated XDG data directories,
+using its HTTP API and SSE event stream. Build it with:
 
 ```bash
-pnpm opencode:build
+pnpm kernel:build
 ```
 
 The runtime lives under `packages/` (see `SOURCE_COMMIT`), trimmed to the
 harness/server dependency closure; app/desktop/gui/session-ui/stories, tests,
 docs and examples are removed. The build bundles the CLI with Vite and packs it
-into a single Node SEA executable at `apps/desktop/resources/opencode/opencode`.
-Electron packages that binary through `extraResources`; `OPENCODE_BIN` can
+into a single Node SEA executable at `apps/desktop/resources/kernel/ateam`.
+Electron packages that binary through `extraResources`; `ATEAM_KERNEL_BIN` can
 override it for development.
 
 Requirements: Node.js >= 26 and pnpm. The build downloads the pinned Node

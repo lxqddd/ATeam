@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const cliDir = path.join(repoRoot, 'packages/cli')
-const outputDir = path.join(repoRoot, 'apps/desktop/resources/opencode')
+const outputDir = path.join(repoRoot, 'apps/desktop/resources/kernel')
 
 function run(command, args, options = {}) {
   console.log(`$ ${command} ${args.join(' ')}`)
@@ -24,18 +24,18 @@ if (!/^[0-9a-f]{7,40}$/.test(commit)) {
 
 run(process.execPath, ['--import', 'tsx', 'script/build-node.ts', '--single'], { cwd: cliDir })
 
-const binary = path.join(cliDir, 'dist', 'node', `cli-node-${platform}-${arch}`, 'bin', 'opencode2-node')
+const binary = path.join(cliDir, 'dist', 'node', `cli-node-${platform}-${arch}`, 'bin', 'ateam')
 await fs.access(binary)
 await fs.mkdir(outputDir, { recursive: true })
 // Replace rather than overwrite in place: macOS caches code-signing state per inode, and an
 // overwritten ad-hoc-signed binary can be killed on launch.
-const destination = path.join(outputDir, 'opencode')
+const destination = path.join(outputDir, 'ateam')
 await fs.rm(destination, { force: true })
 await fs.copyFile(binary, destination)
 await fs.chmod(destination, 0o755)
 
 const version = execFileSync(destination, ['--version'], { encoding: 'utf8' }).trim()
-if (!version) throw new Error('ATeam kernel --version printed nothing')
+if (!/ateam/i.test(version)) throw new Error(`ATeam kernel --version does not name the product: ${version}`)
 const help = execFileSync(destination, ['--help'], { encoding: 'utf8' })
 if (!help.includes('ATeam')) throw new Error('ATeam kernel help does not mention ATeam')
 // Hosted service names (OpenCode Console/Go/Free/Zen/SDK) are legitimate; a bare upstream brand is not.
@@ -46,7 +46,7 @@ if (upstream) {
 }
 
 const digest = createHash('sha256').update(await fs.readFile(destination)).digest('hex')
-await fs.writeFile(path.join(outputDir, 'SHA256SUMS'), `${digest}  opencode\n`)
+await fs.writeFile(path.join(outputDir, 'SHA256SUMS'), `${digest}  ateam\n`)
 
 console.log(`ATeam kernel built: ${destination}`)
 console.log(`  source commit: ${commit}`)

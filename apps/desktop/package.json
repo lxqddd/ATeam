@@ -47,10 +47,10 @@
     },
     "extraResources": [
       {
-        "from": "resources/opencode",
-        "to": "opencode",
+        "from": "resources/kernel",
+        "to": "kernel",
         "filter": [
-          "opencode",
+          "ateam",
           "SHA256SUMS"
         ]
       },

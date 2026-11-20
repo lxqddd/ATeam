@@ -119,9 +119,9 @@ export class KernelManager {
   private async startInternal(): Promise<KernelState> {
     this.state = { status: 'starting' }
     try {
-      const binary = resolveOpenCodeBinary()
+      const binary = resolveKernelBinary()
       if (!binary) {
-        throw new Error('ATeam kernel binary not found; run pnpm opencode:build or set OPENCODE_BIN')
+        throw new Error('ATeam kernel binary not found; run pnpm kernel:build or set ATEAM_KERNEL_BIN')
       }
       this.killStale()
       this.handshake(binary)
@@ -541,7 +541,7 @@ export class KernelManager {
         }
       } catch (error) {
         if (!signal.aborted) {
-          console.warn('OpenCode event stream interrupted; reconnecting:', error)
+          console.warn('ATeam kernel event stream interrupted; reconnecting:', error)
         }
       }
       if (signal.aborted) {
@@ -736,28 +736,35 @@ function waitForServer(
   })
 }
 
-function resolveOpenCodeBinary(): string | null {
-  const explicit = process.env.OPENCODE_BIN
+function resolveKernelBinary(): string | null {
+  const explicit = process.env.ATEAM_KERNEL_BIN ?? process.env.OPENCODE_BIN
   if (explicit && fs.existsSync(explicit)) {
     return explicit
   }
   const bundled = app.isPackaged
-    ? path.join(process.resourcesPath, 'opencode', 'opencode')
-    : path.join(app.getAppPath(), 'resources', 'opencode', 'opencode')
+    ? path.join(process.resourcesPath, 'kernel', 'ateam')
+    : path.join(app.getAppPath(), 'resources', 'kernel', 'ateam')
   if (fs.existsSync(bundled)) {
     return bundled
   }
   const home = os.homedir()
+  const names = ['ateam', 'opencode']
   const candidates: string[] = []
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
-    if (dir) {
-      candidates.push(path.join(dir, 'opencode'))
+    if (!dir) {
+      continue
+    }
+    for (const name of names) {
+      candidates.push(path.join(dir, name))
       if (process.platform === 'win32') {
-        candidates.push(path.join(dir, 'opencode.cmd'))
+        candidates.push(path.join(dir, `${name}.cmd`))
       }
     }
   }
   candidates.push(
+    '/opt/homebrew/bin/ateam',
+    '/usr/local/bin/ateam',
+    path.join(home, '.local', 'bin', 'ateam'),
     '/opt/homebrew/bin/opencode',
     '/usr/local/bin/opencode',
     path.join(home, '.local', 'bin', 'opencode'),
@@ -766,7 +773,9 @@ function resolveOpenCodeBinary(): string | null {
   const nvmRoot = path.join(home, '.nvm', 'versions', 'node')
   if (fs.existsSync(nvmRoot)) {
     for (const version of fs.readdirSync(nvmRoot)) {
-      candidates.push(path.join(nvmRoot, version, 'bin', 'opencode'))
+      for (const name of names) {
+        candidates.push(path.join(nvmRoot, version, 'bin', name))
+      }
     }
   }
   return candidates.find((candidate) => {

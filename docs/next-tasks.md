@@ -140,7 +140,7 @@
 - 产物校验和、许可证/NOTICE 随包
 - 明确源码更新流程：替换 `apps/desktop/src/runtime` → 重新品牌化 → 构建 → 回归
 
-**验收**：干净 clone + `pnpm install` + `pnpm opencode:build` 可复现内核；CI 通过。
+**验收**：干净 clone + `pnpm install` + `pnpm kernel:build` 可复现内核；CI 通过。
 
 **依赖**：无。**估算**：3–4 天。
 
