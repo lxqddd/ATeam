@@ -1,6 +1,6 @@
 # ATeam Vitest 接入与单元测试范围
 
-> 状态：实施方案文档，仓库中尚未接入 Vitest。  
+> 状态：已实施。P0 全部模块与 P1 组件 / runtime 测试已接入；Playwright E2E 未纳入。  
 > 适用对象：接手 Vitest 接入与测试用例实现的工程师。  
 > 当前基线：`feat/conversation-agent` 分支，提交 `516519d`。建议从该提交创建独立分支，例如 `test/vitest-unit-tests`，不要直接提交到 `master`。
 

@@ -9,6 +9,7 @@ release/
 
 # Test output
 coverage/
+.vitest/
 
 # Cache and logs
 .eslintcache

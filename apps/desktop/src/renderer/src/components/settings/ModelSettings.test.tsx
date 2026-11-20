@@ -1,0 +1,208 @@
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import type { ModelPublic, ModelsConfigPublic, ProviderPublic } from '@ateam/shared'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import ModelSettings from './ModelSettings'
+import { createApiMock, type ApiMock } from '../../test/api-mock'
+
+const provider: ProviderPublic = {
+  id: 'p1',
+  name: 'Acme',
+  type: 'anthropic',
+  hasApiKey: true,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+}
+
+const sonnet: ModelPublic = {
+  id: 'm1',
+  providerId: 'p1',
+  modelId: 'claude-sonnet-5',
+  name: 'Sonnet',
+  createdAt: '2026-01-01T00:00:00.000Z'
+}
+
+const opus: ModelPublic = {
+  id: 'm2',
+  providerId: 'p1',
+  modelId: 'claude-opus-5',
+  name: 'Opus',
+  createdAt: '2026-01-01T00:00:00.000Z'
+}
+
+function makeConfig(overrides: Partial<ModelsConfigPublic> = {}): ModelsConfigPublic {
+  return {
+    providers: [provider],
+    models: [sonnet, opus],
+    defaultModel: { providerId: 'p1', modelId: 'claude-sonnet-5' },
+    encryptionAvailable: true,
+    ...overrides
+  }
+}
+
+function rowFor(text: string): HTMLElement {
+  const row = screen
+    .getAllByRole('listitem')
+    .find((item) => within(item).queryByText(text) !== null)
+  if (!row) throw new Error(`Row containing ${text} not found`)
+  return row
+}
+
+let mock: ApiMock
+
+beforeEach(() => {
+  mock = createApiMock({ models: makeConfig() })
+  Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+})
+
+describe('ModelSettings', () => {
+  it('loads and renders providers, models and the workspace', async () => {
+    render(<ModelSettings />)
+
+    expect((await screen.findAllByText('Acme')).length).toBeGreaterThan(0)
+    expect(screen.getByText('Sonnet')).toBeInTheDocument()
+    expect(screen.getByText('Opus')).toBeInTheDocument()
+    expect(screen.getByText('Key configured')).toBeInTheDocument()
+    expect(screen.getByLabelText('Default model')).toHaveValue('p1\u0000claude-sonnet-5')
+    expect(screen.getByText('/tmp/workspace')).toBeInTheDocument()
+  })
+
+  it('warns when secure storage is unavailable', async () => {
+    mock = createApiMock({ models: makeConfig({ encryptionAvailable: false }) })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    render(<ModelSettings />)
+
+    expect(
+      await screen.findByText(
+        'Secure storage is unavailable on this system, so API keys cannot be saved.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('changes the default model', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+
+    const select = await screen.findByLabelText('Default model')
+    await user.selectOptions(select, 'p1\u0000claude-opus-5')
+
+    await waitFor(() =>
+      expect(mock.api.models.setDefault).toHaveBeenCalledWith({
+        providerId: 'p1',
+        modelId: 'claude-opus-5'
+      })
+    )
+  })
+
+  it('adds a provider through the form', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: '+ Add provider' }))
+    await user.type(screen.getByLabelText('Name'), 'My Provider')
+    await user.type(screen.getByLabelText('API key'), 'sk-test')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.addProvider).toHaveBeenCalledWith({
+        name: 'My Provider',
+        type: 'anthropic',
+        baseURL: undefined,
+        apiKey: 'sk-test'
+      })
+    )
+  })
+
+  it('deletes a provider after confirmation', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    const row = rowFor('Acme')
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    expect(screen.getByText('Delete this provider and its models?')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mock.api.models.deleteProvider).toHaveBeenCalledWith('p1'))
+  })
+
+  it('adds a model through the form', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: '+ Add model' }))
+    await user.type(screen.getByLabelText('Model ID'), 'claude-new')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.addModel).toHaveBeenCalledWith({
+        providerId: 'p1',
+        modelId: 'claude-new',
+        name: undefined
+      })
+    )
+  })
+
+  it('deletes a model after confirmation', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findByText('Sonnet')
+
+    const row = rowFor('Sonnet')
+    await user.click(within(row).getByRole('button', { name: 'Delete model' }))
+    expect(screen.getByText('Delete this model?')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(mock.api.models.deleteModel).toHaveBeenCalledWith('m1'))
+  })
+
+  it('reports a successful connection test', async () => {
+    vi.mocked(mock.api.models.test).mockResolvedValue({
+      ok: true,
+      message: 'ok',
+      latencyMs: 42
+    })
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Sonnet')).getByRole('button', { name: 'Test connection' }))
+
+    expect(await screen.findByText(/Connection succeeded/)).toBeInTheDocument()
+  })
+
+  it('reports a failed connection test', async () => {
+    vi.mocked(mock.api.models.test).mockRejectedValue(new Error('bad key'))
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Sonnet')).getByRole('button', { name: 'Test connection' }))
+
+    expect(await screen.findByText(/Connection failed: bad key/)).toBeInTheDocument()
+  })
+
+  it('retries after a load failure', async () => {
+    vi.mocked(mock.api.models.get).mockRejectedValueOnce(new Error('offline'))
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+
+    expect(await screen.findByText(/Could not load the model configuration/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    expect((await screen.findAllByText('Acme')).length).toBeGreaterThan(0)
+  })
+
+  it('opens the workspace folder', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+
+    expect(mock.api.workspace.open).toHaveBeenCalled()
+  })
+})
