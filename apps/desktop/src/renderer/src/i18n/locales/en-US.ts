@@ -7,6 +7,14 @@ const enUS = {
     name: APP_NAME,
     description: 'The Electron + React + TypeScript foundation is ready'
   },
+  nav: {
+    home: 'Home',
+    settings: 'Settings'
+  },
+  settings: {
+    title: 'Settings',
+    description: 'Settings placeholder for models, tools, and permissions.'
+  },
   common: {
     language: 'Language'
   }
