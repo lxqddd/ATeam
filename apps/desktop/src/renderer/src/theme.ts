@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from 'react'
-import { THEME_CHANNEL } from '@ateam/shared'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
@@ -48,8 +47,8 @@ function resolveTheme(preference: ThemePreference): ResolvedTheme {
 }
 
 function syncWindowChrome(theme: ResolvedTheme): void {
-  if (typeof window === 'undefined' || !('electron' in window)) return
-  window.electron.ipcRenderer.send(THEME_CHANNEL, theme)
+  if (typeof window === 'undefined' || !('api' in window)) return
+  window.api.theme.set(theme)
 }
 
 function applyTheme(next: ThemeState): void {

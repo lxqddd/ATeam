@@ -1,6 +1,7 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router'
 import LanguageSettings from '../components/settings/LanguageSettings'
+import ModelSettings from '../components/settings/ModelSettings'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
 
@@ -14,16 +15,33 @@ const SETTINGS_SECTIONS = [
     id: 'language',
     labelKey: 'settings.language',
     descriptionKey: 'settings.languageDescription'
+  },
+  {
+    id: 'models',
+    labelKey: 'settings.models',
+    descriptionKey: 'settings.modelsDescription'
   }
 ] as const
 
 type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
 
+function isSettingsSection(value: string | null): value is SettingsSection {
+  return SETTINGS_SECTIONS.some((item) => item.id === value)
+}
+
 function SettingsPage(): React.JSX.Element {
   const { t } = useTranslation()
-  const [section, setSection] = useState<SettingsSection>('appearance')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.get('section')
+  const section: SettingsSection = isSettingsSection(requested) ? requested : 'appearance'
   const activeSection =
     SETTINGS_SECTIONS.find((item) => item.id === section) ?? SETTINGS_SECTIONS[0]
+
+  function selectSection(next: SettingsSection): void {
+    const params = new URLSearchParams(searchParams)
+    params.set('section', next)
+    setSearchParams(params, { replace: true })
+  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden" data-testid="settings-page">
@@ -39,7 +57,7 @@ function SettingsPage(): React.JSX.Element {
               type="button"
               aria-current={active ? 'page' : undefined}
               data-testid={`settings-nav-${item.id}`}
-              onClick={() => setSection(item.id)}
+              onClick={() => selectSection(item.id)}
               className={[
                 'flex h-8 w-full items-center rounded-md px-2 text-left text-label font-medium transition-colors',
                 active
@@ -60,17 +78,19 @@ function SettingsPage(): React.JSX.Element {
             </h1>
             <p className="mt-1.5 text-label text-muted">{t(activeSection.descriptionKey)}</p>
           </header>
-          {section === 'appearance' ? (
+          {section === 'appearance' && (
             <SettingsGroup title={t('settings.theme')}>
               <ThemeSettings />
             </SettingsGroup>
-          ) : (
+          )}
+          {section === 'language' && (
             <SettingsGroup
               title={t('settings.interfaceLanguage')}
               description={t('settings.interfaceLanguageDescription')}
               actions={<LanguageSettings />}
             />
           )}
+          {section === 'models' && <ModelSettings />}
         </div>
       </section>
     </div>

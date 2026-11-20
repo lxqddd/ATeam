@@ -1,0 +1,343 @@
+import { randomUUID } from 'node:crypto'
+import path from 'node:path'
+import { safeStorage } from 'electron'
+import type {
+  ModelCreateInput,
+  ModelPublic,
+  ModelRef,
+  ModelUpdateInput,
+  ModelsConfigPublic,
+  ProviderCreateInput,
+  ProviderPublic,
+  ProviderType,
+  ProviderUpdateInput,
+  RuntimeModelsConfig,
+  RuntimeProvider
+} from '@ateam/shared'
+import { readJsonFile, writeJsonAtomic } from '../agent/atomic-json'
+
+interface StoredProvider {
+  id: string
+  name: string
+  type: ProviderType
+  baseURL?: string
+  createdAt: string
+  updatedAt: string
+}
+
+interface StoredConfig {
+  version: 1
+  providers: StoredProvider[]
+  models: ModelPublic[]
+  defaultModel: ModelRef | null
+}
+
+interface StoredSecrets {
+  version: 1
+  keys: Record<string, string>
+}
+
+const PROVIDER_TYPES: ProviderType[] = ['anthropic', 'openai', 'google', 'openai-compatible']
+
+function nowIso(): string {
+  return new Date().toISOString()
+}
+
+function normalizeName(value: string): string {
+  const name = value.trim()
+  if (!name) throw new Error('NAME_REQUIRED')
+  if (name.length > 100) throw new Error('NAME_TOO_LONG')
+  return name
+}
+
+function normalizeModelId(value: string): string {
+  const modelId = value.trim()
+  if (!modelId) throw new Error('MODEL_ID_REQUIRED')
+  if (modelId.length > 200) throw new Error('MODEL_ID_TOO_LONG')
+  return modelId
+}
+
+function normalizeBaseUrl(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    throw new Error('INVALID_BASE_URL')
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('INVALID_BASE_URL')
+  }
+  return trimmed.replace(/\/+$/, '')
+}
+
+function normalizeProviderType(value: ProviderType): ProviderType {
+  if (!PROVIDER_TYPES.includes(value)) throw new Error('INVALID_PROVIDER_TYPE')
+  return value
+}
+
+export class ModelsStore {
+  private readonly directory: string
+  private readonly configFile: string
+  private readonly secretsFile: string
+  private config: StoredConfig = { version: 1, providers: [], models: [], defaultModel: null }
+  private secrets: StoredSecrets = { version: 1, keys: {} }
+  private chain: Promise<void> = Promise.resolve()
+
+  constructor(userDataPath: string) {
+    this.directory = path.join(userDataPath, 'models')
+    this.configFile = path.join(this.directory, 'config.json')
+    this.secretsFile = path.join(this.directory, 'secrets.json')
+  }
+
+  async init(): Promise<void> {
+    const config = await readJsonFile<StoredConfig>(this.configFile)
+    if (
+      config &&
+      config.version === 1 &&
+      Array.isArray(config.providers) &&
+      Array.isArray(config.models)
+    ) {
+      this.config = {
+        version: 1,
+        providers: config.providers,
+        models: config.models,
+        defaultModel: config.defaultModel ?? null
+      }
+      if (
+        this.config.defaultModel &&
+        !this.config.models.some(
+          (model) =>
+            model.providerId === this.config.defaultModel?.providerId &&
+            model.modelId === this.config.defaultModel?.modelId
+        )
+      ) {
+        this.config.defaultModel = this.firstModelRef()
+      }
+    }
+    const secrets = await readJsonFile<StoredSecrets>(this.secretsFile)
+    if (secrets && secrets.version === 1 && secrets.keys && typeof secrets.keys === 'object') {
+      this.secrets = { version: 1, keys: secrets.keys }
+    }
+  }
+
+  isEncryptionAvailable(): boolean {
+    try {
+      return safeStorage.isEncryptionAvailable()
+    } catch {
+      return false
+    }
+  }
+
+  publicConfig(): ModelsConfigPublic {
+    return {
+      providers: this.config.providers.map((provider) => this.toPublicProvider(provider)),
+      models: this.config.models.map((model) => ({ ...model })),
+      defaultModel: this.config.defaultModel ? { ...this.config.defaultModel } : null,
+      encryptionAvailable: this.isEncryptionAvailable()
+    }
+  }
+
+  runtimeConfig(): RuntimeModelsConfig {
+    const providers: RuntimeProvider[] = this.config.providers.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      baseURL: provider.baseURL,
+      apiKey: this.decryptKey(provider.id)
+    }))
+    return {
+      providers,
+      models: this.config.models.map((model) => ({ ...model })),
+      defaultModel: this.config.defaultModel ? { ...this.config.defaultModel } : null
+    }
+  }
+
+  addProvider(input: ProviderCreateInput): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      const name = normalizeName(input.name)
+      const type = normalizeProviderType(input.type)
+      const baseURL = normalizeBaseUrl(input.baseURL)
+      if (type === 'openai-compatible' && !baseURL) throw new Error('BASE_URL_REQUIRED')
+
+      const apiKey = input.apiKey?.trim()
+      if (type !== 'openai-compatible' && !apiKey) throw new Error('API_KEY_REQUIRED')
+
+      const id = randomUUID()
+      if (apiKey) {
+        this.secrets.keys[id] = this.encryptOrThrow(apiKey)
+      }
+      const timestamp = nowIso()
+      this.config.providers.push({
+        id,
+        name,
+        type,
+        baseURL,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      })
+      await this.persist()
+    })
+  }
+
+  updateProvider(input: ProviderUpdateInput): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      const provider = this.config.providers.find((candidate) => candidate.id === input.id)
+      if (!provider) throw new Error('PROVIDER_NOT_FOUND')
+
+      const nextType = input.type ? normalizeProviderType(input.type) : provider.type
+      const nextBaseURL =
+        input.baseURL !== undefined ? normalizeBaseUrl(input.baseURL) : provider.baseURL
+      if (nextType === 'openai-compatible' && !nextBaseURL) throw new Error('BASE_URL_REQUIRED')
+
+      const nextApiKey = input.apiKey?.trim()
+      const willHaveKey = input.clearApiKey
+        ? false
+        : Boolean(nextApiKey) || Boolean(this.secrets.keys[provider.id])
+      if (nextType !== 'openai-compatible' && !willHaveKey) throw new Error('API_KEY_REQUIRED')
+
+      if (input.clearApiKey) {
+        delete this.secrets.keys[provider.id]
+      } else if (nextApiKey) {
+        this.secrets.keys[provider.id] = this.encryptOrThrow(nextApiKey)
+      }
+
+      if (input.name !== undefined) provider.name = normalizeName(input.name)
+      provider.type = nextType
+      provider.baseURL = nextBaseURL
+      provider.updatedAt = nowIso()
+      await this.persist()
+    })
+  }
+
+  deleteProvider(id: string): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      const index = this.config.providers.findIndex((provider) => provider.id === id)
+      if (index < 0) throw new Error('PROVIDER_NOT_FOUND')
+      this.config.providers.splice(index, 1)
+      this.config.models = this.config.models.filter((model) => model.providerId !== id)
+      delete this.secrets.keys[id]
+      if (this.config.defaultModel?.providerId === id) {
+        this.config.defaultModel = this.firstModelRef()
+      }
+      await this.persist()
+    })
+  }
+
+  addModel(input: ModelCreateInput): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      const provider = this.config.providers.find((candidate) => candidate.id === input.providerId)
+      if (!provider) throw new Error('PROVIDER_NOT_FOUND')
+      const modelId = normalizeModelId(input.modelId)
+      if (
+        this.config.models.some(
+          (model) => model.providerId === input.providerId && model.modelId === modelId
+        )
+      ) {
+        throw new Error('MODEL_EXISTS')
+      }
+      const model: ModelPublic = {
+        id: randomUUID(),
+        providerId: input.providerId,
+        modelId,
+        name: input.name?.trim() || modelId,
+        createdAt: nowIso()
+      }
+      this.config.models.push(model)
+      if (!this.config.defaultModel) {
+        this.config.defaultModel = { providerId: model.providerId, modelId: model.modelId }
+      }
+      await this.persist()
+    })
+  }
+
+  updateModel(input: ModelUpdateInput): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      const model = this.config.models.find((candidate) => candidate.id === input.id)
+      if (!model) throw new Error('MODEL_NOT_FOUND')
+      model.name = normalizeName(input.name)
+      await this.persist()
+    })
+  }
+
+  deleteModel(id: string): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      const model = this.config.models.find((candidate) => candidate.id === id)
+      if (!model) throw new Error('MODEL_NOT_FOUND')
+      this.config.models = this.config.models.filter((candidate) => candidate.id !== id)
+      if (
+        this.config.defaultModel?.providerId === model.providerId &&
+        this.config.defaultModel.modelId === model.modelId
+      ) {
+        this.config.defaultModel = this.firstModelRef()
+      }
+      await this.persist()
+    })
+  }
+
+  setDefault(model: ModelRef | null): Promise<ModelsConfigPublic> {
+    return this.mutate(async () => {
+      if (model) {
+        const exists = this.config.models.some(
+          (candidate) =>
+            candidate.providerId === model.providerId && candidate.modelId === model.modelId
+        )
+        if (!exists) throw new Error('MODEL_NOT_FOUND')
+        this.config.defaultModel = { ...model }
+      } else {
+        this.config.defaultModel = null
+      }
+      await this.persist()
+    })
+  }
+
+  private mutate(action: () => Promise<void>): Promise<ModelsConfigPublic> {
+    const run = this.chain.then(action, action)
+    this.chain = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run.then(() => this.publicConfig())
+  }
+
+  private firstModelRef(): ModelRef | null {
+    const first = this.config.models[0]
+    return first ? { providerId: first.providerId, modelId: first.modelId } : null
+  }
+
+  private toPublicProvider(provider: StoredProvider): ProviderPublic {
+    return {
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      baseURL: provider.baseURL,
+      hasApiKey: Boolean(this.secrets.keys[provider.id]),
+      createdAt: provider.createdAt,
+      updatedAt: provider.updatedAt
+    }
+  }
+
+  private encryptOrThrow(apiKey: string): string {
+    if (!this.isEncryptionAvailable()) throw new Error('ENCRYPTION_UNAVAILABLE')
+    return safeStorage.encryptString(apiKey).toString('base64')
+  }
+
+  private decryptKey(providerId: string): string | undefined {
+    const encrypted = this.secrets.keys[providerId]
+    if (!encrypted) return undefined
+    try {
+      return safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
+    } catch {
+      return undefined
+    }
+  }
+
+  private async persist(): Promise<void> {
+    await Promise.all([
+      writeJsonAtomic(this.configFile, this.config),
+      writeJsonAtomic(this.secretsFile, this.secrets)
+    ])
+  }
+}

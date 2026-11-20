@@ -1,8 +1,9 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
+import type { AteamApi } from '@ateam/shared'
 
 declare global {
   interface Window {
-    electron: ElectronAPI
-    api: unknown
+    api: AteamApi
   }
 }
+
+export {}

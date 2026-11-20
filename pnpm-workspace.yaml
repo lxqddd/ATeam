@@ -6,3 +6,6 @@ packages:
 allowBuilds:
   electron: true
   electron-winstaller: true
+
+overrides:
+  app-builder-lib>@electron/get: 4.0.3
