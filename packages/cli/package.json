@@ -15,9 +15,9 @@
     "./server-process": "./src/server-process.ts"
   },
   "scripts": {
-    "build": "node --import tsx script/build-node.ts",
     "dev": "node src/index.ts",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "kernel:build": "node --import tsx script/build-node.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "1.6.0",

@@ -50,8 +50,13 @@
         "from": "resources/opencode",
         "to": "opencode",
         "filter": [
-          "opencode"
+          "opencode",
+          "SHA256SUMS"
         ]
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
       }
     ]
   },

@@ -30,8 +30,8 @@ packages/
 
 ## Requirements
 
-- Node.js >= 22.12
-- pnpm 11
+- Node.js 26.4.0 (pinned in `.nvmrc` and `.tool-versions`)
+- pnpm 11.9.0
 
 ## Commands
 
@@ -46,6 +46,14 @@ pnpm package        # unpacked Electron app in apps/desktop/release
 
 The desktop app loads the Vite dev server in development and the bundled
 `apps/web/dist` copy in production.
+
+## CI
+
+`.github/workflows/ci.yml` runs on pushes to `master` and on pull requests:
+
+- install with `pnpm install --frozen-lockfile`, then `pnpm typecheck` and `pnpm build`
+- build the linux-x64 and macOS arm64 kernels, verifying each against `SHA256SUMS`
+- upload each kernel binary and checksum file as a build artifact
 
 ## OpenCode source kernel
 
