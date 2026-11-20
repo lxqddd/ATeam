@@ -4,6 +4,7 @@ import './assets/index.css'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
+import AntdProvider from './antd/AntdProvider'
 import { router } from './router'
 import { initTheme } from './theme'
 
@@ -15,6 +16,8 @@ initTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <AntdProvider>
+      <RouterProvider router={router} />
+    </AntdProvider>
   </StrictMode>
 )

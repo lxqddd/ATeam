@@ -21,7 +21,8 @@
     "build:linux": "pnpm run build && electron-builder --linux"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0"
+    "@electron-toolkit/utils": "^4.0.0",
+    "antd": "6.7.1"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.106",
