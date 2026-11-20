@@ -1,6 +1,6 @@
 # ATeam
 
-AI Agent 桌面应用的基础工程骨架。当前只包含项目结构、构建配置和一条最小占位界面，不包含业务功能。
+AI Agent 桌面应用的基础工程骨架。当前包含项目结构、构建配置、路由、主题与语言设置以及占位页面，不包含业务功能。
 
 ## 技术栈
 
@@ -50,8 +50,10 @@ pnpm dev
 ## 约定
 
 - ESLint 和 Prettier 配置位于仓库根目录，统一覆盖 `apps/` 与 `packages/`。
-- 渲染进程多语言基于 i18next / react-i18next，语言资源位于 `apps/desktop/src/renderer/src/i18n/locales`，当前支持 `zh-CN` 与 `en-US`。
-- 渲染进程样式使用 Tailwind CSS 4（`@tailwindcss/vite`），入口为 `apps/desktop/src/renderer/src/assets/index.css`。
+- 渲染进程多语言基于 i18next / react-i18next，支持跟随系统、中文和 English；语言偏好保存在 localStorage（`ateam.language`）。
+- 渲染进程样式使用 Tailwind CSS 4（`@tailwindcss/vite`），语义化设计令牌参考 nomi-ai 的最新 UI，支持浅色、深色和跟随系统。
+- 设置页（`/settings`）采用左侧分区导航 + 内容区布局，提供主题和语言切换；主题偏好保存在 localStorage（`ateam.theme`）。
+- 桌面窗口使用一体化标题栏：macOS 内嵌红绿灯，Windows/Linux 使用窗口控件 overlay；标题栏可拖动。
 - 渲染进程路由使用 React Router 8 的 Hash 路由，兼容 Electron 的 `file://` 加载方式；路由定义在 `apps/desktop/src/renderer/src/router.tsx`。
 - `@ateam/shared` 直接导出 TypeScript 源码，由 electron-vite / Vite 在构建时打包，因此在桌面端作为开发依赖引入。
 - Electron 二进制默认通过 npmmirror 下载（见 `apps/desktop/scripts/install-electron.mjs`），可用 `ELECTRON_MIRROR` 环境变量覆盖。

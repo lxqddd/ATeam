@@ -1,18 +1,184 @@
 @import 'tailwindcss';
 
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
 @theme {
   --font-sans:
-    Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell,
-    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, 'Noto Sans SC',
+    'Noto Sans CJK SC', 'Source Han Sans SC', Roboto, Ubuntu, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, 'Noto Sans Mono CJK SC',
+    monospace;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 18px;
+  --text-label: 13px;
+  --text-label--line-height: 20px;
+  --text-body: 14px;
+  --text-body--line-height: 22px;
+  --text-subtitle: 16px;
+  --text-subtitle--line-height: 24px;
+  --text-title: 18px;
+  --text-title--line-height: 26px;
+  --text-display: 22px;
+  --text-display--line-height: 30px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-background-subtle: var(--background-subtle);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-selected: var(--selected);
+  --color-selected-foreground: var(--selected-foreground);
+  --color-focus: var(--focus);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+}
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --background: #faf9f6;
+  --background-subtle: #f2f0eb;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f7f5f1;
+  --foreground: #211d19;
+  --muted: #625951;
+  --subtle: #685e55;
+  --border: #e5e0d7;
+  --border-subtle: #efebe4;
+  --border-strong: #93867a;
+  --focus: #2454a4;
+  --accent: #9d3f29;
+  --accent-hover: #85331f;
+  --accent-strong: #9d3f29;
+  --accent-soft: rgb(157 63 41 / 0.1);
+  --accent-foreground: #ffffff;
+  --hover: #f2eee6;
+  --active: #e8e2d6;
+  --selected: #f2dcd1;
+  --selected-foreground: #9d3f29;
+  --success: #24684c;
+  --warning: #7c4a00;
+  --danger: #a33130;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --background: #141414;
+  --background-subtle: #1a1a1a;
+  --surface: #1f1f1f;
+  --surface-raised: #262626;
+  --surface-sunken: #171717;
+  --foreground: #f2f2f2;
+  --muted: #bdbdbd;
+  --subtle: #9e9e9e;
+  --border: #2e2e2e;
+  --border-subtle: #262626;
+  --border-strong: #404040;
+  --focus: #f08a5d;
+  --accent: #f08a5d;
+  --accent-hover: #ffa47e;
+  --accent-strong: #ffa47e;
+  --accent-soft: rgb(240 138 93 / 0.14);
+  --accent-foreground: #241711;
+  --hover: #262626;
+  --active: #303030;
+  --selected: #2e2e2e;
+  --selected-foreground: #ffffff;
+  --success: #6cc59a;
+  --warning: #e5b567;
+  --danger: #f29a8e;
 }
 
 @layer base {
-  html {
-    color-scheme: light dark;
-  }
-
   body {
-    @apply bg-zinc-50 font-sans text-zinc-900 antialiased select-none dark:bg-zinc-900 dark:text-zinc-50;
+    @apply bg-background font-sans text-body font-normal text-foreground antialiased;
     text-rendering: optimizeLegibility;
   }
+
+  ::selection {
+    background: var(--accent-soft);
+    color: var(--foreground);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--muted) 30%, transparent);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, var(--muted) 48%, transparent);
+  }
+
+  :where(
+    button,
+    a[href],
+    select,
+    input,
+    textarea,
+    [role='radio'],
+    [tabindex]:not([tabindex='-1'])
+  ):focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+  }
+}
+
+/* Integrated desktop title bar: transparent, draggable, with room for native window chrome. */
+.app-titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+}
+
+.app-titlebar a,
+.app-titlebar button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+html[data-platform='darwin'] .app-titlebar {
+  padding-left: 78px;
+}
+
+html[data-platform]:not([data-platform='darwin']) .app-titlebar {
+  padding-right: calc(100vw - env(titlebar-area-width, calc(100vw - 140px)));
 }

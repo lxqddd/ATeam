@@ -13,10 +13,18 @@ const enUS = {
   },
   settings: {
     title: 'Settings',
-    description: 'Settings placeholder for models, tools, and permissions.'
-  },
-  common: {
-    language: 'Language'
+    appearance: 'Appearance',
+    appearanceDescription: 'Choose a theme. Changes apply instantly.',
+    theme: 'Theme',
+    themeLight: 'Light',
+    themeDark: 'Dark',
+    themeSystem: 'System',
+    language: 'Language',
+    languageDescription: 'Choose the interface language. Changes apply instantly.',
+    interfaceLanguage: 'Interface language',
+    interfaceLanguageDescription:
+      'System follows your operating system. Your choice is remembered.',
+    languageSystem: 'System'
   }
 } satisfies Translation
 

@@ -5,6 +5,13 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
 import { router } from './router'
+import { initTheme } from './theme'
+
+if ('electron' in window) {
+  document.documentElement.dataset.platform = window.electron.process.platform
+}
+
+initTheme()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
