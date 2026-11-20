@@ -122,6 +122,7 @@ const zhCN = {
       emptyDesc: '打开项目后创建第一个 Agent 会话',
     },
     kernel: {
+      openLogs: "打开内核日志",
       title: '内核就绪度',
       checks: {
         electron: 'Electron 外壳',

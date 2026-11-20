@@ -86,6 +86,7 @@ void app.whenReady().then(() => {
     typeof sessionId === 'string' ? kernel?.interrupt(sessionId) : undefined,
   )
   ipcMain.handle('kernel:restart', () => kernel?.restart())
+  ipcMain.handle('kernel:open-logs', () => shell.openPath(path.join(app.getPath('userData'), 'logs')))
   ipcMain.handle('kernel:models', () => kernel?.listModels() ?? [])
   ipcMain.handle('kernel:permissions', (_event, sessionId: unknown) =>
     typeof sessionId === 'string' ? (kernel?.listPermissions(sessionId) ?? []) : [],
@@ -166,8 +167,13 @@ void app.whenReady().then(() => {
   })
 })
 
-app.on('before-quit', () => {
-  void kernel?.stop()
+let quitting = false
+app.on('before-quit', (event) => {
+  if (quitting) return
+  quitting = true
+  // Give the kernel a chance to exit cleanly before the app goes away.
+  event.preventDefault()
+  void kernel?.stop().finally(() => app.quit())
 })
 
 app.on('window-all-closed', () => {

@@ -181,6 +181,9 @@ export function SettingsView() {
       <section id="settings-kernel" className="cd-card p-5">
         <h2 className="cd-subtitle">{t('settings.kernel.title')}</h2>
         <p className="mt-1 text-[13px] leading-[20px] text-muted">{t('settings.kernel.desc')}</p>
+        <div className="mt-3">
+          <Button onClick={() => void window.ateam?.kernel?.openLogs()}>{t('settings.kernel.openLogs')}</Button>
+        </div>
       </section>
 
       <section id="settings-permissions" className="cd-card p-5">

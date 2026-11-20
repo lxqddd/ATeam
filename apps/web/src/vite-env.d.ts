@@ -12,6 +12,7 @@ interface Window {
       messages(sessionId: string): Promise<import('@ateam/shared').KernelMessage[]>
       interrupt(sessionId: string): Promise<void>
       restart(): Promise<import('@ateam/shared').KernelState>
+      openLogs(): Promise<string>
       models(): Promise<import('@ateam/shared').KernelModel[]>
       permissions(sessionId: string): Promise<import('@ateam/shared').KernelPermission[]>
       replyPermission(input: {

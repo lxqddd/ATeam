@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('ateam', {
     messages: (sessionId: string) => ipcRenderer.invoke('kernel:messages', sessionId),
     interrupt: (sessionId: string) => ipcRenderer.invoke('kernel:interrupt', sessionId),
     restart: () => ipcRenderer.invoke('kernel:restart'),
+    openLogs: () => ipcRenderer.invoke('kernel:open-logs'),
     models: () => ipcRenderer.invoke('kernel:models'),
     permissions: (sessionId: string) => ipcRenderer.invoke('kernel:permissions', sessionId),
     replyPermission: (input: {

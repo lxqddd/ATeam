@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -80,9 +80,14 @@ export class KernelManager {
   private readonly seenPermissions = new Set<string>()
 
   private readonly dataRoot: string
+  private readonly logFile: string
+  private readonly pidFile: string
+  private logStream: fs.WriteStream | null = null
 
   constructor(private readonly workspace: string) {
     this.dataRoot = path.join(app.getPath('userData'), 'opencode')
+    this.logFile = path.join(app.getPath('userData'), 'logs', 'kernel.log')
+    this.pidFile = path.join(app.getPath('userData'), 'kernel.pid')
     for (const dir of ['data', 'config', 'state', 'cache']) {
       fs.mkdirSync(path.join(this.dataRoot, dir), { recursive: true })
     }
@@ -118,49 +123,69 @@ export class KernelManager {
       if (!binary) {
         throw new Error('ATeam kernel binary not found; run pnpm opencode:build or set OPENCODE_BIN')
       }
-      const port = await freePort()
+      this.killStale()
+      this.handshake(binary)
       writeKernelConfig(this.dataRoot)
-      const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
-        cwd: this.workspace,
-        env: {
-          ...process.env,
-          ...kernelEnv(),
-          XDG_DATA_HOME: path.join(this.dataRoot, 'data'),
-          XDG_CONFIG_HOME: path.join(this.dataRoot, 'config'),
-          XDG_STATE_HOME: path.join(this.dataRoot, 'state'),
-          XDG_CACHE_HOME: path.join(this.dataRoot, 'cache'),
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: process.platform !== 'win32',
-      })
-      this.child = child
-      child.once('exit', (code, signal) => {
-        if (this.child !== child) {
-          return
-        }
-        this.child = null
-        this.eventsAbort?.abort()
-        this.eventsAbort = null
-        if (this.state.status !== 'stopped') {
-          this.state = {
-            status: 'error',
-            error: `ATeam kernel exited (${signal ?? code ?? 'unknown'})`,
-          }
-        }
-      })
 
-      const { password } = await waitForServer(child, 15_000)
-      this.password = password
-      this.baseURL = `http://127.0.0.1:${port}`
-      this.state = { status: 'ready', port }
-      void this.consumeEvents()
-      return this.status()
+      let lastError: Error | undefined
+      // A port taken between allocation and bind shows up as an early exit; retry with a fresh one.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const port = await freePort()
+        try {
+          this.openLog()
+          const child = spawn(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)], {
+            cwd: this.workspace,
+            env: {
+              ...process.env,
+              ...kernelEnv(),
+              XDG_DATA_HOME: path.join(this.dataRoot, 'data'),
+              XDG_CONFIG_HOME: path.join(this.dataRoot, 'config'),
+              XDG_STATE_HOME: path.join(this.dataRoot, 'state'),
+              XDG_CACHE_HOME: path.join(this.dataRoot, 'cache'),
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            detached: process.platform !== 'win32',
+          })
+          this.child = child
+          this.writePid(child.pid, port)
+          child.once('exit', (code, signal) => {
+            if (this.child !== child) {
+              return
+            }
+            this.child = null
+            this.removePid()
+            this.eventsAbort?.abort()
+            this.eventsAbort = null
+            this.closeLog()
+            if (this.state.status !== 'stopped') {
+              this.state = {
+                status: 'error',
+                error: `ATeam kernel exited (${signal ?? code ?? 'unknown'})`,
+              }
+            }
+          })
+
+          const { password } = await waitForServer(child, attempt === 0 ? 20_000 : 30_000, (line) => this.log(line))
+          this.password = password
+          this.baseURL = `http://127.0.0.1:${port}`
+          this.state = { status: 'ready', port }
+          void this.consumeEvents()
+          return this.status()
+        } catch (error) {
+          lastError = error instanceof Error ? error : new Error(String(error))
+          this.log(`start attempt ${attempt + 1} failed: ${lastError.message}`)
+          this.killChild()
+          await new Promise((resolve) => setTimeout(resolve, 500))
+        }
+      }
+      throw lastError ?? new Error('ATeam kernel failed to start')
     } catch (error) {
       this.state = {
         status: 'error',
         error: error instanceof Error ? error.message : String(error),
       }
       this.killChild()
+      this.closeLog()
       return this.status()
     }
   }
@@ -170,6 +195,7 @@ export class KernelManager {
     this.eventsAbort?.abort()
     this.eventsAbort = null
     this.killChild()
+    this.closeLog()
   }
 
   async restart(): Promise<KernelState> {
@@ -180,17 +206,132 @@ export class KernelManager {
   private killChild(): void {
     const child = this.child
     this.child = null
+    this.removePid()
     if (!child || child.killed) {
       return
     }
+    const pid = child.pid
+    const signal = (name: NodeJS.Signals) => {
+      try {
+        if (process.platform !== 'win32' && pid) {
+          process.kill(-pid, name)
+        } else {
+          child.kill(name)
+        }
+      } catch {
+        try {
+          child.kill(name)
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    signal('SIGTERM')
+    // A kernel that ignores SIGTERM must not outlive the app.
+    const force = setTimeout(() => signal('SIGKILL'), 3000)
+    child.once('exit', () => clearTimeout(force))
+  }
+
+  private openLog(): void {
+    if (this.logStream) return
+    const dir = path.dirname(this.logFile)
+    fs.mkdirSync(dir, { recursive: true })
     try {
-      if (process.platform !== 'win32' && child.pid) {
-        process.kill(-child.pid, 'SIGTERM')
-      } else {
-        child.kill('SIGTERM')
+      const stat = fs.statSync(this.logFile)
+      if (stat.size > 5 * 1024 * 1024) {
+        fs.renameSync(this.logFile, `${this.logFile}.1`)
       }
     } catch {
-      child.kill('SIGTERM')
+      /* no log yet */
+    }
+    this.logStream = fs.createWriteStream(this.logFile, { flags: 'a', mode: 0o600 })
+  }
+
+  private log(line: string): void {
+    if (!this.logStream) return
+    const redacted = line
+      .replace(/(server password\s+)\S+/g, '$1[redacted]')
+      .replace(/\b(?:oc_sk|sk)-[A-Za-z0-9_-]{16,}/g, '[redacted]')
+    this.logStream.write(`${redacted}\n`)
+  }
+
+  private closeLog(): void {
+    this.logStream?.end()
+    this.logStream = null
+  }
+
+  private writePid(pid: number | undefined, port: number): void {
+    if (!pid) return
+    try {
+      fs.writeFileSync(this.pidFile, `${JSON.stringify({ pid, port })}\n`, { mode: 0o600 })
+    } catch {
+      /* best effort */
+    }
+  }
+
+  private removePid(): void {
+    try {
+      fs.rmSync(this.pidFile, { force: true })
+    } catch {
+      /* best effort */
+    }
+  }
+
+  /** Terminates a kernel left behind by a previous run that was killed before it could clean up. */
+  private killStale(): void {
+    if (process.platform === 'win32') {
+      this.removePid()
+      return
+    }
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.pidFile, 'utf8')) as unknown
+      const pid = raw && typeof raw === 'object' ? (raw as { pid?: unknown }).pid : undefined
+      if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 1) {
+        this.removePid()
+        return
+      }
+      const command = execFileSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' })
+      if (command.includes('opencode')) {
+        this.log(`terminating stale kernel pid=${pid}`)
+        process.kill(-pid, 'SIGKILL')
+      }
+    } catch {
+      /* no stale kernel */
+    } finally {
+      this.removePid()
+    }
+  }
+
+  /** Records the binary identity and drops caches when a different kernel build takes over. */
+  private handshake(binary: string): void {
+    const file = path.join(app.getPath('userData'), 'kernel-version.json')
+    let previous: { size?: number; mtimeMs?: number } | undefined
+    try {
+      previous = JSON.parse(fs.readFileSync(file, 'utf8')) as { size?: number; mtimeMs?: number }
+    } catch {
+      previous = undefined
+    }
+    const stat = fs.statSync(binary)
+    const current = {
+      app: app.getVersion(),
+      binary: path.basename(binary),
+      size: stat.size,
+      mtimeMs: Math.trunc(stat.mtimeMs),
+      recordedAt: new Date().toISOString(),
+    }
+    if (previous && (previous.size !== current.size || previous.mtimeMs !== current.mtimeMs)) {
+      this.log('kernel binary changed; clearing the kernel cache directory')
+      try {
+        fs.rmSync(path.join(this.dataRoot, 'cache'), { recursive: true, force: true })
+        fs.mkdirSync(path.join(this.dataRoot, 'cache'), { recursive: true })
+      } catch {
+        /* cache stays; the kernel rebuilds it */
+      }
+    }
+    try {
+      fs.writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`, { mode: 0o600 })
+    } catch {
+      /* best effort */
     }
   }
 
@@ -527,7 +668,11 @@ function mapParts(content: unknown[]): KernelPart[] {
   return parts
 }
 
-function waitForServer(child: ChildProcess, timeout: number): Promise<{ password: string }> {
+function waitForServer(
+  child: ChildProcess,
+  timeout: number,
+  onLine?: (line: string) => void,
+): Promise<{ password: string }> {
   return new Promise((resolve, reject) => {
     let password = ''
     let listening = false
@@ -554,6 +699,8 @@ function waitForServer(child: ChildProcess, timeout: number): Promise<{ password
     }, timeout)
     const onStdout = (chunk: Buffer) => {
       for (const line of chunk.toString().split('\n')) {
+        if (!line) continue
+        onLine?.(line)
         const passwordMatch = line.match(/server password\s+(\S+)/)
         const matchedPassword = passwordMatch?.[1]
         if (matchedPassword) {
@@ -567,7 +714,11 @@ function waitForServer(child: ChildProcess, timeout: number): Promise<{ password
       }
     }
     const onStderr = (chunk: Buffer) => {
-      stderr += chunk.toString()
+      const text = chunk.toString()
+      stderr += text
+      for (const line of text.split('\n')) {
+        if (line) onLine?.(`stderr: ${line}`)
+      }
     }
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
       fail(new Error(`ATeam kernel exited during startup (${signal ?? code ?? 'unknown'})`))

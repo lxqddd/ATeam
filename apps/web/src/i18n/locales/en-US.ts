@@ -124,6 +124,7 @@ const enUS = {
       emptyDesc: 'Open a project to create your first agent session',
     },
     kernel: {
+      openLogs: "Open kernel logs",
       title: 'Kernel readiness',
       checks: {
         electron: 'Electron shell',
