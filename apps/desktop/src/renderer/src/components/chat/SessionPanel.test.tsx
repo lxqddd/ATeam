@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SessionPanel from './SessionPanel'
@@ -125,5 +125,102 @@ describe('SessionPanel', () => {
     await user.click(screen.getByRole('button', { name: 'New chat' }))
 
     expect(await screen.findByText('boom')).toBeInTheDocument()
+  })
+
+  it('renders status indicators and untitled sessions', () => {
+    setSessions(
+      [
+        makeSession({ id: 'a', title: 'Running', status: 'running' }),
+        makeSession({ id: 'b', title: 'Waiting', status: 'waiting-permission' }),
+        makeSession({ id: 'c', title: 'Failed', status: 'error' }),
+        makeSession({ id: 'd', title: '' })
+      ],
+      'a'
+    )
+    render(<SessionPanel />)
+
+    expect(screen.getByText('Running')).toBeInTheDocument()
+    expect(screen.getByText('Waiting')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('New chat')).toBeInTheDocument()
+  })
+
+  it('ignores unchanged and empty renames', async () => {
+    const user = userEvent.setup()
+    setSessions([makeSession({ id: 's1', title: 'First' })], 's1')
+    render(<SessionPanel />)
+
+    const row = screen.getAllByTestId('session-row')[0]
+    await user.click(within(row).getByRole('button', { name: 'Rename chat' }))
+    await user.keyboard('{Enter}')
+    expect(chatMocks.renameSession).not.toHaveBeenCalled()
+
+    await user.click(within(row).getByRole('button', { name: 'Rename chat' }))
+    await user.clear(screen.getByRole('textbox', { name: 'Rename chat' }))
+    await user.keyboard('{Enter}')
+
+    expect(chatMocks.renameSession).not.toHaveBeenCalled()
+  })
+
+  it('shows rename errors', async () => {
+    chatMocks.renameSession.mockRejectedValueOnce(new Error('rename failed'))
+    const user = userEvent.setup()
+    setSessions([makeSession({ id: 's1', title: 'First' })], 's1')
+    render(<SessionPanel />)
+
+    const row = screen.getAllByTestId('session-row')[0]
+    await user.click(within(row).getByRole('button', { name: 'Rename chat' }))
+    const input = screen.getByRole('textbox', { name: 'Rename chat' })
+    await user.clear(input)
+    await user.type(input, 'New name{Enter}')
+
+    expect(await screen.findByText('rename failed')).toBeInTheDocument()
+  })
+
+  it('shows delete errors', async () => {
+    chatMocks.deleteSession.mockRejectedValueOnce(new Error('delete failed'))
+    const user = userEvent.setup()
+    setSessions([makeSession({ id: 's1', title: 'First' })], 's1')
+    render(<SessionPanel />)
+
+    const row = screen.getAllByTestId('session-row')[0]
+    await user.click(within(row).getByRole('button', { name: 'Delete chat' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete chat' }))
+
+    expect(await screen.findByText('delete failed')).toBeInTheDocument()
+  })
+
+  it('commits a rename on blur', async () => {
+    const user = userEvent.setup()
+    setSessions([makeSession({ id: 's1', title: 'First' })], 's1')
+    render(<SessionPanel />)
+
+    const row = screen.getAllByTestId('session-row')[0]
+    await user.click(within(row).getByRole('button', { name: 'Rename chat' }))
+    const input = screen.getByRole('textbox', { name: 'Rename chat' })
+    await user.clear(input)
+    await user.type(input, 'Blurred')
+    fireEvent.blur(input)
+
+    await waitFor(() => expect(chatMocks.renameSession).toHaveBeenCalledWith('s1', 'Blurred'))
+  })
+
+  it('commits once when Enter and blur race', async () => {
+    const user = userEvent.setup()
+    setSessions([makeSession({ id: 's1', title: 'First' })], 's1')
+    render(<SessionPanel />)
+
+    const row = screen.getAllByTestId('session-row')[0]
+    await user.click(within(row).getByRole('button', { name: 'Rename chat' }))
+    const input = screen.getByRole('textbox', { name: 'Rename chat' })
+    await user.clear(input)
+    await user.type(input, 'Quick')
+
+    act(() => {
+      fireEvent.keyDown(input, { key: 'Enter' })
+      fireEvent.blur(input)
+    })
+
+    await waitFor(() => expect(chatMocks.renameSession).toHaveBeenCalledTimes(1))
   })
 })

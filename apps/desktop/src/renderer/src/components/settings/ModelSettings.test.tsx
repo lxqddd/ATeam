@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ModelPublic, ModelsConfigPublic, ProviderPublic } from '@ateam/shared'
+import type { AgentInfo, ModelPublic, ModelsConfigPublic, ProviderPublic } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelSettings from './ModelSettings'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
@@ -204,5 +204,246 @@ describe('ModelSettings', () => {
     await user.click(screen.getByRole('button', { name: 'Open folder' }))
 
     expect(mock.api.workspace.open).toHaveBeenCalled()
+  })
+})
+
+describe('ModelSettings edge cases', () => {
+  it('maps provider delete failures', async () => {
+    vi.mocked(mock.api.models.deleteProvider).mockRejectedValueOnce(new Error('PROVIDER_NOT_FOUND'))
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    const row = rowFor('Acme')
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('The provider no longer exists.')).toBeInTheDocument()
+  })
+
+  it('maps model delete failures', async () => {
+    vi.mocked(mock.api.models.deleteModel).mockRejectedValueOnce(new Error('MODEL_NOT_FOUND'))
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    const row = rowFor('Sonnet')
+    await user.click(within(row).getByRole('button', { name: 'Delete model' }))
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
+  })
+
+  it('maps default model failures', async () => {
+    vi.mocked(mock.api.models.setDefault).mockRejectedValueOnce(new Error('MODEL_NOT_FOUND'))
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+
+    const select = await screen.findByLabelText('Default model')
+    await user.selectOptions(select, 'p1\u0000claude-opus-5')
+
+    expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
+  })
+
+  it('shows non-Error workspace failures', async () => {
+    vi.mocked(mock.api.workspace.open).mockRejectedValueOnce('open failed')
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: 'Open folder' }))
+
+    expect(await screen.findByText('open failed')).toBeInTheDocument()
+  })
+
+  it('disables the default selector without models', async () => {
+    mock = createApiMock({
+      models: makeConfig({ providers: [], models: [], defaultModel: null })
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    render(<ModelSettings />)
+
+    expect(await screen.findByText('No providers yet. Add one to get started.')).toBeInTheDocument()
+    expect(screen.getByText('No models yet. Add one to get started.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Default model')).toBeDisabled()
+  })
+
+  it('falls back to the provider id for unknown providers', async () => {
+    mock = createApiMock({
+      models: makeConfig({
+        models: [
+          {
+            id: 'm9',
+            providerId: 'ghost',
+            modelId: 'mystery',
+            name: 'Mystery',
+            createdAt: '2026-01-01T00:00:00.000Z'
+          }
+        ],
+        defaultModel: null
+      })
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    render(<ModelSettings />)
+
+    expect(await screen.findByText('Mystery')).toBeInTheDocument()
+    expect(screen.getByText('ghost')).toBeInTheDocument()
+    expect(screen.getByLabelText('Default model')).toHaveValue('')
+  })
+
+  it('cancels a provider form', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: '+ Add provider' }))
+    expect(screen.getByLabelText('Name')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument()
+  })
+
+  it('cancels a provider delete confirmation', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    const row = rowFor('Acme')
+    await user.click(within(row).getByRole('button', { name: 'Delete' }))
+    await user.click(within(row).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByText('Delete this provider and its models?')).not.toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Edit provider' })).toBeInTheDocument()
+  })
+
+  it('edits a provider', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Acme')).getByRole('button', { name: 'Edit provider' }))
+    const name = screen.getByLabelText('Name')
+    await user.clear(name)
+    await user.type(name, 'Renamed')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
+        id: 'p1',
+        name: 'Renamed',
+        type: 'anthropic',
+        baseURL: '',
+        clearApiKey: false,
+        apiKey: undefined
+      })
+    )
+  })
+
+  it('cancels a model form', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: '+ Add model' }))
+    expect(screen.getByLabelText('Model ID')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByLabelText('Model ID')).not.toBeInTheDocument()
+  })
+
+  it('edits a model', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Sonnet')).getByRole('button', { name: 'Edit model' }))
+    const name = screen.getByLabelText('Display name')
+    await user.clear(name)
+    await user.type(name, 'Sonnet 5')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.updateModel).toHaveBeenCalledWith({
+        id: 'm1',
+        name: 'Sonnet 5'
+      })
+    )
+  })
+
+  it('cancels a model delete confirmation', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    const row = rowFor('Sonnet')
+    await user.click(within(row).getByRole('button', { name: 'Delete model' }))
+    await user.click(within(row).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByText('Delete this model?')).not.toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Test connection' })).toBeInTheDocument()
+  })
+
+  it('reports connection success without latency', async () => {
+    vi.mocked(mock.api.models.test).mockResolvedValue({ ok: true, message: 'ok' })
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Sonnet')).getByRole('button', { name: 'Test connection' }))
+
+    expect(await screen.findByText('Connection succeeded')).toBeInTheDocument()
+  })
+
+  it('reports connection failures without a message', async () => {
+    vi.mocked(mock.api.models.test).mockResolvedValue({
+      ok: false,
+      message: undefined as unknown as string
+    })
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Sonnet')).getByRole('button', { name: 'Test connection' }))
+
+    expect(await screen.findByText(/Connection failed/)).toBeInTheDocument()
+  })
+
+  it('shows a placeholder when agent info is unavailable', async () => {
+    vi.mocked(mock.api.agent.info).mockResolvedValue({} as unknown as AgentInfo)
+    render(<ModelSettings />)
+
+    expect(await screen.findAllByText('Acme')).not.toHaveLength(0)
+    expect(screen.getByText('—')).toBeInTheDocument()
+  })
+
+  it('clears the default model', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+
+    const select = await screen.findByLabelText('Default model')
+    await user.selectOptions(select, '')
+
+    await waitFor(() => expect(mock.api.models.setDefault).toHaveBeenCalledWith(null))
+  })
+
+  it('renders provider base URLs and missing keys', async () => {
+    mock = createApiMock({
+      models: makeConfig({
+        providers: [
+          {
+            ...provider,
+            baseURL: 'https://api.example.com',
+            hasApiKey: false
+          }
+        ],
+        models: [],
+        defaultModel: null
+      })
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    render(<ModelSettings />)
+
+    expect(await screen.findByText('https://api.example.com')).toBeInTheDocument()
+    expect(screen.getByText('No key')).toBeInTheDocument()
   })
 })

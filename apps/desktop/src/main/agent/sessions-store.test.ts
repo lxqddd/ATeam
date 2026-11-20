@@ -201,4 +201,63 @@ describe('SessionsStore', () => {
     expect(parsed.session.id).toBe(session.id)
     expect(parsed.messages).toEqual([])
   })
+
+  it('ignores operations for unknown sessions', async () => {
+    expect(await store.rename('missing', 'x')).toBeUndefined()
+    expect(await store.setModel('missing', null)).toBeUndefined()
+    await store.setStatus('missing', 'idle')
+    await store.appendMessage('missing', makeMessage())
+    expect(store.get('missing')).toBeUndefined()
+    expect(store.getSession('missing')).toBeUndefined()
+    expect(store.getMessages('missing')).toBeUndefined()
+  })
+
+  it('skips index entries whose file has disappeared', async () => {
+    const session = await store.create()
+    await fs.rm(path.join(sessionsDirectory, `${session.id}.json`))
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+
+    expect(reloaded.list()).toEqual([])
+  })
+
+  it('skips non-session files when rebuilding the index', async () => {
+    const session = await store.create()
+    await fs.writeFile(path.join(sessionsDirectory, 'notes.txt'), 'not a session')
+    await fs.rm(path.join(sessionsDirectory, 'index.json'))
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+
+    expect(reloaded.list().map((entry) => entry.id)).toEqual([session.id])
+  })
+
+  it('recovers write queues after a failed persist', async () => {
+    const session = await store.create()
+    const indexFile = path.join(sessionsDirectory, 'index.json')
+    await fs.rm(indexFile)
+    await fs.mkdir(indexFile)
+
+    await expect(store.rename(session.id, 'first')).rejects.toBeDefined()
+
+    await fs.rm(indexFile, { recursive: true })
+    const renamed = await store.rename(session.id, 'after failure')
+    expect(renamed?.title).toBe('after failure')
+  })
+
+  it('drops queued writes for deleted sessions', async () => {
+    const session = await store.create()
+
+    const pending = store.persist(session.id)
+    await store.delete(session.id)
+    await pending
+
+    expect(store.list()).toEqual([])
+  })
+
+  it('flushes an empty store', async () => {
+    const fresh = new SessionsStore(directory)
+    await expect(fresh.flush()).resolves.toBeUndefined()
+  })
 })

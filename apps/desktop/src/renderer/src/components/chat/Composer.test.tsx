@@ -71,6 +71,8 @@ beforeEach(() => {
   chatMocks.send.mockClear()
   chatMocks.send.mockResolvedValue(undefined)
   chatMocks.stop.mockClear()
+  chatMocks.ensureSession.mockReset()
+  chatMocks.setSessionModel.mockReset()
 })
 
 describe('Composer', () => {
@@ -181,5 +183,138 @@ describe('Composer', () => {
 
     expect(await screen.findByText('Select a model first.')).toBeInTheDocument()
     expect(chatMocks.send).not.toHaveBeenCalled()
+  })
+
+  it('reports the missing model when sending without any models', () => {
+    const state = baseState()
+    state.models = { providers: [], models: [], defaultModel: null, encryptionAvailable: true }
+    storeState.current = state
+    renderComposer()
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+
+    fireEvent.change(textarea, { target: { value: 'hello' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    expect(screen.getAllByText('No model configured').length).toBeGreaterThanOrEqual(2)
+    expect(chatMocks.send).not.toHaveBeenCalled()
+  })
+
+  it('reports the stopped agent when sending is attempted', () => {
+    const state = baseState()
+    storeState.current = state
+    const { rerender } = render(
+      <MemoryRouter>
+        <Composer />
+      </MemoryRouter>
+    )
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    fireEvent.change(textarea, { target: { value: 'hello' } })
+
+    storeState.current = { ...state, status: { status: 'stopped' } }
+    rerender(
+      <MemoryRouter>
+        <Composer />
+      </MemoryRouter>
+    )
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Message ATeam…' }), { key: 'Enter' })
+
+    expect(
+      screen.getByText('The agent is not running. Past messages are still available.')
+    ).toBeInTheDocument()
+    expect(chatMocks.send).not.toHaveBeenCalled()
+  })
+
+  it('shows the starting placeholder while the agent starts', () => {
+    const state = baseState()
+    state.status = { status: 'starting' }
+    storeState.current = state
+    renderComposer()
+
+    expect(screen.getByRole('textbox', { name: 'Message ATeam…' })).toHaveAttribute(
+      'placeholder',
+      'Agent is starting…'
+    )
+  })
+
+  it('treats a missing model config as no models', () => {
+    const state = baseState()
+    state.models = null
+    storeState.current = state
+    renderComposer()
+
+    expect(screen.getAllByText('No model configured').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+  })
+
+  it('shows non-Error send failures', async () => {
+    chatMocks.send.mockRejectedValueOnce('raw failure')
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), 'hello{Enter}')
+
+    expect(await screen.findByText('raw failure')).toBeInTheDocument()
+  })
+
+  it('changes the session model from the picker', async () => {
+    chatMocks.ensureSession.mockResolvedValue({ id: 's1' })
+    chatMocks.setSessionModel.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: /Claude X/ }))
+    await user.click(screen.getByRole('option', { name: /Claude X/ }))
+
+    await waitFor(() =>
+      expect(chatMocks.setSessionModel).toHaveBeenCalledWith('s1', {
+        providerId: 'p1',
+        modelId: 'claude-x'
+      })
+    )
+  })
+
+  it('shows errors when changing the model fails', async () => {
+    chatMocks.ensureSession.mockRejectedValue(new Error('ensure failed'))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: /Claude X/ }))
+    await user.click(screen.getByRole('option', { name: /Claude X/ }))
+
+    expect(await screen.findByText('ensure failed')).toBeInTheDocument()
+  })
+
+  it('ignores Enter with empty input', () => {
+    renderComposer()
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    expect(chatMocks.send).not.toHaveBeenCalled()
+  })
+
+  it('maps AGENT_NOT_READY failures', async () => {
+    chatMocks.send.mockRejectedValueOnce(new Error('AGENT_NOT_READY'))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), 'hello{Enter}')
+
+    expect(
+      await screen.findByText('The agent is not running. Past messages are still available.')
+    ).toBeInTheDocument()
+  })
+
+  it('shows stop failures', async () => {
+    const state = baseState()
+    state.sessions[0].status = 'running'
+    storeState.current = state
+    chatMocks.stop.mockRejectedValueOnce(new Error('stop failed'))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+
+    expect(await screen.findByText('stop failed')).toBeInTheDocument()
   })
 })

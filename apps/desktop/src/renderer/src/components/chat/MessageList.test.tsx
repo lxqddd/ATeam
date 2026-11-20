@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ChatMessage, PermissionRequest, RunOutcome } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -147,5 +147,17 @@ describe('MessageList', () => {
     renderList({ messages: [assistant({ status: 'complete', parts: [] })] })
 
     expect(screen.getByText('The model returned no content.')).toBeInTheDocument()
+  })
+
+  it('offers a scroll-to-latest button after scrolling up', () => {
+    renderList({ messages: [assistant({ parts: [makeTextPart('hi')] })] })
+    const list = screen.getByTestId('message-list')
+    Object.defineProperty(list, 'scrollHeight', { value: 1_000, configurable: true })
+    Object.defineProperty(list, 'clientHeight', { value: 100, configurable: true })
+    list.scrollTop = 0
+
+    fireEvent.scroll(list)
+
+    expect(screen.getByRole('button', { name: /Scroll to latest/ })).toBeInTheDocument()
   })
 })

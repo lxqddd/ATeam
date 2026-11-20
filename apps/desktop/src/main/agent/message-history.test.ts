@@ -140,4 +140,27 @@ describe('buildModelMessages', () => {
     const message = makeMessage({ parts: [makeReasoningPart('thinking'), makeTextPart('   ')] })
     expect(buildModelMessages([message])).toEqual([])
   })
+
+  it('defaults missing tool input and output', () => {
+    const message = makeMessage({
+      parts: [
+        makeToolPart({
+          toolCallId: 'call-1',
+          toolName: 'read',
+          input: undefined,
+          state: 'completed',
+          output: undefined
+        })
+      ]
+    })
+
+    const result = buildModelMessages([message])
+
+    expect(result[0]).toMatchObject({
+      content: [{ type: 'tool-call', toolCallId: 'call-1', input: {} }]
+    })
+    expect(result[1]).toMatchObject({
+      content: [{ output: { type: 'text', value: '' } }]
+    })
+  })
 })

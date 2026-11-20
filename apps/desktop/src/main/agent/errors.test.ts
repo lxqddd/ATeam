@@ -85,4 +85,8 @@ describe('normalizeError', () => {
     expect(normalizeError('plain failure')).toBe('plain failure')
     expect(normalizeError('')).toBe('The agent run failed.')
   })
+
+  it('falls back for errors with empty messages', () => {
+    expect(normalizeError(new Error(''))).toBe('The agent run failed.')
+  })
 })

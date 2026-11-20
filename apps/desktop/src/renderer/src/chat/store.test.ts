@@ -408,4 +408,337 @@ describe('ChatStore ready transition', () => {
 
     await vi.waitFor(() => expect(mock.api.agent.sessions.list).toHaveBeenCalledTimes(2))
   })
+
+  it('deduplicates concurrent reloads', async () => {
+    vi.mocked(mock.api.agent.status).mockResolvedValue({ status: 'stopped' })
+    await store.init()
+    let resolveList: (sessions: ReturnType<typeof makeSession>[]) => void = () => undefined
+    vi.mocked(mock.api.agent.sessions.list).mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve
+      })
+    )
+    let resolveRestart: (status: { status: 'ready' }) => void = () => undefined
+    vi.mocked(mock.api.agent.restart).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRestart = resolve
+      })
+    )
+
+    const restart = store.restartAgent()
+    mock.emit({ type: 'agent.status', status: { status: 'ready' } })
+    resolveRestart({ status: 'ready' })
+    resolveList([])
+    await restart
+
+    await vi.waitFor(() => expect(mock.api.agent.sessions.list).toHaveBeenCalledTimes(2))
+  })
+})
+
+describe('ChatStore edge cases', () => {
+  it('records agent status failures', async () => {
+    vi.mocked(mock.api.agent.status).mockRejectedValue(new Error('status down'))
+
+    await store.init()
+
+    expect(store.getSnapshot().status).toEqual({ status: 'error', error: 'status down' })
+  })
+
+  it('keeps models null when the model config fails', async () => {
+    vi.mocked(mock.api.models.get).mockRejectedValue(new Error('models down'))
+
+    await store.init()
+
+    expect(store.getSnapshot().models).toBeNull()
+  })
+
+  it('stringifies non-Error failures', async () => {
+    vi.mocked(mock.api.agent.sessions.list).mockRejectedValue('plain failure')
+
+    await store.init()
+
+    expect(store.getSnapshot().actionError).toBe('plain failure')
+  })
+
+  it('does not surface session list errors while stopped', async () => {
+    vi.mocked(mock.api.agent.status).mockResolvedValue({ status: 'stopped' })
+    vi.mocked(mock.api.agent.sessions.list).mockRejectedValue(new Error('offline'))
+
+    await store.init()
+
+    expect(store.getSnapshot().actionError).toBeNull()
+  })
+
+  it('switches selection when the selected session disappears', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-01T00:00:00.000Z' }))
+    await store.init()
+    expect(store.getSnapshot().selectedSessionId).toBe('s1')
+
+    mock.sessions.length = 0
+    mock.sessions.push(makeSession({ id: 's2', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.loadSessions()
+
+    expect(store.getSnapshot().selectedSessionId).toBe('s2')
+  })
+
+  it('ignores a second snapshot request while one is loading', async () => {
+    await store.init()
+    let resolveSnapshot: (snapshot: MessagesSnapshot) => void = () => undefined
+    vi.mocked(mock.api.agent.messages.list).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSnapshot = resolve
+      })
+    )
+
+    store.loadMessages('s1')
+    store.loadMessages('s1')
+    resolveSnapshot({ sessionId: 's1', seq: 0, messages: [], running: false })
+
+    await vi.waitFor(() => expect(store.getSnapshot().loadedBySession.s1).toBe(true))
+    const calls = vi
+      .mocked(mock.api.agent.messages.list)
+      .mock.calls.filter(([sessionId]) => sessionId === 's1')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('records snapshot failures', async () => {
+    await store.init()
+    vi.mocked(mock.api.agent.messages.list).mockRejectedValue(new Error('snapshot down'))
+
+    await store.loadMessages('s1')
+
+    expect(store.getSnapshot().actionError).toBe('snapshot down')
+  })
+
+  it('reuses the selected session or creates one', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.init()
+
+    const existing = await store.ensureSession()
+    expect(existing.id).toBe('s1')
+    expect(mock.api.agent.sessions.create).not.toHaveBeenCalled()
+
+    store.selectSession('missing')
+    const created = await store.ensureSession()
+    expect(mock.api.agent.sessions.create).toHaveBeenCalled()
+    expect(store.getSnapshot().selectedSessionId).toBe(created.id)
+  })
+
+  it('ignores stop and retry without a selected session', async () => {
+    await store.init()
+
+    await store.stop()
+    await store.retry()
+
+    expect(mock.api.agent.chat.stop).not.toHaveBeenCalled()
+    expect(mock.api.agent.chat.retry).not.toHaveBeenCalled()
+  })
+
+  it('forwards permission replies', async () => {
+    await store.init()
+
+    await store.replyPermission('p1', 'always')
+
+    expect(mock.api.agent.permissions.reply).toHaveBeenCalledWith('p1', 'always')
+  })
+
+  it('restarts the agent', async () => {
+    await store.init()
+    vi.mocked(mock.api.agent.restart).mockResolvedValue({ status: 'ready' })
+
+    await store.restartAgent()
+
+    expect(store.getSnapshot().status).toEqual({ status: 'ready' })
+    expect(store.getSnapshot().restarting).toBe(false)
+  })
+
+  it('records restart failures', async () => {
+    await store.init()
+    vi.mocked(mock.api.agent.restart).mockRejectedValue(new Error('restart failed'))
+
+    await store.restartAgent()
+
+    expect(store.getSnapshot().actionError).toBe('restart failed')
+    expect(store.getSnapshot().restarting).toBe(false)
+  })
+
+  it('ignores restart while already restarting', async () => {
+    await store.init()
+    let resolveRestart: (status: { status: 'ready' }) => void = () => undefined
+    vi.mocked(mock.api.agent.restart).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRestart = resolve
+      })
+    )
+
+    const first = store.restartAgent()
+    await store.restartAgent()
+    expect(mock.api.agent.restart).toHaveBeenCalledTimes(1)
+
+    resolveRestart({ status: 'ready' })
+    await first
+  })
+
+  it('notifies subscribers until unsubscribed', () => {
+    const listener = vi.fn()
+    const unsubscribe = store.subscribe(listener)
+
+    store.selectSession('s1')
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
+    store.selectSession('s2')
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores part and delta events for unknown sessions and messages', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    mock.messages.set('s1', {
+      sessionId: 's1',
+      seq: 0,
+      messages: [
+        makeMessage({
+          id: 'm1',
+          sessionId: 's1',
+          parts: [makeTextPart('hi'), makeReasoningPart('think')]
+        })
+      ],
+      running: false
+    })
+    await store.init()
+
+    mock.emit({
+      type: 'message.part.upsert',
+      sessionId: 'other',
+      messageId: 'm1',
+      partIndex: 0,
+      part: makeTextPart('x')
+    })
+    mock.emit({
+      type: 'message.part.upsert',
+      sessionId: 's1',
+      messageId: 'missing',
+      partIndex: 0,
+      part: makeTextPart('x')
+    })
+    mock.emit({
+      type: 'message.part.delta',
+      sessionId: 'other',
+      messageId: 'm1',
+      partIndex: 0,
+      kind: 'text',
+      delta: 'x'
+    })
+    mock.emit({
+      type: 'message.part.delta',
+      sessionId: 's1',
+      messageId: 'missing',
+      partIndex: 0,
+      kind: 'text',
+      delta: 'x'
+    })
+    mock.emit({
+      type: 'message.part.delta',
+      sessionId: 's1',
+      messageId: 'm1',
+      partIndex: 1,
+      kind: 'text',
+      delta: 'x'
+    })
+    mock.emit({
+      type: 'message.part.delta',
+      sessionId: 's1',
+      messageId: 'm1',
+      partIndex: 0,
+      kind: 'reasoning',
+      delta: 'x'
+    })
+
+    expect(store.getSnapshot().messagesBySession.s1?.[0].parts).toEqual([
+      { type: 'text', text: 'hi' },
+      { type: 'reasoning', text: 'think' }
+    ])
+  })
+
+  it('keeps the selection when another session is deleted', async () => {
+    mock.sessions.push(
+      makeSession({ id: 's1', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      makeSession({ id: 's2', updatedAt: '2026-01-02T00:00:00.000Z' })
+    )
+    mock.messages.set('s2', { sessionId: 's2', seq: 0, messages: [], running: false })
+    await store.init()
+
+    mock.emit({ type: 'session.deleted', sessionId: 's1' })
+
+    expect(store.getSnapshot().selectedSessionId).toBe('s2')
+    expect(store.getSnapshot().sessions.map((session) => session.id)).toEqual(['s2'])
+  })
+
+  it('ignores deletion events for unknown sessions', async () => {
+    await store.init()
+
+    mock.emit({ type: 'session.deleted', sessionId: 'missing' })
+
+    expect(store.getSnapshot().sessions).toEqual([])
+  })
+
+  it('deduplicates concurrent session loads', async () => {
+    await store.init()
+    const before = vi.mocked(mock.api.agent.sessions.list).mock.calls.length
+    let resolveList: (sessions: ReturnType<typeof makeSession>[]) => void = () => undefined
+    vi.mocked(mock.api.agent.sessions.list).mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve
+      })
+    )
+
+    const first = store.loadSessions()
+    const second = store.loadSessions()
+    resolveList([])
+    await Promise.all([first, second])
+
+    expect(vi.mocked(mock.api.agent.sessions.list).mock.calls.length).toBe(before + 1)
+  })
+
+  it('clears action errors', async () => {
+    vi.mocked(mock.api.agent.sessions.list).mockRejectedValue(new Error('boom'))
+    await store.init()
+    expect(store.getSnapshot().actionError).toBe('boom')
+
+    store.clearActionError()
+
+    expect(store.getSnapshot().actionError).toBeNull()
+  })
+
+  it('does not reload when a restart does not become ready', async () => {
+    await store.init()
+    const before = vi.mocked(mock.api.agent.sessions.list).mock.calls.length
+    vi.mocked(mock.api.agent.restart).mockResolvedValue({ status: 'stopped' })
+
+    await store.restartAgent()
+
+    expect(store.getSnapshot().status.status).toBe('stopped')
+    expect(vi.mocked(mock.api.agent.sessions.list).mock.calls.length).toBe(before)
+  })
+
+  it('ignores duplicate ready events', async () => {
+    await store.init()
+    const before = vi.mocked(mock.api.agent.sessions.list).mock.calls.length
+
+    mock.emit({ type: 'agent.status', status: { status: 'ready' } })
+    await Promise.resolve()
+
+    expect(vi.mocked(mock.api.agent.sessions.list).mock.calls.length).toBe(before)
+  })
+
+  it('clears the selection when no sessions remain', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-01T00:00:00.000Z' }))
+    await store.init()
+    expect(store.getSnapshot().selectedSessionId).toBe('s1')
+
+    mock.sessions.length = 0
+    await store.loadSessions()
+
+    expect(store.getSnapshot().selectedSessionId).toBeNull()
+  })
 })

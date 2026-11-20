@@ -252,3 +252,126 @@ describe('shell tool', () => {
     expect(result).toContain('[command timed out after 1000ms]')
   })
 })
+
+describe('tool limits and edge cases', () => {
+  it('truncates very large file reads', async () => {
+    await fs.writeFile(path.join(directory, 'big.txt'), 'a'.repeat(250_000))
+
+    const result = await execute(tools.read, { path: 'big.txt' })
+
+    expect(result).toContain('[output truncated at 200000 characters]')
+  })
+
+  it('blocks writes through symlinked parents', async () => {
+    const outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-outside-')))
+    try {
+      await fs.symlink(outside, path.join(directory, 'link'))
+
+      await expect(execute(tools.write, { path: 'link/new.txt', content: 'x' })).resolves.toBe(
+        'Error: Path escapes workspace: link/new.txt'
+      )
+      await expect(fs.stat(path.join(outside, 'new.txt'))).rejects.toMatchObject({
+        code: 'ENOENT'
+      })
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('caps very large directory listings', async () => {
+    await Promise.all(
+      Array.from({ length: 505 }, (_, index) =>
+        fs.writeFile(path.join(directory, `f${String(index).padStart(3, '0')}.txt`), 'x')
+      )
+    )
+
+    const result = await execute(tools.list, {})
+
+    expect(result.split('\n')).toHaveLength(500)
+  })
+
+  it('returns string errors for directory escapes', async () => {
+    await expect(execute(tools.list, { path: '..' })).resolves.toBe(
+      'Error: Path escapes workspace: ..'
+    )
+  })
+
+  it('returns a string error for invalid grep patterns', async () => {
+    const result = await execute(tools.grep, { pattern: '(' })
+
+    expect(result.startsWith('Error:')).toBe(true)
+  })
+
+  it('searches nested directories and skips ignored folders', async () => {
+    await fs.mkdir(path.join(directory, 'nested', 'deep'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'nested', 'deep', 'found.txt'), 'needle')
+    await fs.mkdir(path.join(directory, '.git'))
+    await fs.writeFile(path.join(directory, '.git', 'hidden.txt'), 'needle')
+    await fs.mkdir(path.join(directory, 'node_modules'))
+    await fs.writeFile(path.join(directory, 'node_modules', 'pkg.js'), 'needle')
+
+    const result = await execute(tools.grep, { pattern: 'needle' })
+
+    expect(result).toContain('nested/deep/found.txt:1: needle')
+    expect(result).not.toContain('.git')
+    expect(result).not.toContain('node_modules')
+  })
+
+  it('stops walking very deep trees', async () => {
+    let current = directory
+    for (let index = 0; index < 10; index += 1) {
+      current = path.join(current, `d${index}`)
+      await fs.mkdir(current)
+    }
+    await fs.writeFile(path.join(current, 'deep.txt'), 'needle')
+
+    await expect(execute(tools.grep, { pattern: 'needle' })).resolves.toBe('No matches')
+  })
+
+  it('skips binary files during grep', async () => {
+    await fs.writeFile(
+      path.join(directory, 'bin.dat'),
+      Buffer.from([0x6e, 0x65, 0x65, 0x64, 0x6c, 0x65, 0x00])
+    )
+    await fs.writeFile(path.join(directory, 'a.txt'), 'needle')
+
+    await expect(execute(tools.grep, { pattern: 'needle' })).resolves.toBe('a.txt:1: needle')
+  })
+
+  it('matches plain include substrings', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'needle')
+    await fs.writeFile(path.join(directory, 'b.md'), 'needle')
+
+    await expect(execute(tools.grep, { pattern: 'needle', include: 'md' })).resolves.toBe(
+      'b.md:1: needle'
+    )
+  })
+
+  it('rejects files over 1 MB', async () => {
+    await expect(
+      execute(tools.write, { path: 'big.txt', content: 'a'.repeat(1_000_001) })
+    ).resolves.toBe('Error: file content exceeds 1 MB')
+  })
+
+  it('rejects oversized edit searches', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'x')
+
+    await expect(
+      execute(tools.edit, { path: 'a.txt', oldText: 'a'.repeat(200_001), newText: 'b' })
+    ).resolves.toBe('Error: oldText is too large')
+  })
+
+  it('blocks edits outside the workspace', async () => {
+    await expect(
+      execute(tools.edit, { path: '../outside.txt', oldText: 'a', newText: 'b' })
+    ).resolves.toBe('Error: Path escapes workspace: ../outside.txt')
+  })
+
+  it('truncates large command output', async () => {
+    const command = `node -e "process.stdout.write('a'.repeat(300000))"`
+
+    const result = await execute(tools.shell, { command })
+
+    expect(result).toContain('[output truncated at 200000 characters]')
+  })
+})

@@ -82,4 +82,14 @@ describe('PermissionCard', () => {
 
     expect(await screen.findByText('permission backend down')).toBeInTheDocument()
   })
+
+  it('shows non-Error failure values', async () => {
+    const user = userEvent.setup()
+    mocks.replyPermission.mockRejectedValueOnce('raw denial')
+    render(<PermissionCard request={request} />)
+
+    await user.click(screen.getByRole('button', { name: 'Deny' }))
+
+    expect(await screen.findByText('raw denial')).toBeInTheDocument()
+  })
 })

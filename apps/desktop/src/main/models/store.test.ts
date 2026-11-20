@@ -299,4 +299,94 @@ describe('ModelsStore', () => {
       modelId: 'm1'
     })
   })
+
+  it('validates names and model ids', async () => {
+    await expect(
+      store.addProvider({ name: 'x'.repeat(101), type: 'anthropic', apiKey: 'sk-test' })
+    ).rejects.toThrow('NAME_TOO_LONG')
+
+    const providerId = await addAnthropic()
+    await expect(store.addModel({ providerId, modelId: '   ' })).rejects.toThrow(
+      'MODEL_ID_REQUIRED'
+    )
+    await expect(store.addModel({ providerId, modelId: 'm'.repeat(201) })).rejects.toThrow(
+      'MODEL_ID_TOO_LONG'
+    )
+  })
+
+  it('rejects non-http base URLs and empty compatible endpoints', async () => {
+    await expect(
+      store.addProvider({ name: 'C', type: 'openai-compatible', baseURL: 'file:///tmp' })
+    ).rejects.toThrow('INVALID_BASE_URL')
+    await expect(
+      store.addProvider({ name: 'C', type: 'openai-compatible', baseURL: 'http://[' })
+    ).rejects.toThrow('INVALID_BASE_URL')
+
+    const config = await store.addProvider({
+      name: 'Local',
+      type: 'openai-compatible',
+      baseURL: 'http://localhost:1234'
+    })
+    const providerId = config.providers[0].id
+    await expect(store.updateProvider({ id: providerId, baseURL: '   ' })).rejects.toThrow(
+      'BASE_URL_REQUIRED'
+    )
+  })
+
+  it('exposes a null default model after clearing it', async () => {
+    const providerId = await addAnthropic()
+    await store.addModel({ providerId, modelId: 'm1' })
+    await store.setDefault(null)
+
+    const runtime = store.runtimeConfig()
+    expect(runtime.defaultModel).toBeNull()
+    expect(runtime.models).toHaveLength(1)
+  })
+
+  it('reports encryption as unavailable when safeStorage throws', () => {
+    safeStorage.isEncryptionAvailable.mockImplementationOnce(() => {
+      throw new Error('no keychain')
+    })
+
+    expect(store.publicConfig().encryptionAvailable).toBe(false)
+  })
+
+  it('returns undefined for keys that cannot be decrypted', async () => {
+    const providerId = await addAnthropic()
+    await fs.writeFile(
+      path.join(directory, 'models', 'secrets.json'),
+      JSON.stringify({ version: 1, keys: { [providerId]: 'not-base64' } })
+    )
+
+    const reloaded = new ModelsStore(directory)
+    await reloaded.init()
+    safeStorage.decryptString.mockImplementationOnce(() => {
+      throw new Error('bad cipher')
+    })
+
+    expect(reloaded.runtimeConfig().providers[0].apiKey).toBeUndefined()
+    expect(reloaded.publicConfig().providers[0].hasApiKey).toBe(true)
+  })
+
+  it('keeps the default when deleting another provider', async () => {
+    const providerId = await addAnthropic()
+    await store.addModel({ providerId, modelId: 'm1' })
+    const second = await store.addProvider({ name: 'Second', type: 'openai', apiKey: 'sk-two' })
+    const secondProviderId = second.providers[1].id
+
+    const after = await store.deleteProvider(secondProviderId)
+
+    expect(after.defaultModel).toEqual({ providerId, modelId: 'm1' })
+  })
+
+  it('keeps the default when deleting another model', async () => {
+    const providerId = await addAnthropic()
+    await store.addModel({ providerId, modelId: 'm1' })
+    const second = await store.addModel({ providerId, modelId: 'm2' })
+    const secondModelId = second.models.find((model) => model.modelId === 'm2')?.id ?? ''
+
+    const after = await store.deleteModel(secondModelId)
+
+    expect(after.defaultModel).toEqual({ providerId, modelId: 'm1' })
+  })
 })

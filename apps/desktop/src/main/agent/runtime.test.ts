@@ -10,6 +10,8 @@ import type {
   RuntimeModelsConfig
 } from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './runtime'
+import { SessionsStore } from './sessions-store'
+import { makeMessage } from './test/factories'
 
 const MODELS: RuntimeModelsConfig = {
   providers: [{ id: 'provider-1', name: 'Test', type: 'anthropic', apiKey: 'sk-test' }],
@@ -103,8 +105,34 @@ let sink: Sink
 let scripts: Script[]
 let turns: AgentTurnInput[]
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
+let resumeTurn: (() => void) | null
 let runtime: AgentRuntime
 let sessionId: string
+
+function createRuntime(): AgentRuntime {
+  return new AgentRuntime({
+    userDataPath: directory,
+    workspacePath: path.join(directory, 'workspace'),
+    models: MODELS,
+    send: sink.send,
+    dependencies: {
+      createLanguageModel: () => ({}) as unknown as LanguageModel,
+      createTools: (context) => {
+        toolExecutor = async (value, toolCallId) => {
+          const allowed = await context.askPermission('write', value, 'task', toolCallId)
+          return allowed ? `done:${value}` : 'Permission denied'
+        }
+        return {}
+      },
+      createTurn: (input) => {
+        turns.push(input)
+        const script = scripts.shift()
+        if (!script) throw new Error('No scripted turn')
+        return { stream: script(input) }
+      }
+    }
+  })
+}
 
 function toolScript(values: string[]): Script {
   return async function* (input) {
@@ -147,6 +175,150 @@ function stoppableScript(): Script {
   }
 }
 
+function parallelToolScript(values: string[]): Script {
+  return async function* () {
+    for (const [index, value] of values.entries()) {
+      const callId = `call-${index + 1}`
+      yield part({ type: 'tool-input-start', id: callId, toolName: 'task' })
+      yield part({ type: 'tool-call', toolCallId: callId, toolName: 'task', input: { value } })
+    }
+    const executions = values.map((value, index) => {
+      if (!toolExecutor) throw new Error('Tool executor not initialized')
+      return toolExecutor(value, `call-${index + 1}`)
+    })
+    for (const [index, execution] of executions.entries()) {
+      const value = values[index]
+      const output = await execution
+      yield part({
+        type: 'tool-result',
+        toolCallId: `call-${index + 1}`,
+        toolName: 'task',
+        input: { value },
+        output
+      })
+    }
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'done' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function richStreamScript(): Script {
+  return async function* () {
+    yield part({ type: 'text-delta', id: 'missing', text: 'ignored' })
+    yield part({ type: 'reasoning-delta', id: 'ghost', text: 'ignored' })
+    yield part({ type: 'reasoning-start', id: 'r1' })
+    yield part({ type: 'reasoning-delta', id: 'r1', text: 'think' })
+    yield part({ type: 'reasoning-end', id: 'r1' })
+    yield part({ type: 'ping' })
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'answer' })
+    yield part({ type: 'text-end', id: 't1' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function toolEventScript(event: Record<string, unknown>): Script {
+  return async function* () {
+    yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
+    yield part({
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'task',
+      input: { value: 'a.txt' }
+    })
+    yield part(event)
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function unfinishedToolScript(): Script {
+  return async function* () {
+    yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
+    yield part({
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'task',
+      input: { value: 'a.txt' }
+    })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function doubleDeltaScript(): Script {
+  return async function* () {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'a' })
+    yield part({ type: 'text-delta', id: 't1', text: 'b' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function pausableTextScript(): Script {
+  return async function* () {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'first' })
+    await new Promise<void>((resolve) => {
+      resumeTurn = resolve
+    })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function stoppableToolScript(): Script {
+  return async function* (input) {
+    yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
+    yield part({
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'task',
+      input: { value: 'a.txt' }
+    })
+    await new Promise<void>((resolve) => {
+      if (input.abortSignal.aborted) {
+        resolve()
+        return
+      }
+      input.abortSignal.addEventListener('abort', () => resolve(), { once: true })
+    })
+    yield part({ type: 'abort' })
+  }
+}
+
+function toolCallThenErrorScript(message: string): Script {
+  return async function* () {
+    yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
+    yield part({
+      type: 'tool-call',
+      toolCallId: 'call-1',
+      toolName: 'task',
+      input: { value: 'a.txt' }
+    })
+    yield part({ type: 'error', error: new Error(message) })
+  }
+}
+
+function orphanToolEventScript(): Script {
+  return async function* () {
+    yield part({
+      type: 'tool-result',
+      toolCallId: 'ghost',
+      toolName: 'task',
+      input: {},
+      output: 'x'
+    })
+    yield part({
+      type: 'tool-error',
+      toolCallId: 'ghost',
+      toolName: 'task',
+      input: {},
+      error: new Error('x')
+    })
+    yield part({ type: 'tool-output-denied', toolCallId: 'ghost', toolName: 'task', input: {} })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function assistantMessages(): ChatMessage[] {
   return runtime.messages(sessionId).messages.filter((message) => message.role === 'assistant')
 }
@@ -165,28 +337,8 @@ beforeEach(async () => {
   scripts = []
   turns = []
   toolExecutor = null
-  runtime = new AgentRuntime({
-    userDataPath: directory,
-    workspacePath: path.join(directory, 'workspace'),
-    models: MODELS,
-    send: sink.send,
-    dependencies: {
-      createLanguageModel: () => ({}) as unknown as LanguageModel,
-      createTools: (context) => {
-        toolExecutor = async (value, toolCallId) => {
-          const allowed = await context.askPermission('write', value, 'task', toolCallId)
-          return allowed ? `done:${value}` : 'Permission denied'
-        }
-        return {}
-      },
-      createTurn: (input) => {
-        turns.push(input)
-        const script = scripts.shift()
-        if (!script) throw new Error('No scripted turn')
-        return { stream: script(input) }
-      }
-    }
-  })
+  resumeTurn = null
+  runtime = createRuntime()
   await runtime.init()
   sessionId = (await runtime.createSession()).id
 })
@@ -371,5 +523,320 @@ describe('AgentRuntime', () => {
     expect(finished.event).toMatchObject({ status: 'interrupted' })
     expect(runtime.listSessions()).toEqual([])
     expect(() => runtime.messages(sessionId)).toThrow('SESSION_NOT_FOUND')
+  })
+
+  it('renames sessions and rejects unknown ids', async () => {
+    const renamed = await runtime.renameSession(sessionId, 'New title')
+    expect(renamed.title).toBe('New title')
+    await expect(runtime.renameSession('missing', 'x')).rejects.toThrow('SESSION_NOT_FOUND')
+  })
+
+  it('sets and validates a session model', async () => {
+    const model = { providerId: 'provider-1', modelId: 'model-1' }
+
+    expect((await runtime.setSessionModel(sessionId, model)).model).toEqual(model)
+    await expect(
+      runtime.setSessionModel(sessionId, { providerId: 'other', modelId: 'x' })
+    ).rejects.toThrow('MODEL_NOT_FOUND')
+    await expect(runtime.setSessionModel('missing', model)).rejects.toThrow('SESSION_NOT_FOUND')
+    expect((await runtime.setSessionModel(sessionId, null)).model).toBeNull()
+  })
+
+  it('clears session models that disappear from the config', async () => {
+    await runtime.setSessionModel(sessionId, { providerId: 'provider-1', modelId: 'model-1' })
+    const untouched = (await runtime.createSession()).id
+
+    runtime.setModels({ ...MODELS, models: [] })
+
+    const sessions = runtime.listSessions()
+    expect(sessions.find((session) => session.id === sessionId)?.model).toBeNull()
+    expect(sessions.find((session) => session.id === untouched)?.model).toBeNull()
+  })
+
+  it('validates chat sends', async () => {
+    await expect(runtime.sendChat(sessionId, '   ')).rejects.toThrow('EMPTY_MESSAGE')
+    await expect(runtime.sendChat('missing', 'hi')).rejects.toThrow('SESSION_NOT_FOUND')
+    await expect(
+      runtime.sendChat(sessionId, 'hi', { providerId: 'other', modelId: 'x' })
+    ).rejects.toThrow('MODEL_NOT_FOUND')
+  })
+
+  it('persists a requested model on the session', async () => {
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi', { providerId: 'provider-1', modelId: 'model-1' })
+    await sink.next('run.finished')
+
+    expect(runtime.listSessions()[0].model).toEqual({
+      providerId: 'provider-1',
+      modelId: 'model-1'
+    })
+  })
+
+  it('ignores stop for sessions without a run', () => {
+    expect(() => runtime.stopChat('missing')).not.toThrow()
+  })
+
+  it('rejects replies for unknown permissions', () => {
+    expect(() => runtime.replyPermission('missing', 'once')).toThrow('PERMISSION_NOT_FOUND')
+  })
+
+  it('validates retries', async () => {
+    await expect(runtime.retryChat('missing')).rejects.toThrow('SESSION_NOT_FOUND')
+
+    scripts.push(textScript('done'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    await expect(runtime.retryChat(sessionId)).rejects.toThrow('NOTHING_TO_RETRY')
+  })
+
+  it('rejects retry while a run is active', async () => {
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    await expect(runtime.retryChat(sessionId)).rejects.toThrow('SESSION_BUSY')
+
+    runtime.stopChat(sessionId)
+    await sink.next('run.finished')
+  })
+
+  it('rejects retry when the transcript has no user message', async () => {
+    const seed = new SessionsStore(directory)
+    await seed.init()
+    const seeded = await seed.create()
+    await seed.appendMessage(
+      seeded.id,
+      makeMessage({ role: 'assistant', status: 'error', error: 'boom' })
+    )
+    const other = createRuntime()
+    await other.init()
+
+    await expect(other.retryChat(seeded.id)).rejects.toThrow('NOTHING_TO_RETRY')
+    await other.shutdown()
+  })
+
+  it('resolves sibling permissions when replying always', async () => {
+    scripts.push(parallelToolScript(['a.txt', 'b.txt']))
+
+    await runtime.sendChat(sessionId, 'write')
+    const first = await sink.next('permission.asked')
+    const second = await sink.next('permission.asked')
+    if (first.event.type !== 'permission.asked' || second.event.type !== 'permission.asked') {
+      throw new Error('unexpected event')
+    }
+
+    runtime.replyPermission(first.event.permission.id, 'always')
+    await sink.next('run.finished')
+
+    expect(runtime.permissions()).toEqual([])
+    expect(toolPart('call-1')).toMatchObject({ state: 'completed', output: 'done:a.txt' })
+    expect(toolPart('call-2')).toMatchObject({ state: 'completed', output: 'done:b.txt' })
+  })
+
+  it('leaves permissions of other runs pending when one is stopped', async () => {
+    const otherSession = (await runtime.createSession()).id
+    scripts.push(toolScript(['a.txt']))
+    scripts.push(toolScript(['b.txt']))
+
+    await runtime.sendChat(sessionId, 'write')
+    const first = await sink.next('permission.asked')
+    if (first.event.type !== 'permission.asked') throw new Error('unexpected event')
+    await runtime.sendChat(otherSession, 'write')
+    const second = await sink.next('permission.asked')
+    if (second.event.type !== 'permission.asked') throw new Error('unexpected event')
+
+    runtime.stopChat(sessionId)
+    const stopped = await sink.next('run.finished')
+    expect(stopped.event).toMatchObject({ status: 'interrupted' })
+    expect(runtime.permissions().map((permission) => permission.id)).toEqual([
+      second.event.permission.id
+    ])
+
+    runtime.replyPermission(second.event.permission.id, 'reject')
+    await sink.next('run.finished')
+  })
+
+  it('records reasoning and skips unknown deltas and parts', async () => {
+    scripts.push(richStreamScript())
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(assistantMessages()[0].parts).toEqual([
+      { type: 'reasoning', text: 'think' },
+      { type: 'text', text: 'answer' }
+    ])
+  })
+
+  it('serializes non-string tool output', async () => {
+    scripts.push(
+      toolEventScript({
+        type: 'tool-result',
+        toolCallId: 'call-1',
+        toolName: 'task',
+        input: { value: 'a.txt' },
+        output: { ok: true }
+      })
+    )
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({ state: 'completed', output: '{"ok":true}' })
+  })
+
+  it('marks tool errors with normalized messages', async () => {
+    scripts.push(
+      toolEventScript({
+        type: 'tool-error',
+        toolCallId: 'call-1',
+        toolName: 'task',
+        input: { value: 'a.txt' },
+        error: new Error('401 Unauthorized')
+      })
+    )
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({
+      state: 'failed',
+      error: 'Model authentication failed. Check the provider API key.'
+    })
+  })
+
+  it('marks denied tool outputs', async () => {
+    scripts.push(
+      toolEventScript({
+        type: 'tool-output-denied',
+        toolCallId: 'call-1',
+        toolName: 'task',
+        input: { value: 'a.txt' }
+      })
+    )
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({
+      state: 'denied',
+      error: 'Permission denied by user'
+    })
+  })
+
+  it('settles unfinished tools when the run completes', async () => {
+    scripts.push(unfinishedToolScript())
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({
+      state: 'failed',
+      error: 'Tool call did not finish'
+    })
+  })
+
+  it('appends multiple text deltas', async () => {
+    scripts.push(doubleDeltaScript())
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(assistantMessages()[0].parts).toEqual([{ type: 'text', text: 'ab' }])
+  })
+
+  it('persists while streaming', async () => {
+    vi.useFakeTimers()
+    scripts.push(pausableTextScript())
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+    for (let index = 0; index < 50 && !resumeTurn; index += 1) {
+      await Promise.resolve()
+    }
+    expect(resumeTurn).not.toBeNull()
+
+    vi.advanceTimersByTime(1_000)
+    if (resumeTurn) resumeTurn()
+    resumeTurn = null
+
+    const finished = await sink.next('run.finished')
+    expect(finished.event).toMatchObject({ status: 'completed' })
+  })
+
+  it('settles running tools as interrupted on stop', async () => {
+    scripts.push(stoppableToolScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    runtime.stopChat(sessionId)
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({
+      state: 'failed',
+      error: 'Interrupted by user'
+    })
+  })
+
+  it('settles running tools as failed on errors', async () => {
+    scripts.push(toolCallThenErrorScript('boom'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({
+      state: 'failed',
+      error: 'Tool call failed'
+    })
+  })
+
+  it('ignores tool events for unknown call ids', async () => {
+    scripts.push(orphanToolEventScript())
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(assistantMessages()[0].parts).toEqual([])
+  })
+
+  it('deletes idle sessions', async () => {
+    const idle = (await runtime.createSession()).id
+
+    await runtime.deleteSession(idle)
+
+    expect(runtime.listSessions().map((session) => session.id)).not.toContain(idle)
+  })
+
+  it('rejects pending permissions when a run is stopped', async () => {
+    scripts.push(toolScript(['a.txt']))
+    await runtime.sendChat(sessionId, 'write')
+    await sink.next('permission.asked')
+
+    runtime.stopChat(sessionId)
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'interrupted' })
+    expect(runtime.permissions()).toEqual([])
+    expect(toolPart('call-1')).toMatchObject({ state: 'denied' })
+  })
+
+  it('rejects pending permissions on shutdown across runs', async () => {
+    const other = (await runtime.createSession()).id
+    scripts.push(toolScript(['a.txt']))
+    scripts.push(toolScript(['b.txt']))
+    await runtime.sendChat(sessionId, 'write')
+    await sink.next('permission.asked')
+    await runtime.sendChat(other, 'write')
+    await sink.next('permission.asked')
+
+    await runtime.shutdown()
+    await sink.next('run.finished')
+    await sink.next('run.finished')
+
+    expect(runtime.permissions()).toEqual([])
   })
 })
