@@ -58,7 +58,7 @@ export const THEMES: ThemeMeta[] = [
   }
 ]
 
-export const THEME_IDS: ThemeId[] = ['light', 'dark', 'sunset', 'ink', 'graphite', 'cream', 'mist']
+export const THEME_IDS: ThemeId[] = THEMES.map((theme) => theme.id)
 
 export function isThemePreference(value: string | null): value is ThemePreference {
   return value === 'system' || THEME_IDS.includes(value as ThemeId)
