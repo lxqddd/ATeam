@@ -1,6 +1,7 @@
 import { theme as antdTheme } from 'antd'
 import type { ThemeConfig } from 'antd'
-import type { ResolvedTheme } from '../theme'
+import { themeBase } from '../theme'
+import type { ThemeBase, ThemeId } from '../theme'
 
 interface Palette {
   background: string
@@ -32,6 +33,8 @@ interface Palette {
   btnSecondaryText: string
   disabledBg: string
   disabledText: string
+  switchOff: string
+  switchThumb: string
   success: string
   successSoft: string
   successBorder: string
@@ -56,7 +59,7 @@ interface Palette {
 const FONT_SANS =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, 'Noto Sans SC', 'Noto Sans CJK SC', 'Source Han Sans SC', Roboto, Ubuntu, 'Helvetica Neue', Arial, sans-serif"
 
-const FALLBACK: Record<ResolvedTheme, Palette> = {
+const FALLBACK: Record<ThemeBase, Palette> = {
   light: {
     background: '#faf9f6',
     backgroundSubtle: '#f2f0eb',
@@ -87,6 +90,8 @@ const FALLBACK: Record<ResolvedTheme, Palette> = {
     btnSecondaryText: '#211d19',
     disabledBg: '#edeae3',
     disabledText: '#93867a',
+    switchOff: '#ded8cc',
+    switchThumb: '#ffffff',
     success: '#24684c',
     successSoft: '#e6f1ea',
     successBorder: '#bcdcca',
@@ -137,6 +142,8 @@ const FALLBACK: Record<ResolvedTheme, Palette> = {
     btnSecondaryText: '#e6e6e6',
     disabledBg: '#262626',
     disabledText: '#6b6b6b',
+    switchOff: '#3a3a3a',
+    switchThumb: '#ffffff',
     success: '#6cc59a',
     successSoft: 'rgba(108, 197, 154, 0.14)',
     successBorder: 'rgba(108, 197, 154, 0.36)',
@@ -165,10 +172,11 @@ export function readCssVar(name: string): string {
 }
 
 export function createAntdTheme(
-  resolved: ResolvedTheme,
+  resolved: ThemeId,
   read: (name: string) => string = readCssVar
 ): ThemeConfig {
-  const palette = FALLBACK[resolved]
+  const base = themeBase(resolved)
+  const palette = FALLBACK[base]
   const pick = (variable: string, fallback: string): string => read(variable) || fallback
 
   const controlTokens = {
@@ -182,7 +190,7 @@ export function createAntdTheme(
 
   return {
     cssVar: {},
-    algorithm: resolved === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+    algorithm: base === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
     token: {
       colorPrimary: pick('--accent', palette.accent),
       colorPrimaryHover: pick('--accent-hover', palette.accentHover),
@@ -296,6 +304,14 @@ export function createAntdTheme(
         itemSelectedColor: pick('--foreground', palette.foreground),
         borderRadius: 10,
         borderRadiusSM: 8
+      },
+      Switch: {
+        trackHeight: 20,
+        trackMinWidth: 36,
+        handleSize: 16,
+        colorPrimary: pick('--accent', palette.accent),
+        colorTextQuaternary: pick('--switch-off', palette.switchOff),
+        colorTextLightSolid: pick('--switch-thumb', palette.switchThumb)
       },
       Alert: {
         defaultPadding: '6px 12px',

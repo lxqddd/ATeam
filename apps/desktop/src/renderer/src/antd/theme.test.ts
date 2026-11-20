@@ -47,6 +47,70 @@ describe('createAntdTheme', () => {
     expect(config.token?.colorBgContainer).toBe('#1f1f1f')
   })
 
+  it.each(['dark', 'ink', 'graphite'] as const)(
+    'uses the dark algorithm for the %s theme',
+    (themeId) => {
+      const config = createAntdTheme(themeId, reader({}))
+
+      expect(config.algorithm).toBe(antdTheme.darkAlgorithm)
+    }
+  )
+
+  it.each(['light', 'sunset', 'cream', 'mist'] as const)(
+    'uses the default algorithm for the %s theme',
+    (themeId) => {
+      const config = createAntdTheme(themeId, reader({}))
+
+      expect(config.algorithm).toBe(antdTheme.defaultAlgorithm)
+    }
+  )
+
+  it('selects the fallback palette from the theme base family', () => {
+    const sunset = createAntdTheme('sunset', reader({}))
+    const mist = createAntdTheme('mist', reader({}))
+    const ink = createAntdTheme('ink', reader({}))
+    const graphite = createAntdTheme('graphite', reader({}))
+
+    expect(sunset.token?.colorPrimary).toBe('#9d3f29')
+    expect(sunset.token?.colorBgContainer).toBe('#ffffff')
+    expect(mist.token?.colorPrimary).toBe('#9d3f29')
+    expect(ink.token?.colorPrimary).toBe('#f08a5d')
+    expect(ink.token?.colorBgContainer).toBe('#1f1f1f')
+    expect(graphite.token?.colorPrimary).toBe('#f08a5d')
+    expect(graphite.token?.colorBgContainer).toBe('#1f1f1f')
+  })
+
+  it('maps switch tokens from the theme variables', () => {
+    const config = createAntdTheme(
+      'mist',
+      reader({
+        '--accent': '#4f7182',
+        '--switch-off': '#c9d5da',
+        '--switch-thumb': '#ffffff'
+      })
+    )
+
+    expect(config.components?.Switch).toMatchObject({
+      trackHeight: 20,
+      trackMinWidth: 36,
+      handleSize: 16,
+      colorPrimary: '#4f7182',
+      colorTextQuaternary: '#c9d5da',
+      colorTextLightSolid: '#ffffff'
+    })
+  })
+
+  it('falls back to the base switch palette when variables are missing', () => {
+    expect(createAntdTheme('sunset', reader({})).components?.Switch).toMatchObject({
+      colorTextQuaternary: '#ded8cc',
+      colorTextLightSolid: '#ffffff'
+    })
+    expect(createAntdTheme('ink', reader({})).components?.Switch).toMatchObject({
+      colorTextQuaternary: '#3a3a3a',
+      colorTextLightSolid: '#ffffff'
+    })
+  })
+
   it('reads css variables through getComputedStyle by default', () => {
     const spy = vi.spyOn(window, 'getComputedStyle').mockReturnValue({
       getPropertyValue: (name: string) => (name === '--accent' ? ' #123456 ' : '')
