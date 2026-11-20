@@ -97,6 +97,20 @@ export interface KernelEvent {
   data?: unknown
 }
 
+export type KernelPermissionDecision = 'once' | 'always' | 'reject'
+
+export interface KernelPermission {
+  id: string
+  sessionID: string
+  action: string
+  resources: string[]
+  message?: string
+  command?: string
+  /** ATeam policy verdict; a blocked request cannot be approved. */
+  allowed: boolean
+  reason?: string
+}
+
 export type ProviderKind = 'opencode-go'
 
 export interface ProviderConfig {

@@ -13,6 +13,13 @@ interface Window {
       interrupt(sessionId: string): Promise<void>
       restart(): Promise<import('@ateam/shared').KernelState>
       models(): Promise<import('@ateam/shared').KernelModel[]>
+      permissions(sessionId: string): Promise<import('@ateam/shared').KernelPermission[]>
+      replyPermission(input: {
+        sessionId: string
+        requestId: string
+        decision: import('@ateam/shared').KernelPermissionDecision
+        message?: string
+      }): Promise<void>
       switchModel(sessionId: string, model: { id: string; providerID: string }): Promise<void>
       onEvent(callback: (event: import('@ateam/shared').KernelEvent) => void): () => void
     }

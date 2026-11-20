@@ -150,6 +150,22 @@ const zhCN = {
     name: "项目名称",
   },
 
+  permissions: {
+    title: "需要你的批准：{{action}}",
+    once: "允许一次",
+    always: "始终允许",
+    reject: "拒绝",
+    blocked: "ATeam 策略阻止：{{reason}}",
+    actions: {
+      edit: "修改文件",
+      shell: "执行命令",
+      read: "读取文件",
+      glob: "搜索文件",
+      grep: "搜索内容",
+      webfetch: "访问网络",
+      all: "操作",
+    },
+  },
   settings: {
     provider: {
       title: '模型供应商',

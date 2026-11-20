@@ -87,6 +87,29 @@ void app.whenReady().then(() => {
   )
   ipcMain.handle('kernel:restart', () => kernel?.restart())
   ipcMain.handle('kernel:models', () => kernel?.listModels() ?? [])
+  ipcMain.handle('kernel:permissions', (_event, sessionId: unknown) =>
+    typeof sessionId === 'string' ? (kernel?.listPermissions(sessionId) ?? []) : [],
+  )
+  ipcMain.handle('kernel:reply-permission', (_event, input: unknown) => {
+    const payload = input as
+      | { sessionId?: unknown; requestId?: unknown; decision?: unknown; message?: unknown }
+      | null
+    const decision = payload?.decision
+    if (
+      !payload ||
+      typeof payload.sessionId !== 'string' ||
+      typeof payload.requestId !== 'string' ||
+      (decision !== 'once' && decision !== 'always' && decision !== 'reject')
+    ) {
+      throw new Error('invalid permission payload')
+    }
+    return kernel?.replyPermission(
+      payload.sessionId,
+      payload.requestId,
+      decision,
+      typeof payload.message === 'string' ? payload.message : undefined,
+    )
+  })
   ipcMain.handle('kernel:switch-model', (_event, input: unknown) => {
     const payload = input as
       | { sessionId?: unknown; model?: { id?: unknown; providerID?: unknown } }

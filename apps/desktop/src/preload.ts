@@ -13,6 +13,13 @@ contextBridge.exposeInMainWorld('ateam', {
     interrupt: (sessionId: string) => ipcRenderer.invoke('kernel:interrupt', sessionId),
     restart: () => ipcRenderer.invoke('kernel:restart'),
     models: () => ipcRenderer.invoke('kernel:models'),
+    permissions: (sessionId: string) => ipcRenderer.invoke('kernel:permissions', sessionId),
+    replyPermission: (input: {
+      sessionId: string
+      requestId: string
+      decision: 'once' | 'always' | 'reject'
+      message?: string
+    }) => ipcRenderer.invoke('kernel:reply-permission', input),
     switchModel: (sessionId: string, model: { id: string; providerID: string }) =>
       ipcRenderer.invoke('kernel:switch-model', { sessionId, model }),
     onEvent: (callback: (event: unknown) => void) => {

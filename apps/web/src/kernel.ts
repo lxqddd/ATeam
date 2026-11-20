@@ -4,6 +4,8 @@ import type {
   KernelMessage,
   KernelModel,
   KernelPart,
+  KernelPermission,
+  KernelPermissionDecision,
   KernelSession,
   KernelState,
   KernelToolStatus,
@@ -17,12 +19,14 @@ export interface KernelController {
   activeSession: KernelSession | null
   messages: KernelMessage[]
   streaming: boolean
+  permissions: KernelPermission[]
   loadingMessages: boolean
   sending: boolean
   error: string
   newSession: (title: string) => Promise<void>
   selectSession: (sessionId: string) => void
   switchModel: (model: { id: string; providerID: string }) => Promise<void>
+  replyPermission: (requestId: string, decision: KernelPermissionDecision, message?: string) => Promise<void>
   send: (text: string) => Promise<void>
   interrupt: () => Promise<void>
   restart: () => Promise<void>
@@ -179,6 +183,7 @@ export function useKernel(): KernelController {
   const [sessions, setSessions] = useState<KernelSession[]>([])
   const [models, setModels] = useState<KernelModel[]>([])
   const [live, setLive] = useState<LiveState>(EMPTY_LIVE)
+  const [permissions, setPermissions] = useState<KernelPermission[]>([])
   const [activeSessionId, setActiveSessionId] = useState('')
   const [messages, setMessages] = useState<KernelMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -204,6 +209,19 @@ export function useKernel(): KernelController {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoadingMessages(false)
+    }
+  }, [])
+
+  const refreshPermissions = useCallback(async (sessionId: string) => {
+    const kernel = bridge()
+    if (!kernel || !sessionId) {
+      setPermissions([])
+      return
+    }
+    try {
+      setPermissions(await kernel.permissions(sessionId))
+    } catch {
+      /* keep the last list */
     }
   }, [])
 
@@ -258,6 +276,9 @@ export function useKernel(): KernelController {
         return
       }
       setLive((current) => applyLiveEvent(current, event.type, data))
+      if (event.type.startsWith('permission.')) {
+        void refreshPermissions(activeRef.current)
+      }
       // Deltas arrive in bursts; only durable updates need a snapshot refresh.
       if (event.type.endsWith('.delta')) {
         return
@@ -309,10 +330,12 @@ export function useKernel(): KernelController {
     setLive(EMPTY_LIVE)
     if (activeSessionId) {
       void loadMessages(activeSessionId)
+      void refreshPermissions(activeSessionId)
     } else {
       setMessages([])
+      setPermissions([])
     }
-  }, [activeSessionId, loadMessages])
+  }, [activeSessionId, loadMessages, refreshPermissions])
 
   const switchModel = useCallback(async (model: { id: string; providerID: string }) => {
     const kernel = bridge()
@@ -328,6 +351,27 @@ export function useKernel(): KernelController {
       setError(err instanceof Error ? err.message : String(err))
     }
   }, [])
+
+  const replyPermission = useCallback(
+    async (requestId: string, decision: KernelPermissionDecision, message?: string) => {
+      const kernel = bridge()
+      const sessionId = activeRef.current
+      if (!kernel || !sessionId) return
+      try {
+        await kernel.replyPermission({
+          sessionId,
+          requestId,
+          decision,
+          ...(message ? { message } : {}),
+        })
+        await refreshPermissions(sessionId)
+        setError('')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    },
+    [refreshPermissions],
+  )
 
   const selectSession = useCallback((sessionId: string) => {
     setActiveSessionId(sessionId)
@@ -423,12 +467,14 @@ export function useKernel(): KernelController {
     activeSession,
     messages: displayMessages,
     streaming: live.busy,
+    permissions,
     loadingMessages,
     sending,
     error,
     newSession,
     selectSession,
     switchModel,
+    replyPermission,
     send,
     interrupt,
     restart,

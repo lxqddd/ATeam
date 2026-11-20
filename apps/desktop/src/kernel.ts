@@ -9,6 +9,8 @@ import type {
   KernelMessage,
   KernelModel,
   KernelPart,
+  KernelPermission,
+  KernelPermissionDecision,
   KernelSession,
   KernelState,
   KernelToolStatus,
@@ -16,6 +18,15 @@ import type {
 } from '@ateam/shared' with { "resolution-mode": "import" }
 import { kernelConfig, kernelEnv, providerConfig } from './settings'
 import { activeDirectory } from './projects'
+import { evaluate } from './policy'
+import { audit } from './audit'
+
+// ATeam always asks before a turn changes files or runs a command; the ruleset is merged after the agent's own, so
+// it wins for sessions this app creates.
+const ATEAM_PERMISSIONS = [
+  { action: 'edit', resource: '*', effect: 'ask' as const },
+  { action: 'shell', resource: '*', effect: 'ask' as const },
+]
 
 interface RawSession {
   id: string
@@ -47,6 +58,15 @@ interface RawModel {
   limit?: { context?: number }
 }
 
+interface RawPermission {
+  id: string
+  sessionID?: string
+  action: string
+  resources?: string[]
+  message?: string
+  metadata?: Record<string, unknown>
+}
+
 type EventListener = (event: KernelEvent) => void
 
 export class KernelManager {
@@ -57,6 +77,7 @@ export class KernelManager {
   private eventsAbort: AbortController | null = null
   private listeners = new Set<EventListener>()
   private starting: Promise<KernelState> | null = null
+  private readonly seenPermissions = new Set<string>()
 
   private readonly dataRoot: string
 
@@ -184,9 +205,49 @@ export class KernelManager {
       body: {
         title: title.trim() || 'ATeam',
         location: { directory: this.sessionDirectory() },
+        permissions: ATEAM_PERMISSIONS,
       },
     })
     return mapSession(response.data, this.sessionDirectory())
+  }
+
+  async listPermissions(sessionID: string): Promise<KernelPermission[]> {
+    if (this.state.status !== 'ready') return []
+    const response = await this.request<{ data?: RawPermission[] }>(
+      `/api/session/${encodeURIComponent(sessionID)}/permission`,
+    )
+    return (response.data ?? []).map((raw) => {
+      const command = typeof raw.metadata?.command === 'string' ? raw.metadata.command : undefined
+      const verdict = evaluate(raw.action, raw.resources ?? [], command)
+      if (!this.seenPermissions.has(raw.id)) {
+        this.seenPermissions.add(raw.id)
+        audit({ type: 'permission.asked', sessionID, requestID: raw.id, action: raw.action, resources: raw.resources, command })
+      }
+      return {
+        id: raw.id,
+        sessionID: raw.sessionID ?? sessionID,
+        action: raw.action,
+        resources: raw.resources ?? [],
+        ...(raw.message ? { message: raw.message } : {}),
+        ...(command ? { command } : {}),
+        allowed: verdict.allowed,
+        ...(verdict.reason ? { reason: verdict.reason } : {}),
+      }
+    })
+  }
+
+  async replyPermission(
+    sessionID: string,
+    requestID: string,
+    decision: KernelPermissionDecision,
+    message?: string,
+  ): Promise<void> {
+    await this.request(`/api/session/${encodeURIComponent(sessionID)}/permission/${encodeURIComponent(requestID)}/reply`, {
+      method: 'POST',
+      body: { decision, ...(message ? { message } : {}) },
+    })
+    this.seenPermissions.delete(requestID)
+    audit({ type: 'permission.replied', sessionID, requestID, decision, message })
   }
 
   private sessionDirectory(): string {

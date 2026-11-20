@@ -23,7 +23,7 @@ import {
   ThunderboltFilled,
 } from '@ant-design/icons'
 import { Avatar, Button, Empty, Progress, Select, Tag, Tooltip } from 'antd'
-import { APP_NAME, type KernelMessage, type KernelPart } from '@ateam/shared'
+import { APP_NAME, type KernelMessage, type KernelPart, type KernelPermission, type KernelPermissionDecision } from '@ateam/shared'
 import { useKernel, type KernelController } from './kernel'
 import { SettingsView } from './views/SettingsView'
 import { ProjectsView } from './views/ProjectsView'
@@ -496,6 +496,16 @@ function SessionsView({ kernel }: { kernel: KernelController }) {
           )}
         </div>
 
+        {kernel.permissions.length > 0 && (
+          <div className="shrink-0 px-6">
+            <div className="mx-auto max-w-[760px] space-y-2 pb-2">
+              {kernel.permissions.map((permission) => (
+                <PermissionCard key={permission.id} permission={permission} onReply={kernel.replyPermission} />
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="shrink-0 px-6 pb-4">
           <div className="mx-auto max-w-[760px] rounded-[14px] border border-line bg-surface p-3 shadow-[var(--cd-shadow-md)]">
             <textarea
@@ -556,6 +566,61 @@ function SessionsView({ kernel }: { kernel: KernelController }) {
           />
         </div>
       </aside>
+    </div>
+  )
+}
+
+function PermissionCard({
+  permission,
+  onReply,
+}: {
+  permission: KernelPermission
+  onReply: (requestId: string, decision: KernelPermissionDecision) => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const action = t(`permissions.actions.${permission.action}`, { defaultValue: permission.action })
+  return (
+    <div
+      className={`rounded-lg border px-3 py-2.5 ${
+        permission.allowed ? 'border-accent/40 bg-accent-soft/30' : 'border-danger/40 bg-danger-soft/40'
+      }`}
+      role="alertdialog"
+      aria-label={t('permissions.title', { action })}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-medium text-ink">{t('permissions.title', { action })}</div>
+          {permission.message && <div className="mt-0.5 text-[12px] leading-[18px] text-muted">{permission.message}</div>}
+          {permission.command && (
+            <code className="mt-1 block max-h-[90px] overflow-auto break-all rounded bg-sunken px-2 py-1 font-mono text-[11px] leading-[17px] text-muted">
+              {permission.command}
+            </code>
+          )}
+          {permission.resources.length > 0 && (
+            <div className="mt-1 truncate text-[11px] text-faint" title={permission.resources.join('\n')}>
+              {permission.resources.join(', ')}
+            </div>
+          )}
+          {!permission.allowed && permission.reason && (
+            <div className="mt-1 text-[11px] text-danger">{t('permissions.blocked', { reason: permission.reason })}</div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {permission.allowed && (
+            <>
+              <Button size="small" type="primary" onClick={() => void onReply(permission.id, 'once')}>
+                {t('permissions.once')}
+              </Button>
+              <Button size="small" onClick={() => void onReply(permission.id, 'always')}>
+                {t('permissions.always')}
+              </Button>
+            </>
+          )}
+          <Button size="small" danger onClick={() => void onReply(permission.id, 'reject')}>
+            {t('permissions.reject')}
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

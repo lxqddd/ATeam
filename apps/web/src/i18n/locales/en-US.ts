@@ -152,6 +152,22 @@ const enUS = {
     name: "Project name",
   },
 
+  permissions: {
+    title: "Approval needed: {{action}}",
+    once: "Allow once",
+    always: "Always allow",
+    reject: "Reject",
+    blocked: "Blocked by ATeam policy: {{reason}}",
+    actions: {
+      edit: "edit files",
+      shell: "run commands",
+      read: "read files",
+      glob: "search files",
+      grep: "search contents",
+      webfetch: "fetch the web",
+      all: "act",
+    },
+  },
   settings: {
     provider: {
       title: 'Model provider',
