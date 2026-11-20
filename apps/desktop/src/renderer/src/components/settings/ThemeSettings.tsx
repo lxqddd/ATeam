@@ -1,6 +1,7 @@
-import { useRef } from 'react'
+import { Segmented } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from '../../theme'
+import type { ThemePreference } from '../../theme'
 
 interface ThemePreviewColors {
   background: string
@@ -79,98 +80,29 @@ function ThemePreview({ preview }: { preview: ThemePreviewColors | null }): Reac
   )
 }
 
-function CheckIcon(): React.JSX.Element {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2.75}
-      className="h-3.5 w-3.5"
-      aria-hidden="true"
-    >
-      <path d="m3.5 8.5 3 3 6-7" />
-    </svg>
-  )
-}
-
 function ThemeSettings(): React.JSX.Element {
   const { t } = useTranslation()
   const { preference, setThemePreference } = useTheme()
-  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([])
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
-    const direction =
-      event.key === 'ArrowRight' || event.key === 'ArrowDown'
-        ? 1
-        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-          ? -1
-          : 0
-
-    if (direction === 0) return
-
-    event.preventDefault()
-    const currentIndex = THEME_OPTIONS.findIndex((option) => option.value === preference)
-    const nextIndex = (currentIndex + direction + THEME_OPTIONS.length) % THEME_OPTIONS.length
-    const next = THEME_OPTIONS[nextIndex]
-    if (!next) return
-
-    setThemePreference(next.value)
-    buttonsRef.current[nextIndex]?.focus()
-  }
+  const options = THEME_OPTIONS.map((option) => ({
+    value: option.value,
+    label: (
+      <span className="flex min-h-[30px] items-center gap-2">
+        <ThemePreview preview={option.preview} />
+        <span className="text-label font-medium">{t(option.labelKey)}</span>
+      </span>
+    )
+  }))
 
   return (
-    <div
-      role="radiogroup"
-      aria-label={t('settings.theme')}
-      data-testid="theme-settings"
-      onKeyDown={handleKeyDown}
-      className="grid grid-cols-[repeat(auto-fit,minmax(156px,1fr))] gap-2"
-    >
-      {THEME_OPTIONS.map((option, index) => {
-        const selected = preference === option.value
-        return (
-          <button
-            key={option.value}
-            ref={(element): void => {
-              buttonsRef.current[index] = element
-            }}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            tabIndex={selected ? 0 : -1}
-            data-testid={`theme-${option.value}`}
-            onClick={() => setThemePreference(option.value)}
-            className={[
-              'group flex min-h-[46px] items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
-              selected
-                ? 'border-accent bg-accent-soft shadow-sm'
-                : 'border-border-subtle bg-surface hover:bg-hover'
-            ].join(' ')}
-          >
-            <ThemePreview preview={option.preview} />
-            <span
-              className={[
-                'min-w-0 flex-1 truncate text-label text-foreground',
-                selected ? 'font-semibold' : 'font-medium'
-              ].join(' ')}
-            >
-              {t(option.labelKey)}
-            </span>
-            <span
-              aria-hidden="true"
-              className={[
-                'flex h-4 w-4 flex-none items-center justify-center text-accent-strong transition-all duration-200',
-                selected ? 'scale-100 opacity-100' : 'scale-50 opacity-0'
-              ].join(' ')}
-            >
-              <CheckIcon />
-            </span>
-          </button>
-        )
-      })}
+    <div data-testid="theme-settings">
+      <Segmented
+        block
+        aria-label={t('settings.theme')}
+        options={options}
+        value={preference}
+        onChange={(value) => setThemePreference(value as ThemePreference)}
+      />
     </div>
   )
 }

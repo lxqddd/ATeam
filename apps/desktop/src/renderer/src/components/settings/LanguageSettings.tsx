@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Segmented } from 'antd'
 import { useTranslation } from 'react-i18next'
 import {
   getLanguagePreference,
@@ -6,7 +7,6 @@ import {
   supportedLanguages,
   type LanguagePreference
 } from '../../i18n'
-import SegmentedControl, { type SegmentedOption } from './SegmentedControl'
 
 function LanguageSettings(): React.JSX.Element {
   const { i18n, t } = useTranslation()
@@ -23,12 +23,11 @@ function LanguageSettings(): React.JSX.Element {
     }
   }, [i18n])
 
-  const options: Array<SegmentedOption<LanguagePreference>> = [
-    { value: 'system', label: t('settings.languageSystem'), testId: 'locale-system' },
+  const options: Array<{ value: LanguagePreference; label: string }> = [
+    { value: 'system', label: t('settings.languageSystem') },
     ...supportedLanguages.map((language) => ({
       value: language.code,
-      label: language.label,
-      testId: `locale-${language.code}`
+      label: language.label
     }))
   ]
 
@@ -38,11 +37,11 @@ function LanguageSettings(): React.JSX.Element {
   }
 
   return (
-    <SegmentedControl
-      ariaLabel={t('settings.interfaceLanguage')}
+    <Segmented
+      aria-label={t('settings.interfaceLanguage')}
       options={options}
       value={preference}
-      onChange={handleChange}
+      onChange={(value) => handleChange(value as LanguagePreference)}
     />
   )
 }
