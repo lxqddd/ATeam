@@ -2,7 +2,7 @@ function redact(message: string): string {
   return message
     .replace(/(server password\s+)\S+/gi, '$1[redacted]')
     .replace(/\b(?:sk|oc_sk)-[A-Za-z0-9_-]{12,}/g, '[redacted]')
-    .replace(/Authorization:\s*\S+/gi, 'Authorization: [redacted]')
+    .replace(/Authorization:[^\r\n]*/gi, 'Authorization: [redacted]')
     .slice(0, 1000)
 }
 
