@@ -74,6 +74,9 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
         apiKey: '',
         clearApiKey: false
       }}
+      onValuesChange={(changed) => {
+        if (changed.apiKey) form.setFieldValue('clearApiKey', false)
+      }}
       onFinish={(values) => {
         void handleFinish(values)
       }}

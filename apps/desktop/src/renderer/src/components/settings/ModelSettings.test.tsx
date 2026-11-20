@@ -343,6 +343,28 @@ describe('ModelSettings edge cases', () => {
     )
   })
 
+  it('resets the clear-key flag when a new key is typed', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(within(rowFor('Acme')).getByRole('button', { name: 'Edit provider' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Clear API key' }))
+    await user.type(screen.getByLabelText('API key'), 'sk-new')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
+        id: 'p1',
+        name: 'Acme',
+        type: 'anthropic',
+        baseURL: '',
+        clearApiKey: false,
+        apiKey: 'sk-new'
+      })
+    )
+  })
+
   it('cancels a model form', async () => {
     const user = userEvent.setup()
     render(<ModelSettings />)
