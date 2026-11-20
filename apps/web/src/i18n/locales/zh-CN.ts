@@ -84,6 +84,13 @@ const zhCN = {
         desc: '检查风险、遗漏与边界条件',
       },
     },
+    reasoning: "思考过程",
+    toolStatus: {
+      pending: "等待",
+      running: "执行中",
+      completed: "完成",
+      failed: "失败",
+    },
     composerPlaceholder: '输入消息…',
     modelPlaceholder: '选择模型',
     attach: '添加附件',

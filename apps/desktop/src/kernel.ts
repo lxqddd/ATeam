@@ -8,8 +8,10 @@ import type {
   KernelEvent,
   KernelMessage,
   KernelModel,
+  KernelPart,
   KernelSession,
   KernelState,
+  KernelToolStatus,
   ProviderTestResult,
 } from '@ateam/shared' with { "resolution-mode": "import" }
 import { kernelConfig, kernelEnv, providerConfig } from './settings'
@@ -290,58 +292,63 @@ export class KernelManager {
   private async consumeEvents(): Promise<void> {
     const controller = new AbortController()
     this.eventsAbort = controller
-    try {
-      const response = await fetch(this.baseURL + '/api/event', {
-        headers: authHeader(this.password),
-        signal: controller.signal,
-      })
-      if (!response.ok || !response.body) {
-        throw new Error(`event stream failed (${response.status})`)
-      }
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) {
-          break
+    const signal = controller.signal
+    while (!signal.aborted && this.state.status === 'ready') {
+      try {
+        const response = await fetch(this.baseURL + '/api/event', {
+          headers: authHeader(this.password),
+          signal,
+        })
+        if (!response.ok || !response.body) {
+          throw new Error(`event stream failed (${response.status})`)
         }
-        buffer += decoder.decode(value, { stream: true })
-        let index = buffer.indexOf('\n\n')
-        while (index >= 0) {
-          const chunk = buffer.slice(0, index).replace(/\r/g, '')
-          buffer = buffer.slice(index + 2)
-          for (const line of chunk.split('\n')) {
-            if (!line.startsWith('data:')) {
-              continue
-            }
-            const payload = line.slice(5).trim()
-            if (!payload || payload === '[DONE]') {
-              continue
-            }
-            try {
-              const event = JSON.parse(payload) as KernelEvent
-              if (event.type && event.type !== 'server.connected') {
-                for (const listener of this.listeners) {
-                  listener(event)
-                }
-              }
-            } catch {
-              /* ignore malformed event */
-            }
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) {
+            break
           }
-          index = buffer.indexOf('\n\n')
+          buffer += decoder.decode(value, { stream: true })
+          let index = buffer.indexOf('\n\n')
+          while (index >= 0) {
+            const chunk = buffer.slice(0, index).replace(/\r/g, '')
+            buffer = buffer.slice(index + 2)
+            for (const line of chunk.split('\n')) {
+              if (!line.startsWith('data:')) {
+                continue
+              }
+              const payload = line.slice(5).trim()
+              if (!payload || payload === '[DONE]') {
+                continue
+              }
+              try {
+                const event = JSON.parse(payload) as KernelEvent
+                if (event.type) {
+                  for (const listener of this.listeners) {
+                    listener(event)
+                  }
+                }
+              } catch {
+                /* ignore malformed event */
+              }
+            }
+            index = buffer.indexOf('\n\n')
+          }
+        }
+      } catch (error) {
+        if (!signal.aborted) {
+          console.warn('OpenCode event stream interrupted; reconnecting:', error)
         }
       }
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        // The session APIs keep working; the next renderer poll will still refresh.
-        console.warn('OpenCode event stream stopped:', error)
+      if (signal.aborted) {
+        break
       }
-    } finally {
-      if (this.eventsAbort === controller) {
-        this.eventsAbort = null
-      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    if (this.eventsAbort === controller) {
+      this.eventsAbort = null
     }
   }
 }
@@ -371,70 +378,41 @@ function mapSession(raw: RawSession, fallbackDirectory: string): KernelSession {
 function mapMessage(raw: RawMessage): KernelMessage[] {
   const createdAt = raw.time?.created ? new Date(raw.time.created).toISOString() : undefined
   switch (raw.type) {
-    case 'user':
-      return [{ id: raw.id, role: 'user', text: raw.payload?.text ?? raw.text ?? '', createdAt }]
+    case 'user': {
+      const text = raw.payload?.text ?? raw.text ?? ''
+      return [{ id: raw.id, role: 'user', parts: [{ kind: 'text', text }], text, createdAt }]
+    }
     case 'assistant': {
       if (raw.error?.message && !raw.content?.length) {
         return [
           {
             id: raw.id,
             role: 'error',
+            parts: [{ kind: 'text', text: raw.error.message }],
             text: raw.error.message,
             createdAt,
           },
         ]
       }
-      const messages: KernelMessage[] = []
-      const content = Array.isArray(raw.content) ? raw.content : []
-      const text = content
-        .filter((part): part is { type: string; text?: string } => isRecord(part) && part.type === 'text')
-        .map((part) => part.text ?? '')
-        .filter(Boolean)
+      const parts = mapParts(Array.isArray(raw.content) ? raw.content : [])
+      const text = parts
+        .filter((part): part is Extract<KernelPart, { kind: 'text' }> => part.kind === 'text' && !part.reasoning)
+        .map((part) => part.text)
         .join('\n')
-      if (text) {
-        messages.push({ id: raw.id, role: 'assistant', text, createdAt })
-      }
-      content.forEach((part, index) => {
-        if (!isRecord(part) || part.type !== 'tool') {
-          return
-        }
-        const name = typeof part.name === 'string' ? part.name : 'tool'
-        messages.push({
-          id: `${raw.id}:tool:${index}`,
-          role: 'tool',
-          text: name,
-          toolName: name,
-          createdAt,
-        })
-      })
-      if (messages.length === 0) {
-        messages.push({ id: raw.id, role: 'assistant', text: '', createdAt })
-      }
-      return messages
+      return [{ id: raw.id, role: 'assistant', parts, text, createdAt }]
     }
     case 'idle':
       // The assistant message already carries the same provider error.
       return []
     case 'system':
-    case 'synthetic':
-      return [
-        {
-          id: raw.id,
-          role: 'system',
-          text: raw.text ?? raw.description ?? '',
-          createdAt,
-        },
-      ]
-    case 'shell':
-      return [
-        {
-          id: raw.id,
-          role: 'tool',
-          text: raw.command ?? raw.status ?? 'shell',
-          toolName: 'shell',
-          createdAt,
-        },
-      ]
+    case 'synthetic': {
+      const text = raw.text ?? raw.description ?? ''
+      return [{ id: raw.id, role: 'system', parts: [{ kind: 'text', text }], text, createdAt }]
+    }
+    case 'shell': {
+      const text = raw.command ?? raw.status ?? 'shell'
+      return [{ id: raw.id, role: 'tool', parts: [{ kind: 'text', text }], text, createdAt }]
+    }
     default:
       return []
   }
@@ -442,6 +420,50 @@ function mapMessage(raw: RawMessage): KernelMessage[] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+function mapParts(content: unknown[]): KernelPart[] {
+  const parts: KernelPart[] = []
+  for (const item of content) {
+    if (!isRecord(item)) continue
+    if ((item.type === 'text' || item.type === 'reasoning') && typeof item.text === 'string') {
+      if (!item.text) continue
+      parts.push({
+        kind: 'text',
+        text: item.text,
+        ...(item.type === 'reasoning' ? { reasoning: true } : {}),
+      })
+      continue
+    }
+    if (item.type !== 'tool') continue
+    const state = isRecord(item.state) ? item.state : {}
+    const rawStatus = typeof state.status === 'string' ? state.status : 'pending'
+    const status: KernelToolStatus =
+      rawStatus === 'completed'
+        ? 'completed'
+        : rawStatus === 'failed' || rawStatus === 'error'
+          ? 'failed'
+          : rawStatus === 'running'
+            ? 'running'
+            : 'pending'
+    const input = state.input === undefined ? undefined : JSON.stringify(state.input)
+    const output = Array.isArray(state.content)
+      ? state.content
+          .filter(isRecord)
+          .filter((part) => part.type === 'text' && typeof part.text === 'string')
+          .map((part) => String(part.text))
+          .join('\n')
+      : undefined
+    parts.push({
+      kind: 'tool',
+      id: typeof item.id === 'string' ? item.id : `tool:${parts.length}`,
+      name: typeof item.name === 'string' ? item.name : 'tool',
+      status,
+      ...(input ? { input } : {}),
+      ...(output ? { output } : {}),
+    })
+  }
+  return parts
 }
 
 function waitForServer(child: ChildProcess, timeout: number): Promise<{ password: string }> {

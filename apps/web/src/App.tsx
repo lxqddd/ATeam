@@ -23,7 +23,7 @@ import {
   ThunderboltFilled,
 } from '@ant-design/icons'
 import { Avatar, Button, Empty, Progress, Select, Tag, Tooltip } from 'antd'
-import { APP_NAME, type KernelMessage } from '@ateam/shared'
+import { APP_NAME, type KernelMessage, type KernelPart } from '@ateam/shared'
 import { useKernel, type KernelController } from './kernel'
 import { SettingsView } from './views/SettingsView'
 import { ProjectsView } from './views/ProjectsView'
@@ -433,7 +433,7 @@ function SessionsView({ kernel }: { kernel: KernelController }) {
             </div>
             <div className="flex items-center gap-2">
               <ModelPicker kernel={kernel} />
-              {(kernel.activeSession.busy || kernel.sending) && (
+              {(kernel.activeSession.busy || kernel.sending || kernel.streaming) && (
                 <Button size="small" onClick={() => void kernel.interrupt()}>
                   {t('kernel.stop')}
                 </Button>
@@ -572,16 +572,6 @@ function MessageBubble({ message }: { message: KernelMessage }) {
       </div>
     )
   }
-  if (message.role === 'tool') {
-    return (
-      <div className="flex justify-start">
-        <div className="inline-flex items-center gap-1.5 rounded-md border border-line bg-sunken px-2.5 py-1 font-mono text-[12px] text-muted">
-          <span className="text-faint">{t('sessions.toolCall')}</span>
-          {message.toolName ?? message.text}
-        </div>
-      </div>
-    )
-  }
   if (message.role === 'system') {
     return (
       <div className="flex justify-center">
@@ -600,9 +590,66 @@ function MessageBubble({ message }: { message: KernelMessage }) {
   }
   return (
     <div className="flex justify-start">
-      <div className="max-w-[86%] whitespace-pre-wrap text-[14px] leading-[23px] text-ink">
-        {message.text || '…'}
+      <div className="w-full max-w-[86%] space-y-2">
+        {message.parts.map((part, index) =>
+          part.kind === 'tool' ? (
+            <ToolCard key={part.id || index} part={part} />
+          ) : part.reasoning ? (
+            <details key={index} className="rounded-md border border-line-subtle bg-sunken/60 px-2.5 py-1.5">
+              <summary className="cursor-pointer select-none text-[11px] text-faint">
+                {t('sessions.reasoning')}
+              </summary>
+              <div className="mt-1 whitespace-pre-wrap text-[12px] leading-[18px] text-muted">{part.text}</div>
+            </details>
+          ) : (
+            <div key={index} className="whitespace-pre-wrap text-[14px] leading-[23px] text-ink">
+              {part.text}
+            </div>
+          ),
+        )}
+        {message.streaming && (
+          <span className="inline-block h-4 w-1.5 animate-pulse rounded-sm bg-accent align-middle" />
+        )}
+        {message.parts.length === 0 && !message.streaming && (
+          <div className="text-[14px] leading-[23px] text-ink">…</div>
+        )}
       </div>
+    </div>
+  )
+}
+
+function ToolCard({ part }: { part: Extract<KernelPart, { kind: 'tool' }> }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const color =
+    part.status === 'failed' ? 'text-danger' : part.status === 'completed' ? 'text-success' : 'text-accent'
+  const output = part.output && part.output.length > 4000 ? `${part.output.slice(0, 4000)}\n…` : part.output
+  return (
+    <div className="rounded-md border border-line bg-sunken px-2.5 py-1.5">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 text-left"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="font-mono text-[12px] text-muted">{part.name}</span>
+        <span className={`text-[11px] ${color}`}>{t(`sessions.toolStatus.${part.status}`)}</span>
+        <span className="ml-auto text-[11px] text-faint">{open ? '收起' : '详情'}</span>
+      </button>
+      {open && (part.input || output) && (
+        <div className="mt-2 space-y-1.5 border-t border-line-subtle pt-2">
+          {part.input && (
+            <pre className="max-h-[160px] overflow-auto whitespace-pre-wrap break-all text-[11px] leading-[17px] text-muted">
+              {part.input}
+            </pre>
+          )}
+          {output && (
+            <pre className="max-h-[240px] overflow-auto whitespace-pre-wrap break-all text-[11px] leading-[17px] text-muted">
+              {output}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   )
 }

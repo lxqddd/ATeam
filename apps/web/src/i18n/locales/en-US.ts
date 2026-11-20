@@ -85,6 +85,13 @@ const enUS = {
         desc: 'Check for risks, omissions and edge cases',
       },
     },
+    reasoning: "Reasoning",
+    toolStatus: {
+      pending: "pending",
+      running: "running",
+      completed: "done",
+      failed: "failed",
+    },
     composerPlaceholder: 'Type a message…',
     modelPlaceholder: 'Select model',
     attach: 'Attach',

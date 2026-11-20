@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { KernelEvent, KernelMessage, KernelModel, KernelSession, KernelState } from '@ateam/shared'
+import type {
+  KernelEvent,
+  KernelMessage,
+  KernelModel,
+  KernelPart,
+  KernelSession,
+  KernelState,
+  KernelToolStatus,
+} from '@ateam/shared'
 
 export interface KernelController {
   state: KernelState
@@ -8,6 +16,7 @@ export interface KernelController {
   activeSessionId: string
   activeSession: KernelSession | null
   messages: KernelMessage[]
+  streaming: boolean
   loadingMessages: boolean
   sending: boolean
   error: string
@@ -22,10 +31,154 @@ export interface KernelController {
 
 const bridge = () => window.ateam?.kernel
 
+interface LiveTool {
+  id: string
+  name: string
+  status: KernelToolStatus
+  input?: string
+  output?: string
+}
+
+interface LiveState {
+  messageId: string
+  text: string
+  reasoning: string
+  tools: LiveTool[]
+  busy: boolean
+}
+
+const EMPTY_LIVE: LiveState = { messageId: '', text: '', reasoning: '', tools: [], busy: false }
+
+function toolContent(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined
+  const text = value
+    .filter((item): item is { type?: unknown; text?: unknown } => typeof item === 'object' && item !== null)
+    .filter((item) => item.type === 'text' && typeof item.text === 'string')
+    .map((item) => String(item.text))
+    .join('\n')
+  return text || undefined
+}
+
+function upsertTool(state: LiveState, tool: LiveTool): LiveState {
+  const existing = state.tools.findIndex((item) => item.id === tool.id)
+  return {
+    ...state,
+    tools:
+      existing >= 0
+        ? state.tools.map((item, index) => (index === existing ? { ...item, ...tool } : item))
+        : [...state.tools, tool],
+  }
+}
+
+function updateTool(state: LiveState, id: string, patch: Partial<LiveTool>): LiveState {
+  const existing = state.tools.find((item) => item.id === id)
+  if (!existing) return upsertTool(state, { id, name: 'tool', status: 'running', ...patch })
+  return {
+    ...state,
+    tools: state.tools.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+  }
+}
+
+function applyLiveEvent(state: LiveState, type: string, data: Record<string, unknown>): LiveState {
+  const messageId = typeof data.assistantMessageID === 'string' ? data.assistantMessageID : state.messageId
+  // A new assistant message starts a fresh text/tool buffer; earlier parts live in the snapshot.
+  const base: LiveState =
+    messageId !== state.messageId ? { ...EMPTY_LIVE, busy: state.busy, messageId } : state
+  switch (type) {
+    case 'session.execution.started':
+      return { ...EMPTY_LIVE, busy: true }
+    case 'session.execution.succeeded':
+    case 'session.execution.failed':
+    case 'session.execution.interrupted':
+      return { ...state, busy: false }
+    case 'session.text.started':
+      return { ...base, text: '' }
+    case 'session.text.delta':
+      return { ...base, text: base.text + String(data.delta ?? '') }
+    case 'session.reasoning.delta':
+      return { ...base, reasoning: base.reasoning + String(data.delta ?? '') }
+    case 'session.tool.input.started':
+      return upsertTool(base, {
+        id: String(data.id ?? ''),
+        name: String(data.name ?? 'tool'),
+        status: 'running',
+      })
+    case 'session.tool.input.ended':
+      return updateTool(base, String(data.id ?? ''), { input: String(data.text ?? '') })
+    case 'session.tool.called':
+      return updateTool(base, String(data.id ?? ''), {
+        status: 'running',
+        ...(data.input === undefined ? {} : { input: JSON.stringify(data.input) }),
+      })
+    case 'session.tool.success':
+      return updateTool(base, String(data.id ?? ''), {
+        status: 'completed',
+        ...(toolContent(data.content) ? { output: toolContent(data.content) } : {}),
+      })
+    case 'session.tool.failed':
+      return updateTool(base, String(data.id ?? ''), {
+        status: 'failed',
+        ...(toolContent(data.content) ? { output: toolContent(data.content) } : {}),
+      })
+    default:
+      return state
+  }
+}
+
+function mergeLive(messages: KernelMessage[], live: LiveState): KernelMessage[] {
+  const parts: KernelPart[] = []
+  if (live.reasoning) parts.push({ kind: 'text', text: live.reasoning, reasoning: true })
+  if (live.text) parts.push({ kind: 'text', text: live.text })
+  for (const tool of live.tools) {
+    parts.push({
+      kind: 'tool',
+      id: tool.id,
+      name: tool.name,
+      status: tool.status,
+      ...(tool.input ? { input: tool.input } : {}),
+      ...(tool.output ? { output: tool.output } : {}),
+    })
+  }
+  if (!live.messageId || parts.length === 0) return messages
+  const index = messages.findIndex((message) => message.id === live.messageId)
+  if (index < 0) {
+    return [
+      ...messages,
+      { id: live.messageId, role: 'assistant', parts, text: live.text, streaming: live.busy },
+    ]
+  }
+  const existing = messages[index]
+  if (!existing) return messages
+  const snapshotText = existing.parts
+    .filter((part): part is Extract<KernelPart, { kind: 'text' }> => part.kind === 'text' && !part.reasoning)
+    .map((part) => part.text)
+    .join('\n')
+  const text = live.text.length >= snapshotText.length ? live.text : snapshotText
+  const reasoning =
+    live.reasoning ||
+    existing.parts
+      .filter((part): part is Extract<KernelPart, { kind: 'text' }> => part.kind === 'text' && Boolean(part.reasoning))
+      .map((part) => part.text)
+      .join('\n')
+  const tools = new Map(
+    existing.parts
+      .filter((part): part is Extract<KernelPart, { kind: 'tool' }> => part.kind === 'tool')
+      .map((part) => [part.id, part] as const),
+  )
+  for (const tool of live.tools) tools.set(tool.id, { kind: 'tool', ...tool })
+  const mergedParts: KernelPart[] = []
+  if (reasoning) mergedParts.push({ kind: 'text', text: reasoning, reasoning: true })
+  if (text) mergedParts.push({ kind: 'text', text })
+  mergedParts.push(...tools.values())
+  const merged: KernelMessage = { ...existing, parts: mergedParts, text, streaming: live.busy }
+  return messages.map((message, position) => (position === index ? merged : message))
+}
+
 export function useKernel(): KernelController {
   const [state, setState] = useState<KernelState>({ status: 'stopped' })
   const [sessions, setSessions] = useState<KernelSession[]>([])
   const [models, setModels] = useState<KernelModel[]>([])
+  const [live, setLive] = useState<LiveState>(EMPTY_LIVE)
   const [activeSessionId, setActiveSessionId] = useState('')
   const [messages, setMessages] = useState<KernelMessage[]>([])
   const [loadingMessages, setLoadingMessages] = useState(false)
@@ -93,10 +246,22 @@ export function useKernel(): KernelController {
       return
     }
     void refresh()
+    // Safety net for missed events; streams drive the UI between these ticks.
     const timer = window.setInterval(() => {
       void refresh()
-    }, 2000)
+    }, 10_000)
     const unsubscribe = kernel.onEvent((event: KernelEvent) => {
+      const data =
+        event.data && typeof event.data === 'object' ? (event.data as Record<string, unknown>) : {}
+      const sessionID = typeof data.sessionID === 'string' ? data.sessionID : undefined
+      if (sessionID && activeRef.current && sessionID !== activeRef.current) {
+        return
+      }
+      setLive((current) => applyLiveEvent(current, event.type, data))
+      // Deltas arrive in bursts; only durable updates need a snapshot refresh.
+      if (event.type.endsWith('.delta')) {
+        return
+      }
       if (refreshTimer.current) {
         window.clearTimeout(refreshTimer.current)
       }
@@ -107,7 +272,7 @@ export function useKernel(): KernelController {
           void loadMessages(current)
         }
         void kernel.sessions().then(setSessions).catch(() => undefined)
-      }, 300)
+      }, 150)
     })
     return () => {
       window.clearInterval(timer)
@@ -141,6 +306,7 @@ export function useKernel(): KernelController {
   }, [state.status])
 
   useEffect(() => {
+    setLive(EMPTY_LIVE)
     if (activeSessionId) {
       void loadMessages(activeSessionId)
     } else {
@@ -247,13 +413,16 @@ export function useKernel(): KernelController {
     [activeSessionId, sessions],
   )
 
+  const displayMessages = useMemo(() => mergeLive(messages, live), [messages, live])
+
   return {
     state,
     sessions,
     models,
     activeSessionId,
     activeSession,
-    messages,
+    messages: displayMessages,
+    streaming: live.busy,
     loadingMessages,
     sending,
     error,
