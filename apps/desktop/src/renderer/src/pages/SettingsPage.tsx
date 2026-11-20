@@ -46,9 +46,10 @@ function SettingsPage(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden" data-testid="settings-page">
-      <div className="flex w-[216px] flex-none flex-col border-r border-border-subtle px-2 py-3">
+      <nav className="settings-nav flex w-[216px] flex-none flex-col gap-0.5 overflow-y-auto border-r border-pane-divider px-2 py-3">
         <Menu
           mode="inline"
+          inlineIndent={8}
           aria-label={t('settings.title')}
           selectedKeys={[section]}
           onClick={({ key }) => selectSection(key as SettingsSection)}
@@ -57,28 +58,32 @@ function SettingsPage(): React.JSX.Element {
             label: t(item.labelKey)
           }))}
         />
-      </div>
+      </nav>
       <section className="min-w-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-5xl px-6 py-7 lg:px-10">
-          <header className="mb-6">
+        <div className="mx-auto w-full max-w-[1240px] px-10 pt-7">
+          <header className="mb-5">
             <h1 className="text-display font-semibold tracking-[-0.01em] text-foreground">
               {t(activeSection.labelKey)}
             </h1>
-            <p className="mt-1.5 text-label text-muted">{t(activeSection.descriptionKey)}</p>
+            <p className="mt-1.5 text-label leading-[1.6] text-muted">
+              {t(activeSection.descriptionKey)}
+            </p>
           </header>
-          {section === 'appearance' && (
-            <SettingsGroup title={t('settings.theme')}>
-              <ThemeSettings />
-            </SettingsGroup>
-          )}
-          {section === 'language' && (
-            <SettingsGroup
-              title={t('settings.interfaceLanguage')}
-              description={t('settings.interfaceLanguageDescription')}
-              actions={<LanguageSettings />}
-            />
-          )}
-          {section === 'models' && <ModelSettings />}
+          <div className="flex flex-col gap-4">
+            {section === 'appearance' && (
+              <SettingsGroup title={t('settings.theme')}>
+                <ThemeSettings />
+              </SettingsGroup>
+            )}
+            {section === 'language' && (
+              <SettingsGroup
+                title={t('settings.interfaceLanguage')}
+                description={t('settings.interfaceLanguageDescription')}
+                actions={<LanguageSettings />}
+              />
+            )}
+            {section === 'models' && <ModelSettings />}
+          </div>
         </div>
       </section>
     </div>

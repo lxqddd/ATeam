@@ -37,12 +37,14 @@ function LanguageSettings(): React.JSX.Element {
   }
 
   return (
-    <Segmented
-      aria-label={t('settings.interfaceLanguage')}
-      options={options}
-      value={preference}
-      onChange={(value) => handleChange(value as LanguagePreference)}
-    />
+    <div className="settings-language">
+      <Segmented
+        aria-label={t('settings.interfaceLanguage')}
+        options={options}
+        value={preference}
+        onChange={(value) => handleChange(value as LanguagePreference)}
+      />
+    </div>
   )
 }
 

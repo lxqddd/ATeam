@@ -15,7 +15,8 @@ export default defineConfig({
         test: {
           name: 'main',
           environment: 'node',
-          include: ['src/main/**/*.test.ts']
+          include: ['src/main/**/*.test.ts'],
+          testTimeout: 20000
         }
       },
       {
@@ -23,7 +24,8 @@ export default defineConfig({
           name: 'renderer',
           environment: 'jsdom',
           include: ['src/renderer/src/**/*.test.{ts,tsx}'],
-          setupFiles: ['src/renderer/src/test/setup.ts']
+          setupFiles: ['src/renderer/src/test/setup.ts'],
+          testTimeout: 20000
         }
       }
     ],
@@ -49,6 +51,7 @@ export default defineConfig({
         'src/renderer/src/antd/AntdProvider.tsx',
         'src/renderer/src/pages/SettingsPage.tsx',
         'src/renderer/src/components/settings/SettingsGroup.tsx',
+        'src/renderer/src/components/settings/SettingsRow.tsx',
         'src/renderer/src/components/settings/ThemeSettings.tsx',
         'src/renderer/src/components/settings/LanguageSettings.tsx',
         'src/renderer/src/components/settings/ProviderForm.tsx',

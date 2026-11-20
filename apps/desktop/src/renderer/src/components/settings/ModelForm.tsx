@@ -50,8 +50,8 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
 
   if (providers.length === 0) {
     return (
-      <div className="mb-3 rounded-md border border-border-subtle bg-background-subtle p-3.5">
-        <p className="text-label text-muted">{t('settings.providerRequired')}</p>
+      <div className="settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5">
+        <p className="m-0 text-label text-muted">{t('settings.providerRequired')}</p>
         <div className="mt-3 flex justify-end">
           <Button onClick={onCancel}>{t('settings.cancel')}</Button>
         </div>
@@ -62,7 +62,7 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
   return (
     <div
       ref={containerRef}
-      className="mb-3 rounded-md border border-border-subtle bg-background-subtle p-3.5"
+      className="settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5"
     >
       <Form
         form={form}
@@ -77,7 +77,7 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
           void handleFinish(values)
         }}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-x-3 sm:grid-cols-2">
           <Form.Item name="providerId" label={t('settings.modelProvider')}>
             <Select
               disabled={Boolean(model)}
@@ -108,7 +108,7 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
           </div>
         )}
 
-        <div className="mt-3.5 flex items-center justify-end gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
           <Button onClick={onCancel} disabled={saving}>
             {t('settings.cancel')}
           </Button>

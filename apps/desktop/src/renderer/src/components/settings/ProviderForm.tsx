@@ -64,7 +64,7 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
   }
 
   return (
-    <div className="mb-3 rounded-md border border-border-subtle bg-background-subtle p-3.5">
+    <div className="settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5">
       <Form
         form={form}
         name="provider"
@@ -83,7 +83,7 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
           void handleFinish(values)
         }}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-x-3 sm:grid-cols-2">
           <Form.Item
             name="name"
             label={t('settings.providerName')}
@@ -151,7 +151,7 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
           </div>
         )}
 
-        <div className="mt-3.5 flex items-center justify-end gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
           <Button onClick={onCancel} disabled={saving}>
             {t('settings.cancel')}
           </Button>

@@ -16,6 +16,7 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 20px;
+  --radius-full: 9999px;
 
   --text-caption: 12px;
   --text-caption--line-height: 18px;
@@ -45,18 +46,55 @@
   --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-pressed: var(--accent-pressed);
   --color-accent-strong: var(--accent-strong);
   --color-accent-soft: var(--accent-soft);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-2: var(--accent-2);
+  --color-accent-3: var(--accent-3);
+  --color-user-msg: var(--user-msg);
+  --color-input-bg: var(--input-bg);
+  --color-btn-secondary-bg: var(--btn-secondary-bg);
+  --color-btn-secondary-border: var(--btn-secondary-border);
+  --color-btn-secondary-text: var(--btn-secondary-text);
+  --color-disabled-bg: var(--disabled-bg);
+  --color-disabled-text: var(--disabled-text);
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-selected: var(--selected);
   --color-selected-foreground: var(--selected-foreground);
   --color-focus: var(--focus);
   --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-border: var(--success-border);
   --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-border: var(--warning-border);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-border: var(--danger-border);
+  --color-danger-fill: var(--danger-fill);
+  --color-text-on-danger: var(--text-on-danger);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-border: var(--info-border);
+  --color-neutral: var(--neutral);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-neutral-border: var(--neutral-border);
+  --color-overlay: var(--overlay);
+  --color-pane-divider: var(--pane-divider);
+  --color-nav-bg: var(--nav-bg);
+  --color-nav-pressed: var(--nav-pressed);
+  --color-settings-card-bg: var(--settings-card-bg);
   --color-chat-user: var(--chat-user-bg);
+}
+
+:root {
+  --control-h-xs: 24px;
+  --control-h-sm: 28px;
+  --control-h-ms: 32px;
+  --control-h-md: 36px;
+  --control-h-lg: 40px;
 }
 
 :root,
@@ -77,16 +115,48 @@
   --focus: #2454a4;
   --accent: #9d3f29;
   --accent-hover: #85331f;
+  --accent-pressed: #6e2a19;
   --accent-strong: #9d3f29;
   --accent-soft: rgb(157 63 41 / 0.1);
   --accent-foreground: #ffffff;
+  --accent-2: #c97d62;
+  --accent-3: #e0b9a6;
+  --accent-rgb: 157, 63, 41;
+  --user-msg: #f7e6de;
   --hover: #f2eee6;
   --active: #e8e2d6;
   --selected: #f2dcd1;
   --selected-foreground: #9d3f29;
+  --input-bg: #ffffff;
+  --btn-secondary-bg: #ffffff;
+  --btn-secondary-border: #e5e0d7;
+  --btn-secondary-text: #211d19;
+  --disabled-bg: #edeae3;
+  --disabled-text: #93867a;
   --success: #24684c;
+  --success-soft: #e6f1ea;
+  --success-border: #bcdcca;
   --warning: #7c4a00;
+  --warning-soft: #f8edd5;
+  --warning-border: #ecd49f;
   --danger: #a33130;
+  --danger-soft: #fae9e7;
+  --danger-border: #eec0bb;
+  --danger-fill: #a33130;
+  --text-on-danger: #ffffff;
+  --info: #2d5893;
+  --info-soft: #e7eef9;
+  --info-border: #c2d4ec;
+  --neutral: #625951;
+  --neutral-soft: #f2f0eb;
+  --neutral-border: #e5e0d7;
+  --overlay: rgb(0 0 0 / 0.3);
+  --pane-divider: color-mix(in srgb, var(--border) 55%, transparent);
+  --nav-bg: color-mix(in srgb, var(--hover), var(--selected));
+  --nav-pressed: color-mix(in srgb, var(--selected) 70%, var(--hover));
+  --settings-card-bg: var(--surface-raised);
+  --highlight-inset: inset 0 1px 0 rgb(255 255 255 / 0.78);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 0 0 1px rgb(0 0 0 / 0.02);
   --chat-user-bg: #f3e9de;
 }
 
@@ -107,16 +177,44 @@
   --focus: #f08a5d;
   --accent: #f08a5d;
   --accent-hover: #ffa47e;
+  --accent-pressed: #d96f45;
   --accent-strong: #ffa47e;
   --accent-soft: rgb(240 138 93 / 0.14);
   --accent-foreground: #241711;
+  --accent-2: #ffa47e;
+  --accent-3: #ffc0a3;
+  --accent-rgb: 240, 138, 93;
+  --user-msg: #262626;
   --hover: #262626;
   --active: #303030;
   --selected: #2e2e2e;
   --selected-foreground: #ffffff;
+  --input-bg: #1a1a1a;
+  --btn-secondary-bg: #1f1f1f;
+  --btn-secondary-border: #333333;
+  --btn-secondary-text: #e6e6e6;
+  --disabled-bg: #262626;
+  --disabled-text: #6b6b6b;
   --success: #6cc59a;
+  --success-soft: rgb(108 197 154 / 0.14);
+  --success-border: rgb(108 197 154 / 0.36);
   --warning: #e5b567;
+  --warning-soft: rgb(229 181 103 / 0.14);
+  --warning-border: rgb(229 181 103 / 0.36);
   --danger: #f29a8e;
+  --danger-soft: rgb(242 154 142 / 0.14);
+  --danger-border: rgb(242 154 142 / 0.36);
+  --danger-fill: #b9382f;
+  --text-on-danger: #ffffff;
+  --info: #94bfd3;
+  --info-soft: rgb(148 191 211 / 0.14);
+  --info-border: rgb(148 191 211 / 0.36);
+  --neutral: #a6a6a6;
+  --neutral-soft: #262626;
+  --neutral-border: #3a3a3a;
+  --overlay: rgb(0 0 0 / 0.55);
+  --highlight-inset: inset 0 1px 0 rgb(242 242 242 / 0.06);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 0 0 1px rgb(242 242 242 / 0.03);
   --chat-user-bg: #332b25;
 }
 
@@ -342,4 +440,111 @@ html[data-platform]:not([data-platform='darwin']) .app-titlebar {
 .chat-markdown img {
   max-width: 100%;
   border-radius: 8px;
+}
+
+/*
+ * Settings surface: antd roots are styled through ConfigProvider tokens; these
+ * scoped, unlayered rules only cover the few structural details antd tokens do
+ * not expose (and must win over antd's runtime CSS).
+ */
+.settings-nav .ant-menu {
+  background: transparent;
+}
+
+.settings-nav .ant-menu-item.ant-menu-item-selected {
+  font-weight: 600;
+}
+
+.settings-language .ant-segmented {
+  border: 1px solid var(--border);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.settings-language .ant-segmented .ant-segmented-item-label {
+  font-weight: 500;
+}
+
+.settings-language .ant-segmented .ant-segmented-item-selected {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.theme-choices.ant-radio-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 156px), 1fr));
+  gap: 8px;
+}
+
+.theme-choices .ant-radio-wrapper {
+  position: relative;
+  width: 100%;
+  margin-inline-end: 0;
+}
+
+/*
+ * Hide the radio circle but keep the native input in the accessibility tree
+ * (display: none would remove the radio role) and keyboard focusable.
+ */
+.theme-choices .ant-radio-wrapper .ant-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.theme-choices .ant-radio-wrapper .ant-radio-label {
+  display: block;
+  width: 100%;
+  padding-inline-start: 0;
+}
+
+.theme-choices .ant-radio-wrapper:has(.ant-radio-input:focus-visible) .theme-choice {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.theme-choice-selected {
+  border-color: var(--accent);
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.095),
+    rgba(var(--accent-rgb), 0.03)
+  );
+  box-shadow:
+    0 0 0 1px rgba(var(--accent-rgb), 0.24),
+    var(--shadow-sm),
+    var(--highlight-inset);
+}
+
+.theme-choice-selected:hover {
+  border-color: var(--accent);
+  background: linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.12),
+    rgba(var(--accent-rgb), 0.045)
+  );
+}
+
+.settings-group__rows > .settings-row + .settings-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.settings-group__rows > :not(.settings-row) + *,
+.settings-group__rows > * + :not(.settings-row) {
+  margin-top: 8px;
+}
+
+.settings-list > .settings-list-row + .settings-list-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.settings-form .ant-form-item-label > label {
+  font-weight: 500;
+}
+
+.settings-form .ant-form-item-extra,
+.settings-form .ant-form-item-explain-error {
+  font-size: 12px;
 }
