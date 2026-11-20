@@ -453,4 +453,16 @@ describe('ModelSettings edge cases', () => {
     expect(await screen.findByText('https://api.example.com')).toBeInTheDocument()
     expect(screen.getByText('No key')).toBeInTheDocument()
   })
+
+  it('validates required provider fields', async () => {
+    const user = userEvent.setup()
+    render(<ModelSettings />)
+    await screen.findAllByText('Acme')
+
+    await user.click(screen.getByRole('button', { name: '+ Add provider' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Name is required.')).toBeInTheDocument()
+    expect(mock.api.models.addProvider).not.toHaveBeenCalled()
+  })
 })

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useId } from 'react'
+import { Alert, Button, Checkbox, Form, Input, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import type {
   ProviderCreateInput,
@@ -17,41 +17,42 @@ interface ProviderFormProps {
   onCancel: () => void
 }
 
-const inputClass =
-  'h-9 w-full rounded-md border border-border bg-surface px-3 text-body text-foreground placeholder:text-subtle focus-visible:border-accent-strong'
+interface ProviderFormValues {
+  name: string
+  type: ProviderType
+  baseURL?: string
+  apiKey?: string
+  clearApiKey?: boolean
+}
 
 function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): React.JSX.Element {
   const { t } = useTranslation()
-  const prefix = useId()
-  const [name, setName] = useState(provider?.name ?? '')
-  const [type, setType] = useState<ProviderType>(provider?.type ?? 'anthropic')
-  const [baseURL, setBaseURL] = useState(provider?.baseURL ?? '')
-  const [apiKey, setApiKey] = useState('')
-  const [clearApiKey, setClearApiKey] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [form] = Form.useForm<ProviderFormValues>()
+  const type = Form.useWatch('type', form) ?? provider?.type ?? 'anthropic'
+  const apiKey = Form.useWatch('apiKey', form) ?? ''
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault()
+  async function handleFinish(values: ProviderFormValues): Promise<void> {
     setSaving(true)
     setError(null)
     try {
       if (provider) {
         const input: ProviderUpdateInput = {
           id: provider.id,
-          name,
-          type,
-          baseURL: baseURL.trim(),
-          clearApiKey,
-          apiKey: apiKey.trim() || undefined
+          name: values.name,
+          type: values.type,
+          baseURL: values.baseURL?.trim() ?? '',
+          clearApiKey: values.clearApiKey ?? false,
+          apiKey: values.apiKey?.trim() || undefined
         }
         await onSubmit(input)
       } else {
         const input: ProviderCreateInput = {
-          name,
-          type,
-          baseURL: baseURL.trim() || undefined,
-          apiKey: apiKey.trim() || undefined
+          name: values.name,
+          type: values.type,
+          baseURL: values.baseURL?.trim() || undefined,
+          apiKey: values.apiKey?.trim() || undefined
         }
         await onSubmit(input)
       }
@@ -63,118 +64,94 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
   }
 
   return (
-    <form
-      onSubmit={(event) => {
-        void handleSubmit(event)
+    <Form
+      form={form}
+      layout="vertical"
+      initialValues={{
+        name: provider?.name ?? '',
+        type: provider?.type ?? 'anthropic',
+        baseURL: provider?.baseURL ?? '',
+        apiKey: '',
+        clearApiKey: false
+      }}
+      onFinish={(values) => {
+        void handleFinish(values)
       }}
       className="mb-3 rounded-md border border-border-subtle bg-background-subtle p-3.5"
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={`${prefix}-name`} className="text-label font-medium text-foreground">
-            {t('settings.providerName')}
-          </label>
-          <input
-            id={`${prefix}-name`}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t('settings.providerNamePlaceholder')}
-            className={inputClass}
-            required
-            autoFocus
+        <Form.Item
+          name="name"
+          label={t('settings.providerName')}
+          rules={[{ required: true, message: t('settings.nameRequired') }]}
+        >
+          <Input placeholder={t('settings.providerNamePlaceholder')} autoFocus />
+        </Form.Item>
+        <Form.Item name="type" label={t('settings.providerType')}>
+          <Select
+            options={PROVIDER_TYPES.map((providerType) => ({
+              value: providerType,
+              label: t(`providerTypes.${providerType}`)
+            }))}
           />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={`${prefix}-type`} className="text-label font-medium text-foreground">
-            {t('settings.providerType')}
-          </label>
-          <select
-            id={`${prefix}-type`}
-            value={type}
-            onChange={(event) => setType(event.target.value as ProviderType)}
-            className={inputClass}
+        </Form.Item>
+        <div className="sm:col-span-2">
+          <Form.Item
+            name="baseURL"
+            label={t('settings.baseURL')}
+            rules={[
+              ...(type === 'openai-compatible'
+                ? [{ required: true, message: t('settings.baseURLRequired') }]
+                : []),
+              { type: 'url', message: t('settings.invalidBaseURL') }
+            ]}
+            extra={t('settings.baseURLHint')}
           >
-            {PROVIDER_TYPES.map((providerType) => (
-              <option key={providerType} value={providerType}>
-                {t(`providerTypes.${providerType}`)}
-              </option>
-            ))}
-          </select>
+            <Input placeholder={t('settings.baseURLPlaceholder')} />
+          </Form.Item>
         </div>
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label htmlFor={`${prefix}-base-url`} className="text-label font-medium text-foreground">
-            {t('settings.baseURL')}
-          </label>
-          <input
-            id={`${prefix}-base-url`}
-            value={baseURL}
-            onChange={(event) => setBaseURL(event.target.value)}
-            placeholder={t('settings.baseURLPlaceholder')}
-            className={inputClass}
-            type="url"
-            required={type === 'openai-compatible'}
-          />
-          <p className="text-caption text-muted">{t('settings.baseURLHint')}</p>
-        </div>
-        <div className="flex flex-col gap-1.5 sm:col-span-2">
-          <label htmlFor={`${prefix}-api-key`} className="text-label font-medium text-foreground">
-            {t('settings.apiKey')}
-          </label>
-          <input
-            id={`${prefix}-api-key`}
-            value={apiKey}
-            onChange={(event) => {
-              setApiKey(event.target.value)
-              if (event.target.value) setClearApiKey(false)
-            }}
-            placeholder={
-              provider?.hasApiKey
-                ? t('settings.apiKeyKeepPlaceholder')
-                : t('settings.apiKeyPlaceholder')
+        <div className="sm:col-span-2">
+          <Form.Item
+            name="apiKey"
+            label={t('settings.apiKey')}
+            rules={
+              !provider && type !== 'openai-compatible'
+                ? [{ required: true, message: t('settings.apiKeyRequired') }]
+                : []
             }
-            className={inputClass}
-            type="password"
-            autoComplete="off"
-            required={!provider && type !== 'openai-compatible'}
-          />
+          >
+            <Input.Password
+              placeholder={
+                provider?.hasApiKey
+                  ? t('settings.apiKeyKeepPlaceholder')
+                  : t('settings.apiKeyPlaceholder')
+              }
+              autoComplete="off"
+            />
+          </Form.Item>
           <div className="flex flex-wrap items-center gap-3 text-caption text-muted">
             {provider?.hasApiKey && <span>{t('settings.apiKeyStored')}</span>}
             {provider?.hasApiKey && (
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={clearApiKey}
-                  disabled={Boolean(apiKey)}
-                  onChange={(event) => setClearApiKey(event.target.checked)}
-                />
-                {t('settings.clearApiKey')}
-              </label>
+              <Form.Item name="clearApiKey" valuePropName="checked" noStyle>
+                <Checkbox disabled={Boolean(apiKey)}>{t('settings.clearApiKey')}</Checkbox>
+              </Form.Item>
             )}
             {type === 'openai-compatible' && <span>{t('settings.apiKeyOptional')}</span>}
           </div>
         </div>
       </div>
 
-      {error && <p className="mt-3 text-caption text-danger">{error}</p>}
+      {error && <Alert type="error" showIcon message={error} className="mt-3" />}
 
       <div className="mt-3.5 flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={saving}
-          className="h-8 rounded-md px-3 text-label font-medium text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
-        >
+        <Button onClick={onCancel} disabled={saving}>
           {t('settings.cancel')}
-        </button>
-        <button
-          type="submit"
-          disabled={saving}
-          className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-50"
-        >
-          {saving ? t('settings.saving') : t('settings.save')}
-        </button>
+        </Button>
+        <Button type="primary" htmlType="submit" loading={saving}>
+          {t('settings.save')}
+        </Button>
       </div>
-    </form>
+    </Form>
   )
 }
 

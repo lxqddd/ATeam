@@ -88,7 +88,8 @@ const zhCN = {
     modelExists: '这个模型 ID 已经存在。',
     providerNotFound: '供应商不存在。',
     modelNotFound: '模型不存在。',
-    nameRequired: '名称不能为空。'
+    nameRequired: '名称不能为空。',
+    modelIdRequired: '请填写模型 ID。'
   },
   chat: {
     newChat: '新建会话',

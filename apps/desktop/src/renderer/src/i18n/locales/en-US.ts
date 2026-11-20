@@ -94,7 +94,8 @@ const enUS = {
     modelExists: 'This model ID already exists.',
     providerNotFound: 'The provider no longer exists.',
     modelNotFound: 'The model no longer exists.',
-    nameRequired: 'Name is required.'
+    nameRequired: 'Name is required.',
+    modelIdRequired: 'Model ID is required.'
   },
   chat: {
     newChat: 'New chat',
