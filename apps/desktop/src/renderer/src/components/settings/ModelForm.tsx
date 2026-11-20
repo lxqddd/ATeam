@@ -66,6 +66,7 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
     >
       <Form
         form={form}
+        name="model"
         layout="vertical"
         initialValues={{
           providerId: model?.providerId ?? providers[0]?.id ?? '',
@@ -101,7 +102,11 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
           </div>
         </div>
 
-        {error && <Alert type="error" showIcon message={error} className="mt-3" />}
+        {error && (
+          <div className="mt-3">
+            <Alert type="error" showIcon title={error} />
+          </div>
+        )}
 
         <div className="mt-3.5 flex items-center justify-end gap-2">
           <Button onClick={onCancel} disabled={saving}>

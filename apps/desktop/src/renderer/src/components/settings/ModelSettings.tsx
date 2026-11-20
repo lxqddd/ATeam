@@ -158,7 +158,7 @@ function ModelSettings(): React.JSX.Element {
           <Alert
             type="error"
             showIcon
-            message={`${t('settings.loadFailed')} ${loadError}`}
+            title={`${t('settings.loadFailed')} ${loadError}`}
             action={
               <Button
                 size="small"
@@ -207,9 +207,9 @@ function ModelSettings(): React.JSX.Element {
   return (
     <div className="flex flex-col gap-5">
       {!config.encryptionAvailable && (
-        <Alert type="warning" showIcon message={t('settings.encryptionUnavailable')} />
+        <Alert type="warning" showIcon title={t('settings.encryptionUnavailable')} />
       )}
-      {mutationError && <Alert type="error" showIcon message={mutationError} />}
+      {mutationError && <Alert type="error" showIcon title={mutationError} />}
 
       <SettingsGroup
         title={t('settings.defaultModel')}

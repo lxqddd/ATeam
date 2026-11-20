@@ -69,7 +69,8 @@ const FALLBACK: Record<ResolvedTheme, Palette> = {
     success: '#6cc59a',
     warning: '#e5b567',
     danger: '#f29a8e',
-    fontSans: "'JetBrains Mono', 'SFMono-Regular', ui-monospace, Menlo, Consolas, monospace"
+    fontSans:
+      "-apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, 'Noto Sans SC', 'Noto Sans CJK SC', 'Source Han Sans SC', Roboto, Ubuntu, 'Helvetica Neue', Arial, sans-serif"
   }
 }
 
@@ -117,6 +118,8 @@ export function createAntdTheme(
     },
     components: {
       Menu: {
+        itemBg: 'transparent',
+        activeBarBorderWidth: 0,
         itemSelectedBg: pick('--selected', palette.selected),
         itemSelectedColor: pick('--selected-foreground', palette.selectedForeground),
         itemHoverBg: pick('--hover', palette.hover)

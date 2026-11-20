@@ -56,7 +56,6 @@ function SettingsPage(): React.JSX.Element {
             key: item.id,
             label: t(item.labelKey)
           }))}
-          className="border-none bg-transparent"
         />
       </div>
       <section className="min-w-0 flex-1 overflow-y-auto">

@@ -21,8 +21,7 @@
     "build:linux": "pnpm run build && electron-builder --linux"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0",
-    "antd": "6.7.1"
+    "@electron-toolkit/utils": "^4.0.0"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.106",
@@ -42,6 +41,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "5.1.1",
     "ai": "7.0.177",
+    "antd": "6.7.1",
     "electron": "^44.7.2",
     "electron-builder": "26.15.3",
     "electron-vite": "^6.0.0",
