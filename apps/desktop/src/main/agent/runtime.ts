@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { generateText, stepCountIs, streamText } from 'ai'
+import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import type {
   AgentEvent,
   AgentEventEnvelope,
@@ -18,8 +19,8 @@ import type {
 } from '@ateam/shared'
 import { SessionsStore, type SessionRecord } from './sessions-store'
 import { buildModelMessages } from './message-history'
-import { createLanguageModel, resolveModelRef } from './providers'
-import { createTools } from './tools'
+import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
+import { createTools as createDefaultTools, type ToolContext } from './tools'
 import { normalizeError } from './errors'
 
 const MAX_STEPS = 25
@@ -46,6 +47,43 @@ export interface AgentRuntimeOptions {
   workspacePath: string
   models: RuntimeModelsConfig
   send: (envelope: AgentEventEnvelope) => void
+  dependencies?: Partial<AgentRuntimeDependencies>
+}
+
+export interface AgentTurnInput {
+  model: LanguageModel
+  system: string
+  messages: ModelMessage[]
+  tools: ToolSet
+  abortSignal: AbortSignal
+}
+
+export interface AgentTurnStream {
+  stream: AsyncIterable<TextStreamPart<ToolSet>>
+}
+
+export interface AgentRuntimeDependencies {
+  createLanguageModel: (models: RuntimeModelsConfig, ref: ModelRef | null) => LanguageModel
+  createTools: (context: ToolContext) => ToolSet
+  createTurn: (input: AgentTurnInput) => AgentTurnStream
+}
+
+const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
+  createLanguageModel: createDefaultLanguageModel,
+  createTools: createDefaultTools,
+  createTurn: (input) => ({
+    stream: streamText({
+      model: input.model,
+      system: input.system,
+      messages: input.messages,
+      tools: input.tools,
+      stopWhen: stepCountIs(MAX_STEPS),
+      abortSignal: input.abortSignal,
+      maxRetries: 1,
+      maxOutputTokens: 8_192,
+      onError: () => undefined
+    }).stream
+  })
 }
 
 function nowIso(): string {
@@ -96,11 +134,13 @@ export class AgentRuntime {
   private readonly pending = new Map<string, PendingPermission>()
   private readonly allowedBySession = new Map<string, Set<PermissionAction>>()
   private models: RuntimeModelsConfig
+  private readonly deps: AgentRuntimeDependencies
   private seq = 0
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
     this.models = options.models
+    this.deps = { ...DEFAULT_DEPENDENCIES, ...options.dependencies }
   }
 
   async init(): Promise<void> {
@@ -281,7 +321,7 @@ export class AgentRuntime {
   ): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
     const start = Date.now()
     try {
-      const model = createLanguageModel(this.models, { providerId, modelId })
+      const model = this.deps.createLanguageModel(this.models, { providerId, modelId })
       await generateText({
         model,
         prompt: 'Reply with OK',
@@ -464,18 +504,18 @@ export class AgentRuntime {
 
     try {
       const record = this.record(run.sessionId)
-      const model = createLanguageModel(
+      const model = this.deps.createLanguageModel(
         this.models,
         record.session.model ?? this.models.defaultModel
       )
-      const tools = createTools({
+      const tools = this.deps.createTools({
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
         askPermission: (action, resource, toolName, toolCallId) =>
           this.askPermission(run, action, resource, toolName, toolCallId)
       })
 
-      const result = streamText({
+      const result = this.deps.createTurn({
         model,
         system: buildSystemPrompt(this.options.workspacePath),
         messages: buildModelMessages(
@@ -484,11 +524,7 @@ export class AgentRuntime {
           )
         ),
         tools,
-        stopWhen: stepCountIs(MAX_STEPS),
-        abortSignal: run.abort.signal,
-        maxRetries: 1,
-        maxOutputTokens: 8_192,
-        onError: () => undefined
+        abortSignal: run.abort.signal
       })
 
       for await (const part of result.stream) {
