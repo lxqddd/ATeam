@@ -1,0 +1,24 @@
+@import './base.css';
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app {
+  padding: 32px;
+  text-align: center;
+}
+
+.app h1 {
+  font-size: 40px;
+  letter-spacing: -0.02em;
+}
+
+.app p {
+  margin-top: 12px;
+  color: var(--color-text-muted);
+  font-size: 15px;
+}

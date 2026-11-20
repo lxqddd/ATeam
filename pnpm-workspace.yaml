@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm 11：允许 Electron 在安装阶段下载对应平台的二进制文件
+allowBuilds:
+  electron: true
+  electron-winstaller: true

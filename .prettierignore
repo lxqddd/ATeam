@@ -1,0 +1,12 @@
+node_modules
+out
+dist
+release
+coverage
+.pnpm-store
+.eslintcache
+pnpm-lock.yaml
+*.tsbuildinfo
+tsconfig.json
+tsconfig.*.json
+LICENSE.md
