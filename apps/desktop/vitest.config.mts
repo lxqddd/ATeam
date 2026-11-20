@@ -44,7 +44,15 @@ export default defineConfig({
         'src/renderer/src/components/chat/Composer.tsx',
         'src/renderer/src/components/chat/SessionPanel.tsx',
         'src/renderer/src/components/chat/MessageList.tsx',
-        'src/renderer/src/components/settings/ModelSettings.tsx'
+        'src/renderer/src/components/settings/ModelSettings.tsx',
+        'src/renderer/src/antd/theme.ts',
+        'src/renderer/src/antd/AntdProvider.tsx',
+        'src/renderer/src/pages/SettingsPage.tsx',
+        'src/renderer/src/components/settings/SettingsGroup.tsx',
+        'src/renderer/src/components/settings/ThemeSettings.tsx',
+        'src/renderer/src/components/settings/LanguageSettings.tsx',
+        'src/renderer/src/components/settings/ProviderForm.tsx',
+        'src/renderer/src/components/settings/ModelForm.tsx'
       ],
       exclude: ['**/*.test.{ts,tsx}', 'src/**/test/**']
     }
