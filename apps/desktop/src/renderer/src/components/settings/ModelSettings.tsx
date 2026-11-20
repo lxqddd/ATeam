@@ -266,7 +266,13 @@ function ModelSettings(): React.JSX.Element {
                     <span className="truncate text-label font-medium text-foreground">
                       {provider.name}
                     </span>
-                    <Tag style={{ marginInlineEnd: 0 }}>{t(`providerTypes.${provider.type}`)}</Tag>
+                    <Tag
+                      variant="outlined"
+                      className="settings-tag-neutral"
+                      style={{ marginInlineEnd: 0 }}
+                    >
+                      {t(`providerTypes.${provider.type}`)}
+                    </Tag>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted">
                     {provider.baseURL && (
@@ -350,6 +356,7 @@ function ModelSettings(): React.JSX.Element {
                       <span>{providerName(model.providerId)}</span>
                       {test && (
                         <Tag
+                          variant="outlined"
                           color={test.running ? 'default' : test.result?.ok ? 'success' : 'error'}
                           style={{ marginInlineEnd: 0 }}
                         >

@@ -46,7 +46,7 @@ function SettingsPage(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden" data-testid="settings-page">
-      <nav className="settings-nav flex w-[216px] flex-none flex-col gap-0.5 overflow-y-auto border-r border-pane-divider px-2 py-3">
+      <nav className="settings-nav flex w-[216px] flex-none flex-col overflow-y-auto border-r border-pane-divider px-2 py-3">
         <Menu
           mode="inline"
           inlineIndent={8}

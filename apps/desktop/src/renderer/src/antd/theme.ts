@@ -24,7 +24,6 @@ interface Palette {
   hover: string
   active: string
   selected: string
-  selectedForeground: string
   navBg: string
   navPressed: string
   inputBg: string
@@ -80,7 +79,6 @@ const FALLBACK: Record<ResolvedTheme, Palette> = {
     hover: '#f2eee6',
     active: '#e8e2d6',
     selected: '#f2dcd1',
-    selectedForeground: '#9d3f29',
     navBg: 'color-mix(in srgb, #f2eee6, #f2dcd1)',
     navPressed: 'color-mix(in srgb, #f2dcd1 70%, #f2eee6)',
     inputBg: '#ffffff',
@@ -131,7 +129,6 @@ const FALLBACK: Record<ResolvedTheme, Palette> = {
     hover: '#262626',
     active: '#303030',
     selected: '#2e2e2e',
-    selectedForeground: '#ffffff',
     navBg: 'color-mix(in srgb, #262626, #2e2e2e)',
     navPressed: 'color-mix(in srgb, #2e2e2e 70%, #262626)',
     inputBg: '#1a1a1a',
@@ -179,7 +176,6 @@ export function createAntdTheme(
     colorBgContainer: pick('--input-bg', palette.inputBg),
     hoverBorderColor: pick('--border-strong', palette.borderStrong),
     activeBorderColor: pick('--accent-strong', palette.accentStrong),
-    activeShadow: '0 0 0 2px var(--accent-soft)',
     borderRadius: 10,
     fontSize: 13
   }
@@ -226,7 +222,7 @@ export function createAntdTheme(
         itemHeight: 32,
         itemBorderRadius: 10,
         itemMarginInline: 0,
-        itemMarginBlock: 0,
+        itemMarginBlock: 2,
         itemPaddingInline: 8,
         itemBg: 'transparent',
         itemColor: pick('--muted', palette.muted),
@@ -259,11 +255,8 @@ export function createAntdTheme(
         defaultHoverColor: pick('--foreground', palette.foreground),
         defaultActiveBg: pick('--active', palette.active),
         primaryColor: pick('--accent-foreground', palette.accentForeground),
-        defaultShadow: 'none',
+        defaultShadow: 'var(--shadow-sm), var(--highlight-inset)',
         primaryShadow: 'none',
-        defaultGhostColor: pick('--muted', palette.muted),
-        ghostBg: 'transparent',
-        defaultGhostBorderColor: 'transparent',
         textTextColor: pick('--muted', palette.muted),
         textTextHoverColor: pick('--foreground', palette.foreground),
         textTextActiveColor: pick('--foreground', palette.foreground),
@@ -271,14 +264,17 @@ export function createAntdTheme(
       },
       Input: {
         ...controlTokens,
+        activeShadow: '0 0 0 2px var(--accent-soft)',
         paddingInline: 12
       },
       InputNumber: {
         ...controlTokens,
+        activeShadow: '0 0 0 2px var(--accent-soft)',
         paddingInline: 12
       },
       Select: {
         ...controlTokens,
+        activeOutlineColor: pick('--accent-soft', palette.accentSoft),
         optionFontSize: 13,
         selectorBg: pick('--input-bg', palette.inputBg)
       },
@@ -292,6 +288,7 @@ export function createAntdTheme(
         trackBg: pick('--background-subtle', palette.backgroundSubtle),
         trackPadding: 2,
         controlHeight: 32,
+        fontSize: 13,
         itemColor: pick('--muted', palette.muted),
         itemHoverBg: pick('--hover', palette.hover),
         itemHoverColor: pick('--foreground', palette.foreground),
@@ -312,11 +309,6 @@ export function createAntdTheme(
         colorErrorBorder: pick('--danger-border', palette.dangerBorder),
         colorInfoBg: pick('--info-soft', palette.infoSoft),
         colorInfoBorder: pick('--info-border', palette.infoBorder)
-      },
-      List: {
-        itemPadding: '8px 0',
-        headerBg: 'transparent',
-        colorTextDisabled: pick('--subtle', palette.subtle)
       },
       Tag: {
         defaultBg: pick('--neutral-soft', palette.neutralSoft),
