@@ -49,4 +49,10 @@ describe('SettingsPage', () => {
 
     expect(screen.getByText('language-panel')).toBeInTheDocument()
   })
+
+  it('falls back to appearance for an unknown section', () => {
+    renderPage('/settings?section=unknown')
+
+    expect(screen.getByText('appearance-panel')).toBeInTheDocument()
+  })
 })
