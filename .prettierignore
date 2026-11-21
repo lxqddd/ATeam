@@ -5,6 +5,7 @@ release
 coverage
 .pnpm-store
 .eslintcache
+.superpowers
 pnpm-lock.yaml
 *.tsbuildinfo
 tsconfig.json

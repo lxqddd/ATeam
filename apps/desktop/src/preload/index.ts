@@ -56,6 +56,7 @@ const api: AteamApi = {
     addProvider: (input) => ipcRenderer.invoke(MODEL_CHANNELS.providerAdd, input),
     updateProvider: (input) => ipcRenderer.invoke(MODEL_CHANNELS.providerUpdate, input),
     deleteProvider: (id) => ipcRenderer.invoke(MODEL_CHANNELS.providerDelete, { id }),
+    revealApiKey: (id) => ipcRenderer.invoke(MODEL_CHANNELS.providerRevealKey, { id }),
     addModel: (input) => ipcRenderer.invoke(MODEL_CHANNELS.modelAdd, input),
     updateModel: (input) => ipcRenderer.invoke(MODEL_CHANNELS.modelUpdate, input),
     deleteModel: (id) => ipcRenderer.invoke(MODEL_CHANNELS.modelDelete, { id }),

@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ProviderPublic } from '@ateam/shared'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProviderForm from './ProviderForm'
+import { createApiMock } from '../../test/api-mock'
 
 const storedKeyProvider: ProviderPublic = {
   id: 'p1',
@@ -18,6 +19,10 @@ async function chooseOpenAiCompatible(user: ReturnType<typeof userEvent.setup>):
   await user.click(screen.getByRole('combobox'))
   await user.click(await screen.findByTitle('OpenAI compatible'))
 }
+
+beforeEach(() => {
+  Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
+})
 
 describe('ProviderForm', () => {
   it('creates an OpenAI-compatible provider without an API key', async () => {

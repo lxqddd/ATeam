@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, Button, Checkbox, Form, Input, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -35,9 +35,26 @@ function ProviderForm({
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [form] = Form.useForm<ProviderFormValues>()
   const type = Form.useWatch('type', form) ?? provider?.type ?? 'anthropic'
   const apiKey = Form.useWatch('apiKey', form) ?? ''
+
+  useEffect(() => {
+    if (!provider) return
+    let active = true
+    window.api.models
+      .revealApiKey(provider.id)
+      .then((key) => {
+        if (!active || !key) return
+        setLoadedKey(key)
+        form.setFieldValue('apiKey', key)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [provider, form])
 
   async function handleFinish(values: ProviderFormValues): Promise<void> {
     setSaving(true)
@@ -89,7 +106,9 @@ function ProviderForm({
           clearApiKey: false
         }}
         onValuesChange={(changed) => {
-          if (changed.apiKey) form.setFieldValue('clearApiKey', false)
+          if (changed.apiKey && changed.apiKey !== loadedKey) {
+            form.setFieldValue('clearApiKey', false)
+          }
         }}
         onFinish={(values) => {
           void handleFinish(values)
@@ -149,7 +168,9 @@ function ProviderForm({
               {provider?.hasApiKey && <span>{t('settings.apiKeyStored')}</span>}
               {provider?.hasApiKey && (
                 <Form.Item name="clearApiKey" valuePropName="checked" noStyle>
-                  <Checkbox disabled={Boolean(apiKey)}>{t('settings.clearApiKey')}</Checkbox>
+                  <Checkbox disabled={Boolean(apiKey) && apiKey !== loadedKey}>
+                    {t('settings.clearApiKey')}
+                  </Checkbox>
                 </Form.Item>
               )}
               {type === 'openai-compatible' && <span>{t('settings.apiKeyOptional')}</span>}

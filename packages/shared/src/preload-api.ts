@@ -48,6 +48,7 @@ export interface ModelsBridge {
   addProvider: (input: ProviderCreateInput) => Promise<ModelsConfigPublic>
   updateProvider: (input: ProviderUpdateInput) => Promise<ModelsConfigPublic>
   deleteProvider: (id: string) => Promise<ModelsConfigPublic>
+  revealApiKey: (providerId: string) => Promise<string | null>
   addModel: (input: ModelCreateInput) => Promise<ModelsConfigPublic>
   updateModel: (input: ModelUpdateInput) => Promise<ModelsConfigPublic>
   deleteModel: (id: string) => Promise<ModelsConfigPublic>

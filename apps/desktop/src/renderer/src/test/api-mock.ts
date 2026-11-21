@@ -111,6 +111,7 @@ export function createApiMock(
       addProvider: vi.fn(async () => models),
       updateProvider: vi.fn(async () => models),
       deleteProvider: vi.fn(async () => models),
+      revealApiKey: vi.fn(async () => null as string | null),
       addModel: vi.fn(async () => models),
       updateModel: vi.fn(async () => models),
       deleteModel: vi.fn(async () => models),

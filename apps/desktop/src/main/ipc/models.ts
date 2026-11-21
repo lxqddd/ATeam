@@ -105,6 +105,11 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     return config
   })
 
+  handle(MODEL_CHANNELS.providerRevealKey, (payload): string | null => {
+    const { id } = idPayloadSchema.parse(payload)
+    return modelsStore.revealApiKey(id)
+  })
+
   handle(MODEL_CHANNELS.modelAdd, async (payload): Promise<ModelsConfigPublic> => {
     const input = modelCreateSchema.parse(payload) as ModelCreateInput
     const config = await modelsStore.addModel(input)

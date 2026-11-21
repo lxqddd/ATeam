@@ -368,6 +368,32 @@ describe('ModelsStore', () => {
     expect(reloaded.publicConfig().providers[0].hasApiKey).toBe(true)
   })
 
+  it('reveals the decrypted API key on demand', async () => {
+    const providerId = await addAnthropic()
+
+    expect(store.revealApiKey(providerId)).toBe('sk-test-secret')
+  })
+
+  it('returns null when revealing a key for an unknown provider', () => {
+    expect(store.revealApiKey('missing')).toBeNull()
+  })
+
+  it('returns null when a stored key cannot be decrypted for reveal', async () => {
+    const providerId = await addAnthropic()
+    await fs.writeFile(
+      path.join(directory, 'models', 'secrets.json'),
+      JSON.stringify({ version: 1, keys: { [providerId]: 'not-base64' } })
+    )
+
+    const reloaded = new ModelsStore(directory)
+    await reloaded.init()
+    safeStorage.decryptString.mockImplementationOnce(() => {
+      throw new Error('bad cipher')
+    })
+
+    expect(reloaded.revealApiKey(providerId)).toBeNull()
+  })
+
   it('keeps the default when deleting another provider', async () => {
     const providerId = await addAnthropic()
     await store.addModel({ providerId, modelId: 'm1' })

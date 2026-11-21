@@ -140,6 +140,12 @@ export class ModelsStore {
     }
   }
 
+  revealApiKey(providerId: string): string | null {
+    const provider = this.config.providers.find((candidate) => candidate.id === providerId)
+    if (!provider) return null
+    return this.decryptKey(providerId) ?? null
+  }
+
   runtimeConfig(): RuntimeModelsConfig {
     const providers: RuntimeProvider[] = this.config.providers.map((provider) => ({
       id: provider.id,

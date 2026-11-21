@@ -28,6 +28,7 @@ export const MODEL_CHANNELS = {
   providerAdd: 'ateam:models:providers:add',
   providerUpdate: 'ateam:models:providers:update',
   providerDelete: 'ateam:models:providers:delete',
+  providerRevealKey: 'ateam:models:providers:reveal-key',
   modelAdd: 'ateam:models:models:add',
   modelUpdate: 'ateam:models:models:update',
   modelDelete: 'ateam:models:models:delete',

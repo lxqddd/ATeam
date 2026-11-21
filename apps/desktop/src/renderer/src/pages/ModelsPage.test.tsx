@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AgentInfo, ModelPublic, ModelsConfigPublic, ProviderPublic } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -234,6 +234,81 @@ describe('ModelsPage', () => {
     await user.click(await screen.findByRole('button', { name: 'OK' }))
 
     await waitFor(() => expect(mock.api.models.deleteProvider).toHaveBeenCalledWith('p1'))
+  })
+
+  it('prefills the stored API key masked and reveals it on the eye toggle', async () => {
+    vi.mocked(mock.api.models.revealApiKey).mockResolvedValue('sk-stored-secret')
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Edit provider' }))
+    const input = (await screen.findByLabelText('API key')) as HTMLInputElement
+    await waitFor(() => expect(input).toHaveValue('sk-stored-secret'))
+    expect(input).toHaveAttribute('type', 'password')
+    expect(mock.api.models.revealApiKey).toHaveBeenCalledWith('p1')
+
+    const eye = document.querySelector('.ant-input-password-icon')
+    expect(eye).not.toBeNull()
+    fireEvent.click(eye as Element)
+
+    expect(input).toHaveAttribute('type', 'text')
+  })
+
+  it('clears the prefilled key when the clear checkbox is checked', async () => {
+    vi.mocked(mock.api.models.revealApiKey).mockResolvedValue('sk-stored-secret')
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Edit provider' }))
+    await waitFor(() => expect(screen.getByLabelText('API key')).toHaveValue('sk-stored-secret'))
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Clear API key' })
+    expect(checkbox).toBeEnabled()
+    await user.click(checkbox)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
+        id: 'p1',
+        name: 'Acme',
+        type: 'anthropic',
+        baseURL: '',
+        clearApiKey: true,
+        apiKey: 'sk-stored-secret'
+      })
+    )
+  })
+
+  it('unchecks clear and submits a new key typed after prefill', async () => {
+    vi.mocked(mock.api.models.revealApiKey).mockResolvedValue('sk-stored-secret')
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Edit provider' }))
+    const input = await screen.findByLabelText('API key')
+    await waitFor(() => expect(input).toHaveValue('sk-stored-secret'))
+
+    const checkbox = screen.getByRole('checkbox', { name: 'Clear API key' })
+    await user.click(checkbox)
+    await user.clear(input)
+    await user.type(input, 'sk-brand-new')
+
+    await waitFor(() => expect(checkbox).not.toBeChecked())
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
+        id: 'p1',
+        name: 'Acme',
+        type: 'anthropic',
+        baseURL: '',
+        clearApiKey: false,
+        apiKey: 'sk-brand-new'
+      })
+    )
   })
 
   it('adds a model through the provider card', async () => {
