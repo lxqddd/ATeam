@@ -14,6 +14,7 @@ import {
   type MessagesSnapshot,
   type PermissionRequest,
   type PermissionRule,
+  type QuestionRequest,
   type SessionMeta,
   type SessionUndoResult,
   type WebSearchProviderPublic
@@ -100,11 +101,24 @@ const permissionRuleInputSchema = z.object({
     'edit',
     'shell',
     'external_directory',
+    'mcp',
+    'webfetch',
+    'websearch',
+    'skill',
     '*'
   ]),
   resource: z.string().trim().min(1).max(500),
   effect: z.enum(['allow', 'ask', 'deny']),
   sessionId: idSchema.nullable()
+})
+const questionReplySchema = z.object({
+  questionId: idSchema,
+  answer: z.object({
+    selected: z.array(z.string().max(200)).max(10),
+    custom: z.string().max(2_000).nullable(),
+    cancelled: z.boolean().optional(),
+    timedOut: z.boolean().optional()
+  })
 })
 const externalUrlSchema = z.string().refine((value) => {
   try {
@@ -293,6 +307,15 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.permissionReply, async (payload): Promise<void> => {
     const input = permissionReplySchema.parse(payload)
     await manager.request('permission.reply', input)
+  })
+
+  handle(AGENT_CHANNELS.questionsList, (): Promise<QuestionRequest[]> =>
+    manager.request('questions.list')
+  )
+
+  handle(AGENT_CHANNELS.questionReply, async (payload): Promise<void> => {
+    const input = questionReplySchema.parse(payload)
+    await manager.request('question.reply', input)
   })
 
   handle(AGENT_CHANNELS.permissionsRules, (payload): Promise<PermissionRule[]> => {

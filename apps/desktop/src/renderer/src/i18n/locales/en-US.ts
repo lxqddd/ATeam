@@ -240,6 +240,10 @@ const enUS = {
     mentionFiles: 'Files',
     commands: 'Commands',
     todos: 'Tasks',
+    question: 'Question',
+    questionSubmit: 'Submit',
+    questionCancel: 'Cancel',
+    questionCustom: 'Custom answer',
     permissionMode: 'Permission mode',
     permissionPlan: 'Read only',
     permissionPlanHint:

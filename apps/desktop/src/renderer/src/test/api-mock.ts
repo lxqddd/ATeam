@@ -16,6 +16,7 @@ import type {
   ModelsConfigPublic,
   PermissionRequest,
   PermissionRuleInput,
+  QuestionRequest,
   SessionMeta,
   SessionSettings,
   WebSearchInput,
@@ -174,6 +175,10 @@ export function createApiMock(
           createdAt: new Date().toISOString()
         })),
         removeRule: vi.fn(async () => true)
+      },
+      questions: {
+        list: vi.fn(async () => [] as QuestionRequest[]),
+        reply: vi.fn(async () => undefined)
       },
       config: {
         get: vi.fn(async () => ({

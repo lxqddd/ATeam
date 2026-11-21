@@ -12,6 +12,8 @@ import type {
   PermissionDecision,
   PermissionRequest,
   PermissionRule,
+  QuestionAnswer,
+  QuestionRequest,
   PermissionRuleInput,
   MessageAttachment,
   SessionMeta,
@@ -69,6 +71,10 @@ export interface AgentBridge {
     rules: (sessionId?: string) => Promise<PermissionRule[]>
     addRule: (input: PermissionRuleInput) => Promise<PermissionRule>
     removeRule: (id: string) => Promise<boolean>
+  }
+  questions: {
+    list: () => Promise<QuestionRequest[]>
+    reply: (questionId: string, answer: QuestionAnswer) => Promise<void>
   }
   config: {
     get: () => Promise<AgentConfig>

@@ -31,7 +31,15 @@ describe('builtin agents', () => {
 
     expect(build).toMatchObject({ mode: 'primary', tools: null, source: 'builtin' })
     expect(plan).toMatchObject({ mode: 'primary', source: 'builtin' })
-    expect(plan?.tools).toEqual(['read', 'list', 'grep', 'glob', 'todowrite', 'todoread'])
+    expect(plan?.tools).toEqual([
+      'read',
+      'list',
+      'grep',
+      'glob',
+      'todowrite',
+      'todoread',
+      'question'
+    ])
     expect(plan?.prompt).toContain('plan')
   })
 

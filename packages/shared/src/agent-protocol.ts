@@ -2,6 +2,7 @@ import type {
   McpServerInput,
   MessageAttachment,
   PermissionRuleInput,
+  QuestionAnswer,
   RuntimeWebSearchConfig,
   SessionSettings
 } from './agent-types'
@@ -82,6 +83,12 @@ export type WorkerRequest =
       id: string
       method: 'permission.reply'
       params: { requestId: string; decision: 'once' | 'always' | 'reject' }
+    }
+  | { id: string; method: 'questions.list'; params?: undefined }
+  | {
+      id: string
+      method: 'question.reply'
+      params: { questionId: string; answer: QuestionAnswer }
     }
   | { id: string; method: 'permissions.rules'; params: { sessionId?: string } }
   | {

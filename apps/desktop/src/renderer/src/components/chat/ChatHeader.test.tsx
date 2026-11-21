@@ -66,6 +66,7 @@ function baseState(): ChatStoreState {
     messagesBySession: {},
     loadedBySession: {},
     permissions: [],
+    questions: [],
     runOutcomes: {},
     backgroundResults: [],
     actionError: null,

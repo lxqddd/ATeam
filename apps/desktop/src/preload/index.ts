@@ -60,6 +60,11 @@ const api: AteamApi = {
       addRule: (input) => ipcRenderer.invoke(AGENT_CHANNELS.permissionRuleAdd, input),
       removeRule: (id) => ipcRenderer.invoke(AGENT_CHANNELS.permissionRuleRemove, { id })
     },
+    questions: {
+      list: () => ipcRenderer.invoke(AGENT_CHANNELS.questionsList),
+      reply: (questionId, answer) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.questionReply, { questionId, answer })
+    },
     config: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.agentConfig),
       update: (patch) => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigUpdate, patch)

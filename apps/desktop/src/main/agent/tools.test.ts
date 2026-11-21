@@ -41,6 +41,7 @@ let webSearch: Mock<NonNullable<ToolContext['webSearch']>>
 let loadSkill: Mock<NonNullable<ToolContext['loadSkill']>>
 let writeTodos: Mock<NonNullable<ToolContext['writeTodos']>>
 let readTodos: Mock<NonNullable<ToolContext['readTodos']>>
+let askQuestion: Mock<NonNullable<ToolContext['askQuestion']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -58,6 +59,7 @@ beforeEach(async () => {
   loadSkill = vi.fn(async () => '# Skill instructions')
   writeTodos = vi.fn(async () => 'Tasks (0/1 completed):\n1. [pending] Do it')
   readTodos = vi.fn(async () => 'No tasks.')
+  askQuestion = vi.fn(async () => 'User answered: src/a.ts')
   baseContext = {
     workspace: directory,
     signal: new AbortController().signal,
@@ -74,7 +76,8 @@ beforeEach(async () => {
     webSearch,
     loadSkill,
     writeTodos,
-    readTodos
+    readTodos,
+    askQuestion
   }
   tools = createTools(baseContext)
 })
@@ -830,6 +833,30 @@ describe('todo tools', () => {
     )
     await expect(execute(limited.todoread, {})).resolves.toBe(
       'Error: todo tracking is not available.'
+    )
+  })
+})
+
+describe('question tool', () => {
+  const input = {
+    header: 'Choose',
+    question: 'Which file should change?',
+    options: [{ label: 'src/a.ts' }, { label: 'src/b.ts' }]
+  }
+
+  it('delegates questions to the runtime', async () => {
+    askQuestion.mockResolvedValue('User answered: src/a.ts')
+
+    await expect(execute(tools.question, input)).resolves.toBe('User answered: src/a.ts')
+
+    expect(askQuestion).toHaveBeenCalledWith(input, 'call-1')
+  })
+
+  it('reports unavailable questions', async () => {
+    const limited = createTools({ ...baseContext, askQuestion: undefined })
+
+    await expect(execute(limited.question, input)).resolves.toBe(
+      'Error: questions are not available.'
     )
   })
 })

@@ -188,6 +188,39 @@ export interface PermissionRequest {
   createdAt: string
 }
 
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+export interface QuestionInput {
+  header: string
+  question: string
+  options: QuestionOption[]
+  multiple?: boolean
+  allowCustom?: boolean
+}
+
+export interface QuestionRequest {
+  id: string
+  sessionId: string
+  messageId: string
+  toolCallId: string
+  header: string
+  question: string
+  options: QuestionOption[]
+  multiple: boolean
+  allowCustom: boolean
+  createdAt: string
+}
+
+export interface QuestionAnswer {
+  selected: string[]
+  custom: string | null
+  cancelled?: boolean
+  timedOut?: boolean
+}
+
 export interface AgentStatus {
   status: 'stopped' | 'starting' | 'ready' | 'error'
   error?: string
@@ -310,6 +343,8 @@ export type AgentEvent =
       part: MessagePart
     }
   | { type: 'permission.asked'; permission: PermissionRequest }
+  | { type: 'question.asked'; question: QuestionRequest }
+  | { type: 'question.replied'; sessionId: string; questionId: string }
   | {
       type: 'permission.replied'
       sessionId: string

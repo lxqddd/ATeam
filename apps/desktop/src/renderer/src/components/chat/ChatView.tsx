@@ -3,6 +3,7 @@ import { useChatStore } from '../../chat/store'
 import BackgroundNotices from './BackgroundNotices'
 import Composer from './Composer'
 import MessageList from './MessageList'
+import QuestionCard from './QuestionCard'
 import TodoPanel from './TodoPanel'
 
 function ChatView(): React.JSX.Element {
@@ -14,6 +15,7 @@ function ChatView(): React.JSX.Element {
     messagesBySession,
     loadedBySession,
     permissions,
+    questions,
     runOutcomes,
     backgroundResults
   } = useChatStore()
@@ -24,6 +26,7 @@ function ChatView(): React.JSX.Element {
   const sessionPermissions = permissions.filter(
     (permission) => permission.sessionId === selectedSessionId
   )
+  const sessionQuestions = questions.filter((question) => question.sessionId === selectedSessionId)
   const sessionRunning = session?.status === 'running' || session?.status === 'waiting-permission'
   const sessionBackground = backgroundResults.filter(
     (result) => result.sessionId === selectedSessionId
@@ -80,6 +83,9 @@ function ChatView(): React.JSX.Element {
       )}
 
       <BackgroundNotices results={sessionBackground} />
+      {sessionQuestions.map((question) => (
+        <QuestionCard key={question.id} question={question} />
+      ))}
 
       <Composer />
     </div>

@@ -3,7 +3,13 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import type { PermissionAction, SubagentInput, TodoInput, WebFetchFormat } from '@ateam/shared'
+import type {
+  PermissionAction,
+  QuestionInput,
+  SubagentInput,
+  TodoInput,
+  WebFetchFormat
+} from '@ateam/shared'
 
 const MAX_TOOL_OUTPUT = 200_000
 const MAX_READ_LINES = 2_000
@@ -38,6 +44,7 @@ export interface ToolContext {
   loadSkill?: (name: string) => Promise<string>
   writeTodos?: (todos: TodoInput[]) => Promise<string>
   readTodos?: () => Promise<string>
+  askQuestion?: (input: QuestionInput, toolCallId: string) => Promise<string>
 }
 
 async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
@@ -850,6 +857,30 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const question = tool({
+    description:
+      'Ask the user a structured question when a decision is genuinely theirs. Options are shown as buttons or checkboxes; free-form input can be enabled.',
+    inputSchema: z.object({
+      header: z.string().min(1).max(50).describe('Short label for the question'),
+      question: z.string().min(1).max(500).describe('The question to ask'),
+      options: z
+        .array(
+          z.object({
+            label: z.string().min(1).max(100),
+            description: z.string().max(300).optional()
+          })
+        )
+        .min(1)
+        .max(6),
+      multiple: z.boolean().optional().describe('Allow selecting several options'),
+      allowCustom: z.boolean().optional().describe('Allow a free-form answer')
+    }),
+    execute: async (input, options) => {
+      if (!context.askQuestion) return 'Error: questions are not available.'
+      return context.askQuestion(input, options.toolCallId)
+    }
+  })
+
   return wrapToolOutputs(
     {
       read,
@@ -865,7 +896,8 @@ export function createTools(context: ToolContext): ToolSet {
       webfetch,
       skill,
       todowrite,
-      todoread
+      todoread,
+      question
     },
     context
   )

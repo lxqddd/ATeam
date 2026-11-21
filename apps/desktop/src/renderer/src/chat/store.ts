@@ -14,6 +14,8 @@ import type {
   MessageAttachment,
   PermissionDecision,
   PermissionRequest,
+  QuestionAnswer,
+  QuestionRequest,
   RunOutcome,
   SessionMeta,
   SessionSettings
@@ -30,6 +32,7 @@ export interface ChatStoreState {
   messagesBySession: Record<string, ChatMessage[] | undefined>
   loadedBySession: Record<string, boolean>
   permissions: PermissionRequest[]
+  questions: QuestionRequest[]
   runOutcomes: Record<string, RunOutcome>
   backgroundResults: BackgroundResult[]
   actionError: string | null
@@ -60,6 +63,10 @@ function eventSessionId(event: AgentEvent): string | null {
       return event.sessionId
     case 'permission.asked':
       return event.permission.sessionId
+    case 'question.asked':
+      return event.question.sessionId
+    case 'question.replied':
+      return event.sessionId
     default:
       return null
   }
@@ -77,6 +84,7 @@ export class ChatStore {
     messagesBySession: {},
     loadedBySession: {},
     permissions: [],
+    questions: [],
     runOutcomes: {},
     backgroundResults: [],
     actionError: null,
@@ -137,6 +145,11 @@ export class ChatStore {
       this.setState({ permissions })
     } catch {
       /* permissions are unavailable until the agent is ready */
+    }
+    try {
+      this.setState({ questions: await window.api.agent.questions.list() })
+    } catch {
+      /* questions are unavailable until the agent is ready */
     }
 
     this.initialized = true
@@ -342,6 +355,10 @@ export class ChatStore {
     await window.api.agent.permissions.reply(requestId, decision)
   }
 
+  async replyQuestion(questionId: string, answer: QuestionAnswer): Promise<void> {
+    await window.api.agent.questions.reply(questionId, answer)
+  }
+
   async restartAgent(): Promise<void> {
     if (this.state.restarting) return
     this.setState({ restarting: true, actionError: null })
@@ -375,6 +392,7 @@ export class ChatStore {
         messagesBySession: {},
         loadedBySession: {},
         permissions: [],
+        questions: [],
         runOutcomes: {},
         backgroundResults: [],
         revertPrompt: null
@@ -385,6 +403,11 @@ export class ChatStore {
         this.setState({ permissions })
       } catch {
         /* ignore */
+      }
+      try {
+        this.setState({ questions: await window.api.agent.questions.list() })
+      } catch {
+        /* questions are unavailable until the agent is ready */
       }
       await this.refreshModels()
       await this.refreshAgents()
@@ -517,6 +540,22 @@ export class ChatStore {
           permissions: this.state.permissions.filter(
             (permission) => permission.id !== event.requestId
           )
+        })
+        break
+      case 'question.asked': {
+        const exists = this.state.questions.some((question) => question.id === event.question.id)
+        this.setState({
+          questions: exists
+            ? this.state.questions.map((question) =>
+                question.id === event.question.id ? event.question : question
+              )
+            : [...this.state.questions, event.question]
+        })
+        break
+      }
+      case 'question.replied':
+        this.setState({
+          questions: this.state.questions.filter((question) => question.id !== event.questionId)
         })
         break
       case 'run.started': {

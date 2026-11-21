@@ -25,6 +25,8 @@ export const AGENT_CHANNELS = {
   chatRetry: 'ateam:agent:chat:retry',
   permissionsList: 'ateam:agent:permissions:list',
   permissionReply: 'ateam:agent:permissions:reply',
+  questionsList: 'ateam:agent:questions:list',
+  questionReply: 'ateam:agent:questions:reply',
   permissionsRules: 'ateam:agent:permissions:rules',
   permissionRuleAdd: 'ateam:agent:permissions:add-rule',
   permissionRuleRemove: 'ateam:agent:permissions:remove-rule',

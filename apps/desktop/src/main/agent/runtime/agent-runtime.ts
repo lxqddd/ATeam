@@ -22,6 +22,9 @@ import type {
   PermissionRequest,
   PermissionRule,
   PermissionRuleInput,
+  QuestionAnswer,
+  QuestionInput,
+  QuestionRequest,
   RunOutcome,
   RuntimeModelsConfig,
   RuntimeWebSearchConfig,
@@ -90,6 +93,7 @@ import {
   type AgentRuntimeDependencies,
   type AgentRuntimeOptions,
   type PendingPermission,
+  type PendingQuestion,
   type Run
 } from './types'
 
@@ -100,6 +104,7 @@ export class AgentRuntime {
   private readonly toolOutputs: ToolOutputStore
   private readonly runs = new Map<string, Run>()
   private readonly pending = new Map<string, PendingPermission>()
+  private readonly pendingQuestions = new Map<string, PendingQuestion>()
   private lspManager: LspManager | null = null
   private formattersCache: Promise<FormatterDefinition[]> | null = null
   private mcpManager: McpManagerLike | null = null
@@ -519,6 +524,15 @@ export class AgentRuntime {
     return [...this.pending.values()].map((entry) => structuredClone(entry.request))
   }
 
+  questions(): QuestionRequest[] {
+    return [...this.pendingQuestions.values()].map((entry) => structuredClone(entry.request))
+  }
+
+  replyQuestion(questionId: string, answer: QuestionAnswer): void {
+    if (!this.pendingQuestions.has(questionId)) throw new Error('QUESTION_NOT_FOUND')
+    this.settleQuestion(questionId, answer)
+  }
+
   replyPermission(requestId: string, decision: PermissionDecision): void {
     const entry = this.pending.get(requestId)
     if (!entry) throw new Error('PERMISSION_NOT_FOUND')
@@ -678,6 +692,46 @@ export class AgentRuntime {
 
   private async readTodos(run: Run): Promise<string> {
     return formatTodoList(this.store.getSession(run.sessionId)?.todos ?? [])
+  }
+
+  private askQuestion(run: Run, input: QuestionInput, toolCallId: string): Promise<string> {
+    const id = randomUUID()
+    const request: QuestionRequest = {
+      id,
+      sessionId: run.sessionId,
+      messageId: run.messageId,
+      toolCallId,
+      header: input.header,
+      question: input.question,
+      options: input.options,
+      multiple: input.multiple ?? false,
+      allowCustom: input.allowCustom ?? false,
+      createdAt: nowIso()
+    }
+    return new Promise<string>((resolve) => {
+      const timer = setTimeout(() => {
+        this.settleQuestion(id, { selected: [], custom: null, timedOut: true })
+      }, PERMISSION_TIMEOUT_MS)
+      this.pendingQuestions.set(id, {
+        request,
+        run,
+        resolve: (answer) => {
+          clearTimeout(timer)
+          resolve(formatQuestionAnswer(answer))
+        },
+        timer
+      })
+      this.emit({ type: 'question.asked', question: request })
+    })
+  }
+
+  private settleQuestion(id: string, answer: QuestionAnswer): void {
+    const entry = this.pendingQuestions.get(id)
+    if (!entry) return
+    this.pendingQuestions.delete(id)
+    clearTimeout(entry.timer)
+    entry.resolve(answer)
+    this.emit({ type: 'question.replied', sessionId: entry.request.sessionId, questionId: id })
   }
 
   private resolveAgentTarget(
@@ -905,6 +959,10 @@ export class AgentRuntime {
       if (entry.run !== run) continue
       entry.resolve('reject')
       this.pending.delete(id)
+    }
+    for (const [id, entry] of this.pendingQuestions) {
+      if (entry.run !== run) continue
+      this.settleQuestion(id, { selected: [], custom: null, cancelled: true })
     }
   }
 
@@ -1198,7 +1256,8 @@ export class AgentRuntime {
           return skill ? `# ${skill.name}\n\n${skill.content}` : `Error: unknown skill: ${name}`
         },
         writeTodos: (todos) => this.writeTodos(run, todos),
-        readTodos: async () => this.readTodos(run)
+        readTodos: async () => this.readTodos(run),
+        askQuestion: (input, toolCallId) => this.askQuestion(run, input, toolCallId)
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
@@ -1424,6 +1483,16 @@ export class AgentRuntime {
       this.emitSession(run.sessionId)
     }
   }
+}
+
+function formatQuestionAnswer(answer: QuestionAnswer): string {
+  if (answer.timedOut) return 'User did not answer the question in time.'
+  if (answer.cancelled) return 'User cancelled the question.'
+  const parts: string[] = []
+  if (answer.selected.length > 0) parts.push(answer.selected.join(', '))
+  if (answer.custom?.trim()) parts.push(`custom: ${answer.custom.trim()}`)
+  if (parts.length === 0) return 'User did not answer the question.'
+  return `User answered: ${parts.join('; ')}`
 }
 
 function isContextLengthError(error: unknown): boolean {

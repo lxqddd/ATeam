@@ -7,6 +7,8 @@ import type {
   PermissionAction,
   PermissionDecision,
   PermissionRequest,
+  QuestionAnswer,
+  QuestionRequest,
   ReasoningEffort,
   RuntimeModelsConfig,
   RuntimeWebSearchConfig,
@@ -44,6 +46,13 @@ export interface PendingPermission {
   request: PermissionRequest
   run: Run
   resolve: (decision: PermissionDecision) => void
+}
+
+export interface PendingQuestion {
+  request: QuestionRequest
+  run: Run
+  resolve: (answer: QuestionAnswer) => void
+  timer: NodeJS.Timeout
 }
 
 export interface AgentRuntimeOptions {

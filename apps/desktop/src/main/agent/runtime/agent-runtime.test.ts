@@ -150,6 +150,8 @@ let instructionInputs: Array<{ workspacePath: string; globalDirectory: string }>
 let toolAction: PermissionAction
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
 let toolContext: ToolContext | null
+let questionExecutor:
+  ((input: import('@ateam/shared').QuestionInput, toolCallId: string) => Promise<string>) | null
 let subagentExecutor:
   | ((
       input: { prompt: string; agent?: string; sessionId?: string },
@@ -179,6 +181,7 @@ function createRuntime(): AgentRuntime {
       createTools: (context) => {
         toolContext = context
         subagentExecutor = context.runSubagent ?? null
+        questionExecutor = context.askQuestion ?? null
         toolExecutor = async (value, toolCallId) => {
           const allowed = await context.askPermission(toolAction, value, 'task', toolCallId)
           return allowed ? `done:${value}` : 'Permission denied'
@@ -464,6 +467,7 @@ beforeEach(async () => {
   toolExecutor = null
   toolContext = null
   subagentExecutor = null
+  questionExecutor = null
   baseTools = {}
   languageModelRefs = []
   mcpTools = vi.fn(async () => ({}))
@@ -1922,5 +1926,119 @@ describe('todo tools', () => {
       session: { todos: expect.arrayContaining([expect.objectContaining({ content: 'Ship it' })]) }
     })
     await expect(toolContext?.readTodos?.()).resolves.toContain('1. [in_progress] Write tests')
+  })
+})
+
+describe('question tool', () => {
+  it('asks the user and returns the answer', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const pending = questionExecutor?.(
+      {
+        header: 'Choose',
+        question: 'Which file should change?',
+        options: [{ label: 'src/a.ts' }, { label: 'src/b.ts' }],
+        multiple: false,
+        allowCustom: false
+      },
+      'call-q'
+    )
+    const asked = await sink.next('question.asked')
+    if (asked.event.type !== 'question.asked') throw new Error('unexpected event')
+    expect(asked.event.question).toMatchObject({
+      sessionId,
+      toolCallId: 'call-q',
+      question: 'Which file should change?'
+    })
+    expect(runtime.questions()).toHaveLength(1)
+
+    runtime.replyQuestion(asked.event.question.id, { selected: ['src/a.ts'], custom: null })
+
+    await expect(pending).resolves.toBe('User answered: src/a.ts')
+    expect(runtime.questions()).toEqual([])
+  })
+
+  it('formats multiple selections and custom input', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const pending = questionExecutor?.(
+      {
+        header: 'Pick',
+        question: 'Which checks?',
+        options: [{ label: 'lint' }, { label: 'tests' }],
+        multiple: true,
+        allowCustom: true
+      },
+      'call-q2'
+    )
+    const asked = await sink.next('question.asked')
+    if (asked.event.type !== 'question.asked') throw new Error('unexpected event')
+    runtime.replyQuestion(asked.event.question.id, {
+      selected: ['lint', 'tests'],
+      custom: 'typecheck'
+    })
+
+    await expect(pending).resolves.toBe('User answered: lint, tests; custom: typecheck')
+  })
+
+  it('reports cancelled questions', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const pending = questionExecutor?.(
+      { header: 'Pick', question: 'Continue?', options: [{ label: 'yes' }] },
+      'call-q3'
+    )
+    const asked = await sink.next('question.asked')
+    if (asked.event.type !== 'question.asked') throw new Error('unexpected event')
+    runtime.replyQuestion(asked.event.question.id, {
+      selected: [],
+      custom: null,
+      cancelled: true
+    })
+
+    await expect(pending).resolves.toBe('User cancelled the question.')
+  })
+})
+
+describe('question timeouts and cancellation', () => {
+  it('times out unanswered questions', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    vi.useFakeTimers()
+    const pending = questionExecutor?.(
+      { header: 'Pick', question: 'Continue?', options: [{ label: 'yes' }] },
+      'call-timeout'
+    )
+    vi.advanceTimersByTime(10 * 60 * 1000)
+
+    await expect(pending).resolves.toBe('User did not answer the question in time.')
+    expect(runtime.questions()).toEqual([])
+  })
+
+  it('cancels pending questions when the run stops', async () => {
+    scripts.push(pausableTextScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    const pending = questionExecutor?.(
+      { header: 'Pick', question: 'Continue?', options: [{ label: 'yes' }] },
+      'call-stop'
+    )
+    await sink.next('question.asked')
+
+    runtime.stopChat(sessionId)
+    await expect(pending).resolves.toBe('User cancelled the question.')
+
+    if (resumeTurn) resumeTurn()
+    resumeTurn = null
+    await sink.next('run.finished')
   })
 })
