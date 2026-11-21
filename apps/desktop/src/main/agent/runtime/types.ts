@@ -3,6 +3,7 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentEventEnvelope,
+  AgentPermissionRule,
   ModelRef,
   PermissionAction,
   PermissionDecision,
@@ -38,7 +39,8 @@ export interface Run {
     action: PermissionAction,
     resource: string,
     toolName: string,
-    toolCallId: string
+    toolCallId: string,
+    agentRules?: AgentPermissionRule[]
   ) => Promise<boolean>
 }
 

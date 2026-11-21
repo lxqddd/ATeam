@@ -2142,3 +2142,96 @@ describe('generated session titles', () => {
     expect(runtime.listSessions()[0].title).toBe('today weather')
   })
 })
+
+describe('agent permission rules', () => {
+  async function writeAgent(name: string, frontmatter: string[]): Promise<void> {
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', `${name}.md`),
+      ['---', ...frontmatter, '---', 'Agent instructions.'].join('\n')
+    )
+  }
+
+  it('enforces agent deny rules in auto mode', async () => {
+    await writeAgent('lockdown', [
+      'description: Locked down',
+      'mode: primary',
+      'permission: edit|*|deny'
+    ])
+    await runtime.setSessionSettings(sessionId, { reasoningEffort: null, permissionMode: 'auto' })
+    await runtime.setSessionAgent(sessionId, 'lockdown')
+    toolAction = 'edit'
+    scripts.push(toolScript(['a.txt']))
+
+    await runtime.sendChat(sessionId, 'edit it')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toBe('Permission denied')
+    expect(sink.envelopes.some((envelope) => envelope.event.type === 'permission.asked')).toBe(
+      false
+    )
+  })
+
+  it('lets agent rules allow what the session mode asks', async () => {
+    await writeAgent('trusted', [
+      'description: Trusted',
+      'mode: primary',
+      'permission: write|*|allow'
+    ])
+    await runtime.setSessionAgent(sessionId, 'trusted')
+    toolAction = 'write'
+    scripts.push(toolScript(['a.txt']))
+
+    await runtime.sendChat(sessionId, 'write it')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toBe('done:a.txt')
+    expect(sink.envelopes.some((envelope) => envelope.event.type === 'permission.asked')).toBe(
+      false
+    )
+  })
+
+  it('lets session rules override agent rules', async () => {
+    await writeAgent('lockdown', [
+      'description: Locked down',
+      'mode: primary',
+      'permission: edit|*|deny'
+    ])
+    await runtime.setSessionAgent(sessionId, 'lockdown')
+    await runtime.addPermissionRule({
+      action: 'edit',
+      resource: '*',
+      effect: 'allow',
+      sessionId
+    })
+    toolAction = 'edit'
+    scripts.push(toolScript(['a.txt']))
+
+    await runtime.sendChat(sessionId, 'edit it')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toBe('done:a.txt')
+  })
+
+  it('applies subagent agent rules through the parent request', async () => {
+    await writeAgent('strict', [
+      'description: Strict subagent',
+      'mode: subagent',
+      'permission: shell|*|deny'
+    ])
+    toolAction = 'shell'
+    scripts.push(subagentCallScript({ prompt: 'Run a command', agent: 'strict' }))
+    scripts.push(async function* () {
+      if (!toolExecutor) throw new Error('tool executor is missing')
+      const output = await toolExecutor('rm -rf /', 'child-call')
+      yield part({ type: 'text-start', id: 't1' })
+      yield part({ type: 'text-delta', id: 't1', text: output })
+      yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+    })
+
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toContain('Permission denied')
+  })
+})

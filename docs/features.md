@@ -71,7 +71,8 @@
 ### 3.2 自定义 Agent
 
 - 位置：用户目录 `agent/agents/*.md` 与 `agent/agents.json`，项目 `.opencode/agent(s)/*.md`；项目覆盖用户、用户覆盖内置。
-- 字段：description（必填）、mode（primary / subagent / all）、model、tools、steps、prompt（正文）。
+- 字段：description（必填）、mode（primary / subagent / all）、model、tools、permission、steps、prompt（正文）。
+- Markdown 的 `permission` 使用 `action|resource|effect` 列表（逗号分隔），例如 `permission: edit|*|deny, shell|git *|ask`；JSON Agent 使用对象数组 `{ action, resource, effect }`。agent 权限在全局规则之后、会话规则之前生效，可收紧或放宽全局策略。
 - 会话头部（输入框上方）可选择主 Agent；选择结果持久化到会话。
 
 ### 3.3 子代理工具
@@ -118,6 +119,7 @@
 ### 5.2 规则
 
 - 规则 = `action + resource + effect(allow/ask/deny) + sessionId`；全局规则与会话规则按顺序合并，**后匹配优先**。
+- 求值顺序：模式基础规则 → 全局规则 → 当前 Agent 的规则 → 会话规则；子代理的 Agent 规则随权限请求上抛，由父会话统一裁决。
 - 支持通配符（`*`）、shell 命令的 ` *` 后缀匹配、Windows 下大小写不敏感。
 - “始终允许”持久化到 `agent/permissions.json`，重启后仍生效；设置页可查看与删除。
 - 多资源操作（如 shell 命令中的多个路径）任一命中 `deny` 即拒绝。
@@ -237,7 +239,7 @@ models/                  # 供应商 / 模型配置与加密密钥
 ## 17. 已知限制与后续方向
 
 - MCP：OAuth 授权；prompts 作为命令、resources 供 Agent 读取；更多传输细节（重连退避、分页）。
-- 子代理：后台运行与完成通知、按 Agent 的权限规则与采样参数；子代理的 Question 上抛。
+- 子代理：后台运行与完成通知、按 Agent 的采样参数；子代理的 Question 上抛。
 - 模型：模型 variants（不同推理配置）、OAuth 供应商认证、一键导入供应商及全部模型。
 - 附件：缩略图预览、PDF 文本抽取；私有地址访问策略与 webfetch 缓存。
 - 命令 / Skills：命令绑定 Agent / 模型、命令中的 shell 片段、Skill 附带资源。

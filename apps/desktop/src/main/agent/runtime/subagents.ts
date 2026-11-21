@@ -1,4 +1,9 @@
-import type { AgentDefinition, PermissionAction, SubagentInput } from '@ateam/shared'
+import type {
+  AgentDefinition,
+  AgentPermissionRule,
+  PermissionAction,
+  SubagentInput
+} from '@ateam/shared'
 import type { SessionsStore, SessionRecord } from '../sessions/sessions-store'
 import { makeAssistantMessage, makeUserMessage } from './messages'
 import type { Run } from './types'
@@ -15,7 +20,8 @@ export interface SubagentHost {
     action: PermissionAction,
     resource: string,
     toolName: string,
-    toolCallId: string
+    toolCallId: string,
+    agentRules?: AgentPermissionRule[]
   ): Promise<boolean>
   runAgent(run: Run): Promise<void>
 }
@@ -79,7 +85,7 @@ export async function runSubagentTask(
     agent,
     depth: parent.depth + 1,
     permissionDelegate: (action, resource, toolName) =>
-      host.askPermission(parent, action, resource, toolName, toolCallId)
+      host.askPermission(parent, action, resource, toolName, toolCallId, agent.permissions)
   }
   host.registerRun(sessionId, childRun)
   try {

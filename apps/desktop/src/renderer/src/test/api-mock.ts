@@ -51,6 +51,7 @@ const DEFAULT_AGENTS: AgentDefinition[] = [
     mode: 'primary',
     model: null,
     tools: null,
+    permissions: [],
     maxSteps: null,
     prompt: '',
     source: 'builtin'
@@ -62,6 +63,7 @@ const DEFAULT_AGENTS: AgentDefinition[] = [
     mode: 'primary',
     model: null,
     tools: ['read', 'list', 'grep', 'glob'],
+    permissions: [],
     maxSteps: 20,
     prompt: 'You are the plan agent.',
     source: 'builtin'

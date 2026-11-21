@@ -7,6 +7,7 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentEvent,
+  AgentPermissionRule,
   ChatMessage,
   CommandDefinition,
   MessagePart,
@@ -848,8 +849,8 @@ export class AgentRuntime {
           this.runs.set(sessionId, run)
         },
         createSnapshotId: (sessionId) => this.createSnapshotId(sessionId),
-        askPermission: (target, action, resource, toolName, callId) =>
-          this.askPermission(target, action, resource, toolName, callId),
+        askPermission: (target, action, resource, toolName, callId, rules) =>
+          this.askPermission(target, action, resource, toolName, callId, rules),
         runAgent: (run) => this.runAgent(run)
       },
       parent,
@@ -938,15 +939,38 @@ export class AgentRuntime {
     action: PermissionAction,
     resource: string,
     toolName: string,
-    toolCallId: string
+    toolCallId: string,
+    agentRulesOverride?: AgentPermissionRule[]
   ): Promise<boolean> {
     if (run.permissionDelegate) {
-      return run.permissionDelegate(action, resource, toolName, toolCallId)
+      return run.permissionDelegate(
+        action,
+        resource,
+        toolName,
+        toolCallId,
+        run.agent?.permissions ?? []
+      )
     }
     const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
     const scan = action === 'shell' ? scanShellCommand(resource, this.options.workspacePath) : null
     const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
-    const rules = [...modePermissionRules(mode), ...this.permissionRules.list(run.sessionId)]
+    const storedRules = this.permissionRules.list(run.sessionId)
+    const globalRules = storedRules.filter((rule) => rule.sessionId === null)
+    const sessionRules = storedRules.filter((rule) => rule.sessionId !== null)
+    const agentRules = agentRulesOverride ?? run.agent?.permissions ?? []
+    const rules = [
+      ...modePermissionRules(mode),
+      ...globalRules,
+      ...agentRules.map((rule, index) => ({
+        id: `agent-${run.sessionId}-${index}`,
+        action: rule.action,
+        resource: rule.resource,
+        effect: rule.effect,
+        sessionId: null,
+        createdAt: ''
+      })),
+      ...sessionRules
+    ]
     const effect = evaluatePermissionRules(rules, {
       action,
       resources,

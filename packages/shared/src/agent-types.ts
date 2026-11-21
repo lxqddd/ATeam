@@ -15,9 +15,16 @@ export interface AgentDefinition {
   mode: AgentMode
   model: ModelRef | null
   tools: string[] | null
+  permissions: AgentPermissionRule[]
   maxSteps: number | null
   prompt: string
   source: 'builtin' | 'user' | 'project'
+}
+
+export interface AgentPermissionRule {
+  action: PermissionRuleAction
+  resource: string
+  effect: PermissionEffect
 }
 
 export interface SubagentInput {

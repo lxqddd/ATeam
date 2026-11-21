@@ -1,12 +1,35 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentDefinition, AgentMode, ModelRef } from '@ateam/shared'
+import type {
+  AgentDefinition,
+  AgentMode,
+  AgentPermissionRule,
+  ModelRef,
+  PermissionEffect,
+  PermissionRuleAction
+} from '@ateam/shared'
 import { readJsonFile } from '../atomic-json'
 import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100
 const MODES: readonly AgentMode[] = ['primary', 'subagent', 'all']
 const READ_TOOLS = ['read', 'list', 'grep', 'glob']
+const RULE_ACTIONS: readonly PermissionRuleAction[] = [
+  'read',
+  'list',
+  'glob',
+  'grep',
+  'write',
+  'edit',
+  'shell',
+  'external_directory',
+  'mcp',
+  'webfetch',
+  'websearch',
+  'skill',
+  '*'
+]
+const RULE_EFFECTS: readonly PermissionEffect[] = ['allow', 'ask', 'deny']
 
 export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
   {
@@ -16,6 +39,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     mode: 'primary',
     model: null,
     tools: null,
+    permissions: [],
     maxSteps: null,
     prompt: '',
     source: 'builtin'
@@ -27,6 +51,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     mode: 'primary',
     model: null,
     tools: [...READ_TOOLS, 'todowrite', 'todoread', 'question'],
+    permissions: [],
     maxSteps: 20,
     prompt:
       'You are the plan agent. Inspect the codebase and produce a clear, actionable plan. Do not modify files or run commands.',
@@ -39,6 +64,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     mode: 'subagent',
     model: null,
     tools: null,
+    permissions: [],
     maxSteps: 25,
     prompt: 'You are a subagent. Complete the delegated task and report the result concisely.',
     source: 'builtin'
@@ -50,6 +76,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     mode: 'subagent',
     model: null,
     tools: [...READ_TOOLS],
+    permissions: [],
     maxSteps: 15,
     prompt:
       'You are an exploration subagent. Search and read the codebase and report your findings concisely.',
@@ -95,6 +122,46 @@ function parseSteps(value: unknown): number | null | undefined {
   const steps = Number(value)
   if (!Number.isInteger(steps) || steps < 1 || steps > MAX_STEPS_LIMIT) return undefined
   return steps
+}
+
+function normalizePermissionRule(value: unknown): AgentPermissionRule | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as { action?: unknown; resource?: unknown; effect?: unknown }
+  if (
+    typeof raw.action !== 'string' ||
+    !RULE_ACTIONS.includes(raw.action as PermissionRuleAction)
+  ) {
+    return null
+  }
+  if (typeof raw.effect !== 'string' || !RULE_EFFECTS.includes(raw.effect as PermissionEffect)) {
+    return null
+  }
+  if (typeof raw.resource !== 'string' || !raw.resource.trim()) return null
+  return {
+    action: raw.action as PermissionRuleAction,
+    resource: raw.resource.trim(),
+    effect: raw.effect as PermissionEffect
+  }
+}
+
+function parsePermissionField(value: unknown): AgentPermissionRule[] {
+  if (value === undefined || value === null || value === '') return []
+  if (Array.isArray(value)) {
+    return value
+      .map(normalizePermissionRule)
+      .filter((rule): rule is AgentPermissionRule => rule !== null)
+  }
+  const text = String(value).trim()
+  if (!text) return []
+  return text
+    .split(',')
+    .map((entry) => {
+      const parts = entry.split('|')
+      if (parts.length !== 3) return null
+      const [action, resource, effect] = parts.map((part) => part.trim())
+      return normalizePermissionRule({ action, resource, effect })
+    })
+    .filter((rule): rule is AgentPermissionRule => rule !== null)
 }
 
 function parseModel(value: unknown): ModelRef | null | undefined {
@@ -150,6 +217,7 @@ export function parseAgentMarkdown(
   const model = parseModel(parsed.fields.get('model'))
   if (model === undefined) return null
 
+  const permissions = parsePermissionField(parsed.fields.get('permission'))
   const fallbackName = path.basename(filePath).replace(/\.md$/i, '')
   const name = parsed.fields.get('name')?.trim() || fallbackName
   if (!name) return null
@@ -161,6 +229,7 @@ export function parseAgentMarkdown(
     mode,
     model,
     tools,
+    permissions,
     maxSteps,
     prompt: parsed.body,
     source
@@ -182,6 +251,7 @@ export function parseAgentJson(value: unknown, source: 'user' | 'project'): Agen
   if (maxSteps === undefined) return null
   const model = parseModel(raw.model)
   if (model === undefined) return null
+  const permissions = parsePermissionField(raw.permission)
 
   return {
     id: agentIdFor(name),
@@ -190,6 +260,7 @@ export function parseAgentJson(value: unknown, source: 'user' | 'project'): Agen
     mode,
     model,
     tools,
+    permissions,
     maxSteps,
     prompt: typeof raw.prompt === 'string' ? raw.prompt.trim() : '',
     source

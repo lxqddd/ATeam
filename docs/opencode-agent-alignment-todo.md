@@ -160,19 +160,20 @@
 
 ### P1-2 子代理与自定义 Agent
 
-**进度（2026-11-21）**：已实现内置 build / plan 主 Agent 与 general / explore 子 Agent；支持 Markdown（`~/.config/ATeam/agent/agents`、`.opencode/agent`、`.opencode/agents`）与 `agents.json` 自定义 Agent（description、mode、model、tools、steps、prompt）；会话级 Agent 选择器（输入框上方）与持久化；`subagent` 工具创建隐藏子会话、同步执行并回报结果、支持继续同一子会话、子会话权限上抛到父会话、禁止嵌套、删除父会话时级联清理。剩余：后台运行的子代理、按 Agent 的权限规则配置与温度等采样参数。
+**进度（2026-11-21）**：已实现内置 build / plan 主 Agent 与 general / explore 子 Agent；支持 Markdown（`~/.config/ATeam/agent/agents`、`.opencode/agent`、`.opencode/agents`）与 `agents.json` 自定义 Agent（description、mode、model、tools、permission、steps、prompt）；会话级 Agent 选择器（输入框上方）与持久化；`subagent` 工具创建隐藏子会话、同步执行并回报结果、支持继续同一子会话、子会话权限上抛到父会话并携带子 Agent 的权限规则、禁止嵌套、删除父会话时级联清理。剩余：后台运行的子代理、温度等采样参数。
 
-**验收**：选择 plan 后 Agent 只能读不能改；可以让子代理在独立上下文中探索代码并把结论带回主对话。
+**验收**：选择 plan 后 Agent 只能读不能改；可以让子代理在独立上下文中探索代码并把结论带回主对话；自定义 Agent 的权限规则可以收紧或放宽全局策略。
 
 - [x] 内置 primary agents：build、plan
 - [x] 内置 subagents：general、explore
 - [x] 支持 Markdown / JSON 自定义 Agent：system prompt、model、tools、steps
-- [ ] 按 Agent 的权限规则与采样参数
+- [x] 按 Agent 的权限规则（`permission: action|resource|effect` 列表）
+- [ ] 按 Agent 的采样参数（temperature 等）
 - [x] 增加 `subagent` 工具：子会话、执行完成后回报
 - [x] 支持继续同一个子会话
 - [ ] 子代理后台运行与完成通知
 - [x] 会话输入框上方增加 Agent 选择器（原计划为头部）
-- [x] 测试 Agent 解析、工具过滤、子会话创建、继续、权限上抛、嵌套深度限制、级联删除
+- [x] 测试 Agent 解析、权限规则、工具过滤、子会话创建、继续、权限上抛、嵌套深度限制、级联删除
 
 ### P1-3 Web 工具
 

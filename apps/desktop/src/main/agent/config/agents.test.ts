@@ -9,6 +9,7 @@ import {
   agentIdFor,
   filterToolsForAgent,
   loadAgents,
+  parseAgentJson,
   parseAgentMarkdown
 } from './agents'
 
@@ -71,6 +72,7 @@ describe('parseAgentMarkdown', () => {
       mode: 'subagent',
       model: { providerId: 'openai', modelId: 'gpt-5' },
       tools: ['read', 'grep'],
+      permissions: [],
       maxSteps: 12,
       prompt: 'You review code changes and report issues.',
       source: 'project'
@@ -265,5 +267,72 @@ describe('filterToolsForAgent', () => {
 
   it('returns all tools without an agent', () => {
     expect(Object.keys(filterToolsForAgent(tools, null))).toEqual(Object.keys(tools))
+  })
+})
+
+describe('agent permission rules', () => {
+  it('parses markdown permission rules', () => {
+    const agent = parseAgentMarkdown(
+      '/repo/.opencode/agent/reviewer.md',
+      [
+        '---',
+        'description: Reviews',
+        'permission: edit|*|deny, shell|git *|ask',
+        '---',
+        'Review.'
+      ].join('\n'),
+      'project'
+    )
+
+    expect(agent?.permissions).toEqual([
+      { action: 'edit', resource: '*', effect: 'deny' },
+      { action: 'shell', resource: 'git *', effect: 'ask' }
+    ])
+  })
+
+  it('ignores invalid permission entries', () => {
+    const agent = parseAgentMarkdown(
+      '/repo/.opencode/agent/reviewer.md',
+      [
+        '---',
+        'description: Reviews',
+        'permission: bogus|*|deny, edit|*|nope, edit|src/*|deny',
+        '---',
+        'Review.'
+      ].join('\n'),
+      'project'
+    )
+
+    expect(agent?.permissions).toEqual([{ action: 'edit', resource: 'src/*', effect: 'deny' }])
+  })
+
+  it('parses json permission arrays', () => {
+    const agent = parseAgentJson(
+      {
+        name: 'lockdown',
+        description: 'Locked down',
+        permission: [
+          { action: 'edit', resource: '*', effect: 'deny' },
+          { action: 'shell', resource: 'git *', effect: 'allow' },
+          { action: 'nope', resource: '*', effect: 'deny' }
+        ]
+      },
+      'user'
+    )
+
+    expect(agent?.permissions).toEqual([
+      { action: 'edit', resource: '*', effect: 'deny' },
+      { action: 'shell', resource: 'git *', effect: 'allow' }
+    ])
+  })
+
+  it('defaults to no permission rules', () => {
+    const agent = parseAgentMarkdown(
+      '/repo/.opencode/agent/plain.md',
+      ['---', 'description: Plain', '---', 'Body.'].join('\n'),
+      'project'
+    )
+    expect(agent?.permissions).toEqual([])
+    expect(BUILTIN_AGENTS.every((entry) => entry.permissions.length === 0)).toBe(true)
   })
 })
