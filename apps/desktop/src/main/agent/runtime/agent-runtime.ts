@@ -197,7 +197,12 @@ export class AgentRuntime {
   }
 
   async setSessionModel(id: string, model: ModelRef | null): Promise<SessionMeta> {
-    if (model) resolveModelRef(this.models, model)
+    if (model) {
+      const resolved = resolveModelRef(this.models, model).model
+      if (model.variant && !(resolved.variants ?? []).some((item) => item.id === model.variant)) {
+        throw new Error('INVALID_VARIANT')
+      }
+    }
     const session = await this.store.setModel(id, model)
     if (!session) throw new Error('SESSION_NOT_FOUND')
     this.emit({ type: 'session.upsert', session })
@@ -1433,6 +1438,12 @@ export class AgentRuntime {
         sessionId: run.sessionId
       })
       const targetInfo = resolveModelRef(this.models, target).model
+      const variantId = target?.variant
+      const variant = variantId
+        ? (targetInfo.variants ?? []).find((candidate) => candidate.id === variantId)
+        : undefined
+      if (variantId && !variant) throw new Error('INVALID_VARIANT')
+      const variantSettings = variant?.settings ?? {}
       const contextWindow = targetInfo.contextWindow ?? DEFAULT_CONTEXT_WINDOW
       const history = this.historyMessages(run, message.id)
       if (shouldCompact(history, contextWindow)) {
@@ -1532,10 +1543,10 @@ export class AgentRuntime {
         messages: buildModelMessages(modelHistory, await this.attachmentPayloads(modelHistory)),
         tools,
         abortSignal: run.abort.signal,
-        reasoning: current.session.reasoningEffort,
+        reasoning: variantSettings.reasoningEffort ?? current.session.reasoningEffort,
         maxSteps: agent?.maxSteps ?? undefined,
-        maxOutputTokens: targetInfo.maxOutputTokens,
-        temperature: agent?.temperature ?? undefined
+        maxOutputTokens: variantSettings.maxOutputTokens ?? targetInfo.maxOutputTokens,
+        temperature: agent?.temperature ?? variantSettings.temperature ?? undefined
       })
 
       for await (const part of result.stream) {

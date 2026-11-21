@@ -7,7 +7,9 @@ import type {
   ModelCreateInput,
   ModelPublic,
   ModelUpdateInput,
-  ProviderPublic
+  ModelVariantInput,
+  ProviderPublic,
+  VariantReasoningEffort
 } from '@ateam/shared'
 import { modelErrorMessage } from './model-errors'
 
@@ -30,6 +32,12 @@ interface ModelFormValues {
   attachment?: boolean
   costInput?: number | null
   costOutput?: number | null
+  variants?: Array<{
+    name?: string
+    reasoningEffort?: VariantReasoningEffort | null
+    temperature?: number | null
+    maxOutputTokens?: number | null
+  }>
 }
 
 function ModelForm({
@@ -88,6 +96,19 @@ function ModelForm({
     }
   }, [model])
 
+  function variantInputs(values: ModelFormValues): ModelVariantInput[] {
+    return (values.variants ?? [])
+      .filter((variant) => variant.name?.trim())
+      .map((variant) => ({
+        name: (variant.name ?? '').trim(),
+        settings: {
+          ...(variant.reasoningEffort ? { reasoningEffort: variant.reasoningEffort } : {}),
+          ...(variant.temperature != null ? { temperature: variant.temperature } : {}),
+          ...(variant.maxOutputTokens != null ? { maxOutputTokens: variant.maxOutputTokens } : {})
+        }
+      }))
+  }
+
   async function handleFinish(values: ModelFormValues): Promise<void> {
     setSaving(true)
     setError(null)
@@ -101,7 +122,8 @@ function ModelForm({
           reasoning: values.reasoning ?? false,
           attachment: values.attachment ?? false,
           costInput: values.costInput ?? null,
-          costOutput: values.costOutput ?? null
+          costOutput: values.costOutput ?? null,
+          variants: variantInputs(values)
         })
       } else {
         const input: ModelCreateInput = {
@@ -115,6 +137,8 @@ function ModelForm({
         if (values.attachment) input.attachment = true
         if (values.costInput != null) input.costInput = values.costInput
         if (values.costOutput != null) input.costOutput = values.costOutput
+        const variants = variantInputs(values)
+        if (variants.length > 0) input.variants = variants
         await onSubmit(input)
       }
     } catch (caught) {
@@ -182,7 +206,13 @@ function ModelForm({
           reasoning: model?.reasoning ?? false,
           attachment: model?.attachment ?? false,
           costInput: model?.costInput,
-          costOutput: model?.costOutput
+          costOutput: model?.costOutput,
+          variants: (model?.variants ?? []).map((variant) => ({
+            name: variant.name,
+            reasoningEffort: variant.settings.reasoningEffort ?? null,
+            temperature: variant.settings.temperature ?? null,
+            maxOutputTokens: variant.settings.maxOutputTokens ?? null
+          }))
         }}
         onFinish={(values) => {
           void handleFinish(values)
@@ -289,6 +319,73 @@ function ModelForm({
             <InputNumber min={0} max={1_000} step={0.01} style={{ width: '100%' }} />
           </Form.Item>
         </div>
+
+        <Form.List name="variants">
+          {(fields, { add, remove }) => (
+            <div className="mt-2">
+              <div className="mb-1.5 flex items-center justify-between">
+                <span className="text-label font-medium text-foreground">
+                  {t('settings.modelVariants')}
+                </span>
+                <Button size="small" onClick={() => add({ reasoningEffort: null })}>
+                  {t('settings.addVariant')}
+                </Button>
+              </div>
+              {fields.length === 0 ? (
+                <p className="mb-0 text-caption text-muted">{t('settings.modelVariantsHint')}</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {fields.map(({ key, name, ...rest }) => (
+                    <div key={key} className="grid gap-2 sm:grid-cols-[1.2fr_1fr_0.8fr_1fr_auto]">
+                      <Form.Item {...rest} name={[name, 'name']} className="mb-0">
+                        <Input aria-label={t('settings.variantName')} placeholder="high" />
+                      </Form.Item>
+                      <Form.Item {...rest} name={[name, 'reasoningEffort']} className="mb-0">
+                        <Select
+                          aria-label={t('settings.variantReasoning')}
+                          allowClear
+                          placeholder={t('settings.variantReasoning')}
+                          options={['minimal', 'low', 'medium', 'high'].map((effort) => ({
+                            value: effort,
+                            label: effort
+                          }))}
+                        />
+                      </Form.Item>
+                      <Form.Item {...rest} name={[name, 'temperature']} className="mb-0">
+                        <InputNumber
+                          aria-label={t('settings.variantTemperature')}
+                          min={0}
+                          max={2}
+                          step={0.1}
+                          style={{ width: '100%' }}
+                          placeholder="0.7"
+                        />
+                      </Form.Item>
+                      <Form.Item {...rest} name={[name, 'maxOutputTokens']} className="mb-0">
+                        <InputNumber
+                          aria-label={t('settings.variantMaxOutput')}
+                          min={1}
+                          max={1_000_000}
+                          step={1_000}
+                          style={{ width: '100%' }}
+                          placeholder="8192"
+                        />
+                      </Form.Item>
+                      <Button
+                        danger
+                        size="small"
+                        aria-label={t('settings.removeVariant')}
+                        onClick={() => remove(name)}
+                      >
+                        ×
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Form.List>
 
         {error && (
           <div className="mt-3">

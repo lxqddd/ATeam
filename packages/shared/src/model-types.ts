@@ -3,6 +3,26 @@ export type ProviderType = 'anthropic' | 'openai' | 'google' | 'openai-compatibl
 export interface ModelRef {
   providerId: string
   modelId: string
+  variant?: string | null
+}
+
+export type VariantReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
+
+export interface ModelVariantSettings {
+  reasoningEffort?: VariantReasoningEffort | null
+  temperature?: number | null
+  maxOutputTokens?: number | null
+}
+
+export interface ModelVariant {
+  id: string
+  name: string
+  settings: ModelVariantSettings
+}
+
+export interface ModelVariantInput {
+  name: string
+  settings: ModelVariantSettings
 }
 
 export interface ProviderPublic {
@@ -29,6 +49,7 @@ export interface ModelPublic {
   costInput?: number
   /** USD per 1M output tokens. */
   costOutput?: number
+  variants?: ModelVariant[]
 }
 
 export interface ModelCatalogEntry {
@@ -94,6 +115,7 @@ export interface ModelCreateInput {
   attachment?: boolean
   costInput?: number
   costOutput?: number
+  variants?: ModelVariantInput[]
 }
 
 export interface ModelUpdateInput {
@@ -105,6 +127,7 @@ export interface ModelUpdateInput {
   attachment?: boolean
   costInput?: number | null
   costOutput?: number | null
+  variants?: ModelVariantInput[] | null
 }
 
 export interface ModelTestResult {

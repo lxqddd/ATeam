@@ -2267,6 +2267,48 @@ describe('background subagents and sampling', () => {
     expect(turns[0].temperature).toBe(0.4)
   })
 
+  it('applies the selected model variant', async () => {
+    runtime.setModels({
+      ...MODELS,
+      models: [
+        {
+          ...MODELS.models[0],
+          maxOutputTokens: 4096,
+          variants: [
+            {
+              id: 'deep',
+              name: 'Deep',
+              settings: { reasoningEffort: 'high', temperature: 0.2, maxOutputTokens: 8192 }
+            }
+          ]
+        }
+      ]
+    })
+    await runtime.setSessionModel(sessionId, {
+      providerId: 'provider-1',
+      modelId: 'model-1',
+      variant: 'deep'
+    })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].reasoning).toBe('high')
+    expect(turns[0].temperature).toBe(0.2)
+    expect(turns[0].maxOutputTokens).toBe(8192)
+  })
+
+  it('rejects unknown model variants', async () => {
+    await expect(
+      runtime.setSessionModel(sessionId, {
+        providerId: 'provider-1',
+        modelId: 'model-1',
+        variant: 'missing'
+      })
+    ).rejects.toThrow('INVALID_VARIANT')
+  })
+
   it('runs subagents in the background and reports completion', async () => {
     scripts.push(subagentCallScript({ prompt: 'Explore src', agent: 'explore', background: true }))
     scripts.push(textScript('background result'))

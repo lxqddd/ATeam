@@ -178,16 +178,26 @@ function parseTemperature(value: unknown): number | null | undefined {
 function parseModel(value: unknown): ModelRef | null | undefined {
   if (value === undefined || value === null || value === '') return null
   if (typeof value === 'object') {
-    const raw = value as { providerId?: unknown; modelId?: unknown }
+    const raw = value as { providerId?: unknown; modelId?: unknown; variant?: unknown }
     if (typeof raw.providerId === 'string' && typeof raw.modelId === 'string') {
-      return { providerId: raw.providerId, modelId: raw.modelId }
+      const model: ModelRef = { providerId: raw.providerId, modelId: raw.modelId }
+      if (typeof raw.variant === 'string' && raw.variant.trim()) model.variant = raw.variant.trim()
+      return model
     }
     return undefined
   }
   const text = String(value).trim()
   const separator = text.indexOf('/')
   if (separator <= 0 || separator === text.length - 1) return undefined
-  return { providerId: text.slice(0, separator), modelId: text.slice(separator + 1) }
+  const rest = text.slice(separator + 1)
+  const hash = rest.indexOf('#')
+  if (hash > 0) {
+    const variant = rest.slice(hash + 1).trim()
+    const model: ModelRef = { providerId: text.slice(0, separator), modelId: rest.slice(0, hash) }
+    if (variant) model.variant = variant
+    return model
+  }
+  return { providerId: text.slice(0, separator), modelId: rest }
 }
 
 function parseFrontmatter(content: string): { fields: Map<string, string>; body: string } | null {

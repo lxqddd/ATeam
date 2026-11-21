@@ -268,6 +268,55 @@ describe('ModelsStore', () => {
     )
   })
 
+  it('stores model variants', async () => {
+    const providerId = await addAnthropic()
+    const config = await store.addModel({
+      providerId,
+      modelId: 'm1',
+      variants: [
+        {
+          name: 'Fast',
+          settings: { reasoningEffort: 'low', temperature: 0, maxOutputTokens: 1000 }
+        },
+        { name: 'Deep', settings: { reasoningEffort: 'high' } }
+      ]
+    })
+
+    expect(config.models[0].variants).toEqual([
+      {
+        id: 'fast',
+        name: 'Fast',
+        settings: { reasoningEffort: 'low', temperature: 0, maxOutputTokens: 1000 }
+      },
+      { id: 'deep', name: 'Deep', settings: { reasoningEffort: 'high' } }
+    ])
+
+    const cleared = await store.updateModel({
+      id: config.models[0].id,
+      name: 'Model One',
+      variants: null
+    })
+    expect(cleared.models[0].variants).toBeUndefined()
+
+    await expect(
+      store.addModel({
+        providerId,
+        modelId: 'm2',
+        variants: [{ name: 'Fast', settings: { temperature: 3 } }]
+      })
+    ).rejects.toThrow('INVALID_VARIANT')
+    await expect(
+      store.addModel({
+        providerId,
+        modelId: 'm3',
+        variants: [
+          { name: 'Same', settings: {} },
+          { name: 'Same', settings: {} }
+        ]
+      })
+    ).rejects.toThrow('INVALID_VARIANT')
+  })
+
   it('keeps the previous key when re-encryption is unavailable', async () => {
     const providerId = await addAnthropic()
     safeStorage.isEncryptionAvailable.mockReturnValue(false)

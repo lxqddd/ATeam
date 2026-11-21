@@ -61,6 +61,20 @@ describe('parseCommandMarkdown', () => {
     })
   })
 
+  it('parses a model variant suffix', () => {
+    const command = parseCommandMarkdown(
+      '/repo/.opencode/command/deep.md',
+      ['---', 'description: Deep', 'model: openai/gpt-5#high', '---', 'Think.'].join('\n'),
+      'project'
+    )
+
+    expect(command?.model).toEqual({
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      variant: 'high'
+    })
+  })
+
   it('rejects empty files', () => {
     expect(parseCommandMarkdown('/repo/.opencode/command/empty.md', '', 'project')).toBeNull()
   })

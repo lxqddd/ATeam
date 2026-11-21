@@ -107,7 +107,8 @@ describe('ModelForm', () => {
         reasoning: false,
         attachment: false,
         costInput: null,
-        costOutput: null
+        costOutput: null,
+        variants: []
       })
     )
   })
@@ -147,6 +148,58 @@ describe('model capability metadata', () => {
           attachment: true,
           costInput: 3,
           costOutput: 15
+        })
+      )
+    )
+  })
+
+  it('submits model variants when creating a model', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ModelForm providers={[provider]} onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Model ID'), 'claude-new')
+    await user.click(screen.getByRole('button', { name: 'Add variant' }))
+    await user.type(screen.getByLabelText('Variant name'), 'Fast')
+    await user.type(screen.getByLabelText('Variant temperature'), '0.2')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        providerId: 'p1',
+        modelId: 'claude-new',
+        name: undefined,
+        variants: [{ name: 'Fast', settings: { temperature: 0.2 } }]
+      })
+    )
+  })
+
+  it('round-trips existing variants when editing', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(
+      <ModelForm
+        model={{
+          ...sonnet,
+          variants: [
+            { id: 'high', name: 'High', settings: { reasoningEffort: 'high', temperature: 1 } }
+          ]
+        }}
+        providers={[provider]}
+        onSubmit={onSubmit}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByDisplayValue('High')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'm1',
+          name: 'Sonnet',
+          variants: [{ name: 'High', settings: { reasoningEffort: 'high', temperature: 1 } }]
         })
       )
     )

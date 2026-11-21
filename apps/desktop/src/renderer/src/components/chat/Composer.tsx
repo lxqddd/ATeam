@@ -134,6 +134,15 @@ function Composer(): React.JSX.Element {
   )
   const running = session?.status === 'running' || session?.status === 'waiting-permission'
   const ready = status.status === 'ready'
+  const modelVariants = effectiveModelInfo?.variants ?? []
+  const activeVariant =
+    effectiveModel?.variant &&
+    modelVariants.some((variant) => variant.id === effectiveModel.variant)
+      ? effectiveModel.variant
+      : null
+  const variantLabel = activeVariant
+    ? (modelVariants.find((variant) => variant.id === activeVariant)?.name ?? activeVariant)
+    : t('chat.variantDefault')
   const reasoningEffort = session?.reasoningEffort ?? null
   const permissionMode = session?.permissionMode ?? 'ask'
   const reasoningLabel = reasoningEffort
@@ -588,6 +597,26 @@ function Composer(): React.JSX.Element {
               }}
               disabled={!ready || running || sending}
             />
+            {modelVariants.length > 0 && (
+              <ComposerChoiceChip
+                ariaLabel={t('chat.modelVariant')}
+                accessibleLabel={`${t('chat.modelVariant')}: ${variantLabel}`}
+                label={`${t('chat.variantShort')} · ${variantLabel}`}
+                value={activeVariant ?? 'default'}
+                options={[
+                  { value: 'default', label: t('chat.variantDefault') },
+                  ...modelVariants.map((variant) => ({ value: variant.id, label: variant.name }))
+                ]}
+                onChange={(value) => {
+                  if (!effectiveModel) return
+                  void changeModel({
+                    ...effectiveModel,
+                    variant: value === 'default' ? null : value
+                  })
+                }}
+                disabled={!ready || running || sending}
+              />
+            )}
             {agentOptions.length > 0 && (
               <ComposerChoiceChip
                 ariaLabel={t('chat.agent')}

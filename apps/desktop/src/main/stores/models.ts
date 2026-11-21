@@ -6,6 +6,10 @@ import type {
   ModelPublic,
   ModelRef,
   ModelUpdateInput,
+  ModelVariant,
+  ModelVariantInput,
+  ModelVariantSettings,
+  VariantReasoningEffort,
   ModelsConfigPublic,
   ProviderCreateInput,
   ProviderPublic,
@@ -38,6 +42,8 @@ interface StoredSecrets {
 }
 
 const PROVIDER_TYPES: ProviderType[] = ['anthropic', 'openai', 'google', 'openai-compatible']
+const VARIANT_EFFORTS: VariantReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
+const MAX_MODEL_VARIANTS = 10
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -55,6 +61,58 @@ function normalizeModelId(value: string): string {
   if (!modelId) throw new Error('MODEL_ID_REQUIRED')
   if (modelId.length > 200) throw new Error('MODEL_ID_TOO_LONG')
   return modelId
+}
+
+function slugifyVariant(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function normalizeVariantSettings(value: ModelVariantSettings | undefined): ModelVariantSettings {
+  if (!value || typeof value !== 'object') throw new Error('INVALID_VARIANT')
+  const settings: ModelVariantSettings = {}
+  if (value.reasoningEffort !== undefined && value.reasoningEffort !== null) {
+    if (!VARIANT_EFFORTS.includes(value.reasoningEffort)) throw new Error('INVALID_VARIANT')
+    settings.reasoningEffort = value.reasoningEffort
+  }
+  if (value.temperature !== undefined && value.temperature !== null) {
+    if (!Number.isFinite(value.temperature) || value.temperature < 0 || value.temperature > 2) {
+      throw new Error('INVALID_VARIANT')
+    }
+    settings.temperature = value.temperature
+  }
+  if (value.maxOutputTokens !== undefined && value.maxOutputTokens !== null) {
+    if (
+      !Number.isInteger(value.maxOutputTokens) ||
+      value.maxOutputTokens < 1 ||
+      value.maxOutputTokens > 1_000_000
+    ) {
+      throw new Error('INVALID_VARIANT')
+    }
+    settings.maxOutputTokens = value.maxOutputTokens
+  }
+  return settings
+}
+
+function normalizeVariants(
+  value: ModelVariantInput[] | null | undefined
+): ModelVariant[] | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!Array.isArray(value) || value.length > MAX_MODEL_VARIANTS) {
+    throw new Error('INVALID_VARIANT')
+  }
+  if (value.length === 0) return undefined
+  const seen = new Set<string>()
+  return value.map((input) => {
+    const name = typeof input?.name === 'string' ? input.name.trim() : ''
+    const id = slugifyVariant(name)
+    if (!name || name.length > 50 || !id || seen.has(id)) throw new Error('INVALID_VARIANT')
+    seen.add(id)
+    return { id, name, settings: normalizeVariantSettings(input.settings) }
+  })
 }
 
 function normalizeContextWindow(value: number | null | undefined): number | undefined {
@@ -285,6 +343,8 @@ export class ModelsStore {
       if (costInput !== undefined) model.costInput = costInput
       const costOutput = normalizeCost(input.costOutput)
       if (costOutput !== undefined) model.costOutput = costOutput
+      const variants = normalizeVariants(input.variants)
+      if (variants) model.variants = variants
       this.config.models.push(model)
       if (!this.config.defaultModel) {
         this.config.defaultModel = { providerId: model.providerId, modelId: model.modelId }
@@ -319,6 +379,11 @@ export class ModelsStore {
         const costOutput = normalizeCost(input.costOutput)
         if (costOutput === undefined) delete model.costOutput
         else model.costOutput = costOutput
+      }
+      if (input.variants !== undefined) {
+        const variants = normalizeVariants(input.variants)
+        if (variants === undefined) delete model.variants
+        else model.variants = variants
       }
       await this.persist()
     })

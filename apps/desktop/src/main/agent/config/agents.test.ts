@@ -62,6 +62,16 @@ describe('agentIdFor', () => {
 })
 
 describe('parseAgentMarkdown', () => {
+  it('parses a model variant suffix', () => {
+    const agent = parseAgentMarkdown(
+      '/repo/.opencode/agent/deep.md',
+      ['---', 'description: Deep', 'model: openai/gpt-5#high', '---', 'Body.'].join('\n'),
+      'project'
+    )
+
+    expect(agent?.model).toEqual({ providerId: 'openai', modelId: 'gpt-5', variant: 'high' })
+  })
+
   it('parses frontmatter and prompt body', () => {
     const agent = parseAgentMarkdown('/repo/.opencode/agent/reviewer.md', FRONTMATTER, 'project')
 

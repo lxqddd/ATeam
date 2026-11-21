@@ -43,9 +43,20 @@ function parseModelField(value: string | undefined): ModelRef | null {
   if (!trimmed) return null
   const separator = trimmed.indexOf('/')
   if (separator <= 0 || separator === trimmed.length - 1) return null
+  const rest = trimmed.slice(separator + 1)
+  const hash = rest.indexOf('#')
+  if (hash > 0) {
+    const variant = rest.slice(hash + 1).trim()
+    const model: ModelRef = {
+      providerId: trimmed.slice(0, separator),
+      modelId: rest.slice(0, hash)
+    }
+    if (variant) model.variant = variant
+    return model
+  }
   return {
     providerId: trimmed.slice(0, separator),
-    modelId: trimmed.slice(separator + 1)
+    modelId: rest
   }
 }
 

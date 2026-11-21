@@ -612,6 +612,34 @@ describe('Composer', () => {
 })
 
 describe('model capabilities', () => {
+  it('selects a model variant', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState()
+    if (state.models) {
+      state.models = {
+        ...state.models,
+        models: state.models.models.map((model) => ({
+          ...model,
+          variants: [{ id: 'high', name: 'High', settings: { reasoningEffort: 'high' } }]
+        }))
+      }
+    }
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: 'Model variant: Default' }))
+    await user.click(await screen.findByRole('option', { name: /^High/ }))
+
+    await waitFor(() =>
+      expect(chatMocks.setSessionModel).toHaveBeenCalledWith('s1', {
+        providerId: 'p1',
+        modelId: 'claude-x',
+        variant: 'high'
+      })
+    )
+  })
+
   it('hides the reasoning control for models without reasoning support', () => {
     const state = baseState()
     if (state.models) {
