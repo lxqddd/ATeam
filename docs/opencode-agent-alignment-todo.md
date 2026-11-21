@@ -102,7 +102,7 @@
 - [x] 外部目录默认允许；危险命令不再强制弹窗，由规则与模式决定
 - [x] 增加 read / list / glob / grep 权限 action
 - [x] 提供规则管理 UI（查看、添加、撤销已保存规则）
-- [ ] MCP / Web / Skill / 子代理权限 action（随 P1-1/P1-2/P1-3）
+- [ ] Web / Skill / 子代理权限 action（随 P1-2 / P1-3 / P1-5；MCP 已完成）
 - [x] 测试规则优先级、通配符匹配、持久化恢复、命令扫描
 
 **验收**：用户可以对“某个目录的写操作”或“某类命令”设置永久允许/拒绝；重启后规则仍然有效。
@@ -144,23 +144,35 @@
 
 ### P1-1 MCP（Model Context Protocol）
 
-- [ ] 增加 MCP 配置存储与设置页
-- [ ] 支持本地（stdio）与远程（HTTP）MCP server
-- [ ] 支持 OAuth 与自定义 headers
-- [ ] 把 MCP 工具注册进工具列表，并纳入权限规则
-- [ ] 支持 MCP resources / prompts
-- [ ] 断线重连与连接状态展示
-- [ ] 测试配置校验、工具注册、权限匹配、断线恢复
+**进度（2026-11-21）**：已实现 MCP 服务器配置存储与设置页（新增 / 编辑 / 启停 / 删除 / 状态探测）、本地 stdio 与远程 Streamable HTTP 传输、自定义 headers、工具自动注册为 `mcp_<server>_<tool>` 并纳入 `mcp` 权限动作、工具列表变更刷新、失败隔离与下次运行重连、连接状态与工具 / prompts / resources 数量展示。剩余：OAuth 授权流程，prompts 作为命令与 resources 的 Agent 读取入口（随 P1-5）。
+
+**验收**：在设置页添加一个本地或远程 MCP server 后，对话中可以使用它提供的工具，并按权限规则审批。
+
+- [x] 增加 MCP 配置存储与设置页
+- [x] 支持本地（stdio）与远程（HTTP）MCP server
+- [x] 支持自定义 headers
+- [ ] 支持 OAuth（授权发现、浏览器回调与 token 存储）
+- [x] 把 MCP 工具注册进工具列表，并纳入权限规则
+- [x] 连接后读取并展示 MCP prompts / resources 数量
+- [ ] prompts 作为命令、resources 提供给 Agent 读取（随 P1-5）
+- [x] 断线重连与连接状态展示
+- [x] 测试配置校验、工具注册、权限匹配、传输与分页、失败恢复
 
 ### P1-2 子代理与自定义 Agent
 
-- [ ] 内置 primary agents：build、plan
-- [ ] 内置 subagents：general、explore
-- [ ] 支持 Markdown / JSON 自定义 Agent：system prompt、model、permissions、steps
-- [ ] 增加 `subagent` 工具：子会话、后台运行、完成后回报
-- [ ] 支持继续同一个子会话
-- [ ] 会话头部增加 Agent 选择器
-- [ ] 测试 Agent 解析、子会话创建、后台回报、嵌套深度限制
+**进度（2026-11-21）**：已实现内置 build / plan 主 Agent 与 general / explore 子 Agent；支持 Markdown（`~/.config/ATeam/agent/agents`、`.opencode/agent`、`.opencode/agents`）与 `agents.json` 自定义 Agent（description、mode、model、tools、steps、prompt）；会话级 Agent 选择器（输入框上方）与持久化；`subagent` 工具创建隐藏子会话、同步执行并回报结果、支持继续同一子会话、子会话权限上抛到父会话、禁止嵌套、删除父会话时级联清理。剩余：后台运行的子代理、按 Agent 的权限规则配置与温度等采样参数。
+
+**验收**：选择 plan 后 Agent 只能读不能改；可以让子代理在独立上下文中探索代码并把结论带回主对话。
+
+- [x] 内置 primary agents：build、plan
+- [x] 内置 subagents：general、explore
+- [x] 支持 Markdown / JSON 自定义 Agent：system prompt、model、tools、steps
+- [ ] 按 Agent 的权限规则与采样参数
+- [x] 增加 `subagent` 工具：子会话、执行完成后回报
+- [x] 支持继续同一个子会话
+- [ ] 子代理后台运行与完成通知
+- [x] 会话输入框上方增加 Agent 选择器（原计划为头部）
+- [x] 测试 Agent 解析、工具过滤、子会话创建、继续、权限上抛、嵌套深度限制、级联删除
 
 ### P1-3 Web 工具
 
@@ -239,7 +251,7 @@
 2. ~~P0-2 项目规则~~、~~P0-4 权限规则~~ → 已完成
 3. ~~P0-3 快照 / undo~~ → 已完成
 4. ~~P0-5 工具集补齐~~、~~P0-6 LSP / 格式化~~ → 已完成基础版
-5. P1-1 MCP + P1-2 子代理
+5. ~~P1-1 MCP~~、~~P1-2 子代理~~ → 已完成基础版（OAuth 与后台子代理待补）；下一步 P1-3 Web 工具
 6. P1-3 / P1-4 / P1-5 / P1-6 / P1-9 按产品优先级穿插
 
 ## 关键依赖

@@ -1,10 +1,14 @@
 import type {
   AgentConfig,
+  AgentDefinition,
   AgentEvent,
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
   AteamApi,
+  McpServerConfig,
+  McpServerInput,
+  McpServerStatus,
   MessagesSnapshot,
   ModelRef,
   ModelsConfigPublic,
@@ -31,6 +35,31 @@ const DEFAULT_INFO: AgentInfo = {
   lspServers: [],
   formatters: []
 }
+
+const DEFAULT_AGENTS: AgentDefinition[] = [
+  {
+    id: 'build',
+    name: 'build',
+    description: 'General coding agent with the full toolset.',
+    mode: 'primary',
+    model: null,
+    tools: null,
+    maxSteps: null,
+    prompt: '',
+    source: 'builtin'
+  },
+  {
+    id: 'plan',
+    name: 'plan',
+    description: 'Read-only planning agent.',
+    mode: 'primary',
+    model: null,
+    tools: ['read', 'list', 'grep', 'glob'],
+    maxSteps: 20,
+    prompt: 'You are the plan agent.',
+    source: 'builtin'
+  }
+]
 
 export interface ApiMock {
   api: AteamApi
@@ -69,6 +98,7 @@ export function createApiMock(
       status: vi.fn(async () => status),
       restart: vi.fn(async () => status),
       info: vi.fn(async () => info),
+      agents: vi.fn(async () => DEFAULT_AGENTS.map((agent) => ({ ...agent }))),
       onEvent: vi.fn((callback: (envelope: AgentEventEnvelope) => void) => {
         listeners.add(callback)
         return () => {
@@ -90,6 +120,11 @@ export function createApiMock(
         remove: vi.fn(async (id: string) => {
           const index = sessions.findIndex((entry) => entry.id === id)
           if (index >= 0) sessions.splice(index, 1)
+        }),
+        setAgent: vi.fn(async (id: string, agent: string | null) => {
+          const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          session.agent = agent
+          return { ...session }
         }),
         setModel: vi.fn(async (id: string, model: ModelRef | null) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
@@ -150,6 +185,40 @@ export function createApiMock(
           formatters: true,
           ...patch
         }))
+      },
+      mcp: {
+        list: vi.fn(async () => ({
+          servers: [] as McpServerConfig[],
+          statuses: [] as McpServerStatus[]
+        })),
+        statuses: vi.fn(async () => [] as McpServerStatus[]),
+        add: vi.fn(async (input: McpServerInput) => ({
+          id: `mcp-${Date.now()}`,
+          name: input.name,
+          type: input.type,
+          command: input.command ?? null,
+          args: input.args ?? [],
+          url: input.url ?? null,
+          headers: input.headers ?? {},
+          env: input.env ?? {},
+          enabled: input.enabled ?? true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        })),
+        update: vi.fn(async (id: string, input: Partial<McpServerInput>) => ({
+          id,
+          name: input.name ?? 'demo',
+          type: input.type ?? ('local' as const),
+          command: input.command ?? null,
+          args: input.args ?? [],
+          url: input.url ?? null,
+          headers: input.headers ?? {},
+          env: input.env ?? {},
+          enabled: input.enabled ?? true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        })),
+        remove: vi.fn(async () => true)
       }
     },
     models: {

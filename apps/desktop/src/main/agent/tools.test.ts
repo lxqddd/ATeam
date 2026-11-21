@@ -26,6 +26,7 @@ function execute(
 
 let directory: string
 let tools: ReturnType<typeof createTools>
+let baseContext: ToolContext
 let askPermission: Mock<ToolContext['askPermission']>
 let loadNested: Mock<(targetPath: string) => Promise<string>>
 let storeOutput: Mock<NonNullable<ToolContext['storeOutput']>>
@@ -34,6 +35,7 @@ let backgroundOutputPath: Mock<NonNullable<ToolContext['backgroundOutputPath']>>
 let onBackgroundFinished: Mock<NonNullable<ToolContext['onBackgroundFinished']>>
 let formatFiles: Mock<NonNullable<ToolContext['formatFiles']>>
 let diagnoseFiles: Mock<NonNullable<ToolContext['diagnoseFiles']>>
+let runSubagent: Mock<NonNullable<ToolContext['runSubagent']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -45,7 +47,8 @@ beforeEach(async () => {
   onBackgroundFinished = vi.fn()
   formatFiles = vi.fn(async () => '')
   diagnoseFiles = vi.fn(async () => '')
-  tools = createTools({
+  runSubagent = vi.fn(async () => 'child result')
+  baseContext = {
     workspace: directory,
     signal: new AbortController().signal,
     askPermission,
@@ -55,8 +58,10 @@ beforeEach(async () => {
     backgroundOutputPath,
     onBackgroundFinished,
     formatFiles,
-    diagnoseFiles
-  })
+    diagnoseFiles,
+    runSubagent
+  }
+  tools = createTools(baseContext)
 })
 
 afterEach(async () => {
@@ -689,5 +694,23 @@ describe('formatting and diagnostics', () => {
       path.join(directory, 'added.ts'),
       path.join(directory, 'old.txt')
     ])
+  })
+})
+
+describe('subagent tool', () => {
+  it('delegates to the runtime callback', async () => {
+    await expect(
+      execute(tools.subagent, { prompt: 'Explore src', agent: 'explore' })
+    ).resolves.toBe('child result')
+
+    expect(runSubagent).toHaveBeenCalledWith({ prompt: 'Explore src', agent: 'explore' }, 'call-1')
+  })
+
+  it('reports unavailable subagents', async () => {
+    const limited = createTools({ ...baseContext, runSubagent: undefined })
+
+    await expect(execute(limited.subagent, { prompt: 'Explore src' })).resolves.toBe(
+      'Error: subagents are not available.'
+    )
   })
 })

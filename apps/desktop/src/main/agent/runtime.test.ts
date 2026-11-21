@@ -7,12 +7,14 @@ import type {
   AgentEvent,
   AgentEventEnvelope,
   ChatMessage,
+  ModelRef,
   PermissionAction,
   PermissionRule,
   RuntimeModelsConfig
 } from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './runtime'
 import type { InstructionFile } from './instructions'
+import type { McpManagerLike } from './mcp'
 import { PermissionsStore } from './permissions-store'
 import { SessionsStore } from './sessions-store'
 import { makeMessage } from './test/factories'
@@ -145,6 +147,17 @@ let instructionInputs: Array<{ workspacePath: string; globalDirectory: string }>
 let toolAction: PermissionAction
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
 let toolContext: ToolContext | null
+let subagentExecutor:
+  | ((
+      input: { prompt: string; agent?: string; sessionId?: string },
+      toolCallId: string
+    ) => Promise<string>)
+  | null
+let baseTools: ToolSet
+let languageModelRefs: Array<ModelRef | null>
+let mcpManager: McpManagerLike
+let mcpTools: ReturnType<typeof vi.fn>
+let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
 let runtime: AgentRuntime
 let sessionId: string
@@ -156,14 +169,18 @@ function createRuntime(): AgentRuntime {
     models: MODELS,
     send: sink.send,
     dependencies: {
-      createLanguageModel: () => ({}) as unknown as LanguageModel,
+      createLanguageModel: (_models, ref) => {
+        languageModelRefs.push(ref)
+        return {} as unknown as LanguageModel
+      },
       createTools: (context) => {
         toolContext = context
+        subagentExecutor = context.runSubagent ?? null
         toolExecutor = async (value, toolCallId) => {
           const allowed = await context.askPermission(toolAction, value, 'task', toolCallId)
           return allowed ? `done:${value}` : 'Permission denied'
         }
-        return {}
+        return baseTools
       },
       createTurn: (input) => {
         turns.push(input)
@@ -178,7 +195,8 @@ function createRuntime(): AgentRuntime {
       loadInstructions: async (input) => {
         instructionInputs.push(input)
         return instructionFiles
-      }
+      },
+      createMcpManager: () => mcpManager
     }
   })
 }
@@ -421,6 +439,20 @@ beforeEach(async () => {
   toolAction = 'write'
   toolExecutor = null
   toolContext = null
+  subagentExecutor = null
+  baseTools = {}
+  languageModelRefs = []
+  mcpTools = vi.fn(async () => ({}))
+  mcpDispose = vi.fn(async () => undefined)
+  mcpManager = {
+    tools: mcpTools as unknown as McpManagerLike['tools'],
+    dispose: mcpDispose as unknown as McpManagerLike['dispose'],
+    servers: vi.fn(async () => []),
+    statuses: vi.fn(async () => []),
+    addServer: vi.fn(),
+    updateServer: vi.fn(),
+    removeServer: vi.fn()
+  }
   resumeTurn = null
   runtime = createRuntime()
   await runtime.init()
@@ -1495,5 +1527,213 @@ describe('agent tooling configuration', () => {
 
     expect(toolContext?.formatFiles).toBeUndefined()
     expect(toolContext?.diagnoseFiles).toBeUndefined()
+  })
+})
+
+describe('MCP tool integration', () => {
+  it('merges MCP tools into the run tool set', async () => {
+    mcpTools.mockResolvedValue({
+      mcp_demo_echo: { description: 'Echo', execute: async () => 'ok' }
+    } as unknown as ToolSet)
+    scripts.push(textScript('Hello'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(mcpTools).toHaveBeenCalledWith(
+      expect.objectContaining({ askPermission: expect.any(Function) })
+    )
+    expect(Object.keys(turns[0].tools)).toContain('mcp_demo_echo')
+  })
+
+  it('disposes the MCP manager on shutdown', async () => {
+    scripts.push(textScript('Hello'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    await runtime.shutdown()
+
+    expect(mcpDispose).toHaveBeenCalled()
+  })
+})
+
+function subagentCallScript(input: { prompt: string; agent?: string; sessionId?: string }): Script {
+  return async function* () {
+    yield part({ type: 'tool-input-start', id: 'call-sub', toolName: 'subagent' })
+    yield part({ type: 'tool-call', toolCallId: 'call-sub', toolName: 'subagent', input })
+    if (!subagentExecutor) throw new Error('subagent executor is missing')
+    const output = await subagentExecutor(input, 'call-sub')
+    yield part({ type: 'tool-result', toolCallId: 'call-sub', toolName: 'subagent', input, output })
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'parent done' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function nestedSubagentScript(): Script {
+  return async function* () {
+    if (!subagentExecutor) throw new Error('subagent executor is missing')
+    const output = await subagentExecutor(
+      { prompt: 'Nested task', agent: 'general' },
+      'call-nested'
+    )
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: output })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function toolOutput(message: ChatMessage | undefined): string {
+  const part = message?.parts.find((entry) => entry.type === 'tool')
+  return part?.type === 'tool' ? (part.output ?? '') : ''
+}
+
+describe('agent selection', () => {
+  it('lists builtin and custom agents', async () => {
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', 'custom.md'),
+      ['---', 'description: Custom agent', 'mode: primary', '---', 'Custom prompt.'].join('\n')
+    )
+
+    const agents = await runtime.listAgents()
+
+    expect(agents.map((agent) => agent.id)).toContain('custom')
+    expect(agents.map((agent) => agent.id)).toContain('build')
+  })
+
+  it('persists the selected primary agent', async () => {
+    const updated = await runtime.setSessionAgent(sessionId, 'plan')
+
+    expect(updated.agent).toBe('plan')
+    expect(runtime.listSessions()[0].agent).toBe('plan')
+  })
+
+  it('rejects subagent and unknown agents for primary sessions', async () => {
+    await expect(runtime.setSessionAgent(sessionId, 'explore')).rejects.toThrow('AGENT_NOT_PRIMARY')
+    await expect(runtime.setSessionAgent(sessionId, 'missing')).rejects.toThrow('AGENT_NOT_FOUND')
+  })
+
+  it('applies the agent prompt, tools and step limit', async () => {
+    baseTools = { read: {} as never, write: {} as never, subagent: {} as never }
+    await runtime.setSessionAgent(sessionId, 'plan')
+    scripts.push(textScript('planned'))
+
+    await runtime.sendChat(sessionId, 'plan the work')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('plan agent')
+    expect(Object.keys(turns[0].tools)).toEqual(['read'])
+    expect(turns[0].maxSteps).toBe(20)
+  })
+
+  it('uses the agent model when configured', async () => {
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', 'smart.md'),
+      [
+        '---',
+        'description: Smart agent',
+        'mode: primary',
+        'model: provider-1/model-1',
+        '---',
+        'Be smart.'
+      ].join('\n')
+    )
+    await runtime.setSessionAgent(sessionId, 'smart')
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(languageModelRefs.at(-1)).toEqual({ providerId: 'provider-1', modelId: 'model-1' })
+  })
+})
+
+describe('subagent tool', () => {
+  it('runs a hidden child session and returns its output', async () => {
+    scripts.push(subagentCallScript({ prompt: 'Explore src', agent: 'explore' }))
+    scripts.push(textScript('found three files'))
+
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+
+    const output = toolOutput(assistantMessages().at(-1))
+    expect(output).toContain('[subagent explore · session ')
+    expect(output).toContain('found three files')
+    const childId = /session ([0-9a-f-]+)/.exec(output)?.[1]
+    expect(childId).toBeTruthy()
+    const childMessages = runtime.messages(childId as string).messages
+    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'found three files' }])
+    expect(runtime.listSessions()).toHaveLength(1)
+  })
+
+  it('prevents nested subagents', async () => {
+    scripts.push(subagentCallScript({ prompt: 'Outer task', agent: 'general' }))
+    scripts.push(nestedSubagentScript())
+
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toContain('subagents cannot spawn subagents')
+  })
+
+  it('continues an existing subagent session', async () => {
+    scripts.push(subagentCallScript({ prompt: 'First task', agent: 'explore' }))
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+    const childId = /session ([0-9a-f-]+)/.exec(
+      toolOutput(assistantMessages().at(-1))
+    )?.[1] as string
+
+    scripts.push(subagentCallScript({ prompt: 'Follow up', agent: 'explore', sessionId: childId }))
+    scripts.push(textScript('second answer'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+
+    const childMessages = runtime.messages(childId).messages
+    expect(childMessages).toHaveLength(4)
+    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'second answer' }])
+    expect(toolOutput(assistantMessages().at(-1))).toContain('second answer')
+    expect(runtime.listSessions()).toHaveLength(1)
+  })
+
+  it('delegates child permissions to the parent request', async () => {
+    scripts.push(subagentCallScript({ prompt: 'Edit a file', agent: 'general' }))
+    scripts.push(async function* () {
+      if (!toolExecutor) throw new Error('tool executor is missing')
+      const result = await toolExecutor('child.txt', 'child-call')
+      yield part({ type: 'text-start', id: 't1' })
+      yield part({ type: 'text-delta', id: 't1', text: result })
+      yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+    })
+
+    await runtime.sendChat(sessionId, 'delegate')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    expect(asked.event.permission).toMatchObject({
+      sessionId,
+      action: 'write',
+      toolCallId: 'call-sub'
+    })
+    runtime.replyPermission(asked.event.permission.id, 'once')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toContain('done:child.txt')
+  })
+
+  it('removes child sessions when the parent is deleted', async () => {
+    scripts.push(subagentCallScript({ prompt: 'Explore', agent: 'explore' }))
+    scripts.push(textScript('done'))
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+    const childId = /session ([0-9a-f-]+)/.exec(
+      toolOutput(assistantMessages().at(-1))
+    )?.[1] as string
+
+    await runtime.deleteSession(sessionId)
+
+    expect(() => runtime.messages(childId)).toThrow('SESSION_NOT_FOUND')
   })
 })

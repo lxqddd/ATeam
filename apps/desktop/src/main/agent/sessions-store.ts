@@ -120,6 +120,18 @@ function repairRecord(record: SessionRecord): boolean {
     record.session.contextWindow = null
     changed = true
   }
+  if (typeof record.session.agent !== 'string') {
+    record.session.agent = null
+    changed = true
+  }
+  if (typeof record.session.parentId !== 'string') {
+    record.session.parentId = null
+    changed = true
+  }
+  if (typeof record.session.hidden !== 'boolean') {
+    record.session.hidden = false
+    changed = true
+  }
 
   for (const message of record.messages) {
     if (message.status === 'streaming') {
@@ -232,7 +244,14 @@ export class SessionsStore {
     return record ? clone(record.messages) : undefined
   }
 
-  async create(): Promise<SessionMeta> {
+  async create(
+    options: {
+      hidden?: boolean
+      parentId?: string | null
+      agent?: string | null
+      permissionMode?: PermissionMode
+    } = {}
+  ): Promise<SessionMeta> {
     const timestamp = nowIso()
     const session: SessionMeta = {
       id: randomUUID(),
@@ -242,15 +261,27 @@ export class SessionsStore {
       model: null,
       status: 'idle',
       reasoningEffort: null,
-      permissionMode: 'ask',
+      permissionMode: options.permissionMode ?? 'ask',
       compaction: null,
       redoAvailable: false,
       contextTokens: null,
-      contextWindow: null
+      contextWindow: null,
+      agent: options.agent ?? null,
+      parentId: options.parentId ?? null,
+      hidden: options.hidden ?? false
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
     return clone(session)
+  }
+
+  async setAgent(id: string, agent: string | null): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    record.session.agent = agent
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
   }
 
   async rename(id: string, title: string): Promise<SessionMeta | undefined> {

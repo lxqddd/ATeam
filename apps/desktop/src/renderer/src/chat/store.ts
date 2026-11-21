@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type {
+  AgentDefinition,
   AgentEvent,
   AgentEventEnvelope,
   AgentInfo,
@@ -20,6 +21,7 @@ export interface ChatStoreState {
   status: AgentStatus
   info: AgentInfo | null
   models: ModelsConfigPublic | null
+  agents: AgentDefinition[]
   sessions: SessionMeta[]
   selectedSessionId: string | null
   messagesBySession: Record<string, ChatMessage[] | undefined>
@@ -65,6 +67,7 @@ export class ChatStore {
     status: INITIAL_STATUS,
     info: null,
     models: null,
+    agents: [],
     sessions: [],
     selectedSessionId: null,
     messagesBySession: {},
@@ -121,6 +124,7 @@ export class ChatStore {
     }
 
     await this.refreshModels()
+    await this.refreshAgents()
     await this.loadSessions()
 
     try {
@@ -142,6 +146,14 @@ export class ChatStore {
       this.setState({ models })
     } catch {
       /* the composer will show the missing configuration */
+    }
+  }
+
+  async refreshAgents(): Promise<void> {
+    try {
+      this.setState({ agents: await window.api.agent.agents() })
+    } catch {
+      /* agent discovery is best effort */
     }
   }
 
@@ -240,6 +252,11 @@ export class ChatStore {
 
   async setSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
     const session = await window.api.agent.sessions.setSettings(sessionId, settings)
+    this.upsertSession(session)
+  }
+
+  async setSessionAgent(sessionId: string, agent: string | null): Promise<void> {
+    const session = await window.api.agent.sessions.setAgent(sessionId, agent)
     this.upsertSession(session)
   }
 
@@ -353,6 +370,7 @@ export class ChatStore {
         /* ignore */
       }
       await this.refreshModels()
+      await this.refreshAgents()
     })()
     try {
       await this.reloadPromise

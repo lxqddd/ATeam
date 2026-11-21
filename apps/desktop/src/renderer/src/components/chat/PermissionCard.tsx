@@ -10,7 +10,8 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   write: 'chat.permissionWrite',
   edit: 'chat.permissionEdit',
   shell: 'chat.permissionShell',
-  external_directory: 'chat.permissionExternalDirectory'
+  external_directory: 'chat.permissionExternalDirectory',
+  mcp: 'settings.permissionActionMcp'
 }
 
 interface PermissionCardProps {

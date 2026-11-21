@@ -44,6 +44,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'setModels':
       requireRuntime().setModels(request.params.models)
       return null
+    case 'agents.list':
+      return requireRuntime().listAgents()
     case 'sessions.list':
       return requireRuntime().listSessions()
     case 'sessions.create':
@@ -57,6 +59,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().setSessionModel(request.params.id, request.params.model)
     case 'sessions.setSettings':
       return requireRuntime().setSessionSettings(request.params.id, request.params.settings)
+    case 'sessions.setAgent':
+      return requireRuntime().setSessionAgent(request.params.id, request.params.agent)
     case 'sessions.compact':
       return requireRuntime().compactSession(request.params.id, { force: request.params.force })
     case 'sessions.undo':
@@ -89,6 +93,21 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().addPermissionRule(request.params)
     case 'permissions.removeRule':
       return requireRuntime().removePermissionRule(request.params.id)
+    case 'mcp.list': {
+      const runtime = requireRuntime()
+      return {
+        servers: await runtime.listMcpServers(),
+        statuses: await runtime.mcpStatuses()
+      }
+    }
+    case 'mcp.statuses':
+      return requireRuntime().mcpStatuses(request.params)
+    case 'mcp.add':
+      return requireRuntime().addMcpServer(request.params)
+    case 'mcp.update':
+      return requireRuntime().updateMcpServer(request.params.id, request.params.input)
+    case 'mcp.remove':
+      return requireRuntime().removeMcpServer(request.params.id)
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'shutdown':

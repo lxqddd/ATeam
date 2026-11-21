@@ -405,3 +405,56 @@ describe('SessionsStore', () => {
     await expect(fresh.flush()).resolves.toBeUndefined()
   })
 })
+
+describe('agent metadata', () => {
+  it('creates hidden child sessions with an agent', async () => {
+    const session = await store.create({
+      hidden: true,
+      parentId: 'parent-1',
+      agent: 'explore',
+      permissionMode: 'plan'
+    })
+
+    expect(session).toMatchObject({
+      hidden: true,
+      parentId: 'parent-1',
+      agent: 'explore',
+      permissionMode: 'plan'
+    })
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)).toMatchObject({
+      hidden: true,
+      parentId: 'parent-1',
+      agent: 'explore'
+    })
+  })
+
+  it('updates the session agent', async () => {
+    const session = await store.create()
+
+    await expect(store.setAgent(session.id, 'plan')).resolves.toMatchObject({ agent: 'plan' })
+    await expect(store.setAgent('missing', 'plan')).resolves.toBeUndefined()
+  })
+
+  it('repairs sessions without agent metadata', async () => {
+    const session = await store.create()
+    const file = path.join(sessionsDirectory, `${session.id}.json`)
+    const data = JSON.parse(await fs.readFile(file, 'utf8')) as {
+      session: Record<string, unknown>
+    }
+    delete data.session.hidden
+    delete data.session.parentId
+    delete data.session.agent
+    await fs.writeFile(file, JSON.stringify(data))
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+
+    expect(reloaded.getSession(session.id)).toMatchObject({
+      hidden: false,
+      parentId: null,
+      agent: null
+    })
+  })
+})

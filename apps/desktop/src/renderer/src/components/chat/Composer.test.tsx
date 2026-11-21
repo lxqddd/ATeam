@@ -12,6 +12,7 @@ const chatMocks = vi.hoisted(() => ({
   ensureSession: vi.fn(),
   setSessionModel: vi.fn(),
   setSessionSettings: vi.fn(),
+  setSessionAgent: vi.fn(),
   clearRevertPrompt: vi.fn()
 }))
 
@@ -50,6 +51,30 @@ function baseState(): ChatStoreState {
       encryptionAvailable: true
     },
     sessions: [makeSession({ id: 's1', title: 'Chat' })],
+    agents: [
+      {
+        id: 'build',
+        name: 'build',
+        description: 'General coding agent with the full toolset.',
+        mode: 'primary' as const,
+        model: null,
+        tools: null,
+        maxSteps: null,
+        prompt: '',
+        source: 'builtin' as const
+      },
+      {
+        id: 'plan',
+        name: 'plan',
+        description: 'Read-only planning agent.',
+        mode: 'primary' as const,
+        model: null,
+        tools: ['read', 'list', 'grep', 'glob'],
+        maxSteps: 20,
+        prompt: 'You are the plan agent.',
+        source: 'builtin' as const
+      }
+    ],
     selectedSessionId: 's1',
     messagesBySession: {},
     loadedBySession: {},
@@ -78,6 +103,7 @@ beforeEach(() => {
   chatMocks.ensureSession.mockReset()
   chatMocks.setSessionModel.mockReset()
   chatMocks.setSessionSettings.mockReset()
+  chatMocks.setSessionAgent.mockReset()
   chatMocks.clearRevertPrompt.mockClear()
 })
 
@@ -395,5 +421,16 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Stop' }))
 
     expect(await screen.findByText('stop failed')).toBeInTheDocument()
+  })
+
+  it('switches the session agent', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: 'Agent: Build' }))
+    await user.click(await screen.findByRole('option', { name: /^Plan/ }))
+
+    await waitFor(() => expect(chatMocks.setSessionAgent).toHaveBeenCalledWith('s1', 'plan'))
   })
 })

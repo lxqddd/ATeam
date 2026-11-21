@@ -21,6 +21,7 @@ const api: AteamApi = {
     status: () => ipcRenderer.invoke(AGENT_CHANNELS.status),
     restart: () => ipcRenderer.invoke(AGENT_CHANNELS.restart),
     info: () => ipcRenderer.invoke(AGENT_CHANNELS.info),
+    agents: () => ipcRenderer.invoke(AGENT_CHANNELS.agentsList),
     onEvent: (callback) => {
       const listener = (_event: IpcRendererEvent, envelope: AgentEventEnvelope): void => {
         callback(envelope)
@@ -38,6 +39,7 @@ const api: AteamApi = {
       setModel: (id, model) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetModel, { id, model }),
       setSettings: (id, settings) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionSetSettings, { id, settings }),
+      setAgent: (id, agent) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetAgent, { id, agent }),
       compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id }),
       undo: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId }),
       redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id })
@@ -61,6 +63,13 @@ const api: AteamApi = {
     config: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.agentConfig),
       update: (patch) => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigUpdate, patch)
+    },
+    mcp: {
+      list: () => ipcRenderer.invoke(AGENT_CHANNELS.mcpList),
+      statuses: (options) => ipcRenderer.invoke(AGENT_CHANNELS.mcpStatuses, options ?? {}),
+      add: (input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAdd, input),
+      update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpUpdate, { id, input }),
+      remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id })
     }
   },
   models: {

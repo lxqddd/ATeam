@@ -6,6 +6,27 @@ export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
 
 export type PermissionMode = 'plan' | 'ask' | 'acceptEdits' | 'auto'
 
+export type AgentMode = 'primary' | 'subagent' | 'all'
+
+export interface AgentDefinition {
+  id: string
+  name: string
+  description: string
+  mode: AgentMode
+  model: ModelRef | null
+  tools: string[] | null
+  maxSteps: number | null
+  prompt: string
+  source: 'builtin' | 'user' | 'project'
+}
+
+export interface SubagentInput {
+  prompt: string
+  agent?: string
+  sessionId?: string
+  description?: string
+}
+
 export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
 
 export const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptEdits', 'auto']
@@ -34,6 +55,9 @@ export interface SessionMeta extends SessionSettings {
   redoAvailable: boolean
   contextTokens: number | null
   contextWindow: number | null
+  agent: string | null
+  parentId: string | null
+  hidden: boolean
 }
 
 export type ToolState =
@@ -84,7 +108,7 @@ export interface ChatMessage {
 }
 
 export type PermissionAction =
-  'read' | 'list' | 'grep' | 'write' | 'edit' | 'shell' | 'external_directory'
+  'read' | 'list' | 'grep' | 'write' | 'edit' | 'shell' | 'external_directory' | 'mcp'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
@@ -144,6 +168,46 @@ export interface AgentConfig {
   instructions: string[]
   lsp: boolean
   formatters: boolean
+}
+
+export type McpServerType = 'local' | 'remote'
+
+export interface McpServerConfig {
+  id: string
+  name: string
+  type: McpServerType
+  command: string | null
+  args: string[]
+  url: string | null
+  headers: Record<string, string>
+  env: Record<string, string>
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface McpServerInput {
+  name: string
+  type: McpServerType
+  command?: string | null
+  args?: string[]
+  url?: string | null
+  headers?: Record<string, string>
+  env?: Record<string, string>
+  enabled?: boolean
+}
+
+export type McpConnectionState = 'idle' | 'connecting' | 'connected' | 'failed'
+
+export interface McpServerStatus {
+  id: string
+  name: string
+  state: McpConnectionState
+  toolCount: number
+  promptCount: number
+  resourceCount: number
+  error: string | null
+  updatedAt: string | null
 }
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'

@@ -17,6 +17,9 @@ vi.mock('../components/settings/PermissionRules', () => ({
 vi.mock('../components/settings/AgentSettings', () => ({
   default: () => <div>agent-panel</div>
 }))
+vi.mock('../components/settings/McpServers', () => ({
+  default: () => <div>mcp-panel</div>
+}))
 
 function renderPage(initialEntry = '/settings'): void {
   render(
@@ -65,6 +68,15 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Agent' }))
 
     expect(await screen.findByText('agent-panel')).toBeInTheDocument()
+  })
+
+  it('shows MCP servers from the menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('menuitem', { name: 'MCP' }))
+
+    expect(await screen.findByText('mcp-panel')).toBeInTheDocument()
   })
 
   it('honours the section query parameter', () => {

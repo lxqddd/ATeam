@@ -1,7 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
-import type { ModelRef, PermissionMode, ReasoningEffort, SessionSettings } from '@ateam/shared'
+import type {
+  AgentDefinition,
+  ModelRef,
+  PermissionMode,
+  ReasoningEffort,
+  SessionSettings
+} from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
 import ComposerChoiceChip from './ComposerChoiceChip'
@@ -69,9 +75,32 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+const AGENT_DESCRIPTION_KEYS: Record<string, string> = {
+  build: 'chat.agentBuildDescription',
+  plan: 'chat.agentPlanDescription'
+}
+
+function displayAgentName(agent: AgentDefinition): string {
+  return agent.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : agent.id
+}
+
+function AgentIcon(): React.JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <rect x="4" y="7" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M12 7V4M9 12h.01M15 12h.01M9 16h6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 function Composer(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId, models, status, revertPrompt } = useChatStore()
+  const { sessions, selectedSessionId, models, agents, status, revertPrompt } = useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -99,6 +128,22 @@ function Composer(): React.JSX.Element {
     value: mode,
     label: t(PERMISSION_LABEL_KEYS[mode]),
     description: t(PERMISSION_HINT_KEYS[mode])
+  }))
+
+  const primaryAgents = agents.filter((agent) => agent.mode !== 'subagent')
+  const activeAgent =
+    primaryAgents.find((agent) => agent.id === session?.agent) ??
+    primaryAgents.find((agent) => agent.id === 'build') ??
+    primaryAgents[0] ??
+    null
+  const agentLabel = activeAgent ? displayAgentName(activeAgent) : t('chat.agentDefault')
+  const agentOptions = primaryAgents.map((agent) => ({
+    value: agent.id,
+    label: displayAgentName(agent),
+    description:
+      agent.source === 'builtin' && AGENT_DESCRIPTION_KEYS[agent.id]
+        ? t(AGENT_DESCRIPTION_KEYS[agent.id])
+        : agent.description
   }))
 
   useLayoutEffect(() => {
@@ -186,6 +231,16 @@ function Composer(): React.JSX.Element {
     }
   }
 
+  async function changeAgent(agentId: string): Promise<void> {
+    setError(null)
+    try {
+      const target = await chatStore.ensureSession()
+      await chatStore.setSessionAgent(target.id, agentId)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
   const placeholder = !ready
     ? status.status === 'starting'
       ? t('chat.agentStarting')
@@ -242,6 +297,20 @@ function Composer(): React.JSX.Element {
               }}
               disabled={!ready || running || sending}
             />
+            {agentOptions.length > 0 && (
+              <ComposerChoiceChip
+                ariaLabel={t('chat.agent')}
+                accessibleLabel={`${t('chat.agent')}: ${agentLabel}`}
+                label={agentLabel}
+                value={activeAgent?.id ?? ''}
+                options={agentOptions}
+                onChange={(value) => {
+                  void changeAgent(value)
+                }}
+                disabled={!ready || sending}
+                icon={<AgentIcon />}
+              />
+            )}
             <ComposerChoiceChip
               ariaLabel={t('chat.reasoning')}
               accessibleLabel={`${t('chat.reasoning')}: ${reasoningLabel}`}

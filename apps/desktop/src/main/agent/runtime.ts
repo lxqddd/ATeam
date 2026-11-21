@@ -5,11 +5,15 @@ import { generateText, stepCountIs, streamText } from 'ai'
 import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import type {
   AgentConfig,
+  AgentDefinition,
   AgentEvent,
   AgentEventEnvelope,
   ChatMessage,
   MessagePart,
   MessagesSnapshot,
+  McpServerConfig,
+  McpServerInput,
+  McpServerStatus,
   ModelRef,
   PermissionAction,
   PermissionDecision,
@@ -24,6 +28,7 @@ import type {
   RuntimeModelsConfig,
   SessionMeta,
   SessionSettings,
+  SubagentInput,
   TokenUsage
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
@@ -56,8 +61,10 @@ import { ToolOutputStore } from './tool-output-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
 import { createTools as createDefaultTools, type ToolContext } from './tools'
+import { filterToolsForAgent, loadAgents } from './agents'
 import { discoverFormatters, formatFile, type FormatterDefinition } from './formatters'
 import { formatDiagnosticReport, LspManager } from './lsp'
+import { McpManager, type McpManagerLike } from './mcp'
 import { normalizeError } from './errors'
 
 const MAX_STEPS = 25
@@ -72,6 +79,14 @@ interface Run {
   config: AgentConfig
   skipHistoryIds?: Set<string>
   retried?: boolean
+  agent: AgentDefinition | null
+  depth: number
+  permissionDelegate?: (
+    action: PermissionAction,
+    resource: string,
+    toolName: string,
+    toolCallId: string
+  ) => Promise<boolean>
 }
 
 interface PendingPermission {
@@ -95,6 +110,7 @@ export interface AgentTurnInput {
   tools: ToolSet
   abortSignal: AbortSignal
   reasoning?: ReasoningEffort | null
+  maxSteps?: number
 }
 
 export interface AgentTurnStream {
@@ -118,6 +134,7 @@ export interface AgentRuntimeDependencies {
     workspacePath: string
     globalDirectory: string
   }) => Promise<InstructionFile[]>
+  createMcpManager: (input: { userDataPath: string; workspacePath: string }) => McpManagerLike
 }
 
 async function generateSummary(input: {
@@ -150,7 +167,7 @@ const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       system: input.system,
       messages: input.messages,
       tools: input.tools,
-      stopWhen: stepCountIs(MAX_STEPS),
+      stopWhen: stepCountIs(input.maxSteps ?? MAX_STEPS),
       abortSignal: input.abortSignal,
       reasoning: input.reasoning ?? undefined,
       maxRetries: 1,
@@ -159,7 +176,9 @@ const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
     }).stream
   }),
   generateSummary,
-  loadInstructions
+  loadInstructions,
+  createMcpManager: (input) =>
+    new McpManager({ userDataPath: input.userDataPath, workspace: input.workspacePath })
 }
 
 function nowIso(): string {
@@ -213,6 +232,7 @@ export class AgentRuntime {
   private readonly pending = new Map<string, PendingPermission>()
   private lspManager: LspManager | null = null
   private formattersCache: Promise<FormatterDefinition[]> | null = null
+  private mcpManager: McpManagerLike | null = null
   private models: RuntimeModelsConfig
   private readonly deps: AgentRuntimeDependencies
   private seq = 0
@@ -234,7 +254,36 @@ export class AgentRuntime {
   }
 
   listSessions(): SessionMeta[] {
-    return this.store.list()
+    return this.store.list().filter((session) => !session.hidden)
+  }
+
+  listAgents(): Promise<AgentDefinition[]> {
+    return this.agents()
+  }
+
+  async setSessionAgent(id: string, agentId: string | null): Promise<SessionMeta> {
+    const record = this.store.get(id)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    if (agentId) {
+      const agents = await this.agents()
+      const agent = agents.find(
+        (candidate) =>
+          candidate.id === agentId || candidate.name.toLowerCase() === agentId.toLowerCase()
+      )
+      if (!agent) throw new Error('AGENT_NOT_FOUND')
+      if (agent.mode === 'subagent') throw new Error('AGENT_NOT_PRIMARY')
+    }
+    const session = await this.store.setAgent(id, agentId)
+    if (!session) throw new Error('SESSION_NOT_FOUND')
+    this.emit({ type: 'session.upsert', session })
+    return session
+  }
+
+  private agents(): Promise<AgentDefinition[]> {
+    return loadAgents({
+      userDataPath: this.options.userDataPath,
+      workspacePath: this.options.workspacePath
+    })
   }
 
   async createSession(): Promise<SessionMeta> {
@@ -437,6 +486,17 @@ export class AgentRuntime {
       run.abort.abort()
       this.rejectPendingForRun(run)
     }
+    const children = this.store.list().filter((session) => session.parentId === id)
+    for (const child of children) {
+      const childRun = this.runs.get(child.id)
+      if (childRun) {
+        childRun.abort.abort()
+        this.rejectPendingForRun(childRun)
+      }
+      await this.store.delete(child.id)
+      await this.permissionRules.removeForSession(child.id)
+      await this.snapshots.removeSession(child.id)
+    }
     await this.store.delete(id)
     await this.permissionRules.removeForSession(id)
     await this.snapshots.removeSession(id)
@@ -522,7 +582,9 @@ export class AgentRuntime {
       startedAt: Date.now(),
       steps: 0,
       config,
-      skipHistoryIds
+      skipHistoryIds,
+      agent: null,
+      depth: 0
     }
     this.runs.set(sessionId, run)
     void this.runAgent(run)
@@ -620,6 +682,39 @@ export class AgentRuntime {
       this.lspManager = null
       await manager.dispose()
     }
+    if (this.mcpManager) {
+      const manager = this.mcpManager
+      this.mcpManager = null
+      await manager.dispose()
+    }
+  }
+
+  private mcp(): McpManagerLike {
+    this.mcpManager ??= this.deps.createMcpManager({
+      userDataPath: this.options.userDataPath,
+      workspacePath: this.options.workspacePath
+    })
+    return this.mcpManager
+  }
+
+  listMcpServers(): Promise<McpServerConfig[]> {
+    return this.mcp().servers()
+  }
+
+  mcpStatuses(options?: { probe?: boolean }): Promise<McpServerStatus[]> {
+    return this.mcp().statuses(options)
+  }
+
+  addMcpServer(input: McpServerInput): Promise<McpServerConfig> {
+    return this.mcp().addServer(input)
+  }
+
+  updateMcpServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig> {
+    return this.mcp().updateServer(id, input)
+  }
+
+  removeMcpServer(id: string): Promise<boolean> {
+    return this.mcp().removeServer(id)
   }
 
   private lsp(): LspManager {
@@ -655,12 +750,111 @@ export class AgentRuntime {
     }
   }
 
+  private resolveAgentTarget(
+    agent: AgentDefinition | null,
+    sessionModel: ModelRef | null
+  ): ModelRef | null {
+    const fallback = sessionModel ?? this.models.defaultModel
+    if (!agent?.model) return fallback
+    try {
+      resolveModelRef(this.models, agent.model)
+      return agent.model
+    } catch {
+      return fallback
+    }
+  }
+
+  private async runSubagent(
+    parent: Run,
+    input: SubagentInput,
+    toolCallId: string
+  ): Promise<string> {
+    if (parent.depth >= 1) return 'Error: subagents cannot spawn subagents.'
+    const requested = input.agent?.trim() || 'general'
+    const agent = (await this.agents()).find(
+      (candidate) =>
+        (candidate.id === requested || candidate.name.toLowerCase() === requested.toLowerCase()) &&
+        (candidate.mode === 'subagent' || candidate.mode === 'all')
+    )
+    if (!agent) return `Error: unknown subagent: ${requested}`
+    if (!input.prompt.trim()) return 'Error: the subagent prompt is empty.'
+
+    const parentRecord = this.record(parent.sessionId)
+    let sessionId = input.sessionId?.trim() || null
+    if (sessionId) {
+      const record = this.store.get(sessionId)
+      if (!record || record.session.parentId !== parent.sessionId) {
+        return 'Error: unknown subagent session.'
+      }
+      if (this.runs.has(sessionId)) return 'Error: the subagent session is busy.'
+      if (record.session.agent !== agent.id) await this.store.setAgent(sessionId, agent.id)
+    } else {
+      const session = await this.store.create({
+        hidden: true,
+        parentId: parent.sessionId,
+        agent: agent.id,
+        permissionMode: parentRecord.session.permissionMode
+      })
+      sessionId = session.id
+    }
+
+    const childAbort = new AbortController()
+    const onAbort = (): void => childAbort.abort()
+    if (parent.abort.signal.aborted) childAbort.abort()
+    else parent.abort.signal.addEventListener('abort', onAbort, { once: true })
+
+    const user = makeUserMessage(sessionId, input.prompt)
+    const assistant = makeAssistantMessage(sessionId)
+    if (parent.config.snapshots) {
+      assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+    }
+    await this.store.appendMessage(sessionId, user)
+    await this.store.appendMessage(sessionId, assistant)
+    await this.store.setStatus(sessionId, 'running')
+
+    const childRun: Run = {
+      sessionId,
+      messageId: assistant.id,
+      abort: childAbort,
+      startedAt: Date.now(),
+      steps: 0,
+      config: parent.config,
+      agent,
+      depth: parent.depth + 1,
+      permissionDelegate: (action, resource, toolName) =>
+        this.askPermission(parent, action, resource, toolName, toolCallId)
+    }
+    this.runs.set(sessionId, childRun)
+    try {
+      await this.runAgent(childRun)
+    } finally {
+      parent.abort.signal.removeEventListener('abort', onAbort)
+    }
+
+    const message = this.store.get(sessionId)?.messages.find((entry) => entry.id === assistant.id)
+    const text = (message?.parts ?? [])
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n')
+      .trim()
+    const result =
+      message?.status === 'complete'
+        ? text
+        : `Subagent ${message?.status ?? 'failed'}${message?.error ? `: ${message.error}` : ''}`
+    return `[subagent ${agent.id} · session ${sessionId}]\n${result || '(no output)'}`
+  }
+
   private emitSession(sessionId: string): void {
     const session = this.store.getSession(sessionId)
     if (session) this.emit({ type: 'session.upsert', session })
   }
 
   private emit(event: AgentEvent): void {
+    const sessionId = 'sessionId' in event ? event.sessionId : null
+    if (sessionId) {
+      const record = this.store.get(sessionId)
+      if (record?.session.hidden) return
+    }
     this.seq += 1
     this.options.send({ seq: this.seq, at: nowIso(), event })
   }
@@ -732,6 +926,9 @@ export class AgentRuntime {
     toolName: string,
     toolCallId: string
   ): Promise<boolean> {
+    if (run.permissionDelegate) {
+      return run.permissionDelegate(action, resource, toolName, toolCallId)
+    }
     const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
     const scan = action === 'shell' ? scanShellCommand(resource, this.options.workspacePath) : null
     const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
@@ -1029,7 +1226,14 @@ export class AgentRuntime {
 
     try {
       const record = this.record(run.sessionId)
-      const target = record.session.model ?? this.models.defaultModel
+      const agent =
+        run.agent ??
+        (record.session.agent
+          ? ((await this.agents()).find((candidate) => candidate.id === record.session.agent) ??
+            null)
+          : null)
+      run.agent = agent
+      const target = this.resolveAgentTarget(agent, record.session.model)
       const model = this.deps.createLanguageModel(this.models, target, {
         sessionId: run.sessionId
       })
@@ -1051,7 +1255,7 @@ export class AgentRuntime {
           : [])
       ]
       const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
-      const tools = this.deps.createTools({
+      const toolContext: ToolContext = {
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
         askPermission: (action, resource, toolName, toolCallId) =>
@@ -1076,22 +1280,34 @@ export class AgentRuntime {
             ...info
           }),
         formatFiles: run.config.formatters ? (files) => this.formatFiles(files) : undefined,
-        diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined
-      })
+        diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined,
+        runSubagent: (input, toolCallId) => this.runSubagent(run, input, toolCallId)
+      }
+      const baseTools = this.deps.createTools(toolContext)
+      let mcpTools: ToolSet = {}
+      try {
+        mcpTools = await this.mcp().tools(toolContext)
+      } catch {
+        /* MCP servers are best effort */
+      }
+      const tools = filterToolsForAgent({ ...mcpTools, ...baseTools }, agent)
+
+      const system = systemWithInstructions(
+        systemWithSummary(
+          buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
+          current.session.compaction?.summary
+        ),
+        instructions
+      )
 
       const result = this.deps.createTurn({
         model,
-        system: systemWithInstructions(
-          systemWithSummary(
-            buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
-            current.session.compaction?.summary
-          ),
-          instructions
-        ),
+        system: agent?.prompt ? `${system}\n\n${agent.prompt}` : system,
         messages: buildModelMessages(this.historyMessages(run, message.id)),
         tools,
         abortSignal: run.abort.signal,
-        reasoning: current.session.reasoningEffort
+        reasoning: current.session.reasoningEffort,
+        maxSteps: agent?.maxSteps ?? undefined
       })
 
       for await (const part of result.stream) {
@@ -1321,6 +1537,7 @@ function modePermissionRules(mode: PermissionMode): PermissionRule[] {
         base('write', 'deny'),
         base('edit', 'deny'),
         base('shell', 'deny'),
+        base('mcp', 'deny'),
         external
       ]
     case 'acceptEdits':
@@ -1329,6 +1546,7 @@ function modePermissionRules(mode: PermissionMode): PermissionRule[] {
         base('write', 'allow'),
         base('edit', 'allow'),
         base('shell', 'ask'),
+        base('mcp', 'ask'),
         external
       ]
     case 'auto':
@@ -1337,11 +1555,19 @@ function modePermissionRules(mode: PermissionMode): PermissionRule[] {
         base('write', 'allow'),
         base('edit', 'allow'),
         base('shell', 'allow'),
+        base('mcp', 'allow'),
         external
       ]
     case 'ask':
     default:
-      return [...reads, base('write', 'ask'), base('edit', 'ask'), base('shell', 'ask'), external]
+      return [
+        ...reads,
+        base('write', 'ask'),
+        base('edit', 'ask'),
+        base('shell', 'ask'),
+        base('mcp', 'ask'),
+        external
+      ]
   }
 }
 

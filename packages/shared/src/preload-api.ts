@@ -1,8 +1,12 @@
 import type {
   AgentConfig,
+  AgentDefinition,
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
+  McpServerConfig,
+  McpServerInput,
+  McpServerStatus,
   MessagesSnapshot,
   PermissionDecision,
   PermissionRequest,
@@ -28,6 +32,7 @@ export interface AgentBridge {
   status: () => Promise<AgentStatus>
   restart: () => Promise<AgentStatus>
   info: () => Promise<AgentInfo>
+  agents: () => Promise<AgentDefinition[]>
   onEvent: (callback: (envelope: AgentEventEnvelope) => void) => () => void
   sessions: {
     list: () => Promise<SessionMeta[]>
@@ -36,6 +41,7 @@ export interface AgentBridge {
     remove: (id: string) => Promise<void>
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
     setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
+    setAgent: (id: string, agent: string | null) => Promise<SessionMeta>
     compact: (id: string) => Promise<SessionMeta>
     undo: (id: string, messageId?: string) => Promise<SessionUndoResult>
     redo: (id: string) => Promise<SessionMeta>
@@ -58,6 +64,13 @@ export interface AgentBridge {
   config: {
     get: () => Promise<AgentConfig>
     update: (patch: Partial<AgentConfig>) => Promise<AgentConfig>
+  }
+  mcp: {
+    list: () => Promise<{ servers: McpServerConfig[]; statuses: McpServerStatus[] }>
+    statuses: (options?: { probe?: boolean }) => Promise<McpServerStatus[]>
+    add: (input: McpServerInput) => Promise<McpServerConfig>
+    update: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>
+    remove: (id: string) => Promise<boolean>
   }
 }
 

@@ -3,8 +3,11 @@ import { z } from 'zod'
 import {
   AGENT_CHANNELS,
   type AgentConfig,
+  type AgentDefinition,
   type AgentInfo,
   type AgentStatus,
+  type McpServerConfig,
+  type McpServerStatus,
   type MessagesSnapshot,
   type PermissionRequest,
   type PermissionRule,
@@ -29,6 +32,20 @@ const renameSchema = z.object({
   title: z.string().trim().min(1).max(200)
 })
 const idPayloadSchema = z.object({ id: idSchema })
+const mcpServerInputSchema = z.object({
+  name: z.string().trim().min(1).max(50),
+  type: z.enum(['local', 'remote']),
+  command: z.string().max(500).nullable().optional(),
+  args: z.array(z.string().max(2_000)).max(100).optional(),
+  url: z.string().max(2_000).nullable().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+  enabled: z.boolean().optional()
+})
+const mcpUpdateSchema = z.object({
+  id: idSchema,
+  input: mcpServerInputSchema.partial()
+})
 const sessionSetModelSchema = z.object({
   id: idSchema,
   model: modelRefSchema.nullable()
@@ -132,6 +149,10 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     }
   })
 
+  handle(AGENT_CHANNELS.agentsList, (): Promise<AgentDefinition[]> =>
+    manager.request('agents.list')
+  )
+
   handle(AGENT_CHANNELS.sessionsList, (): Promise<SessionMeta[]> =>
     manager.request('sessions.list')
   )
@@ -158,6 +179,13 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.sessionSetSettings, (payload): Promise<SessionMeta> => {
     const { id, settings } = sessionSetSettingsSchema.parse(payload)
     return manager.request('sessions.setSettings', { id, settings })
+  })
+
+  handle(AGENT_CHANNELS.sessionSetAgent, (payload): Promise<SessionMeta> => {
+    const { id, agent } = z
+      .object({ id: idSchema, agent: z.string().min(1).max(100).nullable() })
+      .parse(payload)
+    return manager.request('sessions.setAgent', { id, agent })
   })
 
   handle(AGENT_CHANNELS.sessionCompact, (payload): Promise<SessionMeta> => {
@@ -237,6 +265,32 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
       .parse(payload)
     await configReady
     return configStore.update(patch)
+  })
+
+  handle(
+    AGENT_CHANNELS.mcpList,
+    (): Promise<{ servers: McpServerConfig[]; statuses: McpServerStatus[] }> =>
+      manager.request('mcp.list')
+  )
+
+  handle(AGENT_CHANNELS.mcpStatuses, (payload): Promise<McpServerStatus[]> => {
+    const { probe } = z.object({ probe: z.boolean().optional() }).parse(payload ?? {})
+    return manager.request('mcp.statuses', { probe })
+  })
+
+  handle(AGENT_CHANNELS.mcpAdd, (payload): Promise<McpServerConfig> => {
+    const input = mcpServerInputSchema.parse(payload)
+    return manager.request('mcp.add', input)
+  })
+
+  handle(AGENT_CHANNELS.mcpUpdate, (payload): Promise<McpServerConfig> => {
+    const { id, input } = mcpUpdateSchema.parse(payload)
+    return manager.request('mcp.update', { id, input })
+  })
+
+  handle(AGENT_CHANNELS.mcpRemove, (payload): Promise<boolean> => {
+    const { id } = idPayloadSchema.parse(payload)
+    return manager.request('mcp.remove', { id })
   })
 
   handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {

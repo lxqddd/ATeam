@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import type { PermissionAction } from '@ateam/shared'
+import type { PermissionAction, SubagentInput } from '@ateam/shared'
 
 const MAX_TOOL_OUTPUT = 200_000
 const MAX_READ_LINES = 2_000
@@ -32,6 +32,7 @@ export interface ToolContext {
   }) => void
   formatFiles?: (files: string[]) => Promise<string>
   diagnoseFiles?: (files: string[]) => Promise<string>
+  runSubagent?: (input: SubagentInput, toolCallId: string) => Promise<string>
 }
 
 async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
@@ -740,7 +741,22 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
-  return wrapToolOutputs({ read, list, grep, glob, patch, write, edit, shell }, context)
+  const subagent = tool({
+    description:
+      'Delegate a focused task to a subagent that works in its own context and returns the result. Use sessionId to continue an earlier subagent session.',
+    inputSchema: z.object({
+      prompt: z.string().min(1).describe('Task instructions for the subagent'),
+      agent: z.string().optional().describe('Subagent name such as explore or general'),
+      sessionId: z.string().optional().describe('Continue a previous subagent session'),
+      description: z.string().optional().describe('Short task summary')
+    }),
+    execute: async (input, options) => {
+      if (!context.runSubagent) return 'Error: subagents are not available.'
+      return context.runSubagent(input, options.toolCallId)
+    }
+  })
+
+  return wrapToolOutputs({ read, list, grep, glob, patch, write, edit, shell, subagent }, context)
 }
 
 function wrapToolOutputs(tools: ToolSet, context: ToolContext): ToolSet {

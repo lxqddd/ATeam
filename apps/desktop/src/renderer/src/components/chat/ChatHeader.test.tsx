@@ -60,6 +60,7 @@ function baseState(): ChatStoreState {
         model: { providerId: 'p1', modelId: 'claude-sonnet-5' }
       })
     ],
+    agents: [],
     selectedSessionId: 's1',
     messagesBySession: {},
     loadedBySession: {},

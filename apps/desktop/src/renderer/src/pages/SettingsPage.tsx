@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import AgentSettings from '../components/settings/AgentSettings'
 import LanguageSettings from '../components/settings/LanguageSettings'
+import McpServers from '../components/settings/McpServers'
 import PermissionRules from '../components/settings/PermissionRules'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
@@ -22,6 +23,11 @@ const SETTINGS_SECTIONS = [
     id: 'permissions',
     labelKey: 'settings.permissions',
     descriptionKey: 'settings.permissionsDescription'
+  },
+  {
+    id: 'mcp',
+    labelKey: 'settings.mcp',
+    descriptionKey: 'settings.mcpDescription'
   },
   {
     id: 'agent',
@@ -94,6 +100,14 @@ function SettingsPage(): React.JSX.Element {
                 description={t('settings.permissionRulesDescription')}
               >
                 <PermissionRules />
+              </SettingsGroup>
+            )}
+            {section === 'mcp' && (
+              <SettingsGroup
+                title={t('settings.mcpServers')}
+                description={t('settings.mcpServersDescription')}
+              >
+                <McpServers />
               </SettingsGroup>
             )}
             {section === 'agent' && (

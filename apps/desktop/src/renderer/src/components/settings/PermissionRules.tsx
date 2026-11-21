@@ -11,6 +11,7 @@ const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
   edit: 'chat.permissionEdit',
   shell: 'chat.permissionShell',
   external_directory: 'settings.permissionActionExternalDirectory',
+  mcp: 'settings.permissionActionMcp',
   '*': 'settings.permissionActionAll'
 }
 

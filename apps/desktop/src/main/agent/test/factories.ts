@@ -30,6 +30,9 @@ export function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
     redoAvailable: false,
     contextTokens: null,
     contextWindow: null,
+    agent: null,
+    parentId: null,
+    hidden: false,
     ...overrides
   }
 }

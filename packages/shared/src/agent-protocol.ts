@@ -1,4 +1,4 @@
-import type { PermissionRuleInput, SessionSettings } from './agent-types'
+import type { McpServerInput, PermissionRuleInput, SessionSettings } from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType } from './model-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
@@ -28,6 +28,7 @@ export type WorkerRequest =
       }
     }
   | { id: string; method: 'setModels'; params: { models: RuntimeModelsConfig } }
+  | { id: string; method: 'agents.list'; params?: undefined }
   | { id: string; method: 'sessions.list'; params?: undefined }
   | { id: string; method: 'sessions.create'; params?: undefined }
   | { id: string; method: 'sessions.rename'; params: { id: string; title: string } }
@@ -41,6 +42,11 @@ export type WorkerRequest =
       id: string
       method: 'sessions.setSettings'
       params: { id: string; settings: SessionSettings }
+    }
+  | {
+      id: string
+      method: 'sessions.setAgent'
+      params: { id: string; agent: string | null }
     }
   | { id: string; method: 'sessions.compact'; params: { id: string; force?: boolean } }
   | { id: string; method: 'sessions.undo'; params: { id: string; messageId?: string } }
@@ -66,6 +72,15 @@ export type WorkerRequest =
       params: PermissionRuleInput
     }
   | { id: string; method: 'permissions.removeRule'; params: { id: string } }
+  | { id: string; method: 'mcp.list'; params?: undefined }
+  | { id: string; method: 'mcp.statuses'; params: { probe?: boolean } }
+  | { id: string; method: 'mcp.add'; params: McpServerInput }
+  | {
+      id: string
+      method: 'mcp.update'
+      params: { id: string; input: Partial<McpServerInput> }
+    }
+  | { id: string; method: 'mcp.remove'; params: { id: string } }
   | {
       id: string
       method: 'models.test'
