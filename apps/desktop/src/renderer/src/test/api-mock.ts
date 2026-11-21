@@ -8,7 +8,8 @@ import type {
   ModelRef,
   ModelsConfigPublic,
   PermissionRequest,
-  SessionMeta
+  SessionMeta,
+  SessionSettings
 } from '@ateam/shared'
 import { vi } from 'vitest'
 import { makeSession } from './factories'
@@ -88,6 +89,12 @@ export function createApiMock(
         setModel: vi.fn(async (id: string, model: ModelRef | null) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           session.model = model
+          return { ...session }
+        }),
+        setSettings: vi.fn(async (id: string, settings: SessionSettings) => {
+          const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          session.reasoningEffort = settings.reasoningEffort
+          session.permissionMode = settings.permissionMode
           return { ...session }
         })
       },

@@ -2,7 +2,20 @@ import type { ModelRef } from './model-types'
 
 export type SessionRuntimeStatus = 'idle' | 'running' | 'waiting-permission' | 'error'
 
-export interface SessionMeta {
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
+
+export type PermissionMode = 'plan' | 'ask' | 'acceptEdits' | 'auto'
+
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
+
+export const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptEdits', 'auto']
+
+export interface SessionSettings {
+  reasoningEffort: ReasoningEffort | null
+  permissionMode: PermissionMode
+}
+
+export interface SessionMeta extends SessionSettings {
   id: string
   title: string
   createdAt: string

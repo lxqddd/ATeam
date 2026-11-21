@@ -26,6 +26,14 @@ const sessionSetModelSchema = z.object({
   id: idSchema,
   model: modelRefSchema.nullable()
 })
+const sessionSettingsSchema = z.object({
+  reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high']).nullable(),
+  permissionMode: z.enum(['plan', 'ask', 'acceptEdits', 'auto'])
+})
+const sessionSetSettingsSchema = z.object({
+  id: idSchema,
+  settings: sessionSettingsSchema
+})
 const sessionIdSchema = z.object({ sessionId: idSchema })
 const chatSendSchema = z.object({
   sessionId: idSchema,
@@ -95,6 +103,11 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.sessionSetModel, (payload): Promise<SessionMeta> => {
     const { id, model } = sessionSetModelSchema.parse(payload)
     return manager.request('sessions.setModel', { id, model })
+  })
+
+  handle(AGENT_CHANNELS.sessionSetSettings, (payload): Promise<SessionMeta> => {
+    const { id, settings } = sessionSetSettingsSchema.parse(payload)
+    return manager.request('sessions.setSettings', { id, settings })
   })
 
   handle(AGENT_CHANNELS.messagesList, (payload): Promise<MessagesSnapshot> => {

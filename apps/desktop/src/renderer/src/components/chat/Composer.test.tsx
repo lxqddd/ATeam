@@ -10,7 +10,8 @@ const chatMocks = vi.hoisted(() => ({
   send: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
   ensureSession: vi.fn(),
-  setSessionModel: vi.fn()
+  setSessionModel: vi.fn(),
+  setSessionSettings: vi.fn()
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -73,6 +74,7 @@ beforeEach(() => {
   chatMocks.stop.mockClear()
   chatMocks.ensureSession.mockReset()
   chatMocks.setSessionModel.mockReset()
+  chatMocks.setSessionSettings.mockReset()
 })
 
 describe('Composer', () => {
@@ -285,6 +287,66 @@ describe('Composer', () => {
     await user.click(screen.getByRole('option', { name: /Claude X/ }))
 
     expect(await screen.findByText('ensure failed')).toBeInTheDocument()
+  })
+
+  it('shows the session reasoning effort and permission mode', () => {
+    const state = baseState()
+    state.sessions[0] = makeSession({
+      id: 's1',
+      title: 'Chat',
+      reasoningEffort: 'high',
+      permissionMode: 'plan'
+    })
+    storeState.current = state
+    renderComposer()
+
+    expect(screen.getByRole('button', { name: 'Reasoning effort: High' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Permission mode: Read only' })).toBeInTheDocument()
+  })
+
+  it('changes the reasoning effort from the composer', async () => {
+    chatMocks.ensureSession.mockResolvedValue({ id: 's1' })
+    chatMocks.setSessionSettings.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: 'Reasoning effort: Default' }))
+    await user.click(screen.getByRole('option', { name: 'High' }))
+
+    await waitFor(() =>
+      expect(chatMocks.setSessionSettings).toHaveBeenCalledWith('s1', {
+        reasoningEffort: 'high',
+        permissionMode: 'ask'
+      })
+    )
+  })
+
+  it('changes the permission mode from the composer', async () => {
+    chatMocks.ensureSession.mockResolvedValue({ id: 's1' })
+    chatMocks.setSessionSettings.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: 'Permission mode: Ask each time' }))
+    await user.click(screen.getByRole('option', { name: /Auto edit files/ }))
+
+    await waitFor(() =>
+      expect(chatMocks.setSessionSettings).toHaveBeenCalledWith('s1', {
+        reasoningEffort: null,
+        permissionMode: 'acceptEdits'
+      })
+    )
+  })
+
+  it('shows errors when changing session settings fails', async () => {
+    chatMocks.ensureSession.mockRejectedValue(new Error('settings failed'))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.click(screen.getByRole('button', { name: 'Reasoning effort: Default' }))
+    await user.click(screen.getByRole('option', { name: 'High' }))
+
+    expect(await screen.findByText('settings failed')).toBeInTheDocument()
   })
 
   it('ignores Enter with empty input', () => {

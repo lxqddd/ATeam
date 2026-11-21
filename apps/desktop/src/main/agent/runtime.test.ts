@@ -542,6 +542,83 @@ describe('AgentRuntime', () => {
     expect((await runtime.setSessionModel(sessionId, null)).model).toBeNull()
   })
 
+  it('sets and validates session settings', async () => {
+    const settings = { reasoningEffort: 'high' as const, permissionMode: 'acceptEdits' as const }
+
+    expect(await runtime.setSessionSettings(sessionId, settings)).toMatchObject(settings)
+    await expect(runtime.setSessionSettings('missing', settings)).rejects.toThrow(
+      'SESSION_NOT_FOUND'
+    )
+    await expect(
+      runtime.setSessionSettings(sessionId, {
+        reasoningEffort: 'ultra' as never,
+        permissionMode: 'ask'
+      })
+    ).rejects.toThrow('INVALID_REASONING_EFFORT')
+    await expect(
+      runtime.setSessionSettings(sessionId, {
+        reasoningEffort: null,
+        permissionMode: 'bypass' as never
+      })
+    ).rejects.toThrow('INVALID_PERMISSION_MODE')
+  })
+
+  it('passes the session reasoning effort to the turn', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: 'medium',
+      permissionMode: 'ask'
+    })
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].reasoning).toBe('medium')
+  })
+
+  it('auto permission mode allows tools without asking', async () => {
+    scripts.push(toolScript(['x']))
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('done:x')
+  })
+
+  it('acceptEdits permission mode allows write tools without asking', async () => {
+    scripts.push(toolScript(['x']))
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'acceptEdits'
+    })
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('done:x')
+  })
+
+  it('plan permission mode denies tools without asking', async () => {
+    scripts.push(toolScript(['x']))
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'plan'
+    })
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(turns[0].system).toContain('read-only plan mode')
+    expect(toolPart('call-1').output).toBe('Permission denied')
+  })
+
   it('clears session models that disappear from the config', async () => {
     await runtime.setSessionModel(sessionId, { providerId: 'provider-1', modelId: 'model-1' })
     const untouched = (await runtime.createSession()).id

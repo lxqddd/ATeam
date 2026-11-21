@@ -1,3 +1,4 @@
+import type { SessionSettings } from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType } from './model-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
@@ -35,6 +36,11 @@ export type WorkerRequest =
       id: string
       method: 'sessions.setModel'
       params: { id: string; model: ModelRef | null }
+    }
+  | {
+      id: string
+      method: 'sessions.setSettings'
+      params: { id: string; settings: SessionSettings }
     }
   | { id: string; method: 'messages.list'; params: { sessionId: string } }
   | {

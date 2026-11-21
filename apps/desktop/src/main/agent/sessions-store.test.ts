@@ -39,7 +39,13 @@ describe('SessionsStore', () => {
   it('creates an idle session with an empty title', async () => {
     const session = await store.create()
 
-    expect(session).toMatchObject({ title: '', model: null, status: 'idle' })
+    expect(session).toMatchObject({
+      title: '',
+      model: null,
+      status: 'idle',
+      reasoningEffort: null,
+      permissionMode: 'ask'
+    })
     await expect(fs.stat(path.join(sessionsDirectory, `${session.id}.json`))).resolves.toBeDefined()
   })
 
@@ -91,6 +97,37 @@ describe('SessionsStore', () => {
     expect((await store.setModel(session.id, model))?.model).toEqual(model)
     await store.setStatus(session.id, 'error')
     expect(store.getSession(session.id)?.status).toBe('error')
+  })
+
+  it('updates session settings and reloads them', async () => {
+    const session = await store.create()
+    const settings = { reasoningEffort: 'high' as const, permissionMode: 'acceptEdits' as const }
+
+    expect(await store.setSettings(session.id, settings)).toMatchObject(settings)
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)).toMatchObject(settings)
+    expect(await store.setSettings('missing', settings)).toBeUndefined()
+  })
+
+  it('fills session settings for records written before they existed', async () => {
+    const session = await store.create()
+    const file = path.join(sessionsDirectory, `${session.id}.json`)
+    const data = JSON.parse(await fs.readFile(file, 'utf8')) as {
+      session: { permissionMode?: string; reasoningEffort?: string | null }
+    }
+    delete data.session.permissionMode
+    delete data.session.reasoningEffort
+    await fs.writeFile(file, JSON.stringify(data))
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+
+    expect(reloaded.getSession(session.id)).toMatchObject({
+      reasoningEffort: null,
+      permissionMode: 'ask'
+    })
   })
 
   it('deletes a session and its file', async () => {
@@ -205,6 +242,9 @@ describe('SessionsStore', () => {
   it('ignores operations for unknown sessions', async () => {
     expect(await store.rename('missing', 'x')).toBeUndefined()
     expect(await store.setModel('missing', null)).toBeUndefined()
+    expect(
+      await store.setSettings('missing', { reasoningEffort: null, permissionMode: 'ask' })
+    ).toBeUndefined()
     await store.setStatus('missing', 'idle')
     await store.appendMessage('missing', makeMessage())
     expect(store.get('missing')).toBeUndefined()

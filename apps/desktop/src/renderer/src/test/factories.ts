@@ -18,6 +18,8 @@ export function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
     updatedAt: timestamp,
     model: null,
     status: 'idle',
+    reasoningEffort: null,
+    permissionMode: 'ask',
     ...overrides
   }
 }

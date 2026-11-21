@@ -5,7 +5,8 @@ import type {
   MessagesSnapshot,
   PermissionDecision,
   PermissionRequest,
-  SessionMeta
+  SessionMeta,
+  SessionSettings
 } from './agent-types'
 import type {
   ModelCreateInput,
@@ -30,6 +31,7 @@ export interface AgentBridge {
     rename: (id: string, title: string) => Promise<SessionMeta>
     remove: (id: string) => Promise<void>
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
+    setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>

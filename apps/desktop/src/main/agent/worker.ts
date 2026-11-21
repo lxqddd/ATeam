@@ -55,6 +55,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return null
     case 'sessions.setModel':
       return requireRuntime().setSessionModel(request.params.id, request.params.model)
+    case 'sessions.setSettings':
+      return requireRuntime().setSessionSettings(request.params.id, request.params.settings)
     case 'messages.list':
       return requireRuntime().messages(request.params.sessionId)
     case 'chat.send':

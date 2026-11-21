@@ -159,7 +159,7 @@ describe('write tool', () => {
     askPermission.mockResolvedValue(false)
 
     await expect(execute(tools.write, { path: 'x.txt', content: 'data' })).resolves.toBe(
-      'Permission denied by user; the file was not written.'
+      'Permission denied; the file was not written.'
     )
     await expect(fs.stat(path.join(directory, 'x.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -207,7 +207,7 @@ describe('edit tool', () => {
 
     await expect(
       execute(tools.edit, { path: 'a.txt', oldText: 'hello', newText: 'bye' })
-    ).resolves.toBe('Permission denied by user; the file was not edited.')
+    ).resolves.toBe('Permission denied; the file was not edited.')
     await expect(fs.readFile(path.join(directory, 'a.txt'), 'utf8')).resolves.toBe('hello')
   })
 })
@@ -222,7 +222,7 @@ describe('shell tool', () => {
     askPermission.mockResolvedValue(false)
 
     await expect(execute(tools.shell, { command: 'printf hi' })).resolves.toBe(
-      'Permission denied by user; the command was not run.'
+      'Permission denied; the command was not run.'
     )
   })
 

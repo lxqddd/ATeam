@@ -137,6 +137,11 @@ describe('ChatStore sessions', () => {
     expect(mock.api.agent.sessions.setModel).toHaveBeenCalledWith('s1', model)
     expect(store.getSnapshot().sessions[0].model).toEqual(model)
 
+    const settings = { reasoningEffort: 'high' as const, permissionMode: 'acceptEdits' as const }
+    await store.setSessionSettings('s1', settings)
+    expect(mock.api.agent.sessions.setSettings).toHaveBeenCalledWith('s1', settings)
+    expect(store.getSnapshot().sessions[0]).toMatchObject(settings)
+
     await store.stop()
     expect(mock.api.agent.chat.stop).toHaveBeenCalledWith('s1')
     await store.retry()

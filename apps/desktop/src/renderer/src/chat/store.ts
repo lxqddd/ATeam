@@ -11,7 +11,8 @@ import type {
   PermissionDecision,
   PermissionRequest,
   RunOutcome,
-  SessionMeta
+  SessionMeta,
+  SessionSettings
 } from '@ateam/shared'
 
 export interface ChatStoreState {
@@ -228,6 +229,11 @@ export class ChatStore {
 
   async setSessionModel(sessionId: string, model: ModelRef): Promise<void> {
     const session = await window.api.agent.sessions.setModel(sessionId, model)
+    this.upsertSession(session)
+  }
+
+  async setSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
+    const session = await window.api.agent.sessions.setSettings(sessionId, settings)
     this.upsertSession(session)
   }
 

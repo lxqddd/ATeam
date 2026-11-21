@@ -1,9 +1,69 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
-import type { ModelRef } from '@ateam/shared'
+import type { ModelRef, PermissionMode, ReasoningEffort, SessionSettings } from '@ateam/shared'
+import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
+import ComposerChoiceChip from './ComposerChoiceChip'
 import ModelPicker from './ModelPicker'
+
+const REASONING_LABEL_KEYS: Record<ReasoningEffort, string> = {
+  minimal: 'chat.reasoningMinimal',
+  low: 'chat.reasoningLow',
+  medium: 'chat.reasoningMedium',
+  high: 'chat.reasoningHigh'
+}
+
+const PERMISSION_LABEL_KEYS: Record<PermissionMode, string> = {
+  plan: 'chat.permissionPlan',
+  ask: 'chat.permissionAsk',
+  acceptEdits: 'chat.permissionAcceptEdits',
+  auto: 'chat.permissionAuto'
+}
+
+const PERMISSION_HINT_KEYS: Record<PermissionMode, string> = {
+  plan: 'chat.permissionPlanHint',
+  ask: 'chat.permissionAskHint',
+  acceptEdits: 'chat.permissionAcceptEditsHint',
+  auto: 'chat.permissionAutoHint'
+}
+
+function ReasoningIcon(): React.JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 3.5 13.6 9l5.4 1.7-5.4 1.7L12 18l-1.6-5.6L5 10.7 10.4 9 12 3.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M18.5 16.5 19.2 19l2.3.8-2.3.7-.7 2.5-.7-2.5-2.3-.7 2.3-.8.7-2.5Z"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+function ShieldIcon(): React.JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 3.5 19 6v5.3c0 4.4-2.8 7.8-7 9.2-4.2-1.4-7-4.8-7-9.2V6l7-2.5Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="m8.8 12 2.2 2.2 4.2-4.4"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -22,6 +82,24 @@ function Composer(): React.JSX.Element {
   const effectiveModel = session?.model ?? models?.defaultModel ?? null
   const running = session?.status === 'running' || session?.status === 'waiting-permission'
   const ready = status.status === 'ready'
+  const reasoningEffort = session?.reasoningEffort ?? null
+  const permissionMode = session?.permissionMode ?? 'ask'
+  const reasoningLabel = reasoningEffort
+    ? t(REASONING_LABEL_KEYS[reasoningEffort])
+    : t('chat.reasoningDefault')
+
+  const reasoningOptions = [
+    { value: 'default', label: t('chat.reasoningDefault') },
+    ...REASONING_EFFORTS.map((effort) => ({
+      value: effort,
+      label: t(REASONING_LABEL_KEYS[effort])
+    }))
+  ]
+  const permissionOptions = PERMISSION_MODES.map((mode) => ({
+    value: mode,
+    label: t(PERMISSION_LABEL_KEYS[mode]),
+    description: t(PERMISSION_HINT_KEYS[mode])
+  }))
 
   useLayoutEffect(() => {
     const element = textareaRef.current
@@ -85,6 +163,20 @@ function Composer(): React.JSX.Element {
     }
   }
 
+  async function changeSettings(patch: Partial<SessionSettings>): Promise<void> {
+    setError(null)
+    try {
+      const target = await chatStore.ensureSession()
+      await chatStore.setSessionSettings(target.id, {
+        reasoningEffort: target.reasoningEffort ?? null,
+        permissionMode: target.permissionMode ?? 'ask',
+        ...patch
+      })
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
   const placeholder = !ready
     ? status.status === 'starting'
       ? t('chat.agentStarting')
@@ -132,7 +224,7 @@ function Composer(): React.JSX.Element {
         />
 
         <div className="mt-1 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
             <ModelPicker
               models={models}
               value={effectiveModel}
@@ -140,6 +232,31 @@ function Composer(): React.JSX.Element {
                 void changeModel(model)
               }}
               disabled={!ready || running || sending}
+            />
+            <ComposerChoiceChip
+              ariaLabel={t('chat.reasoning')}
+              accessibleLabel={`${t('chat.reasoning')}: ${reasoningLabel}`}
+              label={`${t('chat.reasoningShort')} · ${reasoningLabel}`}
+              value={reasoningEffort ?? 'default'}
+              options={reasoningOptions}
+              onChange={(value) => {
+                void changeSettings({
+                  reasoningEffort: value === 'default' ? null : (value as ReasoningEffort)
+                })
+              }}
+              disabled={!ready || sending}
+              icon={<ReasoningIcon />}
+            />
+            <ComposerChoiceChip
+              ariaLabel={t('chat.permissionMode')}
+              label={t(PERMISSION_LABEL_KEYS[permissionMode])}
+              value={permissionMode}
+              options={permissionOptions}
+              onChange={(value) => {
+                void changeSettings({ permissionMode: value as PermissionMode })
+              }}
+              disabled={!ready || sending}
+              icon={<ShieldIcon />}
             />
           </div>
 

@@ -11,12 +11,16 @@ import type {
   ModelRef,
   PermissionAction,
   PermissionDecision,
+  PermissionMode,
   PermissionRequest,
+  ReasoningEffort,
   RunOutcome,
   RuntimeModelsConfig,
   SessionMeta,
+  SessionSettings,
   TokenUsage
 } from '@ateam/shared'
+import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { SessionsStore, type SessionRecord } from './sessions-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
@@ -56,6 +60,7 @@ export interface AgentTurnInput {
   messages: ModelMessage[]
   tools: ToolSet
   abortSignal: AbortSignal
+  reasoning?: ReasoningEffort | null
 }
 
 export interface AgentTurnStream {
@@ -83,6 +88,7 @@ const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       tools: input.tools,
       stopWhen: stepCountIs(MAX_STEPS),
       abortSignal: input.abortSignal,
+      reasoning: input.reasoning ?? undefined,
       maxRetries: 1,
       maxOutputTokens: 8_192,
       onError: () => undefined
@@ -172,6 +178,22 @@ export class AgentRuntime {
   async setSessionModel(id: string, model: ModelRef | null): Promise<SessionMeta> {
     if (model) resolveModelRef(this.models, model)
     const session = await this.store.setModel(id, model)
+    if (!session) throw new Error('SESSION_NOT_FOUND')
+    this.emit({ type: 'session.upsert', session })
+    return session
+  }
+
+  async setSessionSettings(id: string, settings: SessionSettings): Promise<SessionMeta> {
+    if (
+      settings.reasoningEffort !== null &&
+      !REASONING_EFFORTS.includes(settings.reasoningEffort)
+    ) {
+      throw new Error('INVALID_REASONING_EFFORT')
+    }
+    if (!PERMISSION_MODES.includes(settings.permissionMode)) {
+      throw new Error('INVALID_PERMISSION_MODE')
+    }
+    const session = await this.store.setSettings(id, settings)
     if (!session) throw new Error('SESSION_NOT_FOUND')
     this.emit({ type: 'session.upsert', session })
     return session
@@ -414,6 +436,10 @@ export class AgentRuntime {
     toolName: string,
     toolCallId: string
   ): Promise<boolean> {
+    const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
+    if (mode === 'auto') return true
+    if (mode === 'plan') return false
+    if (mode === 'acceptEdits' && action !== 'shell') return true
     if (run.allowed.has(action)) return true
 
     const message = this.assistantFor(run)
@@ -528,14 +554,18 @@ export class AgentRuntime {
 
       const result = this.deps.createTurn({
         model,
-        system: buildSystemPrompt(this.options.workspacePath),
+        system: buildSystemPrompt(
+          this.options.workspacePath,
+          record.session.permissionMode ?? 'ask'
+        ),
         messages: buildModelMessages(
           record.messages.filter(
             (item) => item.id !== message.id && !run.skipHistoryIds?.has(item.id)
           )
         ),
         tools,
-        abortSignal: run.abort.signal
+        abortSignal: run.abort.signal,
+        reasoning: record.session.reasoningEffort
       })
 
       for await (const part of result.stream) {
@@ -709,12 +739,20 @@ export class AgentRuntime {
   }
 }
 
-function buildSystemPrompt(workspacePath: string): string {
+function buildSystemPrompt(workspacePath: string, permissionMode: PermissionMode): string {
+  const permission =
+    permissionMode === 'plan'
+      ? 'This session is in read-only plan mode: inspect the workspace and propose a plan, but do not modify files or run shell commands.'
+      : permissionMode === 'acceptEdits'
+        ? 'File writes and edits are pre-approved and run without asking. Shell commands still require explicit user approval and may be denied.'
+        : permissionMode === 'auto'
+          ? 'File writes, edits, and shell commands are pre-approved and run without asking. Still act carefully and stay inside the workspace.'
+          : 'write, edit, and shell require explicit user approval and may be denied; respect the decision and explain it.'
   return [
     'You are ATeam, a concise and reliable coding agent running on the user desktop.',
     `The workspace is: ${workspacePath}`,
     'Use the available tools to inspect and modify files. Read, list, and grep are allowed automatically.',
-    'write, edit, and shell require explicit user approval and may be denied; respect the decision and explain it.',
+    permission,
     'Prefer small, verifiable changes. Do not claim that you changed a file unless a tool result confirms it.',
     'Use exact unique matches for edit. Keep shell commands non-interactive and scoped to the workspace.',
     'Answer in the language the user used.'

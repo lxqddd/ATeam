@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { ChatMessage, ModelRef, SessionMeta } from '@ateam/shared'
+import type {
+  ChatMessage,
+  ModelRef,
+  PermissionMode,
+  ReasoningEffort,
+  SessionMeta,
+  SessionSettings
+} from '@ateam/shared'
+import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from './atomic-json'
 
 interface SessionIndex {
@@ -37,6 +45,18 @@ function repairRecord(record: SessionRecord): boolean {
   let changed = false
   if (record.session.status === 'running' || record.session.status === 'waiting-permission') {
     record.session.status = 'idle'
+    changed = true
+  }
+
+  if (!PERMISSION_MODES.includes(record.session.permissionMode as PermissionMode)) {
+    record.session.permissionMode = 'ask'
+    changed = true
+  }
+  if (
+    record.session.reasoningEffort !== null &&
+    !REASONING_EFFORTS.includes(record.session.reasoningEffort as ReasoningEffort)
+  ) {
+    record.session.reasoningEffort = null
     changed = true
   }
 
@@ -154,7 +174,9 @@ export class SessionsStore {
       createdAt: timestamp,
       updatedAt: timestamp,
       model: null,
-      status: 'idle'
+      status: 'idle',
+      reasoningEffort: null,
+      permissionMode: 'ask'
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
@@ -174,6 +196,16 @@ export class SessionsStore {
     const record = this.records.get(id)
     if (!record) return undefined
     record.session.model = model
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
+  }
+
+  async setSettings(id: string, settings: SessionSettings): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    record.session.reasoningEffort = settings.reasoningEffort
+    record.session.permissionMode = settings.permissionMode
     record.session.updatedAt = nowIso()
     await this.persist(id)
     return clone(record.session)

@@ -248,7 +248,7 @@ export function createTools(context: ToolContext): ToolSet {
           return 'Error: file content exceeds 1 MB'
         }
         const allowed = await context.askPermission('write', inputPath, 'write', options.toolCallId)
-        if (!allowed) return 'Permission denied by user; the file was not written.'
+        if (!allowed) return 'Permission denied; the file was not written.'
         const filePath = await resolvePath(context.workspace, inputPath, true)
         await fs.mkdir(path.dirname(filePath), { recursive: true })
         await fs.writeFile(filePath, content, 'utf8')
@@ -272,7 +272,7 @@ export function createTools(context: ToolContext): ToolSet {
       try {
         if (oldText.length > 200_000) return 'Error: oldText is too large'
         const allowed = await context.askPermission('edit', inputPath, 'edit', options.toolCallId)
-        if (!allowed) return 'Permission denied by user; the file was not edited.'
+        if (!allowed) return 'Permission denied; the file was not edited.'
         const filePath = await resolvePath(context.workspace, inputPath)
         const text = await readFileText(filePath)
         const occurrences = text.split(oldText).length - 1
@@ -300,7 +300,7 @@ export function createTools(context: ToolContext): ToolSet {
     execute: async ({ command, cwd = '.', timeoutMs = 120_000 }, options) => {
       try {
         const allowed = await context.askPermission('shell', command, 'shell', options.toolCallId)
-        if (!allowed) return 'Permission denied by user; the command was not run.'
+        if (!allowed) return 'Permission denied; the command was not run.'
         const workdir = await resolvePath(context.workspace, cwd)
         return await new Promise<string>((resolve) => {
           const child = spawn(command, {
