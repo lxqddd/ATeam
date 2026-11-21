@@ -85,6 +85,25 @@ async function searchExa(
   }))
 }
 
+async function searchSerper(
+  fetchImpl: typeof fetch,
+  apiKey: string,
+  input: WebSearchQuery,
+  signal: AbortSignal
+): Promise<WebSearchResult[]> {
+  const payload = (await requestJson(fetchImpl, 'https://google.serper.dev/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-KEY': apiKey },
+    body: JSON.stringify({ q: input.query, num: input.count }),
+    signal
+  })) as { organic?: Array<{ title?: unknown; link?: unknown; snippet?: unknown }> }
+  return (payload.organic ?? []).map((result) => ({
+    title: text(result.title),
+    url: text(result.link),
+    snippet: text(result.snippet)
+  }))
+}
+
 async function searchBrave(
   fetchImpl: typeof fetch,
   apiKey: string,
@@ -124,6 +143,8 @@ export async function searchWeb(
         return await searchExa(fetchImpl, config.apiKey, input, signal)
       case 'brave':
         return await searchBrave(fetchImpl, config.apiKey, input, signal)
+      case 'serper':
+        return await searchSerper(fetchImpl, config.apiKey, input, signal)
       default:
         throw new Error(`Unsupported web search provider: ${String(config.provider)}`)
     }

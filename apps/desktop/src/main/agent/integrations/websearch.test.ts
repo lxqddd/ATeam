@@ -10,6 +10,30 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('searchWeb', () => {
+  it('searches with Serper', async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            organic: [{ title: 'Result', link: 'https://example.com/a', snippet: 'Snippet' }]
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+    )
+
+    const results = await searchWeb(
+      { provider: 'serper', apiKey: 'key' },
+      { query: 'electron', count: 3 },
+      { fetch: fetchMock }
+    )
+
+    expect(results).toEqual([{ title: 'Result', url: 'https://example.com/a', snippet: 'Snippet' }])
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://google.serper.dev/search',
+      expect.objectContaining({ method: 'POST' })
+    )
+  })
+
   it('calls Tavily and maps results', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({

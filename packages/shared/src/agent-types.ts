@@ -301,7 +301,7 @@ export interface McpServerStatus {
 
 export type WebFetchFormat = 'markdown' | 'text' | 'html'
 
-export type WebSearchProvider = 'tavily' | 'exa' | 'brave'
+export type WebSearchProvider = 'tavily' | 'exa' | 'brave' | 'serper'
 
 export interface WebSearchInput {
   provider: WebSearchProvider

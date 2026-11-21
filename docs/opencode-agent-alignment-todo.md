@@ -177,7 +177,7 @@
 
 ### P1-3 Web 工具
 
-**进度（2026-11-21）**：已实现 `webfetch`（http(s) 校验、30s 超时、5 MB 截断、HTML→Markdown / 纯文本 / 原始 HTML、错误与重定向 URL 回显）与 `websearch`（Tavily / Exa / Brave，密钥加密存储，设置页配置与状态）；两者都有独立权限 action，默认允许、可通过规则改为询问或拒绝。剩余：更多搜索 provider、私有地址访问策略、页面缓存。
+**进度（2026-11-21）**：已实现 `webfetch`（http(s) 校验、30s 超时、5 MB 截断、HTML→Markdown / 纯文本 / 原始 HTML、错误与重定向 URL 回显）与 `websearch`（Tavily / Exa / Brave，密钥加密存储，设置页配置与状态）；两者都有独立权限 action，默认允许、可通过规则改为询问或拒绝。剩余：无。另增加 Serper 搜索 provider、webfetch 私网地址拦截（含 DNS 解析与重定向校验）与 5 分钟页面缓存。
 
 **验收**：Agent 能抓取网页并读取正文，能用配置的搜索服务返回结果；两者都可以被权限规则限制。
 
@@ -185,7 +185,7 @@
 - [x] 增加 `websearch`：搜索 provider 配置与结果格式化
 - [x] 为两个工具增加独立权限 action
 - [x] 设置页展示搜索 provider 状态
-- [ ] 更多搜索 provider 与私有地址访问策略
+- [x] 更多搜索 provider 与私有地址访问策略
 - [x] 测试 HTML 转 markdown、错误处理、超时、权限控制
 
 ### P1-4 附件与 @ 文件引用

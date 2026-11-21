@@ -9,7 +9,7 @@ import type {
 } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../agent/atomic-json'
 
-const PROVIDERS: readonly WebSearchProvider[] = ['tavily', 'exa', 'brave']
+const PROVIDERS: readonly WebSearchProvider[] = ['tavily', 'exa', 'brave', 'serper']
 
 interface StoredWebSearch {
   version: 1

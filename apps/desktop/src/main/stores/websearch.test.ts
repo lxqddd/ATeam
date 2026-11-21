@@ -33,6 +33,11 @@ afterEach(async () => {
 })
 
 describe('WebSearchStore', () => {
+  it('accepts the serper provider', async () => {
+    const updated = await store.update({ provider: 'serper', apiKey: 'key' })
+    expect(updated.provider).toBe('serper')
+  })
+
   it('starts unconfigured', () => {
     expect(store.get()).toEqual({ provider: 'tavily', hasApiKey: false, updatedAt: null })
     expect(store.runtimeConfig()).toBeNull()

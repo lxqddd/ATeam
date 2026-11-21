@@ -92,7 +92,7 @@ describe('fetchWebContent', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'https://example.com/page',
       expect.objectContaining({
-        redirect: 'follow',
+        redirect: 'manual',
         headers: expect.objectContaining({ 'User-Agent': expect.stringContaining('ATeam') })
       })
     )
@@ -142,6 +142,63 @@ describe('fetchWebContent', () => {
     const result = await fetchWebContent({ url: 'https://example.com/start' }, { fetch: fetchMock })
 
     expect(result.url).toBe('https://example.com/final')
+  })
+
+  it('blocks redirects to private addresses', async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://169.254.169.254/latest' }
+        })
+    )
+
+    await expect(
+      fetchWebContent(
+        { url: 'https://example.com/start' },
+        { fetch: fetchMock, lookup: async () => ['93.184.216.34'] }
+      )
+    ).rejects.toThrow(/private/i)
+  })
+
+  it('rejects private network addresses', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    for (const url of [
+      'http://127.0.0.1:3000',
+      'http://10.0.0.5',
+      'http://192.168.1.2',
+      'http://169.254.169.254/latest',
+      'http://[::1]:8080'
+    ]) {
+      await expect(fetchWebContent({ url }, { fetch: fetchMock })).rejects.toThrow(/private/i)
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects hostnames that resolve to private addresses', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    const lookup = vi.fn(async () => ['10.0.0.7'])
+
+    await expect(
+      fetchWebContent({ url: 'https://internal.example' }, { fetch: fetchMock, lookup })
+    ).rejects.toThrow(/private/i)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('caches identical requests', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => htmlResponse('<p>cached</p>'))
+
+    const first = await fetchWebContent(
+      { url: 'https://example.com/cache' },
+      { fetch: fetchMock, cache: true }
+    )
+    const second = await fetchWebContent(
+      { url: 'https://example.com/cache' },
+      { fetch: fetchMock, cache: true }
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(second).toEqual(first)
   })
 
   it('rejects HTTP errors with a body preview', async () => {

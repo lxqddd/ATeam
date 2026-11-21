@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { WebSearchProvider, WebSearchProviderPublic } from '@ateam/shared'
 
-const PROVIDERS: readonly WebSearchProvider[] = ['tavily', 'exa', 'brave']
+const PROVIDERS: readonly WebSearchProvider[] = ['tavily', 'exa', 'brave', 'serper']
 
 function WebSearchSettings(): React.JSX.Element {
   const { t } = useTranslation()
@@ -82,7 +82,13 @@ function WebSearchSettings(): React.JSX.Element {
           >
             {PROVIDERS.map((value) => (
               <option key={value} value={value}>
-                {value === 'tavily' ? 'Tavily' : value === 'exa' ? 'Exa' : 'Brave Search'}
+                {value === 'tavily'
+                  ? 'Tavily'
+                  : value === 'exa'
+                    ? 'Exa'
+                    : value === 'serper'
+                      ? 'Serper'
+                      : 'Brave Search'}
               </option>
             ))}
           </select>
