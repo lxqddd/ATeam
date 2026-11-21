@@ -2,6 +2,8 @@
 
 ATeam 是一个基于 Electron 的 AI Agent 桌面应用。当前版本包含完整的会话核心：多会话管理、流式回复、Markdown 渲染、工具调用、权限审批、模型供应商配置，以及项目规则、上下文压缩、快照回滚、MCP、子代理、LSP 诊断、自动格式化与 Web 工具。
 
+各功能的详细说明见 [docs/features.md](docs/features.md)。
+
 ## 技术栈
 
 - Monorepo：pnpm workspaces
