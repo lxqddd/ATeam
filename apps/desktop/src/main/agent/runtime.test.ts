@@ -7,10 +7,13 @@ import type {
   AgentEvent,
   AgentEventEnvelope,
   ChatMessage,
+  PermissionAction,
+  PermissionRule,
   RuntimeModelsConfig
 } from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './runtime'
 import type { InstructionFile } from './instructions'
+import { PermissionsStore } from './permissions-store'
 import { SessionsStore } from './sessions-store'
 import { makeMessage } from './test/factories'
 
@@ -114,6 +117,7 @@ let turns: AgentTurnInput[]
 let summaries: string[]
 let instructionFiles: InstructionFile[]
 let instructionInputs: Array<{ workspacePath: string; globalDirectory: string }>
+let toolAction: PermissionAction
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
 let resumeTurn: (() => void) | null
 let runtime: AgentRuntime
@@ -129,7 +133,7 @@ function createRuntime(): AgentRuntime {
       createLanguageModel: () => ({}) as unknown as LanguageModel,
       createTools: (context) => {
         toolExecutor = async (value, toolCallId) => {
-          const allowed = await context.askPermission('write', value, 'task', toolCallId)
+          const allowed = await context.askPermission(toolAction, value, 'task', toolCallId)
           return allowed ? `done:${value}` : 'Permission denied'
         }
         return {}
@@ -176,6 +180,22 @@ function toolScript(values: string[]): Script {
     yield part({ type: 'text-delta', id: 't1', text: 'done' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
+}
+
+async function restartWithRules(
+  rules: Array<{
+    action: PermissionRule['action']
+    resource: string
+    effect: PermissionRule['effect']
+    sessionId: string | null
+  }>
+): Promise<void> {
+  await runtime.shutdown()
+  const permissions = new PermissionsStore(directory)
+  await permissions.init()
+  for (const rule of rules) await permissions.add(rule)
+  runtime = createRuntime()
+  await runtime.init()
 }
 
 function stoppableScript(): Script {
@@ -357,6 +377,7 @@ beforeEach(async () => {
   summaries = []
   instructionFiles = []
   instructionInputs = []
+  toolAction = 'write'
   toolExecutor = null
   resumeTurn = null
   runtime = createRuntime()
@@ -422,6 +443,142 @@ describe('AgentRuntime', () => {
     expect(sink.count('permission.asked')).toBe(1)
     expect(toolPart('call-1')).toMatchObject({ state: 'completed', output: 'done:a.txt' })
     expect(toolPart('call-2')).toMatchObject({ state: 'completed', output: 'done:b.txt' })
+  })
+
+  it('persists always decisions and skips prompts after restart', async () => {
+    scripts.push(toolScript(['src/a.txt']))
+    await runtime.sendChat(sessionId, 'write')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(asked.event.permission.id, 'always')
+    await sink.next('run.finished')
+
+    expect(runtime.listPermissionRules(sessionId)).toEqual([
+      expect.objectContaining({
+        action: 'write',
+        resource: 'src/*',
+        effect: 'allow',
+        sessionId
+      })
+    ])
+
+    await runtime.shutdown()
+    runtime = createRuntime()
+    await runtime.init()
+    const before = sink.count('permission.asked')
+    scripts.push(toolScript(['src/b.txt']))
+    await runtime.sendChat(sessionId, 'write again')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(before)
+    const lastAssistant = assistantMessages().at(-1)
+    expect(
+      lastAssistant?.parts.find((entry) => entry.type === 'tool' && entry.toolCallId === 'call-1')
+    ).toMatchObject({ state: 'completed', output: 'done:src/b.txt' })
+  })
+
+  it('removes a persisted rule so the action asks again', async () => {
+    scripts.push(toolScript(['src/a.txt']))
+    await runtime.sendChat(sessionId, 'write')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(asked.event.permission.id, 'always')
+    await sink.next('run.finished')
+
+    const [rule] = runtime.listPermissionRules(sessionId)
+    expect(await runtime.removePermissionRule(rule.id)).toBe(true)
+
+    const before = sink.count('permission.asked')
+    scripts.push(toolScript(['src/b.txt']))
+    await runtime.sendChat(sessionId, 'again')
+    const next = await sink.next('permission.asked')
+    expect(sink.count('permission.asked')).toBe(before + 1)
+    if (next.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(next.event.permission.id, 'reject')
+    await sink.next('run.finished')
+  })
+
+  it('adds a global permission rule', async () => {
+    const rule = await runtime.addPermissionRule({
+      action: 'shell',
+      resource: 'rm *',
+      effect: 'deny',
+      sessionId: null
+    })
+
+    expect(rule).toMatchObject({
+      action: 'shell',
+      resource: 'rm *',
+      effect: 'deny',
+      sessionId: null
+    })
+    expect(runtime.listPermissionRules()).toEqual([rule])
+  })
+
+  it('denies tools matched by a deny rule even in auto mode', async () => {
+    await restartWithRules([
+      { action: 'write', resource: 'src/*', effect: 'deny', sessionId: null }
+    ])
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    scripts.push(toolScript(['src/a.txt']))
+
+    await runtime.sendChat(sessionId, 'write')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('Permission denied')
+  })
+
+  it('asks for tools matched by an ask rule even in auto mode', async () => {
+    await restartWithRules([{ action: 'write', resource: 'src/*', effect: 'ask', sessionId: null }])
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    scripts.push(toolScript(['src/a.txt']))
+
+    await runtime.sendChat(sessionId, 'write')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(asked.event.permission.id, 'reject')
+    await sink.next('run.finished')
+  })
+
+  it('asks before shell commands that touch paths outside the workspace', async () => {
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    toolAction = 'shell'
+    scripts.push(toolScript(['cat /etc/hosts']))
+
+    await runtime.sendChat(sessionId, 'shell')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    expect(asked.event.permission).toMatchObject({
+      action: 'shell',
+      resource: 'cat /etc/hosts'
+    })
+    runtime.replyPermission(asked.event.permission.id, 'reject')
+    await sink.next('run.finished')
+  })
+
+  it('asks before risky shell commands in auto mode', async () => {
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    toolAction = 'shell'
+    scripts.push(toolScript(['rm -rf /']))
+
+    await runtime.sendChat(sessionId, 'shell')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(asked.event.permission.id, 'reject')
+    await sink.next('run.finished')
   })
 
   it('marks the tool as denied after a reject reply', async () => {

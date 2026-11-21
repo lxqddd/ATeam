@@ -5,6 +5,8 @@ import type {
   MessagesSnapshot,
   PermissionDecision,
   PermissionRequest,
+  PermissionRule,
+  PermissionRuleInput,
   SessionMeta,
   SessionSettings
 } from './agent-types'
@@ -45,6 +47,9 @@ export interface AgentBridge {
   permissions: {
     list: () => Promise<PermissionRequest[]>
     reply: (requestId: string, decision: PermissionDecision) => Promise<void>
+    rules: (sessionId?: string) => Promise<PermissionRule[]>
+    addRule: (input: PermissionRuleInput) => Promise<PermissionRule>
+    removeRule: (id: string) => Promise<boolean>
   }
 }
 

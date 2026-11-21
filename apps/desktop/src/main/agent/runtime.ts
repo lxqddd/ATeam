@@ -11,8 +11,11 @@ import type {
   ModelRef,
   PermissionAction,
   PermissionDecision,
+  PermissionEffect,
   PermissionMode,
   PermissionRequest,
+  PermissionRule,
+  PermissionRuleInput,
   ReasoningEffort,
   RunOutcome,
   RuntimeModelsConfig,
@@ -37,6 +40,8 @@ import {
   systemWithInstructions,
   type InstructionFile
 } from './instructions'
+import { alwaysPermissionResource, evaluatePermissionRules, scanShellCommand } from './permissions'
+import { PermissionsStore } from './permissions-store'
 import { SessionsStore, type SessionRecord } from './sessions-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
@@ -52,7 +57,6 @@ interface Run {
   abort: AbortController
   startedAt: number
   steps: number
-  allowed: Set<PermissionAction>
   skipHistoryIds?: Set<string>
   retried?: boolean
 }
@@ -189,15 +193,16 @@ function usageFrom(total: {
 
 export class AgentRuntime {
   private readonly store: SessionsStore
+  private readonly permissionRules: PermissionsStore
   private readonly runs = new Map<string, Run>()
   private readonly pending = new Map<string, PendingPermission>()
-  private readonly allowedBySession = new Map<string, Set<PermissionAction>>()
   private models: RuntimeModelsConfig
   private readonly deps: AgentRuntimeDependencies
   private seq = 0
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
+    this.permissionRules = new PermissionsStore(options.userDataPath)
     this.models = options.models
     this.deps = { ...DEFAULT_DEPENDENCIES, ...options.dependencies }
   }
@@ -205,6 +210,7 @@ export class AgentRuntime {
   async init(): Promise<void> {
     await fs.mkdir(this.options.workspacePath, { recursive: true })
     await this.store.init()
+    await this.permissionRules.init()
   }
 
   listSessions(): SessionMeta[] {
@@ -266,6 +272,18 @@ export class AgentRuntime {
     return session
   }
 
+  listPermissionRules(sessionId?: string): PermissionRule[] {
+    return this.permissionRules.list(sessionId)
+  }
+
+  addPermissionRule(input: PermissionRuleInput): Promise<PermissionRule> {
+    return this.permissionRules.add(input)
+  }
+
+  removePermissionRule(id: string): Promise<boolean> {
+    return this.permissionRules.remove(id)
+  }
+
   async deleteSession(id: string): Promise<void> {
     const run = this.runs.get(id)
     if (run) {
@@ -273,7 +291,7 @@ export class AgentRuntime {
       this.rejectPendingForRun(run)
     }
     await this.store.delete(id)
-    this.allowedBySession.delete(id)
+    await this.permissionRules.removeForSession(id)
     this.emit({ type: 'session.deleted', sessionId: id })
   }
 
@@ -340,16 +358,12 @@ export class AgentRuntime {
       startedAt: nowIso()
     })
 
-    const allowed = this.allowedBySession.get(sessionId) ?? new Set<PermissionAction>()
-    this.allowedBySession.set(sessionId, allowed)
-
     const run: Run = {
       sessionId,
       messageId: assistant.id,
       abort: new AbortController(),
       startedAt: Date.now(),
       steps: 0,
-      allowed,
       skipHistoryIds
     }
     this.runs.set(sessionId, run)
@@ -504,10 +518,37 @@ export class AgentRuntime {
     toolCallId: string
   ): Promise<boolean> {
     const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
-    if (mode === 'auto') return true
     if (mode === 'plan') return false
-    if (mode === 'acceptEdits' && action !== 'shell') return true
-    if (run.allowed.has(action)) return true
+
+    const scan = action === 'shell' ? scanShellCommand(resource, this.options.workspacePath) : null
+    const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
+    const rules = this.permissionRules.list(run.sessionId)
+    const effect = evaluatePermissionRules(rules, {
+      action,
+      resources,
+      sessionId: run.sessionId
+    })
+    if (effect === 'deny') return false
+
+    let externalEffect: PermissionEffect | null = null
+    if (scan && scan.externalPaths.length > 0) {
+      externalEffect = evaluatePermissionRules(rules, {
+        action: 'external_directory',
+        resources: scan.externalPaths,
+        sessionId: run.sessionId
+      })
+      if (externalEffect === 'deny') return false
+    }
+
+    const externalNeedsPrompt =
+      Boolean(scan && scan.externalPaths.length > 0) && externalEffect !== 'allow'
+    if (!scan?.risky && !externalNeedsPrompt) {
+      if (effect === 'allow') return true
+      if (effect !== 'ask') {
+        if (mode === 'auto') return true
+        if (mode === 'acceptEdits' && action !== 'shell') return true
+      }
+    }
 
     const message = this.assistantFor(run)
     const part = this.ensureToolPart(message, toolCallId, toolName)
@@ -544,7 +585,28 @@ export class AgentRuntime {
       this.emit({ type: 'permission.asked', permission: structuredClone(request) })
     })
 
-    if (decision === 'always') run.allowed.add(action)
+    if (decision === 'always') {
+      for (const entry of resources) {
+        await this.permissionRules
+          .add({
+            action,
+            resource: alwaysPermissionResource(action, entry),
+            effect: 'allow',
+            sessionId: run.sessionId
+          })
+          .catch(() => undefined)
+      }
+      for (const externalPath of scan?.externalPaths ?? []) {
+        await this.permissionRules
+          .add({
+            action: 'external_directory',
+            resource: alwaysPermissionResource('external_directory', externalPath),
+            effect: 'allow',
+            sessionId: run.sessionId
+          })
+          .catch(() => undefined)
+      }
+    }
     const current = this.findToolPart(message, toolCallId)
     if (current && current.type === 'tool') {
       current.state = decision === 'reject' ? 'denied' : 'running'

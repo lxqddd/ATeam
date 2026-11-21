@@ -73,6 +73,27 @@ export interface ChatMessage {
 export type PermissionAction = 'write' | 'edit' | 'shell'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
+export type PermissionEffect = 'allow' | 'ask' | 'deny'
+
+export type PermissionRuleAction = PermissionAction | 'external_directory' | '*'
+
+export interface PermissionRule {
+  id: string
+  action: PermissionRuleAction
+  resource: string
+  effect: PermissionEffect
+  /** null means the rule applies to every session. */
+  sessionId: string | null
+  createdAt: string
+}
+
+export interface PermissionRuleInput {
+  action: PermissionRuleAction
+  resource: string
+  effect: PermissionEffect
+  sessionId: string | null
+}
+
 export interface PermissionRequest {
   id: string
   sessionId: string

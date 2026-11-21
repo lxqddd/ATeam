@@ -8,6 +8,7 @@ import type {
   ModelRef,
   ModelsConfigPublic,
   PermissionRequest,
+  PermissionRuleInput,
   SessionMeta,
   SessionSettings
 } from '@ateam/shared'
@@ -115,7 +116,14 @@ export function createApiMock(
       },
       permissions: {
         list: vi.fn(async () => permissions.map((permission) => ({ ...permission }))),
-        reply: vi.fn(async () => undefined)
+        reply: vi.fn(async () => undefined),
+        rules: vi.fn(async () => []),
+        addRule: vi.fn(async (input: PermissionRuleInput) => ({
+          id: `rule-${Date.now()}`,
+          ...input,
+          createdAt: new Date().toISOString()
+        })),
+        removeRule: vi.fn(async () => true)
       }
     },
     models: {

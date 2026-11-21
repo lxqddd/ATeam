@@ -6,6 +6,7 @@ import {
   type AgentStatus,
   type MessagesSnapshot,
   type PermissionRequest,
+  type PermissionRule,
   type SessionMeta
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
@@ -44,6 +45,13 @@ const chatSendSchema = z.object({
 const permissionReplySchema = z.object({
   requestId: idSchema,
   decision: z.enum(['once', 'always', 'reject'])
+})
+const permissionRulesSchema = z.object({ sessionId: idSchema.optional() }).optional()
+const permissionRuleInputSchema = z.object({
+  action: z.enum(['write', 'edit', 'shell', 'external_directory', '*']),
+  resource: z.string().trim().min(1).max(500),
+  effect: z.enum(['allow', 'ask', 'deny']),
+  sessionId: idSchema.nullable()
 })
 const externalUrlSchema = z.string().refine((value) => {
   try {
@@ -153,6 +161,21 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.permissionReply, async (payload): Promise<void> => {
     const input = permissionReplySchema.parse(payload)
     await manager.request('permission.reply', input)
+  })
+
+  handle(AGENT_CHANNELS.permissionsRules, (payload): Promise<PermissionRule[]> => {
+    const { sessionId } = permissionRulesSchema.parse(payload) ?? {}
+    return manager.request('permissions.rules', { sessionId })
+  })
+
+  handle(AGENT_CHANNELS.permissionRuleAdd, (payload): Promise<PermissionRule> => {
+    const input = permissionRuleInputSchema.parse(payload)
+    return manager.request('permissions.addRule', input)
+  })
+
+  handle(AGENT_CHANNELS.permissionRuleRemove, (payload): Promise<boolean> => {
+    const { id } = idPayloadSchema.parse(payload)
+    return manager.request('permissions.removeRule', { id })
   })
 
   handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {

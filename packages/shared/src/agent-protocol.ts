@@ -1,4 +1,4 @@
-import type { SessionSettings } from './agent-types'
+import type { PermissionRuleInput, SessionSettings } from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType } from './model-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
@@ -57,6 +57,13 @@ export type WorkerRequest =
       method: 'permission.reply'
       params: { requestId: string; decision: 'once' | 'always' | 'reject' }
     }
+  | { id: string; method: 'permissions.rules'; params: { sessionId?: string } }
+  | {
+      id: string
+      method: 'permissions.addRule'
+      params: PermissionRuleInput
+    }
+  | { id: string; method: 'permissions.removeRule'; params: { id: string } }
   | {
       id: string
       method: 'models.test'

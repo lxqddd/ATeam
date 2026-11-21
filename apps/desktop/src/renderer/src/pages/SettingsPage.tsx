@@ -2,6 +2,7 @@ import { Menu } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import LanguageSettings from '../components/settings/LanguageSettings'
+import PermissionRules from '../components/settings/PermissionRules'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
 
@@ -15,6 +16,11 @@ const SETTINGS_SECTIONS = [
     id: 'language',
     labelKey: 'settings.language',
     descriptionKey: 'settings.languageDescription'
+  },
+  {
+    id: 'permissions',
+    labelKey: 'settings.permissions',
+    descriptionKey: 'settings.permissionsDescription'
   }
 ] as const
 
@@ -75,6 +81,14 @@ function SettingsPage(): React.JSX.Element {
                 description={t('settings.interfaceLanguageDescription')}
                 actions={<LanguageSettings />}
               />
+            )}
+            {section === 'permissions' && (
+              <SettingsGroup
+                title={t('settings.permissionRules')}
+                description={t('settings.permissionRulesDescription')}
+              >
+                <PermissionRules />
+              </SettingsGroup>
             )}
           </div>
         </div>

@@ -79,6 +79,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'permission.reply':
       requireRuntime().replyPermission(request.params.requestId, request.params.decision)
       return null
+    case 'permissions.rules':
+      return requireRuntime().listPermissionRules(request.params.sessionId)
+    case 'permissions.addRule':
+      return requireRuntime().addPermissionRule(request.params)
+    case 'permissions.removeRule':
+      return requireRuntime().removePermissionRule(request.params.id)
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'shutdown':
