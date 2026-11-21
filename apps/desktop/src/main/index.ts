@@ -12,6 +12,7 @@ import {
 } from '@ateam/shared'
 import { AgentManager } from './agent/agent-manager'
 import { ModelsStore } from './models/store'
+import { WebSearchStore } from './websearch/store'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
 import { createTrustedSender } from './ipc/trusted-sender'
@@ -137,6 +138,12 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('[models] failed to load the model configuration', error)
     }
+    const webSearchStore = new WebSearchStore(userDataPath)
+    try {
+      await webSearchStore.init()
+    } catch (error) {
+      console.error('[websearch] failed to load the web search configuration', error)
+    }
     try {
       await mkdir(workspacePath, { recursive: true })
     } catch (error) {
@@ -175,7 +182,7 @@ if (!hasSingleInstanceLock) {
     })
 
     const isTrustedSender = createTrustedSender(() => mainWindow)
-    registerAgentIpc({ manager, modelsStore, workspacePath, isTrustedSender })
+    registerAgentIpc({ manager, modelsStore, webSearchStore, workspacePath, isTrustedSender })
     registerModelsIpc({ manager, modelsStore, isTrustedSender })
 
     // Default development shortcuts (F12 for DevTools, etc.).
@@ -185,9 +192,11 @@ if (!hasSingleInstanceLock) {
 
     createWindow()
 
-    void manager.start(modelsStore.runtimeConfig()).catch((error: unknown) => {
-      console.error('[agent] failed to start', error)
-    })
+    void manager
+      .start(modelsStore.runtimeConfig(), webSearchStore.runtimeConfig())
+      .catch((error: unknown) => {
+        console.error('[agent] failed to start', error)
+      })
 
     app.on('activate', function () {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()

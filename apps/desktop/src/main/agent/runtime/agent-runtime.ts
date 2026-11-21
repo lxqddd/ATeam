@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { generateText, stepCountIs, streamText } from 'ai'
-import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
+import { generateText } from 'ai'
+import type { LanguageModel, ToolSet } from 'ai'
 import type {
   AgentConfig,
   AgentDefinition,
   AgentEvent,
-  AgentEventEnvelope,
   ChatMessage,
   MessagePart,
   MessagesSnapshot,
@@ -18,18 +17,17 @@ import type {
   PermissionAction,
   PermissionDecision,
   PermissionEffect,
-  PermissionMode,
   PermissionRequest,
   PermissionRule,
-  PermissionRuleAction,
   PermissionRuleInput,
-  ReasoningEffort,
   RunOutcome,
   RuntimeModelsConfig,
+  RuntimeWebSearchConfig,
   SessionMeta,
   SessionSettings,
   SubagentInput,
-  TokenUsage
+  TokenUsage,
+  WebFetchFormat
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import {
@@ -43,185 +41,49 @@ import {
   shouldCompact,
   summaryPrompt,
   systemWithSummary
-} from './context'
+} from '../sessions/context'
 import {
-  discoverInstructionFiles,
   discoverNestedInstructions,
   formatInstructions,
   loadConfiguredInstructions,
-  systemWithInstructions,
-  type InstructionFile
-} from './instructions'
-import { readAgentConfig } from './config-store'
-import { alwaysPermissionResource, evaluatePermissionRules, scanShellCommand } from './permissions'
-import { PermissionsStore } from './permissions-store'
-import { SessionsStore, type SessionRecord } from './sessions-store'
-import { SnapshotStore } from './snapshots'
-import { ToolOutputStore } from './tool-output-store'
-import { buildModelMessages } from './message-history'
-import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
-import { createTools as createDefaultTools, type ToolContext } from './tools'
-import { filterToolsForAgent, loadAgents } from './agents'
-import { discoverFormatters, formatFile, type FormatterDefinition } from './formatters'
-import { formatDiagnosticReport, LspManager } from './lsp'
-import { McpManager, type McpManagerLike } from './mcp'
-import { normalizeError } from './errors'
-
-const MAX_STEPS = 25
-const PERMISSION_TIMEOUT_MS = 10 * 60 * 1000
-
-interface Run {
-  sessionId: string
-  messageId: string
-  abort: AbortController
-  startedAt: number
-  steps: number
-  config: AgentConfig
-  skipHistoryIds?: Set<string>
-  retried?: boolean
-  agent: AgentDefinition | null
-  depth: number
-  permissionDelegate?: (
-    action: PermissionAction,
-    resource: string,
-    toolName: string,
-    toolCallId: string
-  ) => Promise<boolean>
-}
-
-interface PendingPermission {
-  request: PermissionRequest
-  run: Run
-  resolve: (decision: PermissionDecision) => void
-}
-
-export interface AgentRuntimeOptions {
-  userDataPath: string
-  workspacePath: string
-  models: RuntimeModelsConfig
-  send: (envelope: AgentEventEnvelope) => void
-  dependencies?: Partial<AgentRuntimeDependencies>
-}
-
-export interface AgentTurnInput {
-  model: LanguageModel
-  system: string
-  messages: ModelMessage[]
-  tools: ToolSet
-  abortSignal: AbortSignal
-  reasoning?: ReasoningEffort | null
-  maxSteps?: number
-}
-
-export interface AgentTurnStream {
-  stream: AsyncIterable<TextStreamPart<ToolSet>>
-}
-
-export interface AgentRuntimeDependencies {
-  createLanguageModel: (
-    models: RuntimeModelsConfig,
-    ref: ModelRef | null,
-    options?: { sessionId?: string }
-  ) => LanguageModel
-  createTools: (context: ToolContext) => ToolSet
-  createTurn: (input: AgentTurnInput) => AgentTurnStream
-  generateSummary: (input: {
-    model: LanguageModel
-    prompt: string
-    abortSignal?: AbortSignal
-  }) => Promise<string>
-  loadInstructions: (input: {
-    workspacePath: string
-    globalDirectory: string
-  }) => Promise<InstructionFile[]>
-  createMcpManager: (input: { userDataPath: string; workspacePath: string }) => McpManagerLike
-}
-
-async function generateSummary(input: {
-  model: LanguageModel
-  prompt: string
-  abortSignal?: AbortSignal
-}): Promise<string> {
-  const result = await generateText({
-    model: input.model,
-    prompt: input.prompt,
-    maxOutputTokens: 2_048,
-    abortSignal: input.abortSignal
-  })
-  return result.text
-}
-
-async function loadInstructions(input: {
-  workspacePath: string
-  globalDirectory: string
-}): Promise<InstructionFile[]> {
-  return discoverInstructionFiles(input.workspacePath, input.globalDirectory)
-}
-
-const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
-  createLanguageModel: createDefaultLanguageModel,
-  createTools: createDefaultTools,
-  createTurn: (input) => ({
-    stream: streamText({
-      model: input.model,
-      system: input.system,
-      messages: input.messages,
-      tools: input.tools,
-      stopWhen: stepCountIs(input.maxSteps ?? MAX_STEPS),
-      abortSignal: input.abortSignal,
-      reasoning: input.reasoning ?? undefined,
-      maxRetries: 1,
-      maxOutputTokens: 8_192,
-      onError: () => undefined
-    }).stream
-  }),
-  generateSummary,
-  loadInstructions,
-  createMcpManager: (input) =>
-    new McpManager({ userDataPath: input.userDataPath, workspace: input.workspacePath })
-}
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function makeUserMessage(sessionId: string, text: string): ChatMessage {
-  const timestamp = nowIso()
-  return {
-    id: randomUUID(),
-    sessionId,
-    role: 'user',
-    parts: [{ type: 'text', text }],
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    status: 'complete'
-  }
-}
-
-function makeAssistantMessage(sessionId: string): ChatMessage {
-  const timestamp = nowIso()
-  return {
-    id: randomUUID(),
-    sessionId,
-    role: 'assistant',
-    parts: [],
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    status: 'streaming'
-  }
-}
-
-function usageFrom(total: {
-  inputTokens?: number
-  outputTokens?: number
-  totalTokens?: number
-}): TokenUsage {
-  return {
-    inputTokens: total.inputTokens,
-    outputTokens: total.outputTokens,
-    totalTokens: total.totalTokens
-  }
-}
+  systemWithInstructions
+} from '../config/instructions'
+import { readAgentConfig } from '../config/config-store'
+import {
+  alwaysPermissionResource,
+  evaluatePermissionRules,
+  scanShellCommand
+} from '../config/permissions'
+import { PermissionsStore } from '../config/permissions-store'
+import { SessionsStore, type SessionRecord } from '../sessions/sessions-store'
+import { SnapshotStore } from '../sessions/snapshots'
+import { ToolOutputStore } from '../sessions/tool-output-store'
+import { buildModelMessages } from '../message-history'
+import { resolveModelRef } from '../providers'
+import type { ToolContext } from '../tools'
+import { filterToolsForAgent, loadAgents } from '../config/agents'
+import {
+  discoverFormatters,
+  formatFile,
+  type FormatterDefinition
+} from '../integrations/formatters'
+import { formatDiagnosticReport, LspManager } from '../integrations/lsp'
+import type { McpManagerLike } from '../integrations/mcp'
+import { formatWebFetchResult } from '../integrations/webfetch'
+import { formatSearchResults } from '../integrations/websearch'
+import { normalizeError } from '../errors'
+import { DEFAULT_DEPENDENCIES } from './defaults'
+import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
+import { buildSystemPrompt, modePermissionRules } from './policy'
+import { runSubagentTask } from './subagents'
+import {
+  MAX_STEPS,
+  PERMISSION_TIMEOUT_MS,
+  type AgentRuntimeDependencies,
+  type AgentRuntimeOptions,
+  type PendingPermission,
+  type Run
+} from './types'
 
 export class AgentRuntime {
   private readonly store: SessionsStore
@@ -233,12 +95,14 @@ export class AgentRuntime {
   private lspManager: LspManager | null = null
   private formattersCache: Promise<FormatterDefinition[]> | null = null
   private mcpManager: McpManagerLike | null = null
+  private webSearchConfig: RuntimeWebSearchConfig | null = null
   private models: RuntimeModelsConfig
   private readonly deps: AgentRuntimeDependencies
   private seq = 0
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
+    this.webSearchConfig = options.webSearch ?? null
     this.permissionRules = new PermissionsStore(options.userDataPath)
     this.snapshots = new SnapshotStore(options.userDataPath)
     this.toolOutputs = new ToolOutputStore(options.userDataPath)
@@ -717,6 +581,10 @@ export class AgentRuntime {
     return this.mcp().removeServer(id)
   }
 
+  setWebSearch(config: RuntimeWebSearchConfig | null): void {
+    this.webSearchConfig = config
+  }
+
   private lsp(): LspManager {
     this.lspManager ??= new LspManager({ workspace: this.options.workspacePath })
     return this.lspManager
@@ -750,6 +618,30 @@ export class AgentRuntime {
     }
   }
 
+  private async fetchWebPage(input: {
+    url: string
+    format: WebFetchFormat
+    timeoutMs?: number
+  }): Promise<string> {
+    try {
+      return formatWebFetchResult(await this.deps.fetchWeb(input))
+    } catch (error) {
+      return `Error: ${errorMessage(error)}`
+    }
+  }
+
+  private async searchTheWeb(input: { query: string; count: number }): Promise<string> {
+    if (!this.webSearchConfig) {
+      return 'Error: web search is not configured. Add a provider in Settings → Web search.'
+    }
+    try {
+      const results = await this.deps.searchWeb(this.webSearchConfig, input)
+      return formatSearchResults(input.query, this.webSearchConfig.provider, results)
+    } catch (error) {
+      return `Error: ${errorMessage(error)}`
+    }
+  }
+
   private resolveAgentTarget(
     agent: AgentDefinition | null,
     sessionModel: ModelRef | null
@@ -764,84 +656,25 @@ export class AgentRuntime {
     }
   }
 
-  private async runSubagent(
-    parent: Run,
-    input: SubagentInput,
-    toolCallId: string
-  ): Promise<string> {
-    if (parent.depth >= 1) return 'Error: subagents cannot spawn subagents.'
-    const requested = input.agent?.trim() || 'general'
-    const agent = (await this.agents()).find(
-      (candidate) =>
-        (candidate.id === requested || candidate.name.toLowerCase() === requested.toLowerCase()) &&
-        (candidate.mode === 'subagent' || candidate.mode === 'all')
+  private runSubagent(parent: Run, input: SubagentInput, toolCallId: string): Promise<string> {
+    return runSubagentTask(
+      {
+        store: this.store,
+        agents: () => this.agents(),
+        record: (sessionId) => this.record(sessionId),
+        hasRun: (sessionId) => this.runs.has(sessionId),
+        registerRun: (sessionId, run) => {
+          this.runs.set(sessionId, run)
+        },
+        createSnapshotId: (sessionId) => this.createSnapshotId(sessionId),
+        askPermission: (target, action, resource, toolName, callId) =>
+          this.askPermission(target, action, resource, toolName, callId),
+        runAgent: (run) => this.runAgent(run)
+      },
+      parent,
+      input,
+      toolCallId
     )
-    if (!agent) return `Error: unknown subagent: ${requested}`
-    if (!input.prompt.trim()) return 'Error: the subagent prompt is empty.'
-
-    const parentRecord = this.record(parent.sessionId)
-    let sessionId = input.sessionId?.trim() || null
-    if (sessionId) {
-      const record = this.store.get(sessionId)
-      if (!record || record.session.parentId !== parent.sessionId) {
-        return 'Error: unknown subagent session.'
-      }
-      if (this.runs.has(sessionId)) return 'Error: the subagent session is busy.'
-      if (record.session.agent !== agent.id) await this.store.setAgent(sessionId, agent.id)
-    } else {
-      const session = await this.store.create({
-        hidden: true,
-        parentId: parent.sessionId,
-        agent: agent.id,
-        permissionMode: parentRecord.session.permissionMode
-      })
-      sessionId = session.id
-    }
-
-    const childAbort = new AbortController()
-    const onAbort = (): void => childAbort.abort()
-    if (parent.abort.signal.aborted) childAbort.abort()
-    else parent.abort.signal.addEventListener('abort', onAbort, { once: true })
-
-    const user = makeUserMessage(sessionId, input.prompt)
-    const assistant = makeAssistantMessage(sessionId)
-    if (parent.config.snapshots) {
-      assistant.snapshotBefore = await this.createSnapshotId(sessionId)
-    }
-    await this.store.appendMessage(sessionId, user)
-    await this.store.appendMessage(sessionId, assistant)
-    await this.store.setStatus(sessionId, 'running')
-
-    const childRun: Run = {
-      sessionId,
-      messageId: assistant.id,
-      abort: childAbort,
-      startedAt: Date.now(),
-      steps: 0,
-      config: parent.config,
-      agent,
-      depth: parent.depth + 1,
-      permissionDelegate: (action, resource, toolName) =>
-        this.askPermission(parent, action, resource, toolName, toolCallId)
-    }
-    this.runs.set(sessionId, childRun)
-    try {
-      await this.runAgent(childRun)
-    } finally {
-      parent.abort.signal.removeEventListener('abort', onAbort)
-    }
-
-    const message = this.store.get(sessionId)?.messages.find((entry) => entry.id === assistant.id)
-    const text = (message?.parts ?? [])
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text)
-      .join('\n')
-      .trim()
-    const result =
-      message?.status === 'complete'
-        ? text
-        : `Subagent ${message?.status ?? 'failed'}${message?.error ? `: ${message.error}` : ''}`
-    return `[subagent ${agent.id} · session ${sessionId}]\n${result || '(no output)'}`
   }
 
   private emitSession(sessionId: string): void {
@@ -1281,7 +1114,9 @@ export class AgentRuntime {
           }),
         formatFiles: run.config.formatters ? (files) => this.formatFiles(files) : undefined,
         diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined,
-        runSubagent: (input, toolCallId) => this.runSubagent(run, input, toolCallId)
+        runSubagent: (input, toolCallId) => this.runSubagent(run, input, toolCallId),
+        fetchWeb: (input) => this.fetchWebPage(input),
+        webSearch: (input) => this.searchTheWeb(input)
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
@@ -1517,76 +1352,4 @@ function isContextLengthError(error: unknown): boolean {
     'request too large',
     '413'
   ].some((fragment) => message.includes(fragment))
-}
-
-function modePermissionRules(mode: PermissionMode): PermissionRule[] {
-  const base = (action: PermissionRuleAction, effect: PermissionEffect): PermissionRule => ({
-    id: `mode-${mode}-${action}`,
-    action,
-    resource: '*',
-    effect,
-    sessionId: null,
-    createdAt: ''
-  })
-  const reads = [base('read', 'allow'), base('list', 'allow'), base('grep', 'allow')]
-  const external = base('external_directory', 'allow')
-  switch (mode) {
-    case 'plan':
-      return [
-        ...reads,
-        base('write', 'deny'),
-        base('edit', 'deny'),
-        base('shell', 'deny'),
-        base('mcp', 'deny'),
-        external
-      ]
-    case 'acceptEdits':
-      return [
-        ...reads,
-        base('write', 'allow'),
-        base('edit', 'allow'),
-        base('shell', 'ask'),
-        base('mcp', 'ask'),
-        external
-      ]
-    case 'auto':
-      return [
-        ...reads,
-        base('write', 'allow'),
-        base('edit', 'allow'),
-        base('shell', 'allow'),
-        base('mcp', 'allow'),
-        external
-      ]
-    case 'ask':
-    default:
-      return [
-        ...reads,
-        base('write', 'ask'),
-        base('edit', 'ask'),
-        base('shell', 'ask'),
-        base('mcp', 'ask'),
-        external
-      ]
-  }
-}
-
-function buildSystemPrompt(workspacePath: string, permissionMode: PermissionMode): string {
-  const permission =
-    permissionMode === 'plan'
-      ? 'This session is in read-only plan mode: inspect the workspace and propose a plan, but do not modify files or run shell commands.'
-      : permissionMode === 'acceptEdits'
-        ? 'File writes and edits are pre-approved and run without asking. Shell commands still require explicit user approval and may be denied.'
-        : permissionMode === 'auto'
-          ? 'File writes, edits, and shell commands are pre-approved and run without asking. Still act carefully and stay inside the workspace.'
-          : 'write, edit, and shell require explicit user approval and may be denied; respect the decision and explain it.'
-  return [
-    'You are ATeam, a concise and reliable coding agent running on the user desktop.',
-    `The workspace is: ${workspacePath}`,
-    'Use the available tools to inspect and modify files. Read, list, and grep are allowed automatically.',
-    permission,
-    'Prefer small, verifiable changes. Do not claim that you changed a file unless a tool result confirms it.',
-    'Use exact unique matches for edit. Keep shell commands non-interactive and scoped to the workspace.',
-    'Answer in the language the user used.'
-  ].join('\n')
 }

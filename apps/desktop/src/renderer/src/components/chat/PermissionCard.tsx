@@ -11,7 +11,9 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   edit: 'chat.permissionEdit',
   shell: 'chat.permissionShell',
   external_directory: 'chat.permissionExternalDirectory',
-  mcp: 'settings.permissionActionMcp'
+  mcp: 'settings.permissionActionMcp',
+  webfetch: 'settings.permissionActionWebfetch',
+  websearch: 'settings.permissionActionWebsearch'
 }
 
 interface PermissionCardProps {

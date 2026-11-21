@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { McpServerConfig, McpServerInput, McpServerType } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from './atomic-json'
+import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._-]*$/
 const HEADER_NAME_PATTERN = /^[A-Za-z0-9-]{1,100}$/

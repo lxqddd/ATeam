@@ -1,6 +1,6 @@
 # ATeam
 
-ATeam 是一个基于 Electron 的 AI Agent 桌面应用。当前版本包含完整的会话核心：多会话管理、流式回复、Markdown 渲染、工具调用、权限审批和模型供应商配置。
+ATeam 是一个基于 Electron 的 AI Agent 桌面应用。当前版本包含完整的会话核心：多会话管理、流式回复、Markdown 渲染、工具调用、权限审批、模型供应商配置，以及项目规则、上下文压缩、快照回滚、MCP、子代理、LSP 诊断、自动格式化与 Web 工具。
 
 ## 技术栈
 
@@ -17,20 +17,30 @@ ATeam/
 ├── apps/
 │   └── desktop/
 │       └── src/
-│           ├── main/
-│           │   ├── agent/        # utilityProcess Agent、会话持久化、工具、Provider
-│           │   ├── models/       # 模型配置与 safeStorage 密钥
-│           │   └── ipc/          # 类型化 IPC、入参校验
-│           ├── preload/          # 窄接口 window.api
+│           ├── main/                 # 主进程（只有这里能用 Electron API）
+│           │   ├── agent/            # Agent utilityProcess 侧
+│           │   │   ├── runtime/      # 运行循环、子代理、默认依赖、策略
+│           │   │   ├── sessions/     # 会话存储、压缩、快照、工具输出
+│           │   │   ├── config/       # 指令、权限规则、Agent 定义
+│           │   │   ├── integrations/ # MCP、LSP、格式化、Web 抓取与搜索
+│           │   │   ├── tools.ts      # 内置工具
+│           │   │   └── worker.ts / agent-manager.ts
+│           │   ├── models/           # 模型配置与 safeStorage 密钥
+│           │   ├── websearch/        # 搜索配置与 safeStorage 密钥
+│           │   └── ipc/              # 类型化 IPC、入参校验
+│           ├── preload/              # 窄接口 window.api
 │           └── renderer/src/
-│               ├── chat/         # 会话事件 store
-│               ├── components/   # AppRail、会话页、设置页
-│               └── pages/        # ChatPage、SettingsPage
+│               ├── chat/             # 会话事件 store
+│               ├── components/       # AppRail、会话页、设置页
+│               └── pages/            # ChatPage、SettingsPage
 ├── packages/
-│   └── shared/                   # 跨进程共享的事件、模型、协议类型
+│   └── shared/                       # 跨进程共享的事件、模型、协议类型
+├── docs/                             # 对齐 TODO 与归档文档
 ├── package.json
 └── pnpm-workspace.yaml
 ```
+
+`main/agent` 运行在 Agent utilityProcess 中；`main/models` 与 `main/websearch` 只在主进程运行（需要 `safeStorage`），解密后的配置通过 worker 请求下发给 Agent。
 
 ## 环境要求
 

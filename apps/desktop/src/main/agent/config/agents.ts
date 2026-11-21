@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentDefinition, AgentMode, ModelRef } from '@ateam/shared'
-import { readJsonFile } from './atomic-json'
+import { readJsonFile } from '../atomic-json'
 import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100

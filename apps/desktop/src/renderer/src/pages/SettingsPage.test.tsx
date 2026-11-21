@@ -20,6 +20,9 @@ vi.mock('../components/settings/AgentSettings', () => ({
 vi.mock('../components/settings/McpServers', () => ({
   default: () => <div>mcp-panel</div>
 }))
+vi.mock('../components/settings/WebSearchSettings', () => ({
+  default: () => <div>websearch-panel</div>
+}))
 
 function renderPage(initialEntry = '/settings'): void {
   render(
@@ -77,6 +80,15 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('menuitem', { name: 'MCP' }))
 
     expect(await screen.findByText('mcp-panel')).toBeInTheDocument()
+  })
+
+  it('shows web search settings from the menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('menuitem', { name: 'Web search' }))
+
+    expect(await screen.findByText('websearch-panel')).toBeInTheDocument()
   })
 
   it('honours the section query parameter', () => {

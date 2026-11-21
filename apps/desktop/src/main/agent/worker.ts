@@ -35,6 +35,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         userDataPath: request.params.userDataPath,
         workspacePath: request.params.workspacePath,
         models: request.params.models,
+        webSearch: request.params.webSearch ?? null,
         send: (envelope) => send({ kind: 'event', envelope })
       })
       await runtime.init()
@@ -43,6 +44,9 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     }
     case 'setModels':
       requireRuntime().setModels(request.params.models)
+      return null
+    case 'setWebSearch':
+      requireRuntime().setWebSearch(request.params.config)
       return null
     case 'agents.list':
       return requireRuntime().listAgents()

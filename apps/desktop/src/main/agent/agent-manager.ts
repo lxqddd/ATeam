@@ -4,6 +4,7 @@ import type {
   AgentEventEnvelope,
   AgentStatus,
   RuntimeModelsConfig,
+  RuntimeWebSearchConfig,
   WorkerMessage
 } from '@ateam/shared'
 import { normalizeError } from './errors'
@@ -33,6 +34,8 @@ export class AgentManager {
   private stopping = false
   private models: RuntimeModelsConfig = { providers: [], models: [], defaultModel: null }
   private modelsDirty = false
+  private webSearch: RuntimeWebSearchConfig | null = null
+  private webSearchDirty = false
 
   constructor(private readonly options: AgentManagerOptions) {}
 
@@ -44,8 +47,12 @@ export class AgentManager {
     return this.status.status === 'ready'
   }
 
-  async start(models?: RuntimeModelsConfig): Promise<void> {
+  async start(
+    models?: RuntimeModelsConfig,
+    webSearch?: RuntimeWebSearchConfig | null
+  ): Promise<void> {
     if (models) this.models = models
+    if (webSearch !== undefined) this.webSearch = webSearch
     if (this.worker) await this.stop()
 
     this.stopping = false
@@ -70,7 +77,8 @@ export class AgentManager {
         userDataPath: this.options.userDataPath,
         workspacePath: this.options.workspacePath,
         appVersion: this.options.appVersion,
-        models: this.models
+        models: this.models,
+        webSearch: this.webSearch
       })
       if (this.worker !== worker) return
       if (this.modelsDirty) {
@@ -79,6 +87,14 @@ export class AgentManager {
           this.modelsDirty = false
         } catch (error) {
           console.error('[agent] failed to apply the latest model configuration', error)
+        }
+      }
+      if (this.webSearchDirty) {
+        try {
+          await this.call('setWebSearch', { config: this.webSearch })
+          this.webSearchDirty = false
+        } catch (error) {
+          console.error('[agent] failed to apply the latest web search configuration', error)
         }
       }
       this.setStatus({ status: 'ready', pid: worker.pid })
@@ -128,6 +144,14 @@ export class AgentManager {
     if (this.status.status !== 'ready' || !this.worker) return
     await this.call('setModels', { models })
     this.modelsDirty = false
+  }
+
+  async setWebSearch(config: RuntimeWebSearchConfig | null): Promise<void> {
+    this.webSearch = config
+    this.webSearchDirty = true
+    if (this.status.status !== 'ready' || !this.worker) return
+    await this.call('setWebSearch', { config })
+    this.webSearchDirty = false
   }
 
   async request<T>(method: string, params?: unknown): Promise<T> {

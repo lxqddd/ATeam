@@ -70,6 +70,10 @@ const api: AteamApi = {
       add: (input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAdd, input),
       update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpUpdate, { id, input }),
       remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id })
+    },
+    websearch: {
+      get: () => ipcRenderer.invoke(AGENT_CHANNELS.webSearchGet),
+      update: (input) => ipcRenderer.invoke(AGENT_CHANNELS.webSearchUpdate, input)
     }
   },
   models: {

@@ -12,14 +12,16 @@ import {
   type PermissionRequest,
   type PermissionRule,
   type SessionMeta,
-  type SessionUndoResult
+  type SessionUndoResult,
+  type WebSearchProviderPublic
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
-import { AgentConfigStore } from '../agent/config-store'
-import { discoverInstructionFiles } from '../agent/instructions'
-import { discoverFormatters } from '../agent/formatters'
-import { availableLspServers } from '../agent/lsp'
+import { AgentConfigStore } from '../agent/config/config-store'
+import { discoverInstructionFiles } from '../agent/config/instructions'
+import { discoverFormatters } from '../agent/integrations/formatters'
+import { availableLspServers } from '../agent/integrations/lsp'
 import type { ModelsStore } from '../models/store'
+import type { WebSearchStore } from '../websearch/store'
 import type { TrustedSender } from './trusted-sender'
 
 const idSchema = z.string().min(1).max(200)
@@ -97,12 +99,13 @@ const externalUrlSchema = z.string().refine((value) => {
 export interface AgentIpcOptions {
   manager: AgentManager
   modelsStore: ModelsStore
+  webSearchStore: WebSearchStore
   workspacePath: string
   isTrustedSender: TrustedSender
 }
 
 export function registerAgentIpc(options: AgentIpcOptions): void {
-  const { manager, modelsStore, workspacePath, isTrustedSender } = options
+  const { manager, modelsStore, webSearchStore, workspacePath, isTrustedSender } = options
   const configStore = new AgentConfigStore(app.getPath('userData'))
   const configReady = configStore.init()
 
@@ -291,6 +294,20 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.mcpRemove, (payload): Promise<boolean> => {
     const { id } = idPayloadSchema.parse(payload)
     return manager.request('mcp.remove', { id })
+  })
+
+  handle(AGENT_CHANNELS.webSearchGet, (): WebSearchProviderPublic => webSearchStore.get())
+
+  handle(AGENT_CHANNELS.webSearchUpdate, async (payload): Promise<WebSearchProviderPublic> => {
+    const input = z
+      .object({
+        provider: z.enum(['tavily', 'exa', 'brave']),
+        apiKey: z.string().max(500).optional()
+      })
+      .parse(payload)
+    const result = await webSearchStore.update(input)
+    await manager.setWebSearch(webSearchStore.runtimeConfig())
+    return result
   })
 
   handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {

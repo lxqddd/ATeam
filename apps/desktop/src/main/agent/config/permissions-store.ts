@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from './atomic-json'
+import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 interface PermissionsFile {
   version: 1

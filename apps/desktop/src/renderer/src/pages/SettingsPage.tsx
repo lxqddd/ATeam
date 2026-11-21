@@ -5,6 +5,7 @@ import AgentSettings from '../components/settings/AgentSettings'
 import LanguageSettings from '../components/settings/LanguageSettings'
 import McpServers from '../components/settings/McpServers'
 import PermissionRules from '../components/settings/PermissionRules'
+import WebSearchSettings from '../components/settings/WebSearchSettings'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
 
@@ -28,6 +29,11 @@ const SETTINGS_SECTIONS = [
     id: 'mcp',
     labelKey: 'settings.mcp',
     descriptionKey: 'settings.mcpDescription'
+  },
+  {
+    id: 'web',
+    labelKey: 'settings.web',
+    descriptionKey: 'settings.webDescription'
   },
   {
     id: 'agent',
@@ -108,6 +114,11 @@ function SettingsPage(): React.JSX.Element {
                 description={t('settings.mcpServersDescription')}
               >
                 <McpServers />
+              </SettingsGroup>
+            )}
+            {section === 'web' && (
+              <SettingsGroup title={t('settings.web')} description={t('settings.webDescription')}>
+                <WebSearchSettings />
               </SettingsGroup>
             )}
             {section === 'agent' && (

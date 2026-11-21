@@ -11,7 +11,7 @@ import type {
   SessionSettings
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from './atomic-json'
+import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 interface SessionIndex {
   version: 1

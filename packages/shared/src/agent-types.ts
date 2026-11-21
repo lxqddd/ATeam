@@ -108,7 +108,16 @@ export interface ChatMessage {
 }
 
 export type PermissionAction =
-  'read' | 'list' | 'grep' | 'write' | 'edit' | 'shell' | 'external_directory' | 'mcp'
+  | 'read'
+  | 'list'
+  | 'grep'
+  | 'write'
+  | 'edit'
+  | 'shell'
+  | 'external_directory'
+  | 'mcp'
+  | 'webfetch'
+  | 'websearch'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
@@ -208,6 +217,26 @@ export interface McpServerStatus {
   resourceCount: number
   error: string | null
   updatedAt: string | null
+}
+
+export type WebFetchFormat = 'markdown' | 'text' | 'html'
+
+export type WebSearchProvider = 'tavily' | 'exa' | 'brave'
+
+export interface WebSearchInput {
+  provider: WebSearchProvider
+  apiKey?: string
+}
+
+export interface WebSearchProviderPublic {
+  provider: WebSearchProvider
+  hasApiKey: boolean
+  updatedAt: string | null
+}
+
+export interface RuntimeWebSearchConfig {
+  provider: WebSearchProvider
+  apiKey: string
 }
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'

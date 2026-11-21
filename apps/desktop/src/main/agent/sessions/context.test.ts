@@ -11,7 +11,7 @@ import {
   summaryPrompt,
   systemWithSummary
 } from './context'
-import { makeMessage, makeTextPart, makeToolPart } from './test/factories'
+import { makeMessage, makeTextPart, makeToolPart } from '../test/factories'
 
 function user(id: string, text: string): ChatMessage {
   return makeMessage({ id, role: 'user', parts: [makeTextPart(text)] })

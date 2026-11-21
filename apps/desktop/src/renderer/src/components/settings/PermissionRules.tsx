@@ -12,6 +12,8 @@ const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
   shell: 'chat.permissionShell',
   external_directory: 'settings.permissionActionExternalDirectory',
   mcp: 'settings.permissionActionMcp',
+  webfetch: 'settings.permissionActionWebfetch',
+  websearch: 'settings.permissionActionWebsearch',
   '*': 'settings.permissionActionAll'
 }
 

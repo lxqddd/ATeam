@@ -12,13 +12,15 @@ import type {
   PermissionRule,
   RuntimeModelsConfig
 } from '@ateam/shared'
-import { AgentRuntime, type AgentTurnInput } from './runtime'
-import type { InstructionFile } from './instructions'
-import type { McpManagerLike } from './mcp'
-import { PermissionsStore } from './permissions-store'
-import { SessionsStore } from './sessions-store'
-import { makeMessage } from './test/factories'
-import type { ToolContext } from './tools'
+import { AgentRuntime, type AgentTurnInput } from './index'
+import type { InstructionFile } from '../config/instructions'
+import type { McpManagerLike } from '../integrations/mcp'
+import { PermissionsStore } from '../config/permissions-store'
+import { SessionsStore } from '../sessions/sessions-store'
+import { makeMessage } from '../test/factories'
+import type { ToolContext } from '../tools'
+import type { WebFetchResult } from '../integrations/webfetch'
+import type { WebSearchResult } from '../integrations/websearch'
 
 const MODELS: RuntimeModelsConfig = {
   providers: [{ id: 'provider-1', name: 'Test', type: 'anthropic', apiKey: 'sk-test' }],
@@ -196,7 +198,21 @@ function createRuntime(): AgentRuntime {
         instructionInputs.push(input)
         return instructionFiles
       },
-      createMcpManager: () => mcpManager
+      createMcpManager: () => mcpManager,
+      fetchWeb: async (input): Promise<WebFetchResult> => ({
+        url: input.url,
+        status: 200,
+        contentType: 'text/plain',
+        format: 'text',
+        content: `page:${input.url}`
+      }),
+      searchWeb: async (config, input): Promise<WebSearchResult[]> => [
+        {
+          title: 'Hit',
+          url: 'https://hit.example',
+          snippet: `${config.provider}:${input.query}`
+        }
+      ]
     }
   })
 }
@@ -1735,5 +1751,35 @@ describe('subagent tool', () => {
     await runtime.deleteSession(sessionId)
 
     expect(() => runtime.messages(childId)).toThrow('SESSION_NOT_FOUND')
+  })
+})
+
+describe('web tool wiring', () => {
+  it('wires webfetch through the configured fetcher', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    await expect(
+      toolContext?.fetchWeb?.({ url: 'https://example.com', format: 'markdown' })
+    ).resolves.toBe(
+      'URL: https://example.com\nStatus: 200\nContent-Type: text/plain\n\npage:https://example.com'
+    )
+  })
+
+  it('reports unconfigured web search and uses the saved provider', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    await expect(toolContext?.webSearch?.({ query: 'cats', count: 3 })).resolves.toContain(
+      'web search is not configured'
+    )
+
+    runtime.setWebSearch({ provider: 'tavily', apiKey: 'key' })
+
+    await expect(toolContext?.webSearch?.({ query: 'cats', count: 3 })).resolves.toBe(
+      'Search results for "cats" (tavily):\n1. Hit\n   https://hit.example\n   tavily:cats'
+    )
   })
 })

@@ -21,7 +21,8 @@
     "build:linux": "pnpm run build && electron-builder --linux"
   },
   "dependencies": {
-    "@electron-toolkit/utils": "^4.0.0"
+    "@electron-toolkit/utils": "^4.0.0",
+    "turndown": "^7.2.5"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.106",
@@ -38,6 +39,7 @@
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "5.1.1",
     "ai": "7.0.177",

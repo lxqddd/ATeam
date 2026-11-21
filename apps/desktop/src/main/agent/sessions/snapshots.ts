@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { readJsonFile, writeJsonAtomic } from './atomic-json'
+import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 const execFileAsync = promisify(execFile)
 

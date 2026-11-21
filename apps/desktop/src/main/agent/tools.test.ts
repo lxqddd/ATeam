@@ -36,6 +36,8 @@ let onBackgroundFinished: Mock<NonNullable<ToolContext['onBackgroundFinished']>>
 let formatFiles: Mock<NonNullable<ToolContext['formatFiles']>>
 let diagnoseFiles: Mock<NonNullable<ToolContext['diagnoseFiles']>>
 let runSubagent: Mock<NonNullable<ToolContext['runSubagent']>>
+let fetchWeb: Mock<NonNullable<ToolContext['fetchWeb']>>
+let webSearch: Mock<NonNullable<ToolContext['webSearch']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -48,6 +50,8 @@ beforeEach(async () => {
   formatFiles = vi.fn(async () => '')
   diagnoseFiles = vi.fn(async () => '')
   runSubagent = vi.fn(async () => 'child result')
+  fetchWeb = vi.fn(async () => 'fetched page')
+  webSearch = vi.fn(async () => 'search results')
   baseContext = {
     workspace: directory,
     signal: new AbortController().signal,
@@ -59,7 +63,9 @@ beforeEach(async () => {
     onBackgroundFinished,
     formatFiles,
     diagnoseFiles,
-    runSubagent
+    runSubagent,
+    fetchWeb,
+    webSearch
   }
   tools = createTools(baseContext)
 })
@@ -711,6 +717,55 @@ describe('subagent tool', () => {
 
     await expect(execute(limited.subagent, { prompt: 'Explore src' })).resolves.toBe(
       'Error: subagents are not available.'
+    )
+  })
+})
+
+describe('web tools', () => {
+  it('fetches pages after asking webfetch permission', async () => {
+    await expect(execute(tools.webfetch, { url: 'https://example.com/page' })).resolves.toBe(
+      'fetched page'
+    )
+
+    expect(askPermission).toHaveBeenCalledWith(
+      'webfetch',
+      'https://example.com/page',
+      'webfetch',
+      'call-1'
+    )
+    expect(fetchWeb).toHaveBeenCalledWith({
+      url: 'https://example.com/page',
+      format: 'markdown',
+      timeoutMs: undefined
+    })
+  })
+
+  it('honours webfetch denials', async () => {
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.webfetch, { url: 'https://example.com' })).resolves.toBe(
+      'Permission denied; the page was not fetched.'
+    )
+    expect(fetchWeb).not.toHaveBeenCalled()
+  })
+
+  it('searches the web after asking websearch permission', async () => {
+    await expect(execute(tools.websearch, { query: 'ateam agents' })).resolves.toBe(
+      'search results'
+    )
+
+    expect(askPermission).toHaveBeenCalledWith('websearch', 'ateam agents', 'websearch', 'call-1')
+    expect(webSearch).toHaveBeenCalledWith({ query: 'ateam agents', count: 5 })
+  })
+
+  it('reports unavailable web tools', async () => {
+    const limited = createTools({ ...baseContext, fetchWeb: undefined, webSearch: undefined })
+
+    await expect(execute(limited.webfetch, { url: 'https://example.com' })).resolves.toBe(
+      'Error: web fetching is not available.'
+    )
+    await expect(execute(limited.websearch, { query: 'x' })).resolves.toBe(
+      'Error: web search is not available.'
     )
   })
 })

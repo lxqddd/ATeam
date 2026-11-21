@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConfig } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from './atomic-json'
+import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   snapshots: true,

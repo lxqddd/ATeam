@@ -34,7 +34,7 @@ vi.mock('ai', () => ({
   tool: aiMock.tool
 }))
 
-import { AgentRuntime } from './runtime'
+import { AgentRuntime } from './index'
 
 const MODELS: RuntimeModelsConfig = {
   providers: [{ id: 'provider-1', name: 'Test', type: 'anthropic', apiKey: 'sk-test' }],

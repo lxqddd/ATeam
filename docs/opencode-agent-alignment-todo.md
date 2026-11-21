@@ -47,7 +47,7 @@
 
 ### P0-2 项目规则 AGENTS.md
 
-**现状**：system prompt 完全硬编码（[runtime.ts:742](../apps/desktop/src/main/agent/runtime.ts:742)），不读取仓库的构建命令、测试要求或代码约定。
+**现状**：system prompt 完全硬编码（[runtime.ts:742](../apps/desktop/src/main/agent/runtime/agent-runtime.ts:742)），不读取仓库的构建命令、测试要求或代码约定。
 
 **OpenCode 参考**：全局、项目根、当前目录向上的 `AGENTS.md` 自动合并，`CLAUDE.md` 作为回退，支持配置额外 instructions。
 
@@ -87,7 +87,7 @@
 
 ### P0-4 细粒度且可持久化的权限规则
 
-**现状**：会话级 mode + 内存中的 `allowed` 集合（[runtime.ts:145](../apps/desktop/src/main/agent/runtime.ts:145)、[runtime.ts:432](../apps/desktop/src/main/agent/runtime.ts:432)）；没有通配符、路径或命令级规则，重启后“始终允许”丢失。
+**现状**：会话级 mode + 内存中的 `allowed` 集合（[runtime.ts:145](../apps/desktop/src/main/agent/runtime/agent-runtime.ts:145)、[runtime.ts:432](../apps/desktop/src/main/agent/runtime/agent-runtime.ts:432)）；没有通配符、路径或命令级规则，重启后“始终允许”丢失。
 
 **OpenCode 参考**：有序的 allow / ask / deny 规则，支持通配符、持久化审批、按 agent 配置、shell 命令扫描和 external_directory 边界。
 
@@ -176,11 +176,16 @@
 
 ### P1-3 Web 工具
 
-- [ ] 增加 `webfetch`：URL、format（markdown/text/html）、超时与输出限制
-- [ ] 增加 `websearch`：搜索 provider 配置与结果格式化
-- [ ] 为两个工具增加独立权限 action
-- [ ] 设置页展示搜索 provider 状态
-- [ ] 测试 HTML 转 markdown、错误处理、权限控制
+**进度（2026-11-21）**：已实现 `webfetch`（http(s) 校验、30s 超时、5 MB 截断、HTML→Markdown / 纯文本 / 原始 HTML、错误与重定向 URL 回显）与 `websearch`（Tavily / Exa / Brave，密钥加密存储，设置页配置与状态）；两者都有独立权限 action，默认允许、可通过规则改为询问或拒绝。剩余：更多搜索 provider、私有地址访问策略、页面缓存。
+
+**验收**：Agent 能抓取网页并读取正文，能用配置的搜索服务返回结果；两者都可以被权限规则限制。
+
+- [x] 增加 `webfetch`：URL、format（markdown/text/html）、超时与输出限制
+- [x] 增加 `websearch`：搜索 provider 配置与结果格式化
+- [x] 为两个工具增加独立权限 action
+- [x] 设置页展示搜索 provider 状态
+- [ ] 更多搜索 provider 与私有地址访问策略
+- [x] 测试 HTML 转 markdown、错误处理、超时、权限控制
 
 ### P1-4 附件与 @ 文件引用
 
@@ -251,8 +256,9 @@
 2. ~~P0-2 项目规则~~、~~P0-4 权限规则~~ → 已完成
 3. ~~P0-3 快照 / undo~~ → 已完成
 4. ~~P0-5 工具集补齐~~、~~P0-6 LSP / 格式化~~ → 已完成基础版
-5. ~~P1-1 MCP~~、~~P1-2 子代理~~ → 已完成基础版（OAuth 与后台子代理待补）；下一步 P1-3 Web 工具
-6. P1-3 / P1-4 / P1-5 / P1-6 / P1-9 按产品优先级穿插
+5. ~~P1-1 MCP~~、~~P1-2 子代理~~ → 已完成基础版（OAuth 与后台子代理待补）
+6. ~~P1-3 Web 工具~~ → 已完成基础版；下一步 P1-4 附件与 @ 文件引用
+7. P1-4 / P1-5 / P1-6 / P1-9 按产品优先级穿插
 
 ## 关键依赖
 
@@ -263,5 +269,5 @@
 
 ## 参考
 
-- ATeam：[runtime.ts](../apps/desktop/src/main/agent/runtime.ts)、[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)、[sessions-store.ts](../apps/desktop/src/main/agent/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
+- ATeam：[runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)、[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)、[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
 - OpenCode 文档：Tools、Agents、Permissions、Instructions、Compaction、Snapshots、MCP Servers、Skills、Commands、Attachments、Formatters、LSP

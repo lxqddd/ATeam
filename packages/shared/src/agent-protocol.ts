@@ -1,4 +1,9 @@
-import type { McpServerInput, PermissionRuleInput, SessionSettings } from './agent-types'
+import type {
+  McpServerInput,
+  PermissionRuleInput,
+  RuntimeWebSearchConfig,
+  SessionSettings
+} from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType } from './model-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
@@ -25,9 +30,15 @@ export type WorkerRequest =
         workspacePath: string
         appVersion: string
         models: RuntimeModelsConfig
+        webSearch?: RuntimeWebSearchConfig | null
       }
     }
   | { id: string; method: 'setModels'; params: { models: RuntimeModelsConfig } }
+  | {
+      id: string
+      method: 'setWebSearch'
+      params: { config: RuntimeWebSearchConfig | null }
+    }
   | { id: string; method: 'agents.list'; params?: undefined }
   | { id: string; method: 'sessions.list'; params?: undefined }
   | { id: string; method: 'sessions.create'; params?: undefined }

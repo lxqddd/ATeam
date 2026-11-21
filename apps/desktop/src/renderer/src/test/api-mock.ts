@@ -15,7 +15,9 @@ import type {
   PermissionRequest,
   PermissionRuleInput,
   SessionMeta,
-  SessionSettings
+  SessionSettings,
+  WebSearchInput,
+  WebSearchProviderPublic
 } from '@ateam/shared'
 import { vi } from 'vitest'
 import { makeSession } from './factories'
@@ -219,6 +221,18 @@ export function createApiMock(
           updatedAt: new Date().toISOString()
         })),
         remove: vi.fn(async () => true)
+      },
+      websearch: {
+        get: vi.fn(async (): Promise<WebSearchProviderPublic> => ({
+          provider: 'tavily',
+          hasApiKey: false,
+          updatedAt: null
+        })),
+        update: vi.fn(async (input: WebSearchInput): Promise<WebSearchProviderPublic> => ({
+          provider: input.provider,
+          hasApiKey: true,
+          updatedAt: new Date().toISOString()
+        }))
       }
     },
     models: {

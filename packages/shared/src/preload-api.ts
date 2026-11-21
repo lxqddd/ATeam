@@ -14,7 +14,9 @@ import type {
   PermissionRuleInput,
   SessionMeta,
   SessionSettings,
-  SessionUndoResult
+  SessionUndoResult,
+  WebSearchInput,
+  WebSearchProviderPublic
 } from './agent-types'
 import type {
   ModelCreateInput,
@@ -71,6 +73,10 @@ export interface AgentBridge {
     add: (input: McpServerInput) => Promise<McpServerConfig>
     update: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>
     remove: (id: string) => Promise<boolean>
+  }
+  websearch: {
+    get: () => Promise<WebSearchProviderPublic>
+    update: (input: WebSearchInput) => Promise<WebSearchProviderPublic>
   }
 }
 
