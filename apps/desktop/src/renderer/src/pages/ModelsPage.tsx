@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Alert, Button, Modal, Popconfirm, Spin, Tag } from 'antd'
+import { Alert, Button, Modal, Popconfirm, Radio, Spin, Tag } from 'antd'
 import type {
   AgentInfo,
   ModelCreateInput,
@@ -256,17 +256,30 @@ function ModelsPage(): React.JSX.Element {
             </h1>
             <p className="mt-1.5 text-label text-muted">{t('settings.modelsDescription')}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setProviderForm({})
-            }}
-            title={t('settings.addProvider')}
-            aria-label={t('settings.addProvider')}
-            className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-accent text-accent-foreground shadow-[var(--shadow-sm),var(--highlight-inset)] transition-colors hover:bg-accent-hover"
-          >
-            <PlusIcon />
-          </button>
+          <div className="flex flex-none items-center gap-2">
+            {config.defaultModel && (
+              <Button
+                type="text"
+                size="small"
+                onClick={() => {
+                  void clearDefault()
+                }}
+              >
+                {t('modelsPage.clearDefault')}
+              </Button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setProviderForm({})
+              }}
+              title={t('settings.addProvider')}
+              aria-label={t('settings.addProvider')}
+              className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-accent text-accent-foreground shadow-[var(--shadow-sm),var(--highlight-inset)] transition-colors hover:bg-accent-hover"
+            >
+              <PlusIcon />
+            </button>
+          </div>
         </header>
 
         <div className="flex flex-col gap-4">
@@ -363,6 +376,13 @@ function ModelsPage(): React.JSX.Element {
                               className="flex flex-wrap items-center gap-2 py-2"
                             >
                               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                                <Radio
+                                  checked={isDefault}
+                                  aria-label={model.name}
+                                  onChange={() => {
+                                    void setDefaultModel(model.providerId, model.modelId)
+                                  }}
+                                />
                                 <span className="truncate text-label font-medium text-foreground">
                                   {model.name}
                                 </span>
@@ -397,21 +417,6 @@ function ModelsPage(): React.JSX.Element {
                                 )}
                               </div>
                               <div className="ml-auto flex flex-none items-center gap-1">
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  onClick={() => {
-                                    if (isDefault) {
-                                      void clearDefault()
-                                    } else {
-                                      void setDefaultModel(model.providerId, model.modelId)
-                                    }
-                                  }}
-                                >
-                                  {isDefault
-                                    ? t('modelsPage.clearDefault')
-                                    : t('modelsPage.setDefault')}
-                                </Button>
                                 <Button
                                   type="text"
                                   size="small"

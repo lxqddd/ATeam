@@ -7,6 +7,7 @@ interface ModelPickerProps {
   value: ModelRef | null
   onChange: (model: ModelRef) => void
   disabled?: boolean
+  placement?: 'above' | 'below'
 }
 
 function sameModel(a: ModelRef | null, b: ModelRef): boolean {
@@ -17,7 +18,8 @@ function ModelPicker({
   models,
   value,
   onChange,
-  disabled = false
+  disabled = false,
+  placement = 'above'
 }: ModelPickerProps): React.JSX.Element {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
@@ -97,7 +99,9 @@ function ModelPicker({
         <div
           role="listbox"
           aria-label={t('chat.selectModel')}
-          className="absolute bottom-full left-0 z-30 mb-1.5 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-lg"
+          className={`absolute left-0 z-30 max-h-72 w-72 overflow-y-auto rounded-md border border-border bg-surface-raised p-1 shadow-lg ${
+            placement === 'above' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          }`}
         >
           {models.providers.map((provider) => {
             const providerModels = models.models.filter((model) => model.providerId === provider.id)

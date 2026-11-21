@@ -142,8 +142,8 @@ describe('ModelsPage', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    expect(within(modelRow('Sonnet')).getByRole('button', { name: 'Clear default' })).toBeEnabled()
-    await user.click(within(modelRow('Opus')).getByRole('button', { name: 'Set as default' }))
+    expect(within(modelRow('Sonnet')).getByRole('radio')).toBeChecked()
+    await user.click(within(modelRow('Opus')).getByRole('radio'))
 
     await waitFor(() =>
       expect(mock.api.models.setDefault).toHaveBeenCalledWith({
@@ -158,7 +158,7 @@ describe('ModelsPage', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Clear default' }))
+    await user.click(screen.getByRole('button', { name: 'Clear default' }))
 
     await waitFor(() => expect(mock.api.models.setDefault).toHaveBeenCalledWith(null))
   })
@@ -477,7 +477,7 @@ describe('ModelsPage edge cases', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Opus')).getByRole('button', { name: 'Set as default' }))
+    await user.click(within(modelRow('Opus')).getByRole('radio'))
 
     expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
   })

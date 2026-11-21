@@ -47,6 +47,8 @@ export default defineConfig({
         'src/renderer/src/components/chat/Composer.tsx',
         'src/renderer/src/components/chat/SessionPanel.tsx',
         'src/renderer/src/components/chat/MessageList.tsx',
+        'src/renderer/src/components/chat/ChatHeader.tsx',
+        'src/renderer/src/components/chat/ModelPicker.tsx',
         'src/renderer/src/theme.ts',
         'src/renderer/src/antd/theme.ts',
         'src/renderer/src/antd/AntdProvider.tsx',
