@@ -35,6 +35,7 @@ export interface ToolContext {
   runSubagent?: (input: SubagentInput, toolCallId: string) => Promise<string>
   fetchWeb?: (input: { url: string; format: WebFetchFormat; timeoutMs?: number }) => Promise<string>
   webSearch?: (input: { query: string; count: number }) => Promise<string>
+  loadSkill?: (name: string) => Promise<string>
 }
 
 async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
@@ -806,8 +807,22 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const skill = tool({
+    description:
+      'Load the full instructions of an available skill by name. Use a skill when its description matches the task.',
+    inputSchema: z.object({
+      name: z.string().min(1).describe('Skill name as listed in the system prompt')
+    }),
+    execute: async ({ name }, options) => {
+      if (!context.loadSkill) return 'Error: skills are not available.'
+      const allowed = await context.askPermission('skill', name, 'skill', options.toolCallId)
+      if (!allowed) return 'Permission denied; the skill was not loaded.'
+      return context.loadSkill(name)
+    }
+  })
+
   return wrapToolOutputs(
-    { read, list, grep, glob, patch, write, edit, shell, subagent, websearch, webfetch },
+    { read, list, grep, glob, patch, write, edit, shell, subagent, websearch, webfetch, skill },
     context
   )
 }

@@ -118,6 +118,7 @@ const enUS = {
     permissionActionMcp: 'MCP tool',
     permissionActionWebfetch: 'Fetch web page',
     permissionActionWebsearch: 'Web search',
+    permissionActionSkill: 'Load skill',
     models: 'Models',
     modelsDescription: 'Manage model providers, models, and the default model.',
     defaultModel: 'Default model',
@@ -237,6 +238,7 @@ const enUS = {
     chooseFiles: 'Choose files',
     removeAttachment: 'Remove attachment',
     mentionFiles: 'Files',
+    commands: 'Commands',
     permissionMode: 'Permission mode',
     permissionPlan: 'Read only',
     permissionPlanHint:

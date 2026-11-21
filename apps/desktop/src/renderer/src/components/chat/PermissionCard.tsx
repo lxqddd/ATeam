@@ -13,7 +13,8 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   external_directory: 'chat.permissionExternalDirectory',
   mcp: 'settings.permissionActionMcp',
   webfetch: 'settings.permissionActionWebfetch',
-  websearch: 'settings.permissionActionWebsearch'
+  websearch: 'settings.permissionActionWebsearch',
+  skill: 'settings.permissionActionSkill'
 }
 
 interface PermissionCardProps {

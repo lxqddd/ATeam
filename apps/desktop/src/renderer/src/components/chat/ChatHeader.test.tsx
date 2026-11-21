@@ -61,6 +61,7 @@ function baseState(): ChatStoreState {
       })
     ],
     agents: [],
+    commands: [],
     selectedSessionId: 's1',
     messagesBySession: {},
     loadedBySession: {},

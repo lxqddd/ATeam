@@ -50,6 +50,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return null
     case 'agents.list':
       return requireRuntime().listAgents()
+    case 'commands.list':
+      return requireRuntime().listCommands()
     case 'sessions.list':
       return requireRuntime().listSessions()
     case 'sessions.create':

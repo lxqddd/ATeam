@@ -260,6 +260,13 @@ async function restartWithRules(
   await runtime.init()
 }
 
+async function restartRuntime(): Promise<void> {
+  await runtime.shutdown()
+  runtime = createRuntime()
+  await runtime.init()
+  sessionId = (await runtime.createSession()).id
+}
+
 async function writeAgentConfig(config: {
   snapshots?: boolean
   instructions?: string[]
@@ -1842,5 +1849,52 @@ describe('attachments', () => {
     await runtime.deleteSession(sessionId)
 
     await expect(fs.stat(attachmentDirectory(directory, sessionId))).rejects.toThrow()
+  })
+})
+
+describe('skills and commands', () => {
+  async function writeWorkspace(relative: string, content: string): Promise<void> {
+    const target = path.join(directory, 'workspace', relative)
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, content)
+  }
+
+  it('lists skills in the system prompt and loads them on demand', async () => {
+    await writeWorkspace(
+      '.opencode/skills/review/SKILL.md',
+      ['---', 'description: Review code', '---', 'Review steps.'].join('\n')
+    )
+    await restartRuntime()
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('Available skills')
+    expect(turns[0].system).toContain('- review: Review code')
+    await expect(toolContext?.loadSkill?.('review')).resolves.toContain('Review steps.')
+    await expect(toolContext?.loadSkill?.('missing')).resolves.toContain('unknown skill')
+  })
+
+  it('omits the skills prompt when none exist', async () => {
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).not.toContain('Available skills')
+  })
+
+  it('lists workspace commands', async () => {
+    await writeWorkspace(
+      '.opencode/commands/review.md',
+      ['---', 'description: Review changes', '---', 'Review $ARGUMENTS'].join('\n')
+    )
+
+    const commands = await runtime.listCommands()
+
+    expect(commands).toMatchObject([
+      { name: 'review', description: 'Review changes', template: 'Review $ARGUMENTS' }
+    ])
   })
 })

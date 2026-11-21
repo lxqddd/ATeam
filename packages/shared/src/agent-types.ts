@@ -130,6 +130,7 @@ export type PermissionAction =
   | 'mcp'
   | 'webfetch'
   | 'websearch'
+  | 'skill'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
@@ -249,6 +250,23 @@ export interface WebSearchProviderPublic {
 export interface RuntimeWebSearchConfig {
   provider: WebSearchProvider
   apiKey: string
+}
+
+export interface CommandDefinition {
+  id: string
+  name: string
+  description: string
+  template: string
+  source: 'user' | 'project'
+}
+
+export interface SkillDefinition {
+  id: string
+  name: string
+  description: string
+  content: string
+  path: string
+  source: 'user' | 'project'
 }
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'

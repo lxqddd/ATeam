@@ -4,6 +4,7 @@ import type {
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
+  CommandDefinition,
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
@@ -93,6 +94,9 @@ export interface AgentBridge {
   }
   files: {
     search: (query: string) => Promise<string[]>
+  }
+  commands: {
+    list: () => Promise<CommandDefinition[]>
   }
 }
 

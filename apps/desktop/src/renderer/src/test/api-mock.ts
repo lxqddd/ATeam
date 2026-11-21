@@ -6,6 +6,7 @@ import type {
   AgentInfo,
   AgentStatus,
   AteamApi,
+  CommandDefinition,
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
@@ -257,6 +258,9 @@ export function createApiMock(
       },
       files: {
         search: vi.fn(async () => [] as string[])
+      },
+      commands: {
+        list: vi.fn(async () => [] as CommandDefinition[])
       }
     },
     models: {

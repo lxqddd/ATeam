@@ -203,11 +203,16 @@
 
 ### P1-5 自定义命令与 Skills
 
-- [ ] 支持 `.opencode/commands` 风格的 Markdown / JSON 命令
-- [ ] 输入框 `/` 命令菜单与参数替换
-- [ ] 支持 `.opencode/skills` 与 `.claude/skills` 发现
-- [ ] 增加 `skill` 工具与权限控制
-- [ ] 测试命令参数、Skills 发现、按需加载
+**进度（2026-11-21）**：已实现自定义命令发现（用户目录、`.opencode/command(s)`、`.claude/commands` 的 Markdown 与 `commands.json`）与 `$ARGUMENTS` / `$1..$9` 展开；输入框 `/` 菜单可搜索并插入命令，发送时自动展开。Skills 从用户目录、`.opencode/skill(s)`、`.claude/skills` 发现，启动时加载并把名称与描述注入 system prompt，`skill` 工具按需加载全文并纳入 `skill` 权限动作。剩余：命令绑定 Agent / 模型、命令中的 shell 片段、Skill 附带资源文件。
+
+**验收**：输入 `/` 能选择自定义命令并按参数展开；Agent 能根据技能描述调用 `skill` 工具加载完整说明。
+
+- [x] 支持 `.opencode/commands` 风格的 Markdown / JSON 命令
+- [x] 输入框 `/` 命令菜单与参数替换
+- [x] 支持 `.opencode/skills` 与 `.claude/skills` 发现
+- [x] 增加 `skill` 工具与权限控制
+- [ ] 命令绑定 Agent / 模型与 shell 片段
+- [x] 测试命令参数、Skills 发现、按需加载
 
 ### P1-6 Todo / 计划工具
 
@@ -263,8 +268,8 @@
 4. ~~P0-5 工具集补齐~~、~~P0-6 LSP / 格式化~~ → 已完成基础版
 5. ~~P1-1 MCP~~、~~P1-2 子代理~~ → 已完成基础版（OAuth 与后台子代理待补）
 6. ~~P1-3 Web 工具~~ → 已完成基础版
-7. ~~P1-4 附件与 @ 文件引用~~ → 已完成基础版；下一步 P1-5 自定义命令与 Skills
-8. P1-5 / P1-6 / P1-9 按产品优先级穿插
+7. ~~P1-4 附件与 @ 文件引用~~、~~P1-5 自定义命令与 Skills~~ → 已完成基础版；下一步 P1-6 Todo 工具或 P1-9 Question 工具
+8. P1-6 / P1-9 按产品优先级穿插
 
 ## 关键依赖
 

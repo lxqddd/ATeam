@@ -8,6 +8,7 @@ import type {
   AgentDefinition,
   AgentEvent,
   ChatMessage,
+  CommandDefinition,
   MessagePart,
   MessagesSnapshot,
   McpServerConfig,
@@ -26,6 +27,7 @@ import type {
   RuntimeWebSearchConfig,
   SessionMeta,
   SessionSettings,
+  SkillDefinition,
   SubagentInput,
   TokenUsage,
   WebFetchFormat
@@ -64,6 +66,8 @@ import { readAttachment, readTextAttachment, removeSessionAttachments } from '..
 import { resolveModelRef } from '../providers'
 import type { ToolContext } from '../tools'
 import { filterToolsForAgent, loadAgents } from '../config/agents'
+import { loadCommands } from '../commands'
+import { loadSkills, skillsPrompt } from '../skills'
 import {
   discoverFormatters,
   formatFile,
@@ -98,6 +102,7 @@ export class AgentRuntime {
   private formattersCache: Promise<FormatterDefinition[]> | null = null
   private mcpManager: McpManagerLike | null = null
   private webSearchConfig: RuntimeWebSearchConfig | null = null
+  private skills: SkillDefinition[] = []
   private models: RuntimeModelsConfig
   private readonly deps: AgentRuntimeDependencies
   private seq = 0
@@ -117,6 +122,10 @@ export class AgentRuntime {
     await this.store.init()
     await this.permissionRules.init()
     await this.snapshots.init()
+    this.skills = await loadSkills({
+      userDataPath: this.options.userDataPath,
+      workspacePath: this.options.workspacePath
+    }).catch(() => [])
   }
 
   listSessions(): SessionMeta[] {
@@ -125,6 +134,13 @@ export class AgentRuntime {
 
   listAgents(): Promise<AgentDefinition[]> {
     return this.agents()
+  }
+
+  listCommands(): Promise<CommandDefinition[]> {
+    return loadCommands({
+      userDataPath: this.options.userDataPath,
+      workspacePath: this.options.workspacePath
+    })
   }
 
   async setSessionAgent(id: string, agentId: string | null): Promise<SessionMeta> {
@@ -1130,6 +1146,7 @@ export class AgentRuntime {
           : [])
       ]
       const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
+      const skills = this.skills
       const toolContext: ToolContext = {
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
@@ -1158,7 +1175,15 @@ export class AgentRuntime {
         diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined,
         runSubagent: (input, toolCallId) => this.runSubagent(run, input, toolCallId),
         fetchWeb: (input) => this.fetchWebPage(input),
-        webSearch: (input) => this.searchTheWeb(input)
+        webSearch: (input) => this.searchTheWeb(input),
+        loadSkill: async (name) => {
+          const skill = skills.find(
+            (candidate) =>
+              candidate.name.toLowerCase() === name.toLowerCase() ||
+              candidate.id === name.toLowerCase()
+          )
+          return skill ? `# ${skill.name}\n\n${skill.content}` : `Error: unknown skill: ${name}`
+        }
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
@@ -1169,18 +1194,24 @@ export class AgentRuntime {
       }
       const tools = filterToolsForAgent({ ...mcpTools, ...baseTools }, agent)
 
-      const system = systemWithInstructions(
-        systemWithSummary(
-          buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
-          current.session.compaction?.summary
-        ),
-        instructions
-      )
+      const systemSections = [
+        systemWithInstructions(
+          systemWithSummary(
+            buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
+            current.session.compaction?.summary
+          ),
+          instructions
+        )
+      ]
+      if (agent?.prompt) systemSections.push(agent.prompt)
+      const skillSection = skillsPrompt(skills)
+      if (skillSection) systemSections.push(skillSection)
+      const system = systemSections.join('\n\n')
 
       const modelHistory = this.historyMessages(run, message.id)
       const result = this.deps.createTurn({
         model,
-        system: agent?.prompt ? `${system}\n\n${agent.prompt}` : system,
+        system,
         messages: buildModelMessages(modelHistory, await this.attachmentPayloads(modelHistory)),
         tools,
         abortSignal: run.abort.signal,

@@ -7,6 +7,7 @@ import {
   type AgentDefinition,
   type AgentInfo,
   type AgentStatus,
+  type CommandDefinition,
   type McpServerConfig,
   type McpServerStatus,
   type MessageAttachment,
@@ -172,6 +173,10 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
 
   handle(AGENT_CHANNELS.agentsList, (): Promise<AgentDefinition[]> =>
     manager.request('agents.list')
+  )
+
+  handle(AGENT_CHANNELS.commandsList, (): Promise<CommandDefinition[]> =>
+    manager.request('commands.list')
   )
 
   handle(AGENT_CHANNELS.sessionsList, (): Promise<SessionMeta[]> =>

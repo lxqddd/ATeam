@@ -38,6 +38,7 @@ let diagnoseFiles: Mock<NonNullable<ToolContext['diagnoseFiles']>>
 let runSubagent: Mock<NonNullable<ToolContext['runSubagent']>>
 let fetchWeb: Mock<NonNullable<ToolContext['fetchWeb']>>
 let webSearch: Mock<NonNullable<ToolContext['webSearch']>>
+let loadSkill: Mock<NonNullable<ToolContext['loadSkill']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -52,6 +53,7 @@ beforeEach(async () => {
   runSubagent = vi.fn(async () => 'child result')
   fetchWeb = vi.fn(async () => 'fetched page')
   webSearch = vi.fn(async () => 'search results')
+  loadSkill = vi.fn(async () => '# Skill instructions')
   baseContext = {
     workspace: directory,
     signal: new AbortController().signal,
@@ -65,7 +67,8 @@ beforeEach(async () => {
     diagnoseFiles,
     runSubagent,
     fetchWeb,
-    webSearch
+    webSearch,
+    loadSkill
   }
   tools = createTools(baseContext)
 })
@@ -766,6 +769,32 @@ describe('web tools', () => {
     )
     await expect(execute(limited.websearch, { query: 'x' })).resolves.toBe(
       'Error: web search is not available.'
+    )
+  })
+})
+
+describe('skill tool', () => {
+  it('loads skills after asking permission', async () => {
+    await expect(execute(tools.skill, { name: 'review' })).resolves.toBe('# Skill instructions')
+
+    expect(askPermission).toHaveBeenCalledWith('skill', 'review', 'skill', 'call-1')
+    expect(loadSkill).toHaveBeenCalledWith('review')
+  })
+
+  it('honours skill denials', async () => {
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.skill, { name: 'review' })).resolves.toBe(
+      'Permission denied; the skill was not loaded.'
+    )
+    expect(loadSkill).not.toHaveBeenCalled()
+  })
+
+  it('reports unavailable skills', async () => {
+    const limited = createTools({ ...baseContext, loadSkill: undefined })
+
+    await expect(execute(limited.skill, { name: 'review' })).resolves.toBe(
+      'Error: skills are not available.'
     )
   })
 })

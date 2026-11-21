@@ -7,6 +7,7 @@ import type {
   AgentStatus,
   BackgroundResult,
   ChatMessage,
+  CommandDefinition,
   MessagesSnapshot,
   ModelRef,
   ModelsConfigPublic,
@@ -23,6 +24,7 @@ export interface ChatStoreState {
   info: AgentInfo | null
   models: ModelsConfigPublic | null
   agents: AgentDefinition[]
+  commands: CommandDefinition[]
   sessions: SessionMeta[]
   selectedSessionId: string | null
   messagesBySession: Record<string, ChatMessage[] | undefined>
@@ -69,6 +71,7 @@ export class ChatStore {
     info: null,
     models: null,
     agents: [],
+    commands: [],
     sessions: [],
     selectedSessionId: null,
     messagesBySession: {},
@@ -126,6 +129,7 @@ export class ChatStore {
 
     await this.refreshModels()
     await this.refreshAgents()
+    await this.refreshCommands()
     await this.loadSessions()
 
     try {
@@ -155,6 +159,14 @@ export class ChatStore {
       this.setState({ agents: await window.api.agent.agents() })
     } catch {
       /* agent discovery is best effort */
+    }
+  }
+
+  async refreshCommands(): Promise<void> {
+    try {
+      this.setState({ commands: await window.api.agent.commands.list() })
+    } catch {
+      /* command discovery is best effort */
     }
   }
 
@@ -376,6 +388,7 @@ export class ChatStore {
       }
       await this.refreshModels()
       await this.refreshAgents()
+      await this.refreshCommands()
     })()
     try {
       await this.reloadPromise

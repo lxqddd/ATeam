@@ -14,6 +14,7 @@ const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
   mcp: 'settings.permissionActionMcp',
   webfetch: 'settings.permissionActionWebfetch',
   websearch: 'settings.permissionActionWebsearch',
+  skill: 'settings.permissionActionSkill',
   '*': 'settings.permissionActionAll'
 }
 

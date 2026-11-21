@@ -3,12 +3,14 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import type {
   AgentDefinition,
+  CommandDefinition,
   MessageAttachment,
   ModelRef,
   PermissionMode,
   ReasoningEffort,
   SessionSettings
 } from '@ateam/shared'
+import { expandCommand } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
 import ComposerChoiceChip from './ComposerChoiceChip'
@@ -107,7 +109,8 @@ function AgentIcon(): React.JSX.Element {
 
 function Composer(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId, models, agents, status, revertPrompt } = useChatStore()
+  const { sessions, selectedSessionId, models, agents, commands, status, revertPrompt } =
+    useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -119,6 +122,7 @@ function Composer(): React.JSX.Element {
     start: number
     items: string[]
   } | null>(null)
+  const [commandQuery, setCommandQuery] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -160,6 +164,17 @@ function Composer(): React.JSX.Element {
         ? t(AGENT_DESCRIPTION_KEYS[agent.id])
         : agent.description
   }))
+
+  const commandItems: CommandDefinition[] =
+    commandQuery === null
+      ? []
+      : commands.filter((command) => {
+          const needle = commandQuery.toLowerCase()
+          return (
+            command.name.toLowerCase().includes(needle) ||
+            command.description.toLowerCase().includes(needle)
+          )
+        })
 
   useLayoutEffect(() => {
     const element = textareaRef.current
@@ -211,6 +226,8 @@ function Composer(): React.JSX.Element {
   }
 
   function detectMention(value: string, cursor: number): void {
+    const slash = /^\/([^\s]*)$/.exec(value.slice(0, cursor))
+    setCommandQuery(slash ? slash[1] : null)
     const match = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, cursor))
     if (!match || match[2].length === 0) {
       setMention(null)
@@ -224,6 +241,21 @@ function Composer(): React.JSX.Element {
         setMention(items.length > 0 ? { query, start, items } : null)
       })
       .catch(() => setMention(null))
+  }
+
+  function applyCommand(command: CommandDefinition): void {
+    setText(`/${command.name} `)
+    setCommandQuery(null)
+    textareaRef.current?.focus()
+  }
+
+  function expandSlashCommand(value: string): string {
+    const match = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(value)
+    if (!match) return value
+    const command = commands.find(
+      (candidate) => candidate.name.toLowerCase() === match[1].toLowerCase()
+    )
+    return command ? expandCommand(command.template, match[2] ?? '') : value
   }
 
   function applyMention(filePath: string): void {
@@ -254,10 +286,11 @@ function Composer(): React.JSX.Element {
     setSending(true)
     setError(null)
     try {
-      await chatStore.send(content, attachments)
+      await chatStore.send(expandSlashCommand(content), attachments)
       setText('')
       setAttachments([])
       setMention(null)
+      setCommandQuery(null)
     } catch (caught) {
       const message = errorMessage(caught)
       setError(
@@ -353,6 +386,36 @@ function Composer(): React.JSX.Element {
           void addFiles(Array.from(event.dataTransfer.files))
         }}
       >
+        {commandItems.length > 0 && (
+          <div
+            role="listbox"
+            aria-label={t('chat.commands')}
+            className="mb-2 max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-1"
+          >
+            {commandItems.map((command) => (
+              <button
+                key={command.id}
+                type="button"
+                role="option"
+                onClick={() => applyCommand(command)}
+                className="block w-full rounded px-2 py-1 text-left transition-colors hover:bg-hover"
+              >
+                <span className="block truncate text-label text-foreground">
+                  <span aria-hidden className="text-muted">
+                    /
+                  </span>
+                  {command.name}
+                </span>
+                {command.description && (
+                  <span className="mt-0.5 block truncate text-caption text-muted">
+                    {command.description}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
         {mention && (
           <div
             role="listbox"
@@ -405,6 +468,18 @@ function Composer(): React.JSX.Element {
             detectMention(event.target.value, event.target.selectionStart ?? 0)
           }}
           onKeyDown={(event) => {
+            if (commandItems.length > 0) {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setCommandQuery(null)
+                return
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                applyCommand(commandItems[0])
+                return
+              }
+            }
             if (mention && mention.items.length > 0) {
               if (event.key === 'Escape') {
                 event.preventDefault()

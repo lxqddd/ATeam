@@ -79,6 +79,15 @@ function baseState(): ChatStoreState {
       }
     ],
     selectedSessionId: 's1',
+    commands: [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review changes',
+        template: 'Review $ARGUMENTS',
+        source: 'project' as const
+      }
+    ],
     messagesBySession: {},
     loadedBySession: {},
     permissions: [],
@@ -508,5 +517,28 @@ describe('Composer', () => {
 
     expect(textarea).toHaveValue('@src/main/index.ts ')
     expect(api.api.agent.files.search).toHaveBeenCalledWith('src')
+  })
+
+  it('inserts commands from the slash menu', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/rev')
+    await user.click(await screen.findByRole('option', { name: /^review/ }))
+
+    expect(textarea).toHaveValue('/review ')
+  })
+
+  it('expands commands with arguments when sending', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/review src/a.ts')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
   })
 })
