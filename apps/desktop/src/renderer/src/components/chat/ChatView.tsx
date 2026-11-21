@@ -3,6 +3,7 @@ import { useChatStore } from '../../chat/store'
 import BackgroundNotices from './BackgroundNotices'
 import Composer from './Composer'
 import MessageList from './MessageList'
+import TodoPanel from './TodoPanel'
 
 function ChatView(): React.JSX.Element {
   const { t } = useTranslation()
@@ -56,6 +57,7 @@ function ChatView(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-view">
+      <TodoPanel todos={session?.todos ?? []} />
       {!loaded ? (
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-caption text-muted">
           <span

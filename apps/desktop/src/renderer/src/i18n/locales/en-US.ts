@@ -239,6 +239,7 @@ const enUS = {
     removeAttachment: 'Remove attachment',
     mentionFiles: 'Files',
     commands: 'Commands',
+    todos: 'Tasks',
     permissionMode: 'Permission mode',
     permissionPlan: 'Read only',
     permissionPlanHint:

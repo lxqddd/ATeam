@@ -33,6 +33,7 @@ export function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
     agent: null,
     parentId: null,
     hidden: false,
+    todos: [],
     ...overrides
   }
 }

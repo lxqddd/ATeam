@@ -77,6 +77,7 @@ export function buildSystemPrompt(workspacePath: string, permissionMode: Permiss
     'Use the available tools to inspect and modify files. Read, list, and grep are allowed automatically.',
     permission,
     'Prefer small, verifiable changes. Do not claim that you changed a file unless a tool result confirms it.',
+    'For multi-step work, keep the todo list up to date with the todowrite tool.',
     'Use exact unique matches for edit. Keep shell commands non-interactive and scoped to the workspace.',
     'Answer in the language the user used.'
   ].join('\n')

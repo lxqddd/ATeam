@@ -29,6 +29,7 @@ import type {
   SessionSettings,
   SkillDefinition,
   SubagentInput,
+  TodoInput,
   TokenUsage,
   WebFetchFormat
 } from '@ateam/shared'
@@ -68,6 +69,7 @@ import type { ToolContext } from '../tools'
 import { filterToolsForAgent, loadAgents } from '../config/agents'
 import { loadCommands } from '../commands'
 import { loadSkills, skillsPrompt } from '../skills'
+import { formatTodoList, normalizeTodos } from '../todos'
 import {
   discoverFormatters,
   formatFile,
@@ -667,6 +669,17 @@ export class AgentRuntime {
     }
   }
 
+  private async writeTodos(run: Run, input: TodoInput[]): Promise<string> {
+    const todos = normalizeTodos(input)
+    const session = await this.store.setTodos(run.sessionId, todos)
+    if (session) this.emit({ type: 'session.upsert', session })
+    return formatTodoList(todos)
+  }
+
+  private async readTodos(run: Run): Promise<string> {
+    return formatTodoList(this.store.getSession(run.sessionId)?.todos ?? [])
+  }
+
   private resolveAgentTarget(
     agent: AgentDefinition | null,
     sessionModel: ModelRef | null
@@ -1183,7 +1196,9 @@ export class AgentRuntime {
               candidate.id === name.toLowerCase()
           )
           return skill ? `# ${skill.name}\n\n${skill.content}` : `Error: unknown skill: ${name}`
-        }
+        },
+        writeTodos: (todos) => this.writeTodos(run, todos),
+        readTodos: async () => this.readTodos(run)
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}

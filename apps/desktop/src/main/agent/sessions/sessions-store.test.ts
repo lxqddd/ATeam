@@ -458,3 +458,48 @@ describe('agent metadata', () => {
     })
   })
 })
+
+describe('todos', () => {
+  it('starts with an empty todo list', async () => {
+    const session = await store.create()
+    expect(session.todos).toEqual([])
+  })
+
+  it('persists todo updates', async () => {
+    const session = await store.create()
+    const todos = [
+      {
+        id: 'todo-1',
+        content: 'Write tests',
+        status: 'completed' as const,
+        priority: 'high' as const
+      },
+      {
+        id: 'todo-2',
+        content: 'Implement',
+        status: 'in_progress' as const,
+        priority: 'medium' as const
+      }
+    ]
+
+    await expect(store.setTodos(session.id, todos)).resolves.toMatchObject({ todos })
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)?.todos).toEqual(todos)
+  })
+
+  it('repairs missing or invalid todo lists', async () => {
+    const session = await store.create()
+    const file = path.join(sessionsDirectory, `${session.id}.json`)
+    const data = JSON.parse(await fs.readFile(file, 'utf8')) as {
+      session: Record<string, unknown>
+    }
+    data.session.todos = 'nope'
+    await fs.writeFile(file, JSON.stringify(data))
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+
+    expect(reloaded.getSession(session.id)?.todos).toEqual([])
+  })
+})

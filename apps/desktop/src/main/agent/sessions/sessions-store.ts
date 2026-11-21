@@ -8,9 +8,14 @@ import type {
   ReasoningEffort,
   SessionCompaction,
   SessionMeta,
-  SessionSettings
+  SessionSettings,
+  TodoInput,
+  TodoItem,
+  TodoPriority,
+  TodoStatus
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
+import { normalizeTodos, TODO_PRIORITIES, TODO_STATUSES } from '../todos'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 interface SessionIndex {
@@ -64,6 +69,24 @@ function isSessionCompaction(value: unknown): value is SessionCompaction {
 
 function clone<T>(value: T): T {
   return structuredClone(value)
+}
+
+function repairTodos(value: unknown): TodoItem[] {
+  if (!Array.isArray(value)) return []
+  const inputs: TodoInput[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const raw = entry as Partial<TodoItem>
+    if (typeof raw.content !== 'string' || !raw.content.trim()) continue
+    if (!TODO_STATUSES.includes(raw.status as TodoStatus)) continue
+    if (!TODO_PRIORITIES.includes(raw.priority as TodoPriority)) continue
+    inputs.push({
+      content: raw.content,
+      status: raw.status as TodoStatus,
+      priority: raw.priority as TodoPriority
+    })
+  }
+  return normalizeTodos(inputs)
 }
 
 export function makeTitle(text: string): string {
@@ -130,6 +153,11 @@ function repairRecord(record: SessionRecord): boolean {
   }
   if (typeof record.session.hidden !== 'boolean') {
     record.session.hidden = false
+    changed = true
+  }
+  const todos = repairTodos(record.session.todos)
+  if (JSON.stringify(todos) !== JSON.stringify(record.session.todos)) {
+    record.session.todos = todos
     changed = true
   }
 
@@ -268,7 +296,8 @@ export class SessionsStore {
       contextWindow: null,
       agent: options.agent ?? null,
       parentId: options.parentId ?? null,
-      hidden: options.hidden ?? false
+      hidden: options.hidden ?? false,
+      todos: []
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
@@ -279,6 +308,15 @@ export class SessionsStore {
     const record = this.records.get(id)
     if (!record) return undefined
     record.session.agent = agent
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
+  }
+
+  async setTodos(id: string, todos: TodoItem[]): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    record.session.todos = clone(todos)
     record.session.updatedAt = nowIso()
     await this.persist(id)
     return clone(record.session)

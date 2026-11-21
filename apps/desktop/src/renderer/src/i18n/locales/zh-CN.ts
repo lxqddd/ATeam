@@ -231,6 +231,7 @@ const zhCN = {
     removeAttachment: '移除附件',
     mentionFiles: '文件',
     commands: '命令',
+    todos: '任务',
     permissionMode: '权限模式',
     permissionPlan: '只读',
     permissionPlanHint: '只读：先给出方案，不改文件、不执行命令',

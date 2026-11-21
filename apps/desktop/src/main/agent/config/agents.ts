@@ -26,7 +26,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     description: 'Read-only planning agent that inspects the codebase without modifying it.',
     mode: 'primary',
     model: null,
-    tools: [...READ_TOOLS],
+    tools: [...READ_TOOLS, 'todowrite', 'todoread'],
     maxSteps: 20,
     prompt:
       'You are the plan agent. Inspect the codebase and produce a clear, actionable plan. Do not modify files or run commands.',

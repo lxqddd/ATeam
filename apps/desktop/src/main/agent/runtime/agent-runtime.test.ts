@@ -1898,3 +1898,29 @@ describe('skills and commands', () => {
     ])
   })
 })
+
+describe('todo tools', () => {
+  it('stores todos on the session and exposes them for reading', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const output = await toolContext?.writeTodos?.([
+      { content: 'Write tests', status: 'in_progress', priority: 'high' },
+      { content: 'Ship it', status: 'pending', priority: 'low' }
+    ])
+
+    expect(output).toContain('Tasks (0/2 completed):')
+    expect(runtime.listSessions()[0].todos).toMatchObject([
+      { id: 'todo-1', content: 'Write tests', status: 'in_progress', priority: 'high' },
+      { id: 'todo-2', content: 'Ship it', status: 'pending', priority: 'low' }
+    ])
+    const upsert = sink.envelopes
+      .filter((envelope) => envelope.event.type === 'session.upsert')
+      .at(-1)
+    expect(upsert?.event).toMatchObject({
+      session: { todos: expect.arrayContaining([expect.objectContaining({ content: 'Ship it' })]) }
+    })
+    await expect(toolContext?.readTodos?.()).resolves.toContain('1. [in_progress] Write tests')
+  })
+})

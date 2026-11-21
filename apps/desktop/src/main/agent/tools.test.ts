@@ -39,6 +39,8 @@ let runSubagent: Mock<NonNullable<ToolContext['runSubagent']>>
 let fetchWeb: Mock<NonNullable<ToolContext['fetchWeb']>>
 let webSearch: Mock<NonNullable<ToolContext['webSearch']>>
 let loadSkill: Mock<NonNullable<ToolContext['loadSkill']>>
+let writeTodos: Mock<NonNullable<ToolContext['writeTodos']>>
+let readTodos: Mock<NonNullable<ToolContext['readTodos']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -54,6 +56,8 @@ beforeEach(async () => {
   fetchWeb = vi.fn(async () => 'fetched page')
   webSearch = vi.fn(async () => 'search results')
   loadSkill = vi.fn(async () => '# Skill instructions')
+  writeTodos = vi.fn(async () => 'Tasks (0/1 completed):\n1. [pending] Do it')
+  readTodos = vi.fn(async () => 'No tasks.')
   baseContext = {
     workspace: directory,
     signal: new AbortController().signal,
@@ -68,7 +72,9 @@ beforeEach(async () => {
     runSubagent,
     fetchWeb,
     webSearch,
-    loadSkill
+    loadSkill,
+    writeTodos,
+    readTodos
   }
   tools = createTools(baseContext)
 })
@@ -795,6 +801,35 @@ describe('skill tool', () => {
 
     await expect(execute(limited.skill, { name: 'review' })).resolves.toBe(
       'Error: skills are not available.'
+    )
+  })
+})
+
+describe('todo tools', () => {
+  const todos = [
+    { content: 'Write tests', status: 'in_progress' as const, priority: 'high' as const }
+  ]
+
+  it('writes todos through the runtime', async () => {
+    await expect(execute(tools.todowrite, { todos })).resolves.toContain('Tasks')
+
+    expect(writeTodos).toHaveBeenCalledWith(todos)
+    expect(askPermission).not.toHaveBeenCalled()
+  })
+
+  it('reads todos through the runtime', async () => {
+    await expect(execute(tools.todoread, {})).resolves.toBe('No tasks.')
+    expect(readTodos).toHaveBeenCalled()
+  })
+
+  it('reports unavailable todo tracking', async () => {
+    const limited = createTools({ ...baseContext, writeTodos: undefined, readTodos: undefined })
+
+    await expect(execute(limited.todowrite, { todos })).resolves.toBe(
+      'Error: todo tracking is not available.'
+    )
+    await expect(execute(limited.todoread, {})).resolves.toBe(
+      'Error: todo tracking is not available.'
     )
   })
 })

@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import type { PermissionAction, SubagentInput, WebFetchFormat } from '@ateam/shared'
+import type { PermissionAction, SubagentInput, TodoInput, WebFetchFormat } from '@ateam/shared'
 
 const MAX_TOOL_OUTPUT = 200_000
 const MAX_READ_LINES = 2_000
@@ -36,6 +36,8 @@ export interface ToolContext {
   fetchWeb?: (input: { url: string; format: WebFetchFormat; timeoutMs?: number }) => Promise<string>
   webSearch?: (input: { query: string; count: number }) => Promise<string>
   loadSkill?: (name: string) => Promise<string>
+  writeTodos?: (todos: TodoInput[]) => Promise<string>
+  readTodos?: () => Promise<string>
 }
 
 async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
@@ -821,8 +823,50 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const todoItemSchema = z.object({
+    content: z.string().min(1).max(500).describe('Task description'),
+    status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']),
+    priority: z.enum(['high', 'medium', 'low'])
+  })
+
+  const todowrite = tool({
+    description:
+      'Replace the session todo list. Use it to track progress on multi-step work; statuses are pending, in_progress, completed and cancelled.',
+    inputSchema: z.object({
+      todos: z.array(todoItemSchema).max(50).describe('The complete todo list')
+    }),
+    execute: async ({ todos }) => {
+      if (!context.writeTodos) return 'Error: todo tracking is not available.'
+      return context.writeTodos(todos)
+    }
+  })
+
+  const todoread = tool({
+    description: 'Read the current session todo list.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.readTodos) return 'Error: todo tracking is not available.'
+      return context.readTodos()
+    }
+  })
+
   return wrapToolOutputs(
-    { read, list, grep, glob, patch, write, edit, shell, subagent, websearch, webfetch, skill },
+    {
+      read,
+      list,
+      grep,
+      glob,
+      patch,
+      write,
+      edit,
+      shell,
+      subagent,
+      websearch,
+      webfetch,
+      skill,
+      todowrite,
+      todoread
+    },
     context
   )
 }

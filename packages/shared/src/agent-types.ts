@@ -58,6 +58,24 @@ export interface SessionMeta extends SessionSettings {
   agent: string | null
   parentId: string | null
   hidden: boolean
+  todos: TodoItem[]
+}
+
+export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
+
+export type TodoPriority = 'high' | 'medium' | 'low'
+
+export interface TodoItem {
+  id: string
+  content: string
+  status: TodoStatus
+  priority: TodoPriority
+}
+
+export interface TodoInput {
+  content: string
+  status: TodoStatus
+  priority: TodoPriority
 }
 
 export type ToolState =
