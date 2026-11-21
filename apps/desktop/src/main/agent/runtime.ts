@@ -63,7 +63,11 @@ export interface AgentTurnStream {
 }
 
 export interface AgentRuntimeDependencies {
-  createLanguageModel: (models: RuntimeModelsConfig, ref: ModelRef | null) => LanguageModel
+  createLanguageModel: (
+    models: RuntimeModelsConfig,
+    ref: ModelRef | null,
+    options?: { sessionId?: string }
+  ) => LanguageModel
   createTools: (context: ToolContext) => ToolSet
   createTurn: (input: AgentTurnInput) => AgentTurnStream
 }
@@ -321,7 +325,13 @@ export class AgentRuntime {
   ): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
     const start = Date.now()
     try {
-      const model = this.deps.createLanguageModel(this.models, { providerId, modelId })
+      const model = this.deps.createLanguageModel(
+        this.models,
+        { providerId, modelId },
+        {
+          sessionId: randomUUID()
+        }
+      )
       await generateText({
         model,
         prompt: 'Reply with OK',
@@ -506,7 +516,8 @@ export class AgentRuntime {
       const record = this.record(run.sessionId)
       const model = this.deps.createLanguageModel(
         this.models,
-        record.session.model ?? this.models.defaultModel
+        record.session.model ?? this.models.defaultModel,
+        { sessionId: run.sessionId }
       )
       const tools = this.deps.createTools({
         workspace: this.options.workspacePath,

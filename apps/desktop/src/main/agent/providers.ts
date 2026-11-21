@@ -2,6 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createGoogle } from '@ai-sdk/google'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
+import { randomUUID } from 'node:crypto'
 import type { LanguageModel } from 'ai'
 import type { ModelRef, RuntimeModelsConfig } from '@ateam/shared'
 
@@ -24,26 +25,63 @@ export function resolveModelRef(
   return { ref: target, provider }
 }
 
+/** OpenCode Go requires a per-conversation routing header on every request. */
+export function providerHeaders(
+  baseURL: string | undefined,
+  sessionId?: string
+): Record<string, string> | undefined {
+  if (!baseURL) return undefined
+  try {
+    const host = new URL(baseURL).hostname
+    if (host === 'opencode.ai' || host.endsWith('.opencode.ai')) {
+      return { 'x-opencode-session': sessionId ?? randomUUID() }
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
+/** The Anthropic SDK appends `/messages` to its baseURL, which must include the version segment. */
+export function normalizeAnthropicBaseURL(baseURL: string | undefined): string | undefined {
+  if (!baseURL) return undefined
+  const trimmed = baseURL.replace(/\/+$/, '')
+  try {
+    const pathname = new URL(trimmed).pathname
+    if (/\/v\d+$/.test(pathname)) return trimmed
+  } catch {
+    return trimmed
+  }
+  return `${trimmed}/v1`
+}
+
 export function createLanguageModel(
   config: RuntimeModelsConfig,
-  ref: ModelRef | null
+  ref: ModelRef | null,
+  options: { sessionId?: string } = {}
 ): LanguageModel {
   const { ref: target, provider } = resolveModelRef(config, ref)
   const apiKey = provider.apiKey
+  const headers = providerHeaders(provider.baseURL, options.sessionId)
 
   switch (provider.type) {
     case 'anthropic':
-      return createAnthropic({ apiKey, baseURL: provider.baseURL })(target.modelId)
+      return createAnthropic({
+        apiKey,
+        baseURL: normalizeAnthropicBaseURL(provider.baseURL),
+        headers
+      })(target.modelId)
     case 'openai':
-      return createOpenAI({ apiKey, baseURL: provider.baseURL })(target.modelId)
+      return createOpenAI({ apiKey, baseURL: provider.baseURL, headers })(target.modelId)
     case 'google':
-      return createGoogle({ apiKey, baseURL: provider.baseURL })(target.modelId)
+      return createGoogle({ apiKey, baseURL: provider.baseURL, headers })(target.modelId)
     case 'openai-compatible':
       if (!provider.baseURL) throw new Error('INVALID_PROVIDER: baseURL is required')
       return createOpenAICompatible({
         name: provider.name,
         baseURL: provider.baseURL,
-        apiKey
+        apiKey,
+        headers
       })(target.modelId)
   }
 }
