@@ -65,6 +65,7 @@ function baseState(): ChatStoreState {
     loadedBySession: {},
     permissions: [],
     runOutcomes: {},
+    backgroundResults: [],
     actionError: null,
     restarting: false,
     revertPrompt: null

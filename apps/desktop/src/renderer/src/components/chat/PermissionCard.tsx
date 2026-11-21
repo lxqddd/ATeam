@@ -9,7 +9,8 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   grep: 'chat.permissionGrep',
   write: 'chat.permissionWrite',
   edit: 'chat.permissionEdit',
-  shell: 'chat.permissionShell'
+  shell: 'chat.permissionShell',
+  external_directory: 'chat.permissionExternalDirectory'
 }
 
 interface PermissionCardProps {

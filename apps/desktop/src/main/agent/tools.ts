@@ -21,6 +21,15 @@ export interface ToolContext {
     toolCallId: string
   ) => Promise<boolean>
   loadNestedInstructions?: (targetPath: string) => Promise<string>
+  storeOutput?: (toolCallId: string, output: string) => Promise<{ output: string; path?: string }>
+  onToolOutput?: (toolCallId: string, delta: string) => void
+  backgroundOutputPath?: (toolCallId: string) => Promise<string>
+  onBackgroundFinished?: (info: {
+    toolCallId: string
+    command: string
+    exitCode: number | null
+    outputPath: string | null
+  }) => void
 }
 
 function truncate(value: string): string {
@@ -28,21 +37,28 @@ function truncate(value: string): string {
   return `${value.slice(0, MAX_TOOL_OUTPUT)}\n[output truncated at ${MAX_TOOL_OUTPUT} characters]`
 }
 
+function escapesWorkspace(workspace: string, input: string): boolean {
+  const resolved = path.resolve(workspace, input)
+  const root = path.resolve(workspace)
+  return resolved !== root && !resolved.startsWith(`${root}${path.sep}`)
+}
+
 async function resolvePath(
   workspace: string,
   input: string,
-  allowMissing = false
+  allowMissing = false,
+  allowOutside = false
 ): Promise<string> {
   const resolved = path.resolve(workspace, input)
   const root = path.resolve(workspace)
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+  if (!allowOutside && resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
     throw new Error(`Path escapes workspace: ${input}`)
   }
 
   if (!allowMissing) {
     const real = await fs.realpath(resolved)
     const realRoot = await fs.realpath(root)
-    if (real !== realRoot && !real.startsWith(`${realRoot}${path.sep}`)) {
+    if (!allowOutside && real !== realRoot && !real.startsWith(`${realRoot}${path.sep}`)) {
       throw new Error(`Path escapes workspace: ${input}`)
     }
     return real
@@ -51,11 +67,25 @@ async function resolvePath(
   const parent = path.dirname(resolved)
   const realRoot = await fs.realpath(root)
   const realParent = await nearestExistingRealPath(parent)
-  if (realParent !== realRoot && !realParent.startsWith(`${realRoot}${path.sep}`)) {
+  if (
+    !allowOutside &&
+    realParent !== realRoot &&
+    !realParent.startsWith(`${realRoot}${path.sep}`)
+  ) {
     throw new Error(`Path escapes workspace: ${input}`)
   }
   await fs.mkdir(parent, { recursive: true })
   return resolved
+}
+
+async function ensureExternalAccess(
+  context: ToolContext,
+  input: string,
+  toolName: string,
+  toolCallId: string
+): Promise<boolean> {
+  if (!escapesWorkspace(context.workspace, input)) return true
+  return context.askPermission('external_directory', input, toolName, toolCallId)
 }
 
 async function nearestExistingRealPath(target: string): Promise<string> {
@@ -74,6 +104,118 @@ async function nearestExistingRealPath(target: string): Promise<string> {
 
 function safeError(error: unknown): string {
   return `Error: ${error instanceof Error ? error.message : String(error)}`
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+}
+
+function globExpression(pattern: string): RegExp {
+  const normalized = pattern.replace(/\\/g, '/')
+  let expression = ''
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index]
+    if (character === '*') {
+      if (normalized[index + 1] === '*') {
+        index += 1
+        if (normalized[index + 1] === '/') {
+          index += 1
+          expression += '(?:.*/)?'
+        } else {
+          expression += '.*'
+        }
+      } else {
+        expression += '[^/]*'
+      }
+    } else if (character === '?') {
+      expression += '[^/]'
+    } else {
+      expression += escapeRegExp(character)
+    }
+  }
+  return new RegExp(`^${expression}$`)
+}
+
+interface PatchHunk {
+  oldText: string
+  newText: string
+}
+
+interface PatchOperation {
+  kind: 'add' | 'update' | 'delete'
+  path: string
+  content?: string
+  hunks?: PatchHunk[]
+}
+
+function parsePatch(patchText: string): PatchOperation[] {
+  const lines = patchText.split(/\r?\n/)
+  if (
+    lines[0]?.trim() !== '*** Begin Patch' ||
+    lines[lines.length - 1]?.trim() !== '*** End Patch'
+  ) {
+    throw new Error('Invalid patch: missing Begin/End markers')
+  }
+
+  const operations: PatchOperation[] = []
+  let index = 1
+  while (index < lines.length - 1) {
+    const line = lines[index]
+    const header = /^\*\*\* (Add|Update|Delete) File: (.+)$/.exec(line)
+    if (!header) throw new Error(`Invalid patch line: ${line}`)
+    const kind = header[1].toLowerCase() as PatchOperation['kind']
+    const filePath = header[2]
+    index += 1
+
+    if (kind === 'add') {
+      const content: string[] = []
+      while (index < lines.length - 1 && !lines[index].startsWith('*** ')) {
+        if (!lines[index].startsWith('+')) throw new Error('Invalid add file line')
+        content.push(lines[index].slice(1))
+        index += 1
+      }
+      operations.push({ kind, path: filePath, content: content.join('\n') })
+      continue
+    }
+
+    if (kind === 'delete') {
+      operations.push({ kind, path: filePath })
+      continue
+    }
+
+    const hunks: PatchHunk[] = []
+    while (index < lines.length - 1 && !lines[index].startsWith('*** ')) {
+      if (!lines[index].startsWith('@@')) throw new Error('Invalid update hunk header')
+      index += 1
+      const oldLines: string[] = []
+      const newLines: string[] = []
+      while (
+        index < lines.length - 1 &&
+        !lines[index].startsWith('@@') &&
+        !lines[index].startsWith('*** ')
+      ) {
+        const hunkLine = lines[index]
+        const marker = hunkLine[0] ?? ' '
+        const text = hunkLine.slice(1)
+        if (marker === ' ') {
+          oldLines.push(text)
+          newLines.push(text)
+        } else if (marker === '-') {
+          oldLines.push(text)
+        } else if (marker === '+') {
+          newLines.push(text)
+        } else {
+          throw new Error(`Invalid update line: ${hunkLine}`)
+        }
+        index += 1
+      }
+      hunks.push({ oldText: oldLines.join('\n'), newText: newLines.join('\n') })
+    }
+    operations.push({ kind, path: filePath, hunks })
+  }
+
+  if (operations.length === 0) throw new Error('Patch contains no file operations')
+  return operations
 }
 
 async function readFileText(filePath: string): Promise<string> {
@@ -148,9 +290,16 @@ export function createTools(context: ToolContext): ToolSet {
     }),
     execute: async ({ path: inputPath, offset = 1, limit = MAX_READ_LINES }, options) => {
       try {
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'read', options.toolCallId))
+        ) {
+          return 'Permission denied; the file was not read.'
+        }
         const allowed = await context.askPermission('read', inputPath, 'read', options.toolCallId)
         if (!allowed) return 'Permission denied; the file was not read.'
-        const filePath = await resolvePath(context.workspace, inputPath)
+        const filePath = await resolvePath(context.workspace, inputPath, false, external)
         const text = await readFileText(filePath)
         const lines = text.split(/\r?\n/)
         const start = Math.max(0, offset - 1)
@@ -178,9 +327,16 @@ export function createTools(context: ToolContext): ToolSet {
     }),
     execute: async ({ path: inputPath = '.', depth = 1 }, options) => {
       try {
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'list', options.toolCallId))
+        ) {
+          return 'Permission denied; the directory was not listed.'
+        }
         const allowed = await context.askPermission('list', inputPath, 'list', options.toolCallId)
         if (!allowed) return 'Permission denied; the directory was not listed.'
-        const root = await resolvePath(context.workspace, inputPath)
+        const root = await resolvePath(context.workspace, inputPath, false, external)
         const base = path.resolve(context.workspace)
         const entries: string[] = []
         await listDirectory(root, base, 1, depth, entries)
@@ -199,17 +355,36 @@ export function createTools(context: ToolContext): ToolSet {
       pattern: z.string().describe('JavaScript regular expression'),
       path: z.string().optional().describe('Directory relative to the workspace'),
       include: z.string().optional().describe('Optional filename filter, e.g. *.ts'),
+      literal: z.boolean().optional().describe('Treat the pattern as literal text'),
+      caseSensitive: z.boolean().optional().describe('Use case-sensitive matching'),
       maxResults: z.number().int().min(1).max(500).optional()
     }),
     execute: async (
-      { pattern, path: inputPath = '.', include = '', maxResults = MAX_GREP_MATCHES },
+      {
+        pattern,
+        path: inputPath = '.',
+        include = '',
+        literal = false,
+        caseSensitive = false,
+        maxResults = MAX_GREP_MATCHES
+      },
       options
     ) => {
       try {
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'grep', options.toolCallId))
+        ) {
+          return 'Permission denied; the search was not run.'
+        }
         const allowed = await context.askPermission('grep', pattern, 'grep', options.toolCallId)
         if (!allowed) return 'Permission denied; the search was not run.'
-        const expression = new RegExp(pattern, 'i')
-        const root = await resolvePath(context.workspace, inputPath)
+        const expression = new RegExp(
+          literal ? escapeRegExp(pattern) : pattern,
+          caseSensitive ? '' : 'i'
+        )
+        const root = await resolvePath(context.workspace, inputPath, false, external)
         const base = path.resolve(context.workspace)
         const matches: string[] = []
         let stop = false
@@ -257,9 +432,16 @@ export function createTools(context: ToolContext): ToolSet {
         if (Buffer.byteLength(content, 'utf8') > 1_000_000) {
           return 'Error: file content exceeds 1 MB'
         }
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'write', options.toolCallId))
+        ) {
+          return 'Permission denied; the file was not written.'
+        }
         const allowed = await context.askPermission('write', inputPath, 'write', options.toolCallId)
         if (!allowed) return 'Permission denied; the file was not written.'
-        const filePath = await resolvePath(context.workspace, inputPath, true)
+        const filePath = await resolvePath(context.workspace, inputPath, true, external)
         await fs.mkdir(path.dirname(filePath), { recursive: true })
         await fs.writeFile(filePath, content, 'utf8')
         return `Wrote ${Buffer.byteLength(content, 'utf8')} bytes to ${inputPath}`
@@ -281,9 +463,16 @@ export function createTools(context: ToolContext): ToolSet {
     execute: async ({ path: inputPath, oldText, newText, replaceAll = false }, options) => {
       try {
         if (oldText.length > 200_000) return 'Error: oldText is too large'
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'edit', options.toolCallId))
+        ) {
+          return 'Permission denied; the file was not edited.'
+        }
         const allowed = await context.askPermission('edit', inputPath, 'edit', options.toolCallId)
         if (!allowed) return 'Permission denied; the file was not edited.'
-        const filePath = await resolvePath(context.workspace, inputPath)
+        const filePath = await resolvePath(context.workspace, inputPath, false, external)
         const text = await readFileText(filePath)
         const occurrences = text.split(oldText).length - 1
         if (occurrences === 0) return 'Error: oldText was not found'
@@ -305,13 +494,52 @@ export function createTools(context: ToolContext): ToolSet {
     inputSchema: z.object({
       command: z.string().describe('Shell command'),
       cwd: z.string().optional().describe('Working directory relative to the workspace'),
-      timeoutMs: z.number().int().min(1_000).max(600_000).optional()
+      timeoutMs: z.number().int().min(1_000).max(600_000).optional(),
+      background: z.boolean().optional().describe('Run in the background and return immediately')
     }),
-    execute: async ({ command, cwd = '.', timeoutMs = 120_000 }, options) => {
+    execute: async ({ command, cwd = '.', timeoutMs = 120_000, background = false }, options) => {
       try {
+        const external = escapesWorkspace(context.workspace, cwd)
+        if (external && !(await ensureExternalAccess(context, cwd, 'shell', options.toolCallId))) {
+          return 'Permission denied; the command was not run.'
+        }
         const allowed = await context.askPermission('shell', command, 'shell', options.toolCallId)
         if (!allowed) return 'Permission denied; the command was not run.'
-        const workdir = await resolvePath(context.workspace, cwd)
+        const workdir = await resolvePath(context.workspace, cwd, false, external)
+
+        if (background) {
+          const outputPath = context.backgroundOutputPath
+            ? await context.backgroundOutputPath(options.toolCallId)
+            : null
+          const handle = outputPath ? await fs.open(outputPath, 'a') : null
+          const descriptor = handle?.fd ?? null
+          const child = spawn(command, {
+            cwd: workdir,
+            shell: true,
+            detached: process.platform !== 'win32',
+            env: process.env,
+            stdio: descriptor === null ? 'ignore' : ['ignore', descriptor, descriptor]
+          })
+          let finished = false
+          const finish = (code: number | null): void => {
+            if (finished) return
+            finished = true
+            if (handle) void handle.close()
+            context.onBackgroundFinished?.({
+              toolCallId: options.toolCallId,
+              command,
+              exitCode: code,
+              outputPath
+            })
+          }
+          child.on('error', () => finish(null))
+          child.on('close', (code) => finish(code))
+          child.unref()
+          return `Started background command (pid ${child.pid ?? 'unknown'}).${
+            outputPath ? ` Output: ${outputPath}` : ''
+          }`
+        }
+
         return await new Promise<string>((resolve) => {
           const child = spawn(command, {
             cwd: workdir,
@@ -345,7 +573,11 @@ export function createTools(context: ToolContext): ToolSet {
           }
           const append = (chunk: Buffer): void => {
             if (output.length >= MAX_TOOL_OUTPUT) return
-            output += chunk.toString('utf8')
+            const text = chunk.toString('utf8')
+            const remaining = Math.max(0, MAX_TOOL_OUTPUT - output.length)
+            output += text
+            const delta = text.slice(0, remaining)
+            if (delta) context.onToolOutput?.(options.toolCallId, delta)
           }
           const timer = setTimeout(() => {
             kill()
@@ -365,5 +597,148 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
-  return { read, list, grep, write, edit, shell }
+  const glob = tool({
+    description:
+      'Find files in the workspace by glob pattern such as **/*.ts. Skips ignored directories by default.',
+    inputSchema: z.object({
+      pattern: z.string().describe('Glob pattern relative to the workspace'),
+      path: z.string().optional().describe('Directory to search from'),
+      hidden: z.boolean().optional().describe('Include hidden files and directories'),
+      limit: z.number().int().min(1).max(1_000).optional()
+    }),
+    execute: async ({ pattern, path: inputPath = '.', hidden = false, limit = 100 }, options) => {
+      try {
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'glob', options.toolCallId))
+        ) {
+          return 'Permission denied; the file search was not run.'
+        }
+        const allowed = await context.askPermission('list', pattern, 'glob', options.toolCallId)
+        if (!allowed) return 'Permission denied; the file search was not run.'
+        const base = await resolvePath(context.workspace, inputPath, false, external)
+        const root = path.resolve(context.workspace)
+        const matcher = globExpression(pattern)
+        const matches: string[] = []
+        let stopped = false
+
+        const walk = async (directory: string, depth: number): Promise<void> => {
+          if (depth > 12 || stopped) return
+          const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => [])
+          for (const entry of entries) {
+            if (stopped) return
+            if (IGNORED_DIRS.has(entry.name)) continue
+            if (!hidden && entry.name.startsWith('.')) continue
+            const absolute = path.join(directory, entry.name)
+            if (entry.isDirectory()) {
+              await walk(absolute, depth + 1)
+            } else if (entry.isFile()) {
+              const relative = path.relative(root, absolute).split(path.sep).join('/')
+              const relativeToBase = path.relative(base, absolute).split(path.sep).join('/')
+              if (!matcher.test(relativeToBase)) continue
+              matches.push(relative)
+              if (matches.length >= limit) {
+                stopped = true
+                return
+              }
+            }
+          }
+        }
+
+        await walk(base, 0)
+        matches.sort()
+        const header = stopped ? `[stopped at ${limit} results]\n` : ''
+        const listed = header + (matches.join('\n') || 'No matches')
+        const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
+        return truncate(`${listed}${nested ? `\n\n${nested}` : ''}`)
+      } catch (error) {
+        return safeError(error)
+      }
+    }
+  })
+
+  const patch = tool({
+    description:
+      'Apply one patch that can add, update, move, or delete several files. Requires approval for each file.',
+    inputSchema: z.object({
+      patchText: z
+        .string()
+        .describe('Patch text using *** Add File, *** Update File and *** Delete File sections')
+    }),
+    execute: async ({ patchText }, options) => {
+      try {
+        const operations = parsePatch(patchText)
+        for (const operation of operations) {
+          if (!(await ensureExternalAccess(context, operation.path, 'patch', options.toolCallId))) {
+            return 'Permission denied; the patch was not applied.'
+          }
+          const allowed = await context.askPermission(
+            'edit',
+            operation.path,
+            'patch',
+            options.toolCallId
+          )
+          if (!allowed) return 'Permission denied; the patch was not applied.'
+        }
+
+        const summary: string[] = []
+        for (const operation of operations) {
+          const external = escapesWorkspace(context.workspace, operation.path)
+          if (operation.kind === 'add') {
+            const filePath = await resolvePath(context.workspace, operation.path, true, external)
+            await fs.mkdir(path.dirname(filePath), { recursive: true })
+            await fs.writeFile(filePath, operation.content ?? '', 'utf8')
+            summary.push(`Added ${operation.path}`)
+            continue
+          }
+          if (operation.kind === 'delete') {
+            const filePath = await resolvePath(context.workspace, operation.path, false, external)
+            await fs.rm(filePath, { force: true })
+            summary.push(`Deleted ${operation.path}`)
+            continue
+          }
+          const filePath = await resolvePath(context.workspace, operation.path, false, external)
+          let text = await readFileText(filePath)
+          for (const hunk of operation.hunks ?? []) {
+            if (!text.includes(hunk.oldText)) {
+              return `Error: old text not found in ${operation.path}`
+            }
+            text = text.replace(hunk.oldText, hunk.newText)
+          }
+          await fs.writeFile(filePath, text, 'utf8')
+          summary.push(`Updated ${operation.path}`)
+        }
+        return summary.join('\n')
+      } catch (error) {
+        return safeError(error)
+      }
+    }
+  })
+
+  return wrapToolOutputs({ read, list, grep, glob, patch, write, edit, shell }, context)
+}
+
+function wrapToolOutputs(tools: ToolSet, context: ToolContext): ToolSet {
+  if (!context.storeOutput) return tools
+  const wrapped: Record<string, unknown> = {}
+  for (const [name, definition] of Object.entries(tools)) {
+    const executable = definition as unknown as {
+      execute?: (input: never, options: { toolCallId: string }) => unknown
+    }
+    if (typeof executable.execute !== 'function') {
+      wrapped[name] = definition
+      continue
+    }
+    const execute = executable.execute
+    wrapped[name] = {
+      ...definition,
+      execute: async (input: never, options: { toolCallId: string }) => {
+        const result = await execute(input, options)
+        if (typeof result !== 'string') return result
+        return (await context.storeOutput?.(options.toolCallId, result))?.output ?? result
+      }
+    }
+  }
+  return wrapped as ToolSet
 }

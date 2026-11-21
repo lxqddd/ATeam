@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useChatStore } from '../../chat/store'
+import BackgroundNotices from './BackgroundNotices'
 import Composer from './Composer'
 import MessageList from './MessageList'
 
@@ -12,7 +13,8 @@ function ChatView(): React.JSX.Element {
     messagesBySession,
     loadedBySession,
     permissions,
-    runOutcomes
+    runOutcomes,
+    backgroundResults
   } = useChatStore()
 
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
@@ -22,6 +24,9 @@ function ChatView(): React.JSX.Element {
     (permission) => permission.sessionId === selectedSessionId
   )
   const sessionRunning = session?.status === 'running' || session?.status === 'waiting-permission'
+  const sessionBackground = backgroundResults.filter(
+    (result) => result.sessionId === selectedSessionId
+  )
 
   const emptyState = (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6">
@@ -71,6 +76,8 @@ function ChatView(): React.JSX.Element {
           compaction={session?.compaction ?? null}
         />
       )}
+
+      <BackgroundNotices results={sessionBackground} />
 
       <Composer />
     </div>

@@ -83,7 +83,8 @@ export interface ChatMessage {
   changedFiles?: string[]
 }
 
-export type PermissionAction = 'read' | 'list' | 'grep' | 'write' | 'edit' | 'shell'
+export type PermissionAction =
+  'read' | 'list' | 'grep' | 'write' | 'edit' | 'shell' | 'external_directory'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
@@ -153,7 +154,7 @@ export type AgentEvent =
       sessionId: string
       messageId: string
       partIndex: number
-      kind: 'text' | 'reasoning'
+      kind: 'text' | 'reasoning' | 'tool-output'
       delta: string
     }
   | {
@@ -171,6 +172,7 @@ export type AgentEvent =
       decision: PermissionDecision
     }
   | { type: 'run.started'; sessionId: string; messageId: string; startedAt: string }
+  | ({ type: 'background.finished' } & BackgroundResult)
   | {
       type: 'run.finished'
       sessionId: string
@@ -192,4 +194,13 @@ export interface MessagesSnapshot {
   seq: number
   messages: ChatMessage[]
   running: boolean
+}
+
+export interface BackgroundResult {
+  sessionId: string
+  messageId: string
+  toolCallId: string
+  command: string
+  exitCode: number | null
+  outputPath: string | null
 }

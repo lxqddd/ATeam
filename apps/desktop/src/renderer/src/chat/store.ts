@@ -4,6 +4,7 @@ import type {
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
+  BackgroundResult,
   ChatMessage,
   MessagesSnapshot,
   ModelRef,
@@ -25,6 +26,7 @@ export interface ChatStoreState {
   loadedBySession: Record<string, boolean>
   permissions: PermissionRequest[]
   runOutcomes: Record<string, RunOutcome>
+  backgroundResults: BackgroundResult[]
   actionError: string | null
   restarting: boolean
   revertPrompt: string | null
@@ -49,6 +51,7 @@ function eventSessionId(event: AgentEvent): string | null {
     case 'permission.replied':
     case 'run.started':
     case 'run.finished':
+    case 'background.finished':
       return event.sessionId
     case 'permission.asked':
       return event.permission.sessionId
@@ -68,6 +71,7 @@ export class ChatStore {
     loadedBySession: {},
     permissions: [],
     runOutcomes: {},
+    backgroundResults: [],
     actionError: null,
     restarting: false,
     revertPrompt: null
@@ -270,6 +274,14 @@ export class ChatStore {
     this.setState({ revertPrompt: null })
   }
 
+  dismissBackgroundResult(toolCallId: string): void {
+    this.setState({
+      backgroundResults: this.state.backgroundResults.filter(
+        (result) => result.toolCallId !== toolCallId
+      )
+    })
+  }
+
   async send(text: string): Promise<void> {
     const content = text.trim()
     if (!content) return
@@ -330,6 +342,7 @@ export class ChatStore {
         loadedBySession: {},
         permissions: [],
         runOutcomes: {},
+        backgroundResults: [],
         revertPrompt: null
       })
       await this.loadSessions()
@@ -425,6 +438,15 @@ export class ChatStore {
           } else {
             break
           }
+        } else if (event.kind === 'tool-output') {
+          if (current?.type === 'tool') {
+            parts[event.partIndex] = {
+              ...current,
+              output: (current.output ?? '') + event.delta
+            }
+          } else {
+            break
+          }
         } else {
           if (current?.type === 'reasoning') {
             parts[event.partIndex] = { ...current, text: current.text + event.delta }
@@ -473,6 +495,23 @@ export class ChatStore {
           permissions: this.state.permissions.filter(
             (permission) => permission.sessionId !== event.sessionId
           )
+        })
+        break
+      case 'background.finished':
+        this.setState({
+          backgroundResults: [
+            ...this.state.backgroundResults.filter(
+              (result) => result.toolCallId !== event.toolCallId
+            ),
+            {
+              sessionId: event.sessionId,
+              messageId: event.messageId,
+              toolCallId: event.toolCallId,
+              command: event.command,
+              exitCode: event.exitCode,
+              outputPath: event.outputPath
+            }
+          ].slice(-20)
         })
         break
       default:

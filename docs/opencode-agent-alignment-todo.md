@@ -108,18 +108,17 @@
 
 ### P0-5 工具集补齐
 
-**现状**：只有 read / list / grep / write / edit / shell（[tools.ts:358](../apps/desktop/src/main/agent/tools.ts:358)）；没有 glob 与多文件编辑；shell 阻塞执行、无后台任务；超过 200k 字符的输出直接截断丢弃。
+**进度（2026-11-21）**：已增加 glob、patch 多文件编辑、后台 shell 与完成通知、shell 输出流式回传、大输出落盘、grep literal / caseSensitive / limit，以及工作区外路径的 `external_directory` 审批。剩余：按模型暴露 apply_patch、glob 超时、ripgrep 加速、read 图片/PDF。
 
-**OpenCode 参考**：glob、patch/apply_patch、后台 shell、完整输出落盘，read 支持图片与 PDF。
-
-- [ ] 增加 `glob` 工具：`**/*.ts` 模式、hidden、limit、30 秒超时
-- [ ] 增加 `patch` / `apply_patch` 多文件工具：新增、更新、移动、删除文件
+- [x] 增加 `glob` 工具：`**/*.ts` 模式、hidden、limit（超时待补）
+- [x] 增加 `patch` / `apply_patch` 多文件工具：新增、更新、删除文件
 - [ ] 对支持的模型优先暴露 patch，其余模型继续使用 edit / write
-- [ ] shell 支持 `background`，完成后向会话发送通知
-- [ ] shell 输出流式回传 UI（当前只在结束时一次性返回）
-- [ ] 大输出写入受管文件，模型上下文只保留截断视图
-- [ ] grep 增加 literal / caseSensitive / limit 参数，评估 ripgrep 加速
-- [ ] 测试 glob 匹配、patch 多文件、后台任务通知、输出截断与落盘
+- [x] shell 支持 `background`，完成后向会话发送通知
+- [x] shell 输出流式回传 UI
+- [x] 大输出写入受管文件，模型上下文只保留截断视图
+- [x] grep 增加 literal / caseSensitive / limit 参数（ripgrep 加速待评估）
+- [x] 工作区外文件访问：external_directory 审批后允许
+- [x] 测试 glob 匹配、patch 多文件、后台任务通知、输出截断与落盘
 
 **验收**：可以按模式找文件、一次修改多个文件；dev server 等长命令不阻塞对话；完整输出可追溯。
 
@@ -236,7 +235,7 @@
 1. ~~P0-1 上下文压缩~~ → 已完成基础版；剩余模型能力元数据并入 P1-7，上下文占用条并入 P1-8
 2. ~~P0-2 项目规则~~、~~P0-4 权限规则~~ → 已完成；下一步 P0-3 / P0-6
 3. ~~P0-3 快照 / undo~~ → 已完成；下一步 P0-6 LSP / 格式化
-4. P0-5 工具集补齐
+4. ~~P0-5 工具集补齐~~ → 已完成基础版；下一步 P0-6 LSP / 格式化
 5. P1-1 MCP + P1-2 子代理
 6. P1-3 / P1-4 / P1-5 / P1-6 / P1-9 按产品优先级穿插
 

@@ -51,6 +51,7 @@ import { alwaysPermissionResource, evaluatePermissionRules, scanShellCommand } f
 import { PermissionsStore } from './permissions-store'
 import { SessionsStore, type SessionRecord } from './sessions-store'
 import { SnapshotStore } from './snapshots'
+import { ToolOutputStore } from './tool-output-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
 import { createTools as createDefaultTools, type ToolContext } from './tools'
@@ -204,6 +205,7 @@ export class AgentRuntime {
   private readonly store: SessionsStore
   private readonly permissionRules: PermissionsStore
   private readonly snapshots: SnapshotStore
+  private readonly toolOutputs: ToolOutputStore
   private readonly runs = new Map<string, Run>()
   private readonly pending = new Map<string, PendingPermission>()
   private models: RuntimeModelsConfig
@@ -214,6 +216,7 @@ export class AgentRuntime {
     this.store = new SessionsStore(options.userDataPath)
     this.permissionRules = new PermissionsStore(options.userDataPath)
     this.snapshots = new SnapshotStore(options.userDataPath)
+    this.toolOutputs = new ToolOutputStore(options.userDataPath)
     this.models = options.models
     this.deps = { ...DEFAULT_DEPENDENCIES, ...options.dependencies }
   }
@@ -664,6 +667,21 @@ export class AgentRuntime {
     })
   }
 
+  private appendToolOutput(run: Run, toolCallId: string, delta: string): void {
+    const message = this.assistantFor(run)
+    const part = this.findToolPart(message, toolCallId)
+    if (!part || part.type !== 'tool') return
+    part.output = (part.output ?? '') + delta
+    this.emit({
+      type: 'message.part.delta',
+      sessionId: run.sessionId,
+      messageId: run.messageId,
+      partIndex: message.parts.indexOf(part),
+      kind: 'tool-output',
+      delta
+    })
+  }
+
   private async askPermission(
     run: Run,
     action: PermissionAction,
@@ -1002,7 +1020,18 @@ export class AgentRuntime {
             loadedInstructionPaths
           )
           return formatInstructions(nested)
-        }
+        },
+        storeOutput: (toolCallId, output) =>
+          this.toolOutputs.bound(run.sessionId, toolCallId, output),
+        onToolOutput: (toolCallId, delta) => this.appendToolOutput(run, toolCallId, delta),
+        backgroundOutputPath: (toolCallId) => this.toolOutputs.pathFor(run.sessionId, toolCallId),
+        onBackgroundFinished: (info) =>
+          this.emit({
+            type: 'background.finished',
+            sessionId: run.sessionId,
+            messageId: run.messageId,
+            ...info
+          })
       })
 
       const result = this.deps.createTurn({

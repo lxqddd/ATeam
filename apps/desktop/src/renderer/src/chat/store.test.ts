@@ -145,6 +145,71 @@ describe('ChatStore sessions', () => {
     expect(store.getSnapshot().sessions[0].compaction).toEqual(compaction)
   })
 
+  it('appends streamed tool output deltas', async () => {
+    mock.sessions.push(makeSession({ id: 's1' }))
+    mock.messages.set('s1', {
+      sessionId: 's1',
+      seq: 0,
+      running: true,
+      messages: [
+        makeMessage({
+          id: 'a1',
+          sessionId: 's1',
+          role: 'assistant',
+          parts: [
+            makeToolPart({
+              toolCallId: 'call-1',
+              state: 'running',
+              output: 'a'
+            })
+          ]
+        })
+      ]
+    })
+    await store.init()
+
+    mock.emit({
+      type: 'message.part.delta',
+      sessionId: 's1',
+      messageId: 'a1',
+      partIndex: 0,
+      kind: 'tool-output',
+      delta: 'b'
+    })
+
+    const part = store.getSnapshot().messagesBySession.s1?.[0].parts[0]
+    expect(part).toMatchObject({ type: 'tool', output: 'ab' })
+  })
+
+  it('tracks and dismisses background command results', async () => {
+    mock.sessions.push(makeSession({ id: 's1' }))
+    await store.init()
+
+    mock.emit({
+      type: 'background.finished',
+      sessionId: 's1',
+      messageId: 'a1',
+      toolCallId: 'call-1',
+      command: 'sleep 1',
+      exitCode: 0,
+      outputPath: '/tmp/bg.log'
+    })
+
+    expect(store.getSnapshot().backgroundResults).toEqual([
+      {
+        sessionId: 's1',
+        messageId: 'a1',
+        toolCallId: 'call-1',
+        command: 'sleep 1',
+        exitCode: 0,
+        outputPath: '/tmp/bg.log'
+      }
+    ])
+
+    store.dismissBackgroundResult('call-1')
+    expect(store.getSnapshot().backgroundResults).toEqual([])
+  })
+
   it('undoes and redoes the selected session', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()

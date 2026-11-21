@@ -28,16 +28,28 @@ let directory: string
 let tools: ReturnType<typeof createTools>
 let askPermission: Mock<ToolContext['askPermission']>
 let loadNested: Mock<(targetPath: string) => Promise<string>>
+let storeOutput: Mock<NonNullable<ToolContext['storeOutput']>>
+let onToolOutput: Mock<NonNullable<ToolContext['onToolOutput']>>
+let backgroundOutputPath: Mock<NonNullable<ToolContext['backgroundOutputPath']>>
+let onBackgroundFinished: Mock<NonNullable<ToolContext['onBackgroundFinished']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
   askPermission = vi.fn<ToolContext['askPermission']>(async () => true)
   loadNested = vi.fn(async () => '')
+  storeOutput = vi.fn(async (_toolCallId: string, output: string) => ({ output }))
+  onToolOutput = vi.fn()
+  backgroundOutputPath = vi.fn(async () => path.join(directory, 'bg.log'))
+  onBackgroundFinished = vi.fn()
   tools = createTools({
     workspace: directory,
     signal: new AbortController().signal,
     askPermission,
-    loadNestedInstructions: loadNested
+    loadNestedInstructions: loadNested,
+    storeOutput,
+    onToolOutput,
+    backgroundOutputPath,
+    onBackgroundFinished
   })
 })
 
@@ -72,12 +84,6 @@ describe('read tool', () => {
     expect(result.startsWith('Error:')).toBe(true)
   })
 
-  it('blocks paths outside the workspace', async () => {
-    await expect(execute(tools.read, { path: '../outside.txt' })).resolves.toBe(
-      'Error: Path escapes workspace: ../outside.txt'
-    )
-  })
-
   it('honours read permission denials', async () => {
     await fs.writeFile(path.join(directory, 'a.txt'), 'one')
     askPermission.mockResolvedValue(false)
@@ -97,6 +103,42 @@ describe('read tool', () => {
 
     expect(result).toContain('nested rule')
     expect(loadNested).toHaveBeenCalledWith('sub/a.txt')
+  })
+
+  it('stores large tool output through the output store', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'one')
+    storeOutput.mockResolvedValue({ output: 'stored output', path: '/tmp/full.txt' })
+
+    await expect(execute(tools.read, { path: 'a.txt' })).resolves.toBe('stored output')
+    expect(storeOutput).toHaveBeenCalledWith('call-1', expect.stringContaining('one'))
+  })
+
+  it('allows external files after external-directory approval', async () => {
+    const outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-outside-')))
+    try {
+      const file = path.join(outside, 'note.txt')
+      await fs.writeFile(file, 'outside')
+
+      await expect(execute(tools.read, { path: file })).resolves.toBe('    1  outside')
+      expect(askPermission).toHaveBeenCalledWith('external_directory', file, 'read', 'call-1')
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
+  it('denies external files when external-directory approval is denied', async () => {
+    const outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-outside-')))
+    try {
+      const file = path.join(outside, 'note.txt')
+      await fs.writeFile(file, 'outside')
+      askPermission.mockImplementation(async (action) => action !== 'external_directory')
+
+      await expect(execute(tools.read, { path: file })).resolves.toBe(
+        'Permission denied; the file was not read.'
+      )
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true })
+    }
   })
 
   it('blocks symlink escapes', async () => {
@@ -165,6 +207,22 @@ describe('grep tool', () => {
     expect(askPermission).toHaveBeenCalledWith('grep', 'beta', 'grep', 'call-1')
   })
 
+  it('supports literal and case-sensitive search options', async () => {
+    await fs.writeFile(path.join(directory, 'literal.txt'), 'a.b\naxb')
+
+    await expect(
+      execute(tools.grep, { pattern: 'a.b', path: '.', literal: true })
+    ).resolves.toContain('literal.txt:1: a.b')
+    await expect(
+      execute(tools.grep, { pattern: 'a.b', path: '.', literal: true })
+    ).resolves.not.toContain('literal.txt:2: axb')
+
+    await fs.writeFile(path.join(directory, 'case.txt'), 'Beta')
+    await expect(
+      execute(tools.grep, { pattern: 'beta', path: '.', caseSensitive: true })
+    ).resolves.not.toContain('case.txt')
+  })
+
   it('reports matching lines with file and line number', async () => {
     const result = await execute(tools.grep, { pattern: 'beta' })
     expect(result).toContain('a.txt:2: beta')
@@ -185,6 +243,104 @@ describe('grep tool', () => {
 
   it('reports when nothing matches', async () => {
     await expect(execute(tools.grep, { pattern: 'nothing-here' })).resolves.toBe('No matches')
+  })
+})
+
+describe('glob tool', () => {
+  beforeEach(async () => {
+    await fs.mkdir(path.join(directory, 'src', 'nested'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'src', 'a.ts'), 'a')
+    await fs.writeFile(path.join(directory, 'src', 'nested', 'b.ts'), 'b')
+    await fs.writeFile(path.join(directory, 'src', 'c.js'), 'c')
+    await fs.writeFile(path.join(directory, 'src', '.hidden.ts'), 'h')
+    await fs.writeFile(path.join(directory, 'root.md'), 'r')
+  })
+
+  it('finds files by glob pattern', async () => {
+    await expect(execute(tools.glob, { pattern: '**/*.ts' })).resolves.toBe(
+      'src/a.ts\nsrc/nested/b.ts'
+    )
+  })
+
+  it('supports path scoping, hidden files and limits', async () => {
+    await expect(execute(tools.glob, { pattern: '*.ts', path: 'src' })).resolves.toBe('src/a.ts')
+    await expect(execute(tools.glob, { pattern: '*.ts', path: 'src', hidden: true })).resolves.toBe(
+      'src/.hidden.ts\nsrc/a.ts'
+    )
+    await expect(execute(tools.glob, { pattern: '**/*', limit: 2 })).resolves.toContain(
+      '[stopped at 2 results]'
+    )
+  })
+
+  it('honours list permission denial', async () => {
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.glob, { pattern: '**/*.ts' })).resolves.toBe(
+      'Permission denied; the file search was not run.'
+    )
+    expect(askPermission).toHaveBeenCalledWith('list', '**/*.ts', 'glob', 'call-1')
+  })
+})
+
+describe('patch tool', () => {
+  it('adds, updates and deletes files in one patch', async () => {
+    await fs.writeFile(path.join(directory, 'existing.txt'), 'old')
+    await fs.writeFile(path.join(directory, 'gone.txt'), 'gone')
+    const patchText = [
+      '*** Begin Patch',
+      '*** Add File: added.txt',
+      '+hello',
+      '*** Update File: existing.txt',
+      '@@',
+      '-old',
+      '+new',
+      '*** Delete File: gone.txt',
+      '*** End Patch'
+    ].join('\n')
+
+    const result = await execute(tools.patch, { patchText })
+
+    expect(await fs.readFile(path.join(directory, 'added.txt'), 'utf8')).toBe('hello')
+    expect(await fs.readFile(path.join(directory, 'existing.txt'), 'utf8')).toBe('new')
+    await expect(fs.stat(path.join(directory, 'gone.txt'))).rejects.toMatchObject({
+      code: 'ENOENT'
+    })
+    expect(result).toContain('added.txt')
+    expect(result).toContain('existing.txt')
+    expect(result).toContain('gone.txt')
+  })
+
+  it('asks edit permission for every file before applying anything', async () => {
+    askPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const patchText = [
+      '*** Begin Patch',
+      '*** Add File: one.txt',
+      '+one',
+      '*** Add File: two.txt',
+      '+two',
+      '*** End Patch'
+    ].join('\n')
+
+    await expect(execute(tools.patch, { patchText })).resolves.toBe(
+      'Permission denied; the patch was not applied.'
+    )
+    await expect(fs.stat(path.join(directory, 'one.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(askPermission).toHaveBeenNthCalledWith(1, 'edit', 'one.txt', 'patch', 'call-1')
+    expect(askPermission).toHaveBeenNthCalledWith(2, 'edit', 'two.txt', 'patch', 'call-1')
+  })
+
+  it('denies external paths when external-directory approval is denied', async () => {
+    askPermission.mockImplementation(async (action) => action !== 'external_directory')
+    const patchText = [
+      '*** Begin Patch',
+      '*** Add File: ../outside.txt',
+      '+nope',
+      '*** End Patch'
+    ].join('\n')
+
+    await expect(execute(tools.patch, { patchText })).resolves.toBe(
+      'Permission denied; the patch was not applied.'
+    )
   })
 })
 
@@ -261,6 +417,26 @@ describe('shell tool', () => {
     expect(askPermission).toHaveBeenCalledWith('shell', 'printf hello', 'shell', 'call-1')
   })
 
+  it('streams shell output deltas', async () => {
+    await execute(tools.shell, { command: 'printf hello' })
+
+    expect(onToolOutput).toHaveBeenCalledWith('call-1', 'hello')
+  })
+
+  it('runs background commands and notifies on completion', async () => {
+    const result = await execute(tools.shell, {
+      command: 'printf background-output',
+      background: true
+    })
+
+    expect(result).toContain('Started background command')
+    await vi.waitFor(() => expect(onBackgroundFinished).toHaveBeenCalled())
+    const info = onBackgroundFinished.mock.calls[0][0]
+    expect(info.exitCode).toBe(0)
+    expect(info.outputPath).toBe(path.join(directory, 'bg.log'))
+    expect(await fs.readFile(info.outputPath ?? '', 'utf8')).toContain('background-output')
+  })
+
   it('does not run commands when permission is denied', async () => {
     askPermission.mockResolvedValue(false)
 
@@ -269,9 +445,11 @@ describe('shell tool', () => {
     )
   })
 
-  it('rejects a working directory outside the workspace', async () => {
+  it('denies external working directories without external approval', async () => {
+    askPermission.mockImplementation(async (action) => action !== 'external_directory')
+
     await expect(execute(tools.shell, { command: 'pwd', cwd: '..' })).resolves.toBe(
-      'Error: Path escapes workspace: ..'
+      'Permission denied; the command was not run.'
     )
   })
 
@@ -333,9 +511,11 @@ describe('tool limits and edge cases', () => {
     expect(result.split('\n')).toHaveLength(500)
   })
 
-  it('returns string errors for directory escapes', async () => {
+  it('denies directory escapes without external approval', async () => {
+    askPermission.mockImplementation(async (action) => action !== 'external_directory')
+
     await expect(execute(tools.list, { path: '..' })).resolves.toBe(
-      'Error: Path escapes workspace: ..'
+      'Permission denied; the directory was not listed.'
     )
   })
 
@@ -404,10 +584,12 @@ describe('tool limits and edge cases', () => {
     ).resolves.toBe('Error: oldText is too large')
   })
 
-  it('blocks edits outside the workspace', async () => {
+  it('denies edits outside the workspace without external approval', async () => {
+    askPermission.mockImplementation(async (action) => action !== 'external_directory')
+
     await expect(
       execute(tools.edit, { path: '../outside.txt', oldText: 'a', newText: 'b' })
-    ).resolves.toBe('Error: Path escapes workspace: ../outside.txt')
+    ).resolves.toBe('Permission denied; the file was not edited.')
   })
 
   it('truncates large command output', async () => {
