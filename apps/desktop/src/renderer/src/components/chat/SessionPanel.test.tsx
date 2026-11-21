@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import SessionPanel from './SessionPanel'
+import { createApiMock, type ApiMock } from '../../test/api-mock'
 import { makeSession } from '../../test/factories'
 
 const chatMocks = vi.hoisted(() => ({
@@ -13,6 +14,8 @@ const chatMocks = vi.hoisted(() => ({
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
 
+let api: ApiMock
+
 vi.mock('../../chat/store', () => ({
   chatStore: chatMocks,
   useChatStore: () => storeState.current
@@ -23,6 +26,8 @@ function setSessions(sessions: ReturnType<typeof makeSession>[], selected: strin
 }
 
 beforeEach(() => {
+  api = createApiMock()
+  Object.defineProperty(window, 'api', { value: api.api, configurable: true })
   chatMocks.createSession.mockClear()
   chatMocks.createSession.mockResolvedValue(undefined)
   chatMocks.selectSession.mockClear()
@@ -222,5 +227,25 @@ describe('SessionPanel', () => {
     })
 
     await waitFor(() => expect(chatMocks.renameSession).toHaveBeenCalledTimes(1))
+  })
+})
+
+describe('session search', () => {
+  it('searches sessions by message content', async () => {
+    const user = userEvent.setup()
+    setSessions([makeSession({ id: 's1', title: 'Chat' })], 's1')
+    vi.mocked(api.api.agent.sessions.search).mockResolvedValue([
+      { session: makeSession({ id: 's2', title: 'Weather' }), snippet: 'sunny weather today' }
+    ])
+
+    render(<SessionPanel />)
+    await user.type(screen.getByLabelText('Search sessions'), 'weather')
+
+    await waitFor(() => expect(api.api.agent.sessions.search).toHaveBeenCalledWith('weather'))
+    expect(await screen.findByText('Weather')).toBeInTheDocument()
+    expect(screen.getByText('sunny weather today')).toBeInTheDocument()
+
+    await user.click(screen.getByText('Weather'))
+    expect(chatMocks.selectSession).toHaveBeenCalledWith('s2')
   })
 })

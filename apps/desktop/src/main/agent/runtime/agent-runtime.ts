@@ -29,6 +29,7 @@ import type {
   RuntimeModelsConfig,
   RuntimeWebSearchConfig,
   SessionMeta,
+  SessionSearchResult,
   SessionSettings,
   SkillDefinition,
   SubagentInput,
@@ -62,7 +63,7 @@ import {
   scanShellCommand
 } from '../config/permissions'
 import { PermissionsStore } from '../config/permissions-store'
-import { SessionsStore, type SessionRecord } from '../sessions/sessions-store'
+import { SessionsStore, type SessionRecord, makeTitle } from '../sessions/sessions-store'
 import { SnapshotStore } from '../sessions/snapshots'
 import { ToolOutputStore } from '../sessions/tool-output-store'
 import { buildModelMessages, type AttachmentPayload } from '../message-history'
@@ -321,6 +322,42 @@ export class AgentRuntime {
     this.emit({ type: 'session.upsert', session })
     await this.updateContextUsage(id)
     return session
+  }
+
+  async forkSession(id: string, messageId?: string): Promise<SessionMeta> {
+    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    const session = await this.store.fork(id, messageId)
+    if (!session) throw new Error('SESSION_NOT_FOUND')
+    this.emit({ type: 'session.upsert', session })
+    return session
+  }
+
+  searchSessions(query: string): SessionSearchResult[] {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return []
+    const results: SessionSearchResult[] = []
+    for (const session of this.listSessions()) {
+      if (session.title.toLowerCase().includes(needle)) {
+        results.push({ session, snippet: session.title })
+        continue
+      }
+      const messages = this.store.getMessages(session.id) ?? []
+      for (const message of messages) {
+        const text = message.parts
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join(' ')
+        const index = text.toLowerCase().indexOf(needle)
+        if (index === -1) continue
+        const start = Math.max(0, index - 40)
+        results.push({
+          session,
+          snippet: text.slice(start, index + needle.length + 60).trim()
+        })
+        break
+      }
+    }
+    return results.slice(0, 20)
   }
 
   listPermissionRules(sessionId?: string): PermissionRule[] {
@@ -702,6 +739,47 @@ export class AgentRuntime {
       )
     } catch {
       return undefined
+    }
+  }
+
+  private async maybeGenerateTitle(
+    run: Run,
+    model: LanguageModel,
+    message: ChatMessage
+  ): Promise<void> {
+    const record = this.store.get(run.sessionId)
+    if (!record || record.session.hidden || record.messages.length !== 2) return
+    const firstUser = record.messages.find((entry) => entry.role === 'user')
+    const userText = (firstUser?.parts ?? [])
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join(' ')
+    if (!userText.trim() || record.session.title !== makeTitle(userText)) return
+
+    const assistantText = message.parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join(' ')
+      .slice(0, 1_000)
+    try {
+      const title = await this.deps.generateTitle({
+        model,
+        prompt: [
+          'Create a concise title for this conversation. Reply with the title only, at most 6 words, without quotes.',
+          `User: ${userText.slice(0, 1_000)}`,
+          `Assistant: ${assistantText}`
+        ].join('\n')
+      })
+      const cleaned = title
+        .replace(/["'`#*]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 60)
+      if (!cleaned) return
+      const session = await this.store.rename(run.sessionId, cleaned)
+      if (session) this.emit({ type: 'session.upsert', session })
+    } catch {
+      /* keep the derived title */
     }
   }
 
@@ -1443,6 +1521,7 @@ export class AgentRuntime {
       this.schedulePreparedCompaction(run.sessionId)
       await this.store.setStatus(run.sessionId, 'idle')
       this.emitSession(run.sessionId)
+      await this.maybeGenerateTitle(run, model, message)
       const outcome: RunOutcome =
         finishReason === 'tool-calls' && run.steps >= MAX_STEPS ? 'max-steps' : 'completed'
       this.emit({

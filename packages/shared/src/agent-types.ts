@@ -174,6 +174,11 @@ export interface PermissionRuleInput {
   sessionId: string | null
 }
 
+export interface SessionSearchResult {
+  session: SessionMeta
+  snippet: string
+}
+
 export interface SessionUndoResult {
   session: SessionMeta
   prompt: string

@@ -256,6 +256,12 @@ const enUS = {
     questionCancel: 'Cancel',
     questionCustom: 'Custom answer',
     cost: 'Estimated cost',
+    forkSession: 'Fork session',
+    forkFromHere: 'Fork from here',
+    searchSessions: 'Search sessions',
+    searchPlaceholder: 'Search messages…',
+    searching: 'Searching…',
+    searchNoResults: 'No matching sessions.',
     permissionMode: 'Permission mode',
     permissionPlan: 'Read only',
     permissionPlanHint:

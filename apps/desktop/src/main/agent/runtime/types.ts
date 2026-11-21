@@ -92,6 +92,7 @@ export interface AgentRuntimeDependencies {
     prompt: string
     abortSignal?: AbortSignal
   }) => Promise<string>
+  generateTitle: (input: { model: LanguageModel; prompt: string }) => Promise<string>
   loadInstructions: (input: {
     workspacePath: string
     globalDirectory: string

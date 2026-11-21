@@ -503,3 +503,45 @@ describe('todos', () => {
     expect(reloaded.getSession(session.id)?.todos).toEqual([])
   })
 })
+
+describe('fork', () => {
+  it('copies messages and settings into a new session', async () => {
+    const session = await store.create({ agent: 'plan', permissionMode: 'auto' })
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'user', parts: [makeTextPart('hi')] })
+    )
+    await store.appendMessage(session.id, makeMessage({ parts: [makeTextPart('hello')] }))
+    await store.setTodos(session.id, [
+      { id: 'todo-1', content: 'Ship', status: 'pending', priority: 'high' }
+    ])
+
+    const forked = await store.fork(session.id)
+
+    expect(forked?.id).not.toBe(session.id)
+    expect(forked).toMatchObject({
+      agent: 'plan',
+      permissionMode: 'auto',
+      status: 'idle',
+      todos: []
+    })
+    expect(forked?.title).toContain('(fork)')
+    expect(store.getMessages(forked?.id as string)).toHaveLength(2)
+  })
+
+  it('truncates the transcript at a message', async () => {
+    const session = await store.create()
+    const first = makeMessage({ role: 'user', parts: [makeTextPart('one')] })
+    const second = makeMessage({ parts: [makeTextPart('two')] })
+    await store.appendMessage(session.id, first)
+    await store.appendMessage(session.id, second)
+
+    expect(store.getMessages((await store.fork(session.id, first.id))?.id as string)).toHaveLength(
+      1
+    )
+
+    const full = await store.fork(session.id, second.id)
+    expect(store.getMessages(full?.id as string)).toHaveLength(2)
+    await expect(store.fork(session.id, 'missing')).resolves.toBeUndefined()
+  })
+})

@@ -19,6 +19,7 @@ import type {
   PermissionRuleInput,
   QuestionRequest,
   SessionMeta,
+  SessionSearchResult,
   SessionSettings,
   WebSearchInput,
   WebSearchProviderPublic
@@ -127,6 +128,18 @@ export function createApiMock(
           const index = sessions.findIndex((entry) => entry.id === id)
           if (index >= 0) sessions.splice(index, 1)
         }),
+        fork: vi.fn(async (id: string, messageId?: string) => {
+          const source = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          const fork = makeSession({
+            id: `fork-${Date.now()}`,
+            title: `${source.title} (fork)`,
+            model: source.model
+          })
+          void messageId
+          sessions.unshift(fork)
+          return fork
+        }),
+        search: vi.fn(async () => [] as SessionSearchResult[]),
         setAgent: vi.fn(async (id: string, agent: string | null) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           session.agent = agent

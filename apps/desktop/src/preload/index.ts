@@ -42,7 +42,9 @@ const api: AteamApi = {
       setAgent: (id, agent) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetAgent, { id, agent }),
       compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id }),
       undo: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId }),
-      redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id })
+      redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id }),
+      fork: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionFork, { id, messageId }),
+      search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSearch, { query })
     },
     messages: {
       list: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.messagesList, { sessionId })

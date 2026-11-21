@@ -29,6 +29,15 @@ async function loadInstructions(input: {
   return discoverInstructionFiles(input.workspacePath, input.globalDirectory)
 }
 
+async function generateTitle(input: { model: LanguageModel; prompt: string }): Promise<string> {
+  const result = await generateText({
+    model: input.model,
+    prompt: input.prompt,
+    maxOutputTokens: 32
+  })
+  return result.text
+}
+
 export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
   createLanguageModel: createDefaultLanguageModel,
   createTools: createDefaultTools,
@@ -47,6 +56,7 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
     }).stream
   }),
   generateSummary,
+  generateTitle,
   loadInstructions,
   createMcpManager: (input) =>
     new McpManager({ userDataPath: input.userDataPath, workspace: input.workspacePath }),

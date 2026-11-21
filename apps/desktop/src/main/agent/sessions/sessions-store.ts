@@ -322,6 +322,37 @@ export class SessionsStore {
     return clone(record.session)
   }
 
+  async fork(id: string, messageId?: string): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    let messages = clone(record.messages).filter((message) => message.status !== 'streaming')
+    if (messageId) {
+      const index = messages.findIndex((message) => message.id === messageId)
+      if (index === -1) return undefined
+      messages = messages.slice(0, index + 1)
+    }
+
+    const timestamp = nowIso()
+    const session: SessionMeta = {
+      ...clone(record.session),
+      id: randomUUID(),
+      title: `${record.session.title || 'Chat'} (fork)`.slice(0, 120),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      status: 'idle',
+      compaction: null,
+      redoAvailable: false,
+      contextTokens: null,
+      contextWindow: null,
+      hidden: false,
+      parentId: null,
+      todos: []
+    }
+    this.records.set(session.id, { session, messages })
+    await this.persist(session.id)
+    return clone(session)
+  }
+
   async rename(id: string, title: string): Promise<SessionMeta | undefined> {
     const record = this.records.get(id)
     if (!record) return undefined

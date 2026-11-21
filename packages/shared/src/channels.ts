@@ -19,6 +19,8 @@ export const AGENT_CHANNELS = {
   sessionCompact: 'ateam:agent:sessions:compact',
   sessionUndo: 'ateam:agent:sessions:undo',
   sessionRedo: 'ateam:agent:sessions:redo',
+  sessionFork: 'ateam:agent:sessions:fork',
+  sessionSearch: 'ateam:agent:sessions:search',
   messagesList: 'ateam:agent:messages:list',
   chatSend: 'ateam:agent:chat:send',
   chatStop: 'ateam:agent:chat:stop',

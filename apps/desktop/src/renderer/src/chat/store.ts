@@ -286,6 +286,16 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
+  async forkSession(messageId?: string): Promise<SessionMeta> {
+    const sessionId = this.state.selectedSessionId
+    if (!sessionId) throw new Error('NO_SESSION')
+    const session = await window.api.agent.sessions.fork(sessionId, messageId)
+    this.upsertSession(session)
+    this.selectSession(session.id)
+    await this.loadMessages(session.id)
+    return session
+  }
+
   async compactSession(): Promise<void> {
     const sessionId = this.state.selectedSessionId
     if (!sessionId) return

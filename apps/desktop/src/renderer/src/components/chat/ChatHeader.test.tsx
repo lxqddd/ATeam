@@ -9,7 +9,8 @@ import { makeMessage, makeSession, makeTextPart } from '../../test/factories'
 const chatMocks = vi.hoisted(() => ({
   compactSession: vi.fn(async () => undefined),
   undoSession: vi.fn(async () => 'prompt'),
-  redoSession: vi.fn(async () => undefined)
+  redoSession: vi.fn(async () => undefined),
+  forkSession: vi.fn(async () => undefined)
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -228,5 +229,35 @@ describe('ChatHeader', () => {
     await user.click(screen.getByRole('button', { name: 'Open workspace' }))
 
     expect(mock.api.workspace.open).toHaveBeenCalled()
+  })
+})
+
+describe('session experience', () => {
+  it('forks the selected session', async () => {
+    chatMocks.forkSession.mockClear()
+    const user = userEvent.setup()
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'Fork session' }))
+
+    await waitFor(() => expect(chatMocks.forkSession).toHaveBeenCalled())
+  })
+
+  it('shows session cost and the context progress bar', () => {
+    const state = baseState()
+    state.sessions[0].contextTokens = 32_000
+    state.sessions[0].contextWindow = 128_000
+    state.messagesBySession = {
+      s1: [makeMessage({ role: 'assistant', parts: [], costUsd: 0.000069 })]
+    }
+    storeState.current = state
+
+    render(<ChatHeader />)
+
+    expect(screen.getByText('$0.000069')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute(
+      'aria-valuenow',
+      '25'
+    )
   })
 })

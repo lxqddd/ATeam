@@ -164,6 +164,7 @@ let mcpManager: McpManagerLike
 let mcpTools: ReturnType<typeof vi.fn>
 let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
+const generateTitle = vi.fn(async () => '')
 let runtime: AgentRuntime
 let sessionId: string
 
@@ -203,6 +204,7 @@ function createRuntime(): AgentRuntime {
         return instructionFiles
       },
       createMcpManager: () => mcpManager,
+      generateTitle,
       fetchWeb: async (input): Promise<WebFetchResult> => ({
         url: input.url,
         status: 200,
@@ -482,6 +484,8 @@ beforeEach(async () => {
     removeServer: vi.fn()
   }
   resumeTurn = null
+  generateTitle.mockReset()
+  generateTitle.mockResolvedValue('')
   runtime = createRuntime()
   await runtime.init()
   sessionId = (await runtime.createSession()).id
@@ -2064,5 +2068,77 @@ describe('model capability metadata', () => {
 
     expect(turns[0].maxOutputTokens).toBe(4_096)
     expect(assistantMessages()[0].costUsd).toBe(0.000069)
+  })
+})
+
+describe('session search and fork', () => {
+  it('forks a session and emits it', async () => {
+    scripts.push(textScript('hello'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const forked = await runtime.forkSession(sessionId)
+
+    expect(forked.title).toContain('(fork)')
+    expect(runtime.messages(forked.id).messages).toHaveLength(2)
+    expect(
+      sink.envelopes.some(
+        (envelope) =>
+          envelope.event.type === 'session.upsert' && envelope.event.session.id === forked.id
+      )
+    ).toBe(true)
+  })
+
+  it('rejects forking a running session', async () => {
+    scripts.push(pausableTextScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    await expect(runtime.forkSession(sessionId)).rejects.toThrow('SESSION_BUSY')
+
+    if (resumeTurn) resumeTurn()
+    resumeTurn = null
+    await sink.next('run.finished')
+  })
+
+  it('searches sessions by title and message content', async () => {
+    scripts.push(textScript('The weather is sunny today'))
+    await runtime.sendChat(sessionId, 'weather in Hangzhou')
+    await sink.next('run.finished')
+
+    const byMessage = runtime.searchSessions('sunny')
+    expect(byMessage).toHaveLength(1)
+    expect(byMessage[0].session.id).toBe(sessionId)
+    expect(byMessage[0].snippet).toContain('sunny')
+
+    const byTitle = runtime.searchSessions('weather in')
+    expect(byTitle[0].session.id).toBe(sessionId)
+    expect(runtime.searchSessions('nothing-matches')).toEqual([])
+    expect(runtime.searchSessions('  ')).toEqual([])
+  })
+})
+
+describe('generated session titles', () => {
+  it('replaces the derived title after the first exchange', async () => {
+    generateTitle.mockResolvedValueOnce('Hangzhou Weather')
+    scripts.push(textScript('sunny'))
+    await runtime.sendChat(sessionId, 'today weather')
+    await sink.next('run.finished')
+
+    expect(runtime.listSessions()[0].title).toBe('Hangzhou Weather')
+
+    scripts.push(textScript('again'))
+    await runtime.sendChat(sessionId, 'more')
+    await sink.next('run.finished')
+    expect(generateTitle).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the derived title when generation fails', async () => {
+    generateTitle.mockRejectedValueOnce(new Error('offline'))
+    scripts.push(textScript('sunny'))
+    await runtime.sendChat(sessionId, 'today weather')
+    await sink.next('run.finished')
+
+    expect(runtime.listSessions()[0].title).toBe('today weather')
   })
 })

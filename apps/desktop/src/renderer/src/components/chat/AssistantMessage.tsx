@@ -28,6 +28,8 @@ function AssistantMessage({
   const [retryError, setRetryError] = useState<string | null>(null)
   const [reverting, setReverting] = useState(false)
   const [revertError, setRevertError] = useState<string | null>(null)
+  const [forking, setForking] = useState(false)
+  const [forkError, setForkError] = useState<string | null>(null)
 
   const text = message.parts
     .filter((part) => part.type === 'text')
@@ -70,6 +72,18 @@ function AssistantMessage({
       setRevertError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setReverting(false)
+    }
+  }
+
+  async function fork(): Promise<void> {
+    setForking(true)
+    setForkError(null)
+    try {
+      await chatStore.forkSession(message.id)
+    } catch (caught) {
+      setForkError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setForking(false)
     }
   }
 
@@ -194,7 +208,20 @@ function AssistantMessage({
               {t('chat.revertToHere')}
             </button>
           )}
+          {!sessionRunning && (
+            <button
+              type="button"
+              disabled={forking}
+              onClick={() => {
+                void fork()
+              }}
+              className="rounded px-1 text-caption text-subtle transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+            >
+              {t('chat.forkFromHere')}
+            </button>
+          )}
           {revertError && <span className="text-caption text-danger">{revertError}</span>}
+          {forkError && <span className="text-caption text-danger">{forkError}</span>}
         </div>
       )}
     </div>

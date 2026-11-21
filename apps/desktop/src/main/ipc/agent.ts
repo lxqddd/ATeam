@@ -16,6 +16,7 @@ import {
   type PermissionRule,
   type QuestionRequest,
   type SessionMeta,
+  type SessionSearchResult,
   type SessionUndoResult,
   type WebSearchProviderPublic
 } from '@ateam/shared'
@@ -243,6 +244,18 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.sessionRedo, (payload): Promise<SessionMeta> => {
     const { id } = idPayloadSchema.parse(payload)
     return manager.request('sessions.redo', { id })
+  })
+
+  handle(AGENT_CHANNELS.sessionFork, (payload): Promise<SessionMeta> => {
+    const { id, messageId } = z
+      .object({ id: idSchema, messageId: idSchema.optional() })
+      .parse(payload)
+    return manager.request('sessions.fork', { id, messageId })
+  })
+
+  handle(AGENT_CHANNELS.sessionSearch, (payload): Promise<SessionSearchResult[]> => {
+    const { query } = z.object({ query: z.string().max(200) }).parse(payload)
+    return manager.request('sessions.search', { query })
   })
 
   handle(AGENT_CHANNELS.messagesList, (payload): Promise<MessagesSnapshot> => {

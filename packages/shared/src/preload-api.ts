@@ -17,6 +17,7 @@ import type {
   PermissionRuleInput,
   MessageAttachment,
   SessionMeta,
+  SessionSearchResult,
   SessionSettings,
   SessionUndoResult,
   WebSearchInput,
@@ -52,6 +53,8 @@ export interface AgentBridge {
     compact: (id: string) => Promise<SessionMeta>
     undo: (id: string, messageId?: string) => Promise<SessionUndoResult>
     redo: (id: string) => Promise<SessionMeta>
+    fork: (id: string, messageId?: string) => Promise<SessionMeta>
+    search: (query: string) => Promise<SessionSearchResult[]>
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>

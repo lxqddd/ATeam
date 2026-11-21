@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SessionMeta } from '@ateam/shared'
+import type { SessionMeta, SessionSearchResult } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
 
 function errorMessage(error: unknown): string {
@@ -237,6 +237,36 @@ function SessionPanel(): React.JSX.Element {
   const { sessions, selectedSessionId } = useChatStore()
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SessionSearchResult[] | null>(null)
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (!trimmed) return undefined
+    let active = true
+    const timer = setTimeout(() => {
+      setSearching(true)
+      setResults(null)
+      window.api.agent.sessions
+        .search(trimmed)
+        .then((next) => {
+          if (active) setResults(next)
+        })
+        .catch((caught: unknown) => {
+          if (!active) return
+          setError(errorMessage(caught))
+          setResults([])
+        })
+        .finally(() => {
+          if (active) setSearching(false)
+        })
+    }, 200)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [query])
 
   async function newChat(): Promise<void> {
     setCreating(true)
@@ -277,20 +307,57 @@ function SessionPanel(): React.JSX.Element {
 
       {error && <p className="px-1 py-1 text-caption text-danger">{error}</p>}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pb-1">
-        {sessions.length === 0 ? (
-          <p className="px-2 py-2 text-caption text-subtle">{t('chat.noSessions')}</p>
-        ) : (
-          sessions.map((session) => (
-            <SessionRow
-              key={session.id}
-              session={session}
-              active={session.id === selectedSessionId}
-              onError={setError}
-            />
-          ))
-        )}
+      <div className="px-1 pb-1">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label={t('chat.searchSessions')}
+          placeholder={t('chat.searchPlaceholder')}
+          className="h-8 w-full rounded-md border border-border bg-surface px-2 text-label text-foreground outline-none placeholder:text-subtle focus:border-border-strong"
+        />
       </div>
+
+      {query.trim() ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pb-1">
+          {searching && <p className="px-2 py-2 text-caption text-subtle">{t('chat.searching')}</p>}
+          {!searching && results?.length === 0 && (
+            <p className="px-2 py-2 text-caption text-subtle">{t('chat.searchNoResults')}</p>
+          )}
+          {results?.map((result) => (
+            <button
+              key={result.session.id}
+              type="button"
+              onClick={() => chatStore.selectSession(result.session.id)}
+              title={result.session.title}
+              className="flex flex-col rounded-md px-2 py-1.5 text-left transition-colors hover:bg-hover"
+            >
+              <span className="block truncate text-label text-foreground">
+                {result.session.title || t('chat.untitled')}
+              </span>
+              {result.snippet && result.snippet !== result.session.title && (
+                <span className="mt-0.5 block truncate text-caption text-muted">
+                  {result.snippet}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pb-1">
+          {sessions.length === 0 ? (
+            <p className="px-2 py-2 text-caption text-subtle">{t('chat.noSessions')}</p>
+          ) : (
+            sessions.map((session) => (
+              <SessionRow
+                key={session.id}
+                session={session}
+                active={session.id === selectedSessionId}
+                onError={setError}
+              />
+            ))
+          )}
+        </div>
+      )}
     </aside>
   )
 }

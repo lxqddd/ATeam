@@ -73,6 +73,10 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().undoSession(request.params.id, request.params.messageId)
     case 'sessions.redo':
       return requireRuntime().redoSession(request.params.id)
+    case 'sessions.fork':
+      return requireRuntime().forkSession(request.params.id, request.params.messageId)
+    case 'sessions.search':
+      return requireRuntime().searchSessions(request.params.query)
     case 'messages.list':
       return requireRuntime().messages(request.params.sessionId)
     case 'chat.send':

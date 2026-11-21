@@ -31,6 +31,11 @@ function ChatHeader(): React.JSX.Element {
   const [headerError, setHeaderError] = useState<string | null>(null)
   const canUndo = !running && messages.some((message) => message.role === 'assistant')
   const canRedo = !running && session?.redoAvailable === true
+  const totalCost = messages.reduce((sum, message) => sum + (message.costUsd ?? 0), 0)
+  const contextPercent =
+    session?.contextTokens != null && session.contextWindow
+      ? Math.min(100, Math.round((session.contextTokens / session.contextWindow) * 100))
+      : null
 
   async function compactSession(): Promise<void> {
     setCompacting(true)
@@ -65,6 +70,16 @@ function ChatHeader(): React.JSX.Element {
       setHeaderError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setHistoryBusy(null)
+    }
+  }
+
+  async function fork(): Promise<void> {
+    setHistoryBusy(null)
+    setHeaderError(null)
+    try {
+      await chatStore.forkSession()
+    } catch (caught) {
+      setHeaderError(caught instanceof Error ? caught.message : String(caught))
     }
   }
 
@@ -112,8 +127,32 @@ function ChatHeader(): React.JSX.Element {
       )}
 
       {session?.contextTokens != null && session.contextWindow != null && (
-        <span className="flex-none text-caption text-subtle" title={t('chat.contextUsageTitle')}>
+        <span
+          className="flex flex-none items-center gap-1.5 text-caption text-subtle"
+          title={t('chat.contextUsageTitle')}
+        >
           {formatTokens(session.contextTokens)} / {formatTokens(session.contextWindow)}
+          {contextPercent !== null && (
+            <span
+              role="progressbar"
+              aria-label={t('chat.contextUsageTitle')}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={contextPercent}
+              className="h-1 w-14 overflow-hidden rounded-full bg-active"
+            >
+              <span
+                className="block h-full rounded-full bg-accent"
+                style={{ width: `${contextPercent}%` }}
+              />
+            </span>
+          )}
+        </span>
+      )}
+
+      {totalCost > 0 && (
+        <span className="flex-none text-caption text-subtle" title={t('chat.cost')}>
+          ${totalCost.toFixed(6)}
         </span>
       )}
 
@@ -214,6 +253,34 @@ function ChatHeader(): React.JSX.Element {
             <path d="m9 5 3 4 3-4M9 19l3-4 3 4" />
           </svg>
         )}
+      </button>
+
+      <button
+        type="button"
+        title={t('chat.forkSession')}
+        aria-label={t('chat.forkSession')}
+        disabled={running || !session}
+        onClick={() => {
+          void fork()
+        }}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55 disabled:hover:bg-transparent"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <circle cx="6" cy="5" r="2" />
+          <circle cx="18" cy="5" r="2" />
+          <circle cx="12" cy="19" r="2" />
+          <path d="M6 7v3a4 4 0 0 0 4 4h2M18 7v3a4 4 0 0 1-4 4h-2M12 14v3" />
+        </svg>
       </button>
 
       {label && (
