@@ -1,8 +1,14 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { expandCommand, loadCommands, parseCommandJson, parseCommandMarkdown } from './commands'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  expandCommand,
+  expandCommandTemplate,
+  loadCommands,
+  parseCommandJson,
+  parseCommandMarkdown
+} from './commands'
 
 const MARKDOWN = [
   '---',
@@ -18,6 +24,8 @@ describe('parseCommandMarkdown', () => {
       name: 'review',
       description: 'Review pending changes',
       template: 'Review $1 and list issues. Extra context: $ARGUMENTS',
+      agent: null,
+      model: null,
       source: 'project'
     })
   })
@@ -38,6 +46,21 @@ describe('parseCommandMarkdown', () => {
     expect(agent).toMatchObject({ id: 'code-review', name: 'Code Review' })
   })
 
+  it('parses agent and model bindings', () => {
+    const command = parseCommandMarkdown(
+      '/repo/.opencode/command/plan.md',
+      ['---', 'description: Plan it', 'agent: plan', 'model: openai/gpt-5', '---', 'Plan.'].join(
+        '\n'
+      ),
+      'project'
+    )
+
+    expect(command).toMatchObject({
+      agent: 'plan',
+      model: { providerId: 'openai', modelId: 'gpt-5' }
+    })
+  })
+
   it('rejects empty files', () => {
     expect(parseCommandMarkdown('/repo/.opencode/command/empty.md', '', 'project')).toBeNull()
   })
@@ -51,6 +74,18 @@ describe('parseCommandJson', () => {
         'user'
       )
     ).toMatchObject({ id: 'summarize', template: 'Summarize $1', source: 'user' })
+  })
+
+  it('parses agent and model bindings', () => {
+    expect(
+      parseCommandJson(
+        { name: 'deploy', template: 'Deploy', agent: 'build', model: 'anthropic/claude' },
+        'user'
+      )
+    ).toMatchObject({
+      agent: 'build',
+      model: { providerId: 'anthropic', modelId: 'claude' }
+    })
   })
 
   it('rejects incomplete definitions', () => {
@@ -73,6 +108,44 @@ describe('expandCommand', () => {
   it('appends arguments when the template has no placeholders', () => {
     expect(expandCommand('Run the checks.', 'now')).toBe('Run the checks.\n\nnow')
     expect(expandCommand('Run the checks.', '')).toBe('Run the checks.')
+  })
+})
+
+describe('expandCommandTemplate', () => {
+  it('runs shell snippets and injects their output', async () => {
+    const runner = vi.fn(async () => ({ stdout: 'abc\n' }))
+
+    await expect(expandCommandTemplate('Files:\n!`ls src`', '', runner)).resolves.toBe(
+      'Files:\nabc'
+    )
+    expect(runner).toHaveBeenCalledWith('ls src')
+  })
+
+  it('reports failed snippets without throwing', async () => {
+    const runner = vi.fn(async () => ({ stdout: '', error: 'boom' }))
+
+    await expect(expandCommandTemplate('!`false`', '', runner)).resolves.toBe(
+      '(shell command failed: boom)'
+    )
+  })
+
+  it('caps the number of executed snippets', async () => {
+    const runner = vi.fn(async () => ({ stdout: 'x' }))
+    const template = Array.from({ length: 7 }, () => '!`echo x`').join(' ')
+
+    const result = await expandCommandTemplate(template, '', runner)
+
+    expect(runner).toHaveBeenCalledTimes(5)
+    expect(result).toContain('(shell snippet limit reached)')
+  })
+
+  it('leaves templates without snippets untouched', async () => {
+    const runner = vi.fn(async () => ({ stdout: '' }))
+
+    await expect(expandCommandTemplate('Review $1', 'src/a.ts', runner)).resolves.toBe(
+      'Review src/a.ts'
+    )
+    expect(runner).not.toHaveBeenCalled()
   })
 })
 

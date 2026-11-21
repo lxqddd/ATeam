@@ -46,6 +46,7 @@ export const AGENT_CHANNELS = {
   attachmentPreview: 'ateam:agent:attachments:preview',
   filesSearch: 'ateam:agent:files:search',
   commandsList: 'ateam:agent:commands:list',
+  commandExpand: 'ateam:agent:commands:expand',
   workspaceOpen: 'ateam:workspace:open',
   openExternal: 'ateam:shell:open-external'
 } as const

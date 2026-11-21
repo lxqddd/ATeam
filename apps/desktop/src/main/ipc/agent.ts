@@ -31,6 +31,7 @@ import {
   removeAttachment,
   saveAttachment
 } from '../agent/attachments'
+import { expandCommandTemplate, runWorkspaceShell } from '../agent/commands'
 import { normalizeImageAttachment } from '../attachments/image'
 import { searchWorkspaceFiles } from '../files/search'
 import type { ModelsStore } from '../stores/models'
@@ -198,6 +199,15 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.commandsList, (): Promise<CommandDefinition[]> =>
     manager.request('commands.list')
   )
+
+  handle(AGENT_CHANNELS.commandExpand, async (payload): Promise<string> => {
+    const { template, args } = z
+      .object({ template: z.string().max(100_000), args: z.string().max(10_000) })
+      .parse(payload)
+    return expandCommandTemplate(template, args, (command) =>
+      runWorkspaceShell(command, workspacePath)
+    )
+  })
 
   handle(AGENT_CHANNELS.sessionsList, (): Promise<SessionMeta[]> =>
     manager.request('sessions.list')

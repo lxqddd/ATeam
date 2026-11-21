@@ -1881,6 +1881,7 @@ describe('skills and commands', () => {
       '.opencode/skills/review/SKILL.md',
       ['---', 'description: Review code', '---', 'Review steps.'].join('\n')
     )
+    await writeWorkspace('.opencode/skills/review/references/checklist.md', 'Checklist')
     await restartRuntime()
     scripts.push(textScript('ok'))
 
@@ -1889,7 +1890,10 @@ describe('skills and commands', () => {
 
     expect(turns[0].system).toContain('Available skills')
     expect(turns[0].system).toContain('- review: Review code')
-    await expect(toolContext?.loadSkill?.('review')).resolves.toContain('Review steps.')
+    const loaded = await toolContext?.loadSkill?.('review')
+    expect(loaded).toContain('Review steps.')
+    expect(loaded).toContain('references/checklist.md')
+    expect(loaded).toContain(path.join(directory, 'workspace', '.opencode', 'skills', 'review'))
     await expect(toolContext?.loadSkill?.('missing')).resolves.toContain('unknown skill')
   })
 

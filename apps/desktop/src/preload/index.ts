@@ -94,7 +94,8 @@ const api: AteamApi = {
       search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.filesSearch, { query })
     },
     commands: {
-      list: () => ipcRenderer.invoke(AGENT_CHANNELS.commandsList)
+      list: () => ipcRenderer.invoke(AGENT_CHANNELS.commandsList),
+      expand: (input) => ipcRenderer.invoke(AGENT_CHANNELS.commandExpand, input)
     }
   },
   models: {

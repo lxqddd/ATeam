@@ -11,9 +11,9 @@ const chatMocks = vi.hoisted(() => ({
   send: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
   ensureSession: vi.fn(),
-  setSessionModel: vi.fn(),
-  setSessionSettings: vi.fn(),
-  setSessionAgent: vi.fn(),
+  setSessionModel: vi.fn(async () => undefined),
+  setSessionSettings: vi.fn(async () => undefined),
+  setSessionAgent: vi.fn(async () => undefined),
   clearRevertPrompt: vi.fn()
 }))
 
@@ -89,6 +89,8 @@ function baseState(): ChatStoreState {
         name: 'review',
         description: 'Review changes',
         template: 'Review $ARGUMENTS',
+        agent: null,
+        model: null,
         source: 'project' as const
       }
     ],
@@ -546,6 +548,66 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
+  })
+
+  it('applies the agent and model bound to a command', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review changes',
+        template: 'Review $ARGUMENTS',
+        agent: 'plan',
+        model: { providerId: 'p1', modelId: 'claude-x' },
+        source: 'project'
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/review src/a.ts')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
+    expect(chatMocks.setSessionAgent).toHaveBeenCalledWith('s1', 'plan')
+    expect(chatMocks.setSessionModel).toHaveBeenCalledWith('s1', {
+      providerId: 'p1',
+      modelId: 'claude-x'
+    })
+  })
+
+  it('expands shell snippets through the agent process', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'recent',
+        name: 'recent',
+        description: 'Recent commits',
+        template: 'Recent:\n!`git log --oneline -1`',
+        agent: null,
+        model: null,
+        source: 'project'
+      }
+    ]
+    storeState.current = state
+    vi.mocked(api.api.agent.commands.expand).mockResolvedValueOnce('Recent:\nabc123 commit')
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/recent')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Recent:\nabc123 commit', []))
+    expect(api.api.agent.commands.expand).toHaveBeenCalledWith({
+      template: 'Recent:\n!`git log --oneline -1`',
+      args: ''
+    })
   })
 })
 

@@ -254,13 +254,44 @@ function Composer(): React.JSX.Element {
     textareaRef.current?.focus()
   }
 
-  function expandSlashCommand(value: string): string {
+  async function expandSlashCommand(
+    value: string
+  ): Promise<{ text: string; command: CommandDefinition | null }> {
     const match = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(value)
-    if (!match) return value
+    if (!match) return { text: value, command: null }
     const command = commands.find(
       (candidate) => candidate.name.toLowerCase() === match[1].toLowerCase()
     )
-    return command ? expandCommand(command.template, match[2] ?? '') : value
+    if (!command) return { text: value, command: null }
+    const args = match[2] ?? ''
+    if (command.template.includes('!`')) {
+      try {
+        return {
+          text: await window.api.agent.commands.expand({ template: command.template, args }),
+          command
+        }
+      } catch {
+        /* fall back to local expansion */
+      }
+    }
+    return { text: expandCommand(command.template, args), command }
+  }
+
+  async function applyCommandBindings(command: CommandDefinition): Promise<void> {
+    if (!command.agent && !command.model) return
+    const session = await chatStore.ensureSession()
+    if (command.agent && agents.some((agent) => agent.id === command.agent)) {
+      await chatStore.setSessionAgent(session.id, command.agent).catch(() => undefined)
+    }
+    const bound = command.model
+    if (
+      bound &&
+      models?.models.some(
+        (model) => model.providerId === bound.providerId && model.modelId === bound.modelId
+      )
+    ) {
+      await chatStore.setSessionModel(session.id, bound).catch(() => undefined)
+    }
   }
 
   function applyMention(filePath: string): void {
@@ -291,7 +322,9 @@ function Composer(): React.JSX.Element {
     setSending(true)
     setError(null)
     try {
-      await chatStore.send(expandSlashCommand(content), attachments)
+      const expanded = await expandSlashCommand(content)
+      if (expanded.command) await applyCommandBindings(expanded.command)
+      await chatStore.send(expanded.text, attachments)
       setText('')
       setAttachments([])
       setMention(null)

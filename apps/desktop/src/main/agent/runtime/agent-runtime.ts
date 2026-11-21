@@ -1486,7 +1486,13 @@ export class AgentRuntime {
               candidate.name.toLowerCase() === name.toLowerCase() ||
               candidate.id === name.toLowerCase()
           )
-          return skill ? `# ${skill.name}\n\n${skill.content}` : `Error: unknown skill: ${name}`
+          if (!skill) return `Error: unknown skill: ${name}`
+          const sections = [`# ${skill.name}`, '', skill.content]
+          sections.push('', `Skill directory: ${path.dirname(skill.path)}`)
+          if (skill.resources.length > 0) {
+            sections.push('Resource files:', ...skill.resources.map((file) => `- ${file}`))
+          }
+          return sections.join('\n')
         },
         writeTodos: (todos) => this.writeTodos(run, todos),
         readTodos: async () => this.readTodos(run),

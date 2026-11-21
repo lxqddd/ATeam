@@ -160,7 +160,7 @@
 
 ### P1-2 子代理与自定义 Agent
 
-**进度（2026-11-21）**：已实现内置 build / plan 主 Agent 与 general / explore 子 Agent；支持 Markdown（`~/.config/ATeam/agent/agents`、`.opencode/agent`、`.opencode/agents`）与 `agents.json` 自定义 Agent（description、mode、model、tools、permission、steps、prompt）；会话级 Agent 选择器（输入框上方）与持久化；`subagent` 工具创建隐藏子会话、同步执行并回报结果、支持继续同一子会话、子会话权限上抛到父会话并携带子 Agent 的权限规则、禁止嵌套、删除父会话时级联清理。剩余：后台运行的子代理、温度等采样参数。
+**进度（2026-11-21）**：已实现内置 build / plan 主 Agent 与 general / explore 子 Agent；支持 Markdown（`~/.config/ATeam/agent/agents`、`.opencode/agent`、`.opencode/agents`）与 `agents.json` 自定义 Agent（description、mode、model、tools、permission、steps、prompt）；会话级 Agent 选择器（输入框上方）与持久化；`subagent` 工具创建隐藏子会话、同步执行并回报结果、支持继续同一子会话、子会话权限上抛到父会话并携带子 Agent 的权限规则、禁止嵌套、删除父会话时级联清理。剩余：无（后台子代理与温度采样已补齐）。
 
 **验收**：选择 plan 后 Agent 只能读不能改；可以让子代理在独立上下文中探索代码并把结论带回主对话；自定义 Agent 的权限规则可以收紧或放宽全局策略。
 
@@ -168,10 +168,10 @@
 - [x] 内置 subagents：general、explore
 - [x] 支持 Markdown / JSON 自定义 Agent：system prompt、model、tools、steps
 - [x] 按 Agent 的权限规则（`permission: action|resource|effect` 列表）
-- [ ] 按 Agent 的采样参数（temperature 等）
+- [x] 按 Agent 的采样参数（temperature 等）
 - [x] 增加 `subagent` 工具：子会话、执行完成后回报
 - [x] 支持继续同一个子会话
-- [ ] 子代理后台运行与完成通知
+- [x] 子代理后台运行与完成通知
 - [x] 会话输入框上方增加 Agent 选择器（原计划为头部）
 - [x] 测试 Agent 解析、权限规则、工具过滤、子会话创建、继续、权限上抛、嵌套深度限制、级联删除
 
@@ -204,7 +204,7 @@
 
 ### P1-5 自定义命令与 Skills
 
-**进度（2026-11-21）**：已实现自定义命令发现（用户目录、`.opencode/command(s)`、`.claude/commands` 的 Markdown 与 `commands.json`）与 `$ARGUMENTS` / `$1..$9` 展开；输入框 `/` 菜单可搜索并插入命令，发送时自动展开。Skills 从用户目录、`.opencode/skill(s)`、`.claude/skills` 发现，启动时加载并把名称与描述注入 system prompt，`skill` 工具按需加载全文并纳入 `skill` 权限动作。剩余：命令绑定 Agent / 模型、命令中的 shell 片段、Skill 附带资源文件。
+**进度（2026-11-21）**：已实现自定义命令发现（用户目录、`.opencode/command(s)`、`.claude/commands` 的 Markdown 与 `commands.json`）与 `$ARGUMENTS` / `$1..$9` 展开；输入框 `/` 菜单可搜索并插入命令，发送时自动展开。Skills 从用户目录、`.opencode/skill(s)`、`.claude/skills` 发现，启动时加载并把名称与描述注入 system prompt，`skill` 工具按需加载全文并纳入 `skill` 权限动作。剩余：无（命令可绑定 Agent / 模型，模板支持 `!` 包裹的 shell 片段，Skill 会附带资源文件清单）。
 
 **验收**：输入 `/` 能选择自定义命令并按参数展开；Agent 能根据技能描述调用 `skill` 工具加载完整说明。
 
@@ -212,7 +212,7 @@
 - [x] 输入框 `/` 命令菜单与参数替换
 - [x] 支持 `.opencode/skills` 与 `.claude/skills` 发现
 - [x] 增加 `skill` 工具与权限控制
-- [ ] 命令绑定 Agent / 模型与 shell 片段
+- [x] 命令绑定 Agent / 模型与 shell 片段
 - [x] 测试命令参数、Skills 发现、按需加载
 
 ### P1-6 Todo / 计划工具

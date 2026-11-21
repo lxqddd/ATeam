@@ -284,7 +284,8 @@ export function createApiMock(
         search: vi.fn(async () => [] as string[])
       },
       commands: {
-        list: vi.fn(async () => [] as CommandDefinition[])
+        list: vi.fn(async () => [] as CommandDefinition[]),
+        expand: vi.fn(async ({ template }: { template: string; args: string }) => template)
       }
     },
     models: {

@@ -22,6 +22,7 @@ describe('parseSkillMarkdown', () => {
       description: 'Review changes for bugs and style',
       content: '# Code review\n\nRead the diff and report issues.',
       path: '/repo/.opencode/skills/review/SKILL.md',
+      resources: [],
       source: 'project'
     })
   })
@@ -134,6 +135,19 @@ describe('loadSkills', () => {
     })
   })
 
+  it('lists adjacent resource files relative to the skill directory', async () => {
+    await write(
+      'workspace/.opencode/skills/review/SKILL.md',
+      ['---', 'description: Review', '---', 'Body.'].join('\n')
+    )
+    await write('workspace/.opencode/skills/review/references/checklist.md', 'Checklist')
+    await write('workspace/.opencode/skills/review/scripts/run.sh', 'echo hi')
+
+    const skills = await loadSkills({ userDataPath: directory, workspacePath: workspace })
+
+    expect(skills[0]?.resources).toEqual(['references/checklist.md', 'scripts/run.sh'])
+  })
+
   it('ignores files that are not named SKILL.md', async () => {
     await write(
       'workspace/.opencode/skills/notes/README.md',
@@ -155,6 +169,7 @@ describe('skillsPrompt', () => {
         description: 'Review changes',
         content: 'Body',
         path: '/x/SKILL.md',
+        resources: [],
         source: 'project'
       }
     ])

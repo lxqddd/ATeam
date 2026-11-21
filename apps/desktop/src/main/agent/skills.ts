@@ -48,8 +48,33 @@ export function parseSkillMarkdown(
     description,
     content: parsed.body,
     path: filePath,
+    resources: [],
     source
   }
+}
+
+const MAX_SKILL_RESOURCES = 50
+const MAX_RESOURCE_DEPTH = 3
+
+async function listSkillResources(directory: string, prefix = '', depth = 0): Promise<string[]> {
+  if (depth > MAX_RESOURCE_DEPTH) return []
+  const entries = await fs
+    .readdir(path.join(directory, prefix), { withFileTypes: true })
+    .catch(() => [])
+  const resources: string[] = []
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!prefix && entry.name === 'SKILL.md') continue
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+    if (entry.isDirectory()) {
+      resources.push(...(await listSkillResources(directory, relative, depth + 1)))
+    } else {
+      resources.push(relative)
+    }
+    if (resources.length >= MAX_SKILL_RESOURCES) {
+      return resources.slice(0, MAX_SKILL_RESOURCES)
+    }
+  }
+  return resources
 }
 
 async function readSkillDirectory(
@@ -64,7 +89,10 @@ async function readSkillDirectory(
     const content = await fs.readFile(filePath, 'utf8').catch(() => null)
     if (content === null) continue
     const skill = parseSkillMarkdown(filePath, content, source)
-    if (skill) skills.push(skill)
+    if (skill) {
+      skill.resources = await listSkillResources(path.dirname(filePath))
+      skills.push(skill)
+    }
   }
   return skills
 }

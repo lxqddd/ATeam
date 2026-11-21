@@ -1,6 +1,7 @@
+import { exec } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { expandCommand, type CommandDefinition } from '@ateam/shared'
+import { expandCommand, type CommandDefinition, type ModelRef } from '@ateam/shared'
 import { readJsonFile } from './atomic-json'
 
 export { expandCommand }
@@ -37,6 +38,17 @@ function splitFrontmatter(content: string): { fields: Map<string, string>; body:
   return { fields, body: body.trim() }
 }
 
+function parseModelField(value: string | undefined): ModelRef | null {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  const separator = trimmed.indexOf('/')
+  if (separator <= 0 || separator === trimmed.length - 1) return null
+  return {
+    providerId: trimmed.slice(0, separator),
+    modelId: trimmed.slice(separator + 1)
+  }
+}
+
 export function parseCommandMarkdown(
   filePath: string,
   content: string,
@@ -52,6 +64,8 @@ export function parseCommandMarkdown(
     name,
     description: fields.get('description')?.trim() ?? '',
     template: body,
+    agent: fields.get('agent')?.trim() || null,
+    model: parseModelField(fields.get('model')),
     source
   }
 }
@@ -61,7 +75,13 @@ export function parseCommandJson(
   source: 'user' | 'project'
 ): CommandDefinition | null {
   if (!value || typeof value !== 'object') return null
-  const raw = value as { name?: unknown; description?: unknown; template?: unknown }
+  const raw = value as {
+    name?: unknown
+    description?: unknown
+    template?: unknown
+    agent?: unknown
+    model?: unknown
+  }
   const name = typeof raw.name === 'string' ? raw.name.trim() : ''
   const template = typeof raw.template === 'string' ? raw.template.trim() : ''
   if (!name || !template) return null
@@ -70,6 +90,8 @@ export function parseCommandJson(
     name,
     description: typeof raw.description === 'string' ? raw.description.trim() : '',
     template,
+    agent: typeof raw.agent === 'string' && raw.agent.trim() ? raw.agent.trim() : null,
+    model: parseModelField(typeof raw.model === 'string' ? raw.model : undefined),
     source
   }
 }
@@ -131,4 +153,67 @@ export async function loadCommands(input: {
   }
 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export interface ShellSnippetResult {
+  stdout: string
+  error?: string
+}
+
+export type ShellSnippetRunner = (command: string) => Promise<ShellSnippetResult>
+
+const MAX_SNIPPET_OUTPUT = 10_000
+const MAX_SNIPPETS = 5
+const SNIPPET_PATTERN = /!`([^`\n]+)`/g
+
+/** Expand placeholders, then replace !`command` snippets with their stdout. */
+export async function expandCommandTemplate(
+  template: string,
+  args: string,
+  runner: ShellSnippetRunner
+): Promise<string> {
+  const expanded = expandCommand(template, args)
+  if (!expanded.includes('!`')) return expanded
+
+  const parts: string[] = []
+  let lastIndex = 0
+  let executed = 0
+  for (const match of expanded.matchAll(SNIPPET_PATTERN)) {
+    const index = match.index ?? 0
+    parts.push(expanded.slice(lastIndex, index))
+    if (executed >= MAX_SNIPPETS) {
+      parts.push('(shell snippet limit reached)')
+      lastIndex = index + match[0].length
+      continue
+    }
+    executed += 1
+    const result = await runner(match[1].trim())
+    parts.push(
+      result.error
+        ? `(shell command failed: ${result.error})`
+        : result.stdout.trim().slice(0, MAX_SNIPPET_OUTPUT)
+    )
+    lastIndex = index + match[0].length
+  }
+  parts.push(expanded.slice(lastIndex))
+  return parts.join('')
+}
+
+export function runWorkspaceShell(command: string, cwd: string): Promise<ShellSnippetResult> {
+  return new Promise((resolve) => {
+    exec(
+      command,
+      { cwd, timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({
+            stdout,
+            error: (stderr.trim() || error.message).slice(0, 2_000)
+          })
+          return
+        }
+        resolve({ stdout })
+      }
+    )
+  })
 }

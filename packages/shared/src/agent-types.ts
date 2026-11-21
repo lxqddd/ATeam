@@ -324,6 +324,8 @@ export interface CommandDefinition {
   name: string
   description: string
   template: string
+  agent: string | null
+  model: ModelRef | null
   source: 'user' | 'project'
 }
 
@@ -333,6 +335,7 @@ export interface SkillDefinition {
   description: string
   content: string
   path: string
+  resources: string[]
   source: 'user' | 'project'
 }
 

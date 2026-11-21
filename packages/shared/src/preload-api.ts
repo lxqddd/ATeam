@@ -108,6 +108,7 @@ export interface AgentBridge {
   }
   commands: {
     list: () => Promise<CommandDefinition[]>
+    expand: (input: { template: string; args: string }) => Promise<string>
   }
 }
 
