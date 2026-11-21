@@ -23,6 +23,12 @@ export interface ModelPublic {
   createdAt: string
 }
 
+/** A model exposed by the provider's own model-listing endpoint. */
+export interface AvailableModel {
+  id: string
+  name?: string
+}
+
 export interface ModelsConfigPublic {
   providers: ProviderPublic[]
   models: ModelPublic[]

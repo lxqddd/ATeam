@@ -14,7 +14,8 @@ import type {
   ModelUpdateInput,
   ModelsConfigPublic,
   ProviderCreateInput,
-  ProviderUpdateInput
+  ProviderUpdateInput,
+  AvailableModel
 } from './model-types'
 
 export interface AgentBridge {
@@ -54,6 +55,7 @@ export interface ModelsBridge {
   deleteModel: (id: string) => Promise<ModelsConfigPublic>
   setDefault: (model: ModelRef | null) => Promise<ModelsConfigPublic>
   test: (providerId: string, modelId: string) => Promise<ModelTestResult>
+  listModels: (providerId: string) => Promise<AvailableModel[]>
 }
 
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'

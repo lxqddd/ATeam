@@ -211,6 +211,33 @@ describe('ModelsPage', () => {
     )
   })
 
+  it('offers the provider model list when adding a model', async () => {
+    vi.mocked(mock.api.models.listModels).mockResolvedValue([
+      { id: 'claude-opus-5', name: 'Claude Opus 5' },
+      { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' }
+    ])
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: /Add model/ }))
+    await user.click(await screen.findByLabelText('Model ID'))
+
+    expect(await screen.findByText('claude-opus-5 · Claude Opus 5')).toBeInTheDocument()
+    expect(mock.api.models.listModels).toHaveBeenCalledWith('p1')
+
+    await user.click(screen.getByText('claude-opus-5 · Claude Opus 5'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.addModel).toHaveBeenCalledWith({
+        providerId: 'p1',
+        modelId: 'claude-opus-5',
+        name: 'Claude Opus 5'
+      })
+    )
+  })
+
   it('edits a provider from its card', async () => {
     const user = userEvent.setup()
     render(<ModelsPage />)

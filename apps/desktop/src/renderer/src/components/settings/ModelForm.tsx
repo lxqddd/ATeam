@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Form, Input, Select } from 'antd'
+import { Alert, AutoComplete, Button, Form, Input, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
-import type { ModelCreateInput, ModelPublic, ModelUpdateInput, ProviderPublic } from '@ateam/shared'
+import type {
+  AvailableModel,
+  ModelCreateInput,
+  ModelPublic,
+  ModelUpdateInput,
+  ProviderPublic
+} from '@ateam/shared'
 import { modelErrorMessage } from './model-errors'
 
 interface ModelFormProps {
@@ -30,12 +36,35 @@ function ModelForm({
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [available, setAvailable] = useState<AvailableModel[]>([])
+  const [modelsError, setModelsError] = useState(false)
   const [form] = Form.useForm<ModelFormValues>()
   const containerRef = useRef<HTMLDivElement | null>(null)
+  const providerId = Form.useWatch('providerId', form)
 
   useEffect(() => {
     containerRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [])
+
+  useEffect(() => {
+    if (model || !providerId) return
+    let active = true
+    window.api.models
+      .listModels(providerId)
+      .then((models) => {
+        if (!active) return
+        setAvailable(models)
+        setModelsError(false)
+      })
+      .catch(() => {
+        if (!active) return
+        setAvailable([])
+        setModelsError(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [model, providerId])
 
   async function handleFinish(values: ModelFormValues): Promise<void> {
     setSaving(true)
@@ -109,11 +138,27 @@ function ModelForm({
             name="modelId"
             label={t('settings.modelId')}
             rules={[{ required: true, message: t('settings.modelIdRequired') }]}
+            extra={modelsError ? t('settings.modelListUnavailable') : undefined}
           >
-            <Input
+            <AutoComplete
+              options={available.map((entry) => ({
+                value: entry.id,
+                label: entry.name ? `${entry.id} · ${entry.name}` : entry.id
+              }))}
               placeholder={t('settings.modelIdPlaceholder')}
               disabled={Boolean(model)}
               autoFocus={!model}
+              filterOption={(input, option) =>
+                String(option?.value ?? '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+              onSelect={(value: string) => {
+                const found = available.find((entry) => entry.id === value)
+                if (found?.name && !form.getFieldValue('name')) {
+                  form.setFieldValue('name', found.name)
+                }
+              }}
             />
           </Form.Item>
           <div className="sm:col-span-2">

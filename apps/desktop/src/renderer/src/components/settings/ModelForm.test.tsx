@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ModelPublic, ProviderPublic } from '@ateam/shared'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelForm from './ModelForm'
+import { createApiMock } from '../../test/api-mock'
 
 const provider: ProviderPublic = {
   id: 'p1',
@@ -22,6 +23,13 @@ const sonnet: ModelPublic = {
 }
 
 describe('ModelForm', () => {
+  beforeEach(() => {
+    Object.defineProperty(window, 'api', {
+      value: createApiMock().api,
+      configurable: true
+    })
+  })
+
   it('asks for a provider when none exist', async () => {
     const user = userEvent.setup()
     const onCancel = vi.fn()

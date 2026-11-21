@@ -85,6 +85,7 @@ const zhCN = {
     confirmDeleteModel: '确认删除该模型？',
     modelNamePlaceholder: '例如 Claude Sonnet',
     modelIdPlaceholder: '例如 claude-sonnet-5-5',
+    modelListUnavailable: '无法获取该供应商的模型列表，可直接输入模型 ID。',
     providerNamePlaceholder: '例如 Anthropic',
     baseURLPlaceholder: 'https://api.example.com/v1',
     apiKeyOptional: '可选',

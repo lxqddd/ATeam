@@ -33,5 +33,6 @@ export const MODEL_CHANNELS = {
   modelUpdate: 'ateam:models:models:update',
   modelDelete: 'ateam:models:models:delete',
   defaultSet: 'ateam:models:default:set',
-  test: 'ateam:models:test'
+  test: 'ateam:models:test',
+  providerModels: 'ateam:models:providers:models'
 } as const

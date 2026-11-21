@@ -116,7 +116,8 @@ export function createApiMock(
       updateModel: vi.fn(async () => models),
       deleteModel: vi.fn(async () => models),
       setDefault: vi.fn(async () => models),
-      test: vi.fn(async () => ({ ok: true, message: 'ok' }))
+      test: vi.fn(async () => ({ ok: true, message: 'ok' })),
+      listModels: vi.fn(async () => [])
     }
   }
 

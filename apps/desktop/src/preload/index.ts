@@ -61,7 +61,9 @@ const api: AteamApi = {
     updateModel: (input) => ipcRenderer.invoke(MODEL_CHANNELS.modelUpdate, input),
     deleteModel: (id) => ipcRenderer.invoke(MODEL_CHANNELS.modelDelete, { id }),
     setDefault: (model) => ipcRenderer.invoke(MODEL_CHANNELS.defaultSet, model),
-    test: (providerId, modelId) => ipcRenderer.invoke(MODEL_CHANNELS.test, { providerId, modelId })
+    test: (providerId, modelId) => ipcRenderer.invoke(MODEL_CHANNELS.test, { providerId, modelId }),
+    listModels: (providerId) =>
+      ipcRenderer.invoke(MODEL_CHANNELS.providerModels, { id: providerId })
   },
   workspace: {
     open: () => ipcRenderer.invoke(AGENT_CHANNELS.workspaceOpen)

@@ -2,6 +2,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import {
   MODEL_CHANNELS,
+  type AvailableModel,
   type ModelCreateInput,
   type ModelTestResult,
   type ModelUpdateInput,
@@ -11,6 +12,7 @@ import {
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
 import { normalizeError } from '../agent/errors'
+import { listProviderModels } from '../models/available'
 import type { ModelsStore } from '../models/store'
 import type { TrustedSender } from './trusted-sender'
 
@@ -136,6 +138,13 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     const config = await modelsStore.setDefault(model)
     await sync()
     return config
+  })
+
+  handle(MODEL_CHANNELS.providerModels, async (payload): Promise<AvailableModel[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    const provider = modelsStore.runtimeConfig().providers.find((candidate) => candidate.id === id)
+    if (!provider) throw new Error('PROVIDER_NOT_FOUND')
+    return listProviderModels(provider)
   })
 
   handle(MODEL_CHANNELS.test, async (payload): Promise<ModelTestResult> => {

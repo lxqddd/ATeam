@@ -91,6 +91,7 @@ const enUS = {
     confirmDeleteModel: 'Delete this model?',
     modelNamePlaceholder: 'e.g. Claude Sonnet',
     modelIdPlaceholder: 'e.g. claude-sonnet-5-5',
+    modelListUnavailable: "Could not load this provider's model list; enter the model ID manually.",
     providerNamePlaceholder: 'e.g. Anthropic',
     baseURLPlaceholder: 'https://api.example.com/v1',
     apiKeyOptional: 'Optional',

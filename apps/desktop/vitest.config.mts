@@ -40,6 +40,7 @@ export default defineConfig({
         'src/main/agent/tools.ts',
         'src/main/agent/runtime.ts',
         'src/main/agent/providers.ts',
+        'src/main/models/available.ts',
         'src/main/models/store.ts',
         'src/renderer/src/chat/store.ts',
         'src/renderer/src/hooks/useElapsed.ts',
