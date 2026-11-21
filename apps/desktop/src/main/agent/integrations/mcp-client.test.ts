@@ -409,3 +409,28 @@ describe('createHttpTransport', () => {
     ])
   })
 })
+
+describe('McpClient prompts', () => {
+  it('loads a prompt with arguments', async () => {
+    const { client, transport } = createClient()
+
+    const loading = client.getPrompt('greet', { name: 'Ada' })
+    await vi.waitFor(() => expect(transport.requests()).toHaveLength(1))
+    expect(transport.requests()[0]).toMatchObject({
+      method: 'prompts/get',
+      params: { name: 'greet', arguments: { name: 'Ada' } }
+    })
+    transport.emit({
+      jsonrpc: '2.0',
+      id: transport.requests()[0].id,
+      result: {
+        messages: [
+          { role: 'user', content: { type: 'text', text: 'Hello Ada' } },
+          { role: 'assistant', content: { type: 'text', text: 'Hi!' } }
+        ]
+      }
+    })
+
+    await expect(loading).resolves.toBe('Hello Ada\n\nHi!')
+  })
+})

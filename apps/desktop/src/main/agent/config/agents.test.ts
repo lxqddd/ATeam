@@ -73,6 +73,7 @@ describe('parseAgentMarkdown', () => {
       model: { providerId: 'openai', modelId: 'gpt-5' },
       tools: ['read', 'grep'],
       permissions: [],
+      temperature: null,
       maxSteps: 12,
       prompt: 'You review code changes and report issues.',
       source: 'project'
@@ -334,5 +335,38 @@ describe('agent permission rules', () => {
     )
     expect(agent?.permissions).toEqual([])
     expect(BUILTIN_AGENTS.every((entry) => entry.permissions.length === 0)).toBe(true)
+  })
+})
+
+describe('agent sampling parameters', () => {
+  it('parses temperature from markdown and json', () => {
+    const markdown = parseAgentMarkdown(
+      '/repo/.opencode/agent/creative.md',
+      ['---', 'description: Creative', 'temperature: 0.7', '---', 'Write.'].join('\n'),
+      'project'
+    )
+    expect(markdown?.temperature).toBe(0.7)
+
+    const json = parseAgentJson({ name: 'precise', description: 'Precise', temperature: 0 }, 'user')
+    expect(json?.temperature).toBe(0)
+  })
+
+  it('rejects out-of-range temperatures', () => {
+    expect(
+      parseAgentMarkdown(
+        '/repo/.opencode/agent/hot.md',
+        ['---', 'description: Hot', 'temperature: 3', '---', 'Body.'].join('\n'),
+        'project'
+      )
+    ).toBeNull()
+  })
+
+  it('defaults to no temperature', () => {
+    const agent = parseAgentMarkdown(
+      '/repo/.opencode/agent/plain.md',
+      ['---', 'description: Plain', '---', 'Body.'].join('\n'),
+      'project'
+    )
+    expect(agent?.temperature).toBeNull()
   })
 })

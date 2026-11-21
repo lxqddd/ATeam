@@ -18,7 +18,8 @@ import type {
   QuestionRequest,
   RunOutcome,
   SessionMeta,
-  SessionSettings
+  SessionSettings,
+  SubagentResult
 } from '@ateam/shared'
 
 export interface ChatStoreState {
@@ -35,6 +36,7 @@ export interface ChatStoreState {
   questions: QuestionRequest[]
   runOutcomes: Record<string, RunOutcome>
   backgroundResults: BackgroundResult[]
+  subagentResults: SubagentResult[]
   actionError: string | null
   restarting: boolean
   revertPrompt: string | null
@@ -67,6 +69,8 @@ function eventSessionId(event: AgentEvent): string | null {
       return event.question.sessionId
     case 'question.replied':
       return event.sessionId
+    case 'subagent.finished':
+      return event.parentSessionId
     default:
       return null
   }
@@ -87,6 +91,7 @@ export class ChatStore {
     questions: [],
     runOutcomes: {},
     backgroundResults: [],
+    subagentResults: [],
     actionError: null,
     restarting: false,
     revertPrompt: null
@@ -327,6 +332,14 @@ export class ChatStore {
     this.setState({ revertPrompt: null })
   }
 
+  dismissSubagentResult(toolCallId: string): void {
+    this.setState({
+      subagentResults: this.state.subagentResults.filter(
+        (result) => result.toolCallId !== toolCallId
+      )
+    })
+  }
+
   dismissBackgroundResult(toolCallId: string): void {
     this.setState({
       backgroundResults: this.state.backgroundResults.filter(
@@ -405,6 +418,7 @@ export class ChatStore {
         questions: [],
         runOutcomes: {},
         backgroundResults: [],
+        subagentResults: [],
         revertPrompt: null
       })
       await this.loadSessions()
@@ -582,6 +596,20 @@ export class ChatStore {
           )
         })
         break
+      case 'subagent.finished': {
+        const result: SubagentResult = {
+          sessionId: event.sessionId,
+          parentSessionId: event.parentSessionId,
+          toolCallId: event.toolCallId,
+          agentId: event.agentId,
+          status: event.status,
+          result: event.result
+        }
+        this.setState({
+          subagentResults: [...this.state.subagentResults, result].slice(-15)
+        })
+        break
+      }
       case 'background.finished':
         this.setState({
           backgroundResults: [

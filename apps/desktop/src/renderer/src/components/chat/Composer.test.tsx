@@ -63,6 +63,7 @@ function baseState(): ChatStoreState {
         model: null,
         tools: null,
         permissions: [],
+        temperature: null,
         maxSteps: null,
         prompt: '',
         source: 'builtin' as const
@@ -75,6 +76,7 @@ function baseState(): ChatStoreState {
         model: null,
         tools: ['read', 'list', 'grep', 'glob'],
         permissions: [],
+        temperature: null,
         maxSteps: 20,
         prompt: 'You are the plan agent.',
         source: 'builtin' as const
@@ -96,6 +98,7 @@ function baseState(): ChatStoreState {
     questions: [],
     runOutcomes: {},
     backgroundResults: [],
+    subagentResults: [],
     actionError: null,
     restarting: false,
     revertPrompt: null

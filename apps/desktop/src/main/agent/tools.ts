@@ -45,6 +45,10 @@ export interface ToolContext {
   writeTodos?: (todos: TodoInput[]) => Promise<string>
   readTodos?: () => Promise<string>
   askQuestion?: (input: QuestionInput, toolCallId: string) => Promise<string>
+  listMcpPrompts?: (server?: string) => Promise<string>
+  getMcpPrompt?: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
+  listMcpResources?: (server?: string) => Promise<string>
+  readMcpResource?: (server: string, uri: string) => Promise<string>
 }
 
 async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
@@ -760,7 +764,11 @@ export function createTools(context: ToolContext): ToolSet {
       prompt: z.string().min(1).describe('Task instructions for the subagent'),
       agent: z.string().optional().describe('Subagent name such as explore or general'),
       sessionId: z.string().optional().describe('Continue a previous subagent session'),
-      description: z.string().optional().describe('Short task summary')
+      description: z.string().optional().describe('Short task summary'),
+      background: z
+        .boolean()
+        .optional()
+        .describe('Run in the background and report completion as a notification')
     }),
     execute: async (input, options) => {
       if (!context.runSubagent) return 'Error: subagents are not available.'
@@ -881,6 +889,58 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const mcpPrompt = tool({
+    description:
+      'List MCP prompts, or load one prompt by server and name and return its messages. Omit prompt to list.',
+    inputSchema: z.object({
+      server: z.string().optional().describe('MCP server name'),
+      prompt: z.string().optional().describe('Prompt name to load'),
+      arguments: z.record(z.string(), z.string()).optional().describe('Arguments for the prompt')
+    }),
+    execute: async (input, options) => {
+      if (!input.prompt) {
+        if (!context.listMcpPrompts) return 'Error: MCP prompts are not available.'
+        return context.listMcpPrompts(input.server)
+      }
+      if (!context.getMcpPrompt) return 'Error: MCP prompts are not available.'
+      const server = input.server?.trim()
+      if (!server) return 'Error: server is required to load an MCP prompt.'
+      const allowed = await context.askPermission(
+        'mcp',
+        `${server}/prompts/${input.prompt}`,
+        'mcp_prompt',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the MCP prompt was not loaded.'
+      return context.getMcpPrompt(server, input.prompt, input.arguments)
+    }
+  })
+
+  const mcpResource = tool({
+    description: 'List MCP resources, or read one resource by server and URI. Omit uri to list.',
+    inputSchema: z.object({
+      server: z.string().optional().describe('MCP server name'),
+      uri: z.string().optional().describe('Resource URI to read')
+    }),
+    execute: async (input, options) => {
+      if (!input.uri) {
+        if (!context.listMcpResources) return 'Error: MCP resources are not available.'
+        return context.listMcpResources(input.server)
+      }
+      if (!context.readMcpResource) return 'Error: MCP resources are not available.'
+      const server = input.server?.trim()
+      if (!server) return 'Error: server is required to read an MCP resource.'
+      const allowed = await context.askPermission(
+        'mcp',
+        `${server}/resources/${input.uri}`,
+        'mcp_resource',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the MCP resource was not read.'
+      return context.readMcpResource(server, input.uri)
+    }
+  })
+
   return wrapToolOutputs(
     {
       read,
@@ -897,7 +957,9 @@ export function createTools(context: ToolContext): ToolSet {
       skill,
       todowrite,
       todoread,
-      question
+      question,
+      mcp_prompt: mcpPrompt,
+      mcp_resource: mcpResource
     },
     context
   )

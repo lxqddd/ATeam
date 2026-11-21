@@ -32,10 +32,27 @@ export interface McpManagerLike {
   tools(context: McpToolContext): Promise<ToolSet>
   servers(): Promise<McpServerConfig[]>
   statuses(options?: { probe?: boolean }): Promise<McpServerStatus[]>
+  prompts(): Promise<McpPromptSummary[]>
+  resources(): Promise<McpResourceSummary[]>
+  getPrompt(server: string, name: string, args?: Record<string, string>): Promise<string>
+  readResource(server: string, uri: string): Promise<string>
   addServer(input: McpServerInput): Promise<McpServerConfig>
   updateServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig>
   removeServer(id: string): Promise<boolean>
   dispose(): Promise<void>
+}
+
+export interface McpPromptSummary {
+  server: string
+  name: string
+  description?: string
+}
+
+export interface McpResourceSummary {
+  server: string
+  uri: string
+  name?: string
+  mimeType?: string
 }
 
 interface McpManagerOptions {
@@ -169,6 +186,79 @@ export class McpManager implements McpManagerLike {
   async addServer(input: McpServerInput): Promise<McpServerConfig> {
     await this.ready
     return this.store.add(input)
+  }
+
+  async prompts(): Promise<McpPromptSummary[]> {
+    await this.ready
+    if (this.disposed) return []
+    const summaries: McpPromptSummary[] = []
+    for (const config of this.store.list()) {
+      if (!config.enabled) continue
+      const entry = await this.connectionFor(config)
+      if (!entry) continue
+      const prompts = await entry.client.listPrompts().catch(() => [])
+      for (const prompt of prompts) {
+        summaries.push({
+          server: config.name,
+          name: prompt.name,
+          description: prompt.description
+        })
+      }
+    }
+    return summaries
+  }
+
+  async resources(): Promise<McpResourceSummary[]> {
+    await this.ready
+    if (this.disposed) return []
+    const summaries: McpResourceSummary[] = []
+    for (const config of this.store.list()) {
+      if (!config.enabled) continue
+      const entry = await this.connectionFor(config)
+      if (!entry) continue
+      const resources = await entry.client.listResources().catch(() => [])
+      for (const resource of resources) {
+        summaries.push({
+          server: config.name,
+          uri: resource.uri,
+          name: resource.name,
+          mimeType: resource.mimeType
+        })
+      }
+    }
+    return summaries
+  }
+
+  async getPrompt(server: string, name: string, args?: Record<string, string>): Promise<string> {
+    const { entry } = await this.serverEntry(server)
+    return entry.client.getPrompt(name, args)
+  }
+
+  async readResource(server: string, uri: string): Promise<string> {
+    const { entry } = await this.serverEntry(server)
+    const contents = await entry.client.readResource(uri)
+    const text = contents
+      .map((content) => content.text ?? JSON.stringify(content))
+      .filter(Boolean)
+      .join('\n\n')
+    return text || '(empty resource)'
+  }
+
+  private async serverEntry(
+    server: string
+  ): Promise<{ config: McpServerConfig; entry: Connection }> {
+    await this.ready
+    const config = this.store
+      .list()
+      .find(
+        (candidate) =>
+          candidate.enabled &&
+          (candidate.name.toLowerCase() === server.toLowerCase() || candidate.id === server)
+      )
+    if (!config) throw new Error(`UNKNOWN_MCP_SERVER: ${server}`)
+    const entry = await this.connectionFor(config)
+    if (!entry) throw new Error(`MCP_SERVER_UNAVAILABLE: ${config.name}`)
+    return { config, entry }
   }
 
   async updateServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig> {

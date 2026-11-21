@@ -154,7 +154,7 @@ let questionExecutor:
   ((input: import('@ateam/shared').QuestionInput, toolCallId: string) => Promise<string>) | null
 let subagentExecutor:
   | ((
-      input: { prompt: string; agent?: string; sessionId?: string },
+      input: { prompt: string; agent?: string; sessionId?: string; background?: boolean },
       toolCallId: string
     ) => Promise<string>)
   | null
@@ -479,6 +479,10 @@ beforeEach(async () => {
     dispose: mcpDispose as unknown as McpManagerLike['dispose'],
     servers: vi.fn(async () => []),
     statuses: vi.fn(async () => []),
+    prompts: vi.fn(async () => []),
+    resources: vi.fn(async () => []),
+    getPrompt: vi.fn(async () => ''),
+    readResource: vi.fn(async () => ''),
     addServer: vi.fn(),
     updateServer: vi.fn(),
     removeServer: vi.fn()
@@ -1589,7 +1593,12 @@ describe('MCP tool integration', () => {
   })
 })
 
-function subagentCallScript(input: { prompt: string; agent?: string; sessionId?: string }): Script {
+function subagentCallScript(input: {
+  prompt: string
+  agent?: string
+  sessionId?: string
+  background?: boolean
+}): Script {
   return async function* () {
     yield part({ type: 'tool-input-start', id: 'call-sub', toolName: 'subagent' })
     yield part({ type: 'tool-call', toolCallId: 'call-sub', toolName: 'subagent', input })
@@ -2233,5 +2242,45 @@ describe('agent permission rules', () => {
     await sink.next('run.finished')
 
     expect(toolOutput(assistantMessages().at(-1))).toContain('Permission denied')
+  })
+})
+
+describe('background subagents and sampling', () => {
+  it('passes the agent temperature to the turn', async () => {
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', 'creative.md'),
+      ['---', 'description: Creative', 'mode: primary', 'temperature: 0.4', '---', 'Write.'].join(
+        '\n'
+      )
+    )
+    await runtime.setSessionAgent(sessionId, 'creative')
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].temperature).toBe(0.4)
+  })
+
+  it('runs subagents in the background and reports completion', async () => {
+    scripts.push(subagentCallScript({ prompt: 'Explore src', agent: 'explore', background: true }))
+    scripts.push(textScript('background result'))
+
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toContain('running in background')
+
+    const finished = await sink.next('subagent.finished')
+    if (finished.event.type !== 'subagent.finished') throw new Error('unexpected event')
+    expect(finished.event).toMatchObject({
+      parentSessionId: sessionId,
+      agentId: 'explore',
+      status: 'completed',
+      toolCallId: 'call-sub'
+    })
+    expect(finished.event.result).toContain('background result')
+    expect(runtime.listSessions()).toHaveLength(1)
   })
 })

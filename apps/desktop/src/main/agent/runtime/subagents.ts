@@ -24,6 +24,15 @@ export interface SubagentHost {
     agentRules?: AgentPermissionRule[]
   ): Promise<boolean>
   runAgent(run: Run): Promise<void>
+  startBackground(
+    run: Run,
+    info: {
+      parentSessionId: string
+      toolCallId: string
+      agentId: string
+      cleanup: () => void
+    }
+  ): void
 }
 
 export async function runSubagentTask(
@@ -88,6 +97,15 @@ export async function runSubagentTask(
       host.askPermission(parent, action, resource, toolName, toolCallId, agent.permissions)
   }
   host.registerRun(sessionId, childRun)
+  if (input.background) {
+    host.startBackground(childRun, {
+      parentSessionId: parent.sessionId,
+      toolCallId,
+      agentId: agent.id,
+      cleanup: () => parent.abort.signal.removeEventListener('abort', onAbort)
+    })
+    return `[subagent ${agent.id} · session ${sessionId}] running in background`
+  }
   try {
     await host.runAgent(childRun)
   } finally {

@@ -17,6 +17,7 @@ export interface AgentDefinition {
   tools: string[] | null
   permissions: AgentPermissionRule[]
   maxSteps: number | null
+  temperature: number | null
   prompt: string
   source: 'builtin' | 'user' | 'project'
 }
@@ -32,6 +33,7 @@ export interface SubagentInput {
   agent?: string
   sessionId?: string
   description?: string
+  background?: boolean
 }
 
 export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
@@ -367,6 +369,7 @@ export type AgentEvent =
     }
   | { type: 'run.started'; sessionId: string; messageId: string; startedAt: string }
   | ({ type: 'background.finished' } & BackgroundResult)
+  | ({ type: 'subagent.finished' } & SubagentResult)
   | {
       type: 'run.finished'
       sessionId: string
@@ -397,4 +400,13 @@ export interface BackgroundResult {
   command: string
   exitCode: number | null
   outputPath: string | null
+}
+
+export interface SubagentResult {
+  sessionId: string
+  parentSessionId: string
+  toolCallId: string
+  agentId: string
+  status: 'completed' | 'failed' | 'interrupted'
+  result: string
 }

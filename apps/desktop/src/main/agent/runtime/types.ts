@@ -75,6 +75,7 @@ export interface AgentTurnInput {
   reasoning?: ReasoningEffort | null
   maxSteps?: number
   maxOutputTokens?: number
+  temperature?: number
 }
 
 export interface AgentTurnStream {

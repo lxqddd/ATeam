@@ -31,6 +31,8 @@ function makeClient(options: FakeClientOptions = {}): {
     listTools: vi.fn(async () => options.tools ?? []),
     listPrompts: vi.fn(async () => options.prompts ?? []),
     listResources: vi.fn(async () => options.resources ?? []),
+    getPrompt: vi.fn(async () => ''),
+    readResource: vi.fn(async () => []),
     callTool: vi.fn(
       options.call ?? (async () => ({ content: [{ type: 'text', text: 'ok' }], isError: false }))
     ),
@@ -317,6 +319,65 @@ describe('McpManager lifecycle', () => {
     await manager.addServer({ name: 'demo', type: 'local', command: 'node' })
 
     await expect(manager.servers()).resolves.toHaveLength(1)
+    await manager.dispose()
+  })
+})
+
+describe('McpManager prompts and resources', () => {
+  let directory: string
+
+  beforeEach(async () => {
+    directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-mcp-extra-')))
+  })
+
+  afterEach(async () => {
+    await fs.rm(directory, { recursive: true, force: true })
+  })
+
+  function clientWithExtras(): McpClientLike {
+    return {
+      connect: async () => undefined,
+      listTools: async () => [],
+      listPrompts: async () => [{ name: 'greet', description: 'Say hello' }],
+      listResources: async () => [{ uri: 'demo://readme', name: 'readme' }],
+      callTool: async () => ({ content: [], isError: false }),
+      getPrompt: async () => 'Hello from prompt',
+      readResource: async () => [{ uri: 'demo://readme', text: 'resource body' }],
+      onToolsChanged: () => () => undefined,
+      close: async () => undefined
+    } as McpClientLike
+  }
+
+  it('lists prompts and resources across servers', async () => {
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      createClient: () => clientWithExtras()
+    })
+    await manager.addServer({ name: 'demo', type: 'local', command: 'node' })
+
+    await expect(manager.prompts()).resolves.toEqual([
+      { server: 'demo', name: 'greet', description: 'Say hello' }
+    ])
+    await expect(manager.resources()).resolves.toEqual([
+      { server: 'demo', uri: 'demo://readme', name: 'readme', mimeType: undefined }
+    ])
+    await manager.dispose()
+  })
+
+  it('loads prompts and resources for a server', async () => {
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      createClient: () => clientWithExtras()
+    })
+    await manager.addServer({ name: 'demo', type: 'local', command: 'node' })
+
+    await expect(manager.getPrompt('demo', 'greet', { name: 'Ada' })).resolves.toBe(
+      'Hello from prompt'
+    )
+    await expect(manager.readResource('demo', 'demo://readme')).resolves.toBe('resource body')
+    await expect(manager.getPrompt('missing', 'greet')).rejects.toThrow('UNKNOWN_MCP_SERVER')
     await manager.dispose()
   })
 })

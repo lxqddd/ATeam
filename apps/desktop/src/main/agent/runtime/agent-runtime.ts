@@ -733,6 +733,109 @@ export class AgentRuntime {
     return formatTodoList(this.store.getSession(run.sessionId)?.todos ?? [])
   }
 
+  private async listMcpPrompts(server?: string): Promise<string> {
+    try {
+      const prompts = await this.mcp().prompts()
+      const filtered = server
+        ? prompts.filter((prompt) => prompt.server.toLowerCase() === server.toLowerCase())
+        : prompts
+      if (filtered.length === 0) return 'No MCP prompts available.'
+      return [
+        'MCP prompts:',
+        ...filtered.map(
+          (prompt) =>
+            `- ${prompt.server}/${prompt.name}${prompt.description ? `: ${prompt.description}` : ''}`
+        )
+      ].join('\n')
+    } catch (error) {
+      return `Error: ${errorMessage(error)}`
+    }
+  }
+
+  private async getMcpPrompt(
+    server: string,
+    prompt: string,
+    args?: Record<string, string>
+  ): Promise<string> {
+    try {
+      return await this.mcp().getPrompt(server, prompt, args)
+    } catch (error) {
+      return this.mcpError(error, server)
+    }
+  }
+
+  private async listMcpResources(server?: string): Promise<string> {
+    try {
+      const resources = await this.mcp().resources()
+      const filtered = server
+        ? resources.filter((resource) => resource.server.toLowerCase() === server.toLowerCase())
+        : resources
+      if (filtered.length === 0) return 'No MCP resources available.'
+      return [
+        'MCP resources:',
+        ...filtered.map((resource) => {
+          const details = [resource.name, resource.mimeType].filter(Boolean).join(', ')
+          return `- ${resource.server}: ${resource.uri}${details ? ` (${details})` : ''}`
+        })
+      ].join('\n')
+    } catch (error) {
+      return `Error: ${errorMessage(error)}`
+    }
+  }
+
+  private async readMcpResource(server: string, uri: string): Promise<string> {
+    try {
+      return await this.mcp().readResource(server, uri)
+    } catch (error) {
+      return this.mcpError(error, server)
+    }
+  }
+
+  private mcpError(error: unknown, server: string): string {
+    const message = errorMessage(error)
+    return message.includes('UNKNOWN_MCP_SERVER')
+      ? `Error: unknown MCP server: ${server}`
+      : `Error: ${message}`
+  }
+
+  private startBackgroundSubagent(
+    run: Run,
+    info: {
+      parentSessionId: string
+      toolCallId: string
+      agentId: string
+      cleanup: () => void
+    }
+  ): void {
+    void this.runAgent(run)
+      .catch(() => undefined)
+      .finally(() => {
+        info.cleanup()
+        const record = this.store.get(run.sessionId)
+        const message = record?.messages.find((entry) => entry.id === run.messageId)
+        const result = (message?.parts ?? [])
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join('\n')
+          .trim()
+        const status =
+          message?.status === 'complete'
+            ? 'completed'
+            : message?.status === 'interrupted'
+              ? 'interrupted'
+              : 'failed'
+        this.emit({
+          type: 'subagent.finished',
+          sessionId: run.sessionId,
+          parentSessionId: info.parentSessionId,
+          toolCallId: info.toolCallId,
+          agentId: info.agentId,
+          status,
+          result: result.slice(0, 2_000)
+        })
+      })
+  }
+
   private messageCost(target: ModelRef | null, usage?: TokenUsage): number | undefined {
     try {
       return (
@@ -851,7 +954,8 @@ export class AgentRuntime {
         createSnapshotId: (sessionId) => this.createSnapshotId(sessionId),
         askPermission: (target, action, resource, toolName, callId, rules) =>
           this.askPermission(target, action, resource, toolName, callId, rules),
-        runAgent: (run) => this.runAgent(run)
+        runAgent: (run) => this.runAgent(run),
+        startBackground: (run, info) => this.startBackgroundSubagent(run, info)
       },
       parent,
       input,
@@ -868,7 +972,7 @@ export class AgentRuntime {
     const sessionId = 'sessionId' in event ? event.sessionId : null
     if (sessionId) {
       const record = this.store.get(sessionId)
-      if (record?.session.hidden) return
+      if (record?.session.hidden && event.type !== 'subagent.finished') return
     }
     this.seq += 1
     this.options.send({ seq: this.seq, at: nowIso(), event })
@@ -1372,7 +1476,11 @@ export class AgentRuntime {
         },
         writeTodos: (todos) => this.writeTodos(run, todos),
         readTodos: async () => this.readTodos(run),
-        askQuestion: (input, toolCallId) => this.askQuestion(run, input, toolCallId)
+        askQuestion: (input, toolCallId) => this.askQuestion(run, input, toolCallId),
+        listMcpPrompts: (server) => this.listMcpPrompts(server),
+        getMcpPrompt: (server, prompt, args) => this.getMcpPrompt(server, prompt, args),
+        listMcpResources: (server) => this.listMcpResources(server),
+        readMcpResource: (server, uri) => this.readMcpResource(server, uri)
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
@@ -1406,7 +1514,8 @@ export class AgentRuntime {
         abortSignal: run.abort.signal,
         reasoning: current.session.reasoningEffort,
         maxSteps: agent?.maxSteps ?? undefined,
-        maxOutputTokens: targetInfo.maxOutputTokens
+        maxOutputTokens: targetInfo.maxOutputTokens,
+        temperature: agent?.temperature ?? undefined
       })
 
       for await (const part of result.stream) {

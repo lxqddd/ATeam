@@ -70,6 +70,7 @@ function baseState(): ChatStoreState {
     questions: [],
     runOutcomes: {},
     backgroundResults: [],
+    subagentResults: [],
     actionError: null,
     restarting: false,
     revertPrompt: null

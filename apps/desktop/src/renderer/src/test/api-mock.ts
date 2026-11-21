@@ -52,6 +52,7 @@ const DEFAULT_AGENTS: AgentDefinition[] = [
     model: null,
     tools: null,
     permissions: [],
+    temperature: null,
     maxSteps: null,
     prompt: '',
     source: 'builtin'
@@ -64,6 +65,7 @@ const DEFAULT_AGENTS: AgentDefinition[] = [
     model: null,
     tools: ['read', 'list', 'grep', 'glob'],
     permissions: [],
+    temperature: null,
     maxSteps: 20,
     prompt: 'You are the plan agent.',
     source: 'builtin'

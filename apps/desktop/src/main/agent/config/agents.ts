@@ -40,6 +40,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     model: null,
     tools: null,
     permissions: [],
+    temperature: null,
     maxSteps: null,
     prompt: '',
     source: 'builtin'
@@ -52,6 +53,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     model: null,
     tools: [...READ_TOOLS, 'todowrite', 'todoread', 'question'],
     permissions: [],
+    temperature: null,
     maxSteps: 20,
     prompt:
       'You are the plan agent. Inspect the codebase and produce a clear, actionable plan. Do not modify files or run commands.',
@@ -65,6 +67,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     model: null,
     tools: null,
     permissions: [],
+    temperature: null,
     maxSteps: 25,
     prompt: 'You are a subagent. Complete the delegated task and report the result concisely.',
     source: 'builtin'
@@ -77,6 +80,7 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     model: null,
     tools: [...READ_TOOLS],
     permissions: [],
+    temperature: null,
     maxSteps: 15,
     prompt:
       'You are an exploration subagent. Search and read the codebase and report your findings concisely.',
@@ -164,6 +168,13 @@ function parsePermissionField(value: unknown): AgentPermissionRule[] {
     .filter((rule): rule is AgentPermissionRule => rule !== null)
 }
 
+function parseTemperature(value: unknown): number | null | undefined {
+  if (value === undefined || value === null || value === '') return null
+  const temperature = Number(value)
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 2) return undefined
+  return temperature
+}
+
 function parseModel(value: unknown): ModelRef | null | undefined {
   if (value === undefined || value === null || value === '') return null
   if (typeof value === 'object') {
@@ -216,6 +227,8 @@ export function parseAgentMarkdown(
   if (maxSteps === undefined) return null
   const model = parseModel(parsed.fields.get('model'))
   if (model === undefined) return null
+  const temperature = parseTemperature(parsed.fields.get('temperature'))
+  if (temperature === undefined) return null
 
   const permissions = parsePermissionField(parsed.fields.get('permission'))
   const fallbackName = path.basename(filePath).replace(/\.md$/i, '')
@@ -231,6 +244,7 @@ export function parseAgentMarkdown(
     tools,
     permissions,
     maxSteps,
+    temperature,
     prompt: parsed.body,
     source
   }
@@ -251,6 +265,8 @@ export function parseAgentJson(value: unknown, source: 'user' | 'project'): Agen
   if (maxSteps === undefined) return null
   const model = parseModel(raw.model)
   if (model === undefined) return null
+  const temperature = parseTemperature(raw.temperature)
+  if (temperature === undefined) return null
   const permissions = parsePermissionField(raw.permission)
 
   return {
@@ -262,6 +278,7 @@ export function parseAgentJson(value: unknown, source: 'user' | 'project'): Agen
     tools,
     permissions,
     maxSteps,
+    temperature,
     prompt: typeof raw.prompt === 'string' ? raw.prompt.trim() : '',
     source
   }

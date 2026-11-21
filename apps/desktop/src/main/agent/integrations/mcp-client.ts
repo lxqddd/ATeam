@@ -55,6 +55,8 @@ export interface McpClientLike {
   listPrompts(): Promise<McpPromptDefinition[]>
   listResources(): Promise<McpResourceDefinition[]>
   callTool(name: string, args: Record<string, unknown>): Promise<McpToolCallResult>
+  getPrompt(name: string, args?: Record<string, string>): Promise<string>
+  readResource(uri: string): Promise<McpResourceContent[]>
   onToolsChanged(handler: () => void): () => void
   close(): Promise<void>
 }
@@ -441,6 +443,24 @@ export class McpClient implements McpClientLike {
       })
     }
     return contents
+  }
+
+  async getPrompt(name: string, args?: Record<string, string>): Promise<string> {
+    const result = (await this.request('prompts/get', {
+      name,
+      ...(args && Object.keys(args).length > 0 ? { arguments: args } : {})
+    })) as {
+      messages?: Array<{ content?: { type?: string; text?: string } | string }>
+    }
+    return (result?.messages ?? [])
+      .map((message) => {
+        const content = message.content
+        if (!content) return ''
+        if (typeof content === 'string') return content
+        return content.type === 'text' ? (content.text ?? '') : ''
+      })
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   async callTool(name: string, args: Record<string, unknown>): Promise<McpToolCallResult> {

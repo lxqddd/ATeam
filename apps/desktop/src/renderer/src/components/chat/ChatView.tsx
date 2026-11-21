@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next'
-import { useChatStore } from '../../chat/store'
+import { chatStore, useChatStore } from '../../chat/store'
 import BackgroundNotices from './BackgroundNotices'
 import Composer from './Composer'
 import MessageList from './MessageList'
 import QuestionCard from './QuestionCard'
+import SubagentNotices from './SubagentNotices'
 import TodoPanel from './TodoPanel'
 
 function ChatView(): React.JSX.Element {
@@ -16,6 +17,7 @@ function ChatView(): React.JSX.Element {
     loadedBySession,
     permissions,
     questions,
+    subagentResults,
     runOutcomes,
     backgroundResults
   } = useChatStore()
@@ -28,6 +30,9 @@ function ChatView(): React.JSX.Element {
   )
   const sessionQuestions = questions.filter((question) => question.sessionId === selectedSessionId)
   const sessionRunning = session?.status === 'running' || session?.status === 'waiting-permission'
+  const sessionSubagents = subagentResults.filter(
+    (result) => result.parentSessionId === selectedSessionId
+  )
   const sessionBackground = backgroundResults.filter(
     (result) => result.sessionId === selectedSessionId
   )
@@ -83,6 +88,10 @@ function ChatView(): React.JSX.Element {
       )}
 
       <BackgroundNotices results={sessionBackground} />
+      <SubagentNotices
+        results={sessionSubagents}
+        onDismiss={(toolCallId) => chatStore.dismissSubagentResult(toolCallId)}
+      />
       {sessionQuestions.map((question) => (
         <QuestionCard key={question.id} question={question} />
       ))}

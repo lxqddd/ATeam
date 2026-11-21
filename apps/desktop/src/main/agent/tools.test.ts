@@ -42,6 +42,10 @@ let loadSkill: Mock<NonNullable<ToolContext['loadSkill']>>
 let writeTodos: Mock<NonNullable<ToolContext['writeTodos']>>
 let readTodos: Mock<NonNullable<ToolContext['readTodos']>>
 let askQuestion: Mock<NonNullable<ToolContext['askQuestion']>>
+let listMcpPrompts: Mock<NonNullable<ToolContext['listMcpPrompts']>>
+let getMcpPrompt: Mock<NonNullable<ToolContext['getMcpPrompt']>>
+let listMcpResources: Mock<NonNullable<ToolContext['listMcpResources']>>
+let readMcpResource: Mock<NonNullable<ToolContext['readMcpResource']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -60,6 +64,10 @@ beforeEach(async () => {
   writeTodos = vi.fn(async () => 'Tasks (0/1 completed):\n1. [pending] Do it')
   readTodos = vi.fn(async () => 'No tasks.')
   askQuestion = vi.fn(async () => 'User answered: src/a.ts')
+  listMcpPrompts = vi.fn(async () => 'MCP prompts:\n- demo/greet')
+  getMcpPrompt = vi.fn(async () => 'Hello from prompt')
+  listMcpResources = vi.fn(async () => 'MCP resources:\n- demo: demo://readme')
+  readMcpResource = vi.fn(async () => 'resource body')
   baseContext = {
     workspace: directory,
     signal: new AbortController().signal,
@@ -77,7 +85,11 @@ beforeEach(async () => {
     loadSkill,
     writeTodos,
     readTodos,
-    askQuestion
+    askQuestion,
+    listMcpPrompts,
+    getMcpPrompt,
+    listMcpResources,
+    readMcpResource
   }
   tools = createTools(baseContext)
 })
@@ -857,6 +869,68 @@ describe('question tool', () => {
 
     await expect(execute(limited.question, input)).resolves.toBe(
       'Error: questions are not available.'
+    )
+  })
+})
+
+describe('mcp prompt and resource tools', () => {
+  it('lists and loads prompts with permission', async () => {
+    listMcpPrompts.mockResolvedValue('MCP prompts:\n- demo/greet: Say hello')
+    getMcpPrompt.mockResolvedValue('Hello from prompt')
+
+    await expect(execute(tools.mcp_prompt, {})).resolves.toContain('demo/greet')
+    await expect(
+      execute(tools.mcp_prompt, { server: 'demo', prompt: 'greet', arguments: { name: 'Ada' } })
+    ).resolves.toBe('Hello from prompt')
+
+    expect(getMcpPrompt).toHaveBeenCalledWith('demo', 'greet', { name: 'Ada' })
+    expect(askPermission).toHaveBeenCalledWith(
+      'mcp',
+      'demo/prompts/greet',
+      'mcp_prompt',
+      'call-1'
+    )
+  })
+
+  it('lists and reads resources with permission', async () => {
+    listMcpResources.mockResolvedValue('MCP resources:\n- demo: demo://readme')
+    readMcpResource.mockResolvedValue('resource body')
+
+    await expect(execute(tools.mcp_resource, {})).resolves.toContain('demo://readme')
+    await expect(
+      execute(tools.mcp_resource, { server: 'demo', uri: 'demo://readme' })
+    ).resolves.toBe('resource body')
+
+    expect(readMcpResource).toHaveBeenCalledWith('demo', 'demo://readme')
+    expect(askPermission).toHaveBeenCalledWith(
+      'mcp',
+      'demo/resources/demo://readme',
+      'mcp_resource',
+      'call-1'
+    )
+  })
+
+  it('honours denials and missing callbacks', async () => {
+    askPermission.mockResolvedValue(false)
+    await expect(
+      execute(tools.mcp_prompt, { server: 'demo', prompt: 'greet' })
+    ).resolves.toBe('Permission denied; the MCP prompt was not loaded.')
+    await expect(
+      execute(tools.mcp_resource, { server: 'demo', uri: 'demo://readme' })
+    ).resolves.toBe('Permission denied; the MCP resource was not read.')
+
+    const limited = createTools({
+      ...baseContext,
+      listMcpPrompts: undefined,
+      getMcpPrompt: undefined,
+      listMcpResources: undefined,
+      readMcpResource: undefined
+    })
+    await expect(execute(limited.mcp_prompt, {})).resolves.toBe(
+      'Error: MCP prompts are not available.'
+    )
+    await expect(execute(limited.mcp_resource, {})).resolves.toBe(
+      'Error: MCP resources are not available.'
     )
   })
 })

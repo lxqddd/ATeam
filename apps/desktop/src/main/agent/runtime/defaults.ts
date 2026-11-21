@@ -50,6 +50,7 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       stopWhen: stepCountIs(input.maxSteps ?? MAX_STEPS),
       abortSignal: input.abortSignal,
       reasoning: input.reasoning ?? undefined,
+      temperature: input.temperature,
       maxRetries: 1,
       maxOutputTokens: input.maxOutputTokens ?? 8_192,
       onError: () => undefined
