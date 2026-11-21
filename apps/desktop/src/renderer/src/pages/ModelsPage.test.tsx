@@ -430,11 +430,13 @@ describe('ModelsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(mock.api.models.updateModel).toHaveBeenCalledWith({
-        id: 'm1',
-        name: 'Sonnet 5',
-        contextWindow: null
-      })
+      expect(mock.api.models.updateModel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'm1',
+          name: 'Sonnet 5',
+          contextWindow: null
+        })
+      )
     )
   })
 

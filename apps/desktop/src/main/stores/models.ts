@@ -65,6 +65,22 @@ function normalizeContextWindow(value: number | null | undefined): number | unde
   return value
 }
 
+function normalizeMaxOutputTokens(value: number | null | undefined): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!Number.isInteger(value) || value < 1 || value > 1_000_000) {
+    throw new Error('INVALID_MAX_OUTPUT_TOKENS')
+  }
+  return value
+}
+
+function normalizeCost(value: number | null | undefined): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!Number.isFinite(value) || value < 0 || value > 1_000) {
+    throw new Error('INVALID_COST')
+  }
+  return value
+}
+
 function normalizeBaseUrl(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   const trimmed = value.trim()
@@ -261,6 +277,14 @@ export class ModelsStore {
       }
       const contextWindow = normalizeContextWindow(input.contextWindow)
       if (contextWindow !== undefined) model.contextWindow = contextWindow
+      const maxOutputTokens = normalizeMaxOutputTokens(input.maxOutputTokens)
+      if (maxOutputTokens !== undefined) model.maxOutputTokens = maxOutputTokens
+      if (input.reasoning !== undefined) model.reasoning = input.reasoning
+      if (input.attachment !== undefined) model.attachment = input.attachment
+      const costInput = normalizeCost(input.costInput)
+      if (costInput !== undefined) model.costInput = costInput
+      const costOutput = normalizeCost(input.costOutput)
+      if (costOutput !== undefined) model.costOutput = costOutput
       this.config.models.push(model)
       if (!this.config.defaultModel) {
         this.config.defaultModel = { providerId: model.providerId, modelId: model.modelId }
@@ -278,6 +302,23 @@ export class ModelsStore {
         const contextWindow = normalizeContextWindow(input.contextWindow)
         if (contextWindow === undefined) delete model.contextWindow
         else model.contextWindow = contextWindow
+      }
+      if (input.maxOutputTokens !== undefined) {
+        const maxOutputTokens = normalizeMaxOutputTokens(input.maxOutputTokens)
+        if (maxOutputTokens === undefined) delete model.maxOutputTokens
+        else model.maxOutputTokens = maxOutputTokens
+      }
+      if (input.reasoning !== undefined) model.reasoning = input.reasoning
+      if (input.attachment !== undefined) model.attachment = input.attachment
+      if (input.costInput !== undefined) {
+        const costInput = normalizeCost(input.costInput)
+        if (costInput === undefined) delete model.costInput
+        else model.costInput = costInput
+      }
+      if (input.costOutput !== undefined) {
+        const costOutput = normalizeCost(input.costOutput)
+        if (costOutput === undefined) delete model.costOutput
+        else model.costOutput = costOutput
       }
       await this.persist()
     })

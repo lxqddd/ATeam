@@ -2042,3 +2042,27 @@ describe('question timeouts and cancellation', () => {
     await sink.next('run.finished')
   })
 })
+
+describe('model capability metadata', () => {
+  it('passes max output tokens to the turn and records message cost', async () => {
+    runtime.setModels({
+      ...MODELS,
+      models: [
+        {
+          ...MODELS.models[0],
+          contextWindow: 200_000,
+          maxOutputTokens: 4_096,
+          costInput: 3,
+          costOutput: 15
+        }
+      ]
+    })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].maxOutputTokens).toBe(4_096)
+    expect(assistantMessages()[0].costUsd).toBe(0.000069)
+  })
+})

@@ -106,7 +106,8 @@ const api: AteamApi = {
     test: (providerId, modelId) => ipcRenderer.invoke(MODEL_CHANNELS.test, { providerId, modelId }),
     listModels: (providerId) =>
       ipcRenderer.invoke(MODEL_CHANNELS.providerModels, { id: providerId }),
-    previewModels: (input) => ipcRenderer.invoke(MODEL_CHANNELS.providerModelsPreview, input)
+    previewModels: (input) => ipcRenderer.invoke(MODEL_CHANNELS.providerModelsPreview, input),
+    catalog: (refresh) => ipcRenderer.invoke(MODEL_CHANNELS.catalog, { refresh })
   },
   workspace: {
     open: () => ipcRenderer.invoke(AGENT_CHANNELS.workspaceOpen)

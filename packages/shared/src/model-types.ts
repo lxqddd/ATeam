@@ -22,6 +22,28 @@ export interface ModelPublic {
   name: string
   createdAt: string
   contextWindow?: number
+  maxOutputTokens?: number
+  reasoning?: boolean
+  attachment?: boolean
+  /** USD per 1M input tokens. */
+  costInput?: number
+  /** USD per 1M output tokens. */
+  costOutput?: number
+}
+
+export interface ModelCatalogEntry {
+  providerId: string
+  providerName: string
+  providerApi: string | null
+  providerType: ProviderType | null
+  modelId: string
+  name: string
+  contextWindow: number | null
+  maxOutputTokens: number | null
+  reasoning: boolean
+  attachment: boolean
+  costInput: number | null
+  costOutput: number | null
 }
 
 /** A model exposed by the provider's own model-listing endpoint. */
@@ -67,12 +89,22 @@ export interface ModelCreateInput {
   modelId: string
   name?: string
   contextWindow?: number
+  maxOutputTokens?: number
+  reasoning?: boolean
+  attachment?: boolean
+  costInput?: number
+  costOutput?: number
 }
 
 export interface ModelUpdateInput {
   id: string
   name: string
   contextWindow?: number | null
+  maxOutputTokens?: number | null
+  reasoning?: boolean
+  attachment?: boolean
+  costInput?: number | null
+  costOutput?: number | null
 }
 
 export interface ModelTestResult {

@@ -3,6 +3,7 @@ import { Alert, Button, Checkbox, Form, Input, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import type {
   AvailableModel,
+  ModelCatalogEntry,
   ProviderCreateInput,
   ProviderPublic,
   ProviderType,
@@ -44,6 +45,14 @@ function ProviderForm({
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [catalogProviders, setCatalogProviders] = useState<
+    Array<{
+      id: string
+      name: string
+      api: string | null
+      type: ProviderType | null
+    }>
+  >([])
   const [form] = Form.useForm<ProviderFormValues>()
   const type = Form.useWatch('type', form) ?? provider?.type ?? 'anthropic'
   const apiKey = Form.useWatch('apiKey', form) ?? ''
@@ -67,6 +76,44 @@ function ProviderForm({
       active = false
     }
   }, [provider, form])
+
+  useEffect(() => {
+    if (provider) return
+    let active = true
+    window.api.models
+      .catalog()
+      .then((entries: ModelCatalogEntry[]) => {
+        if (!active) return
+        const byId = new Map<
+          string,
+          { id: string; name: string; api: string | null; type: ProviderType | null }
+        >()
+        for (const entry of entries) {
+          if (byId.has(entry.providerId)) continue
+          byId.set(entry.providerId, {
+            id: entry.providerId,
+            name: entry.providerName,
+            api: entry.providerApi,
+            type: entry.providerType
+          })
+        }
+        setCatalogProviders([...byId.values()])
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [provider])
+
+  function applyCatalog(providerId: string): void {
+    const entry = catalogProviders.find((candidate) => candidate.id === providerId)
+    if (!entry) return
+    form.setFieldsValue({
+      name: entry.name,
+      type: entry.type ?? 'openai-compatible',
+      baseURL: entry.api ?? ''
+    })
+  }
 
   async function fetchModels(): Promise<void> {
     setFetching(true)
@@ -147,6 +194,34 @@ function ProviderForm({
         }}
       >
         <div className="grid gap-x-3 sm:grid-cols-2">
+          {!provider && (
+            <div className="sm:col-span-2">
+              <Form.Item
+                label={t('settings.providerCatalog')}
+                extra={t('settings.providerCatalogHint')}
+              >
+                <Select
+                  aria-label={t('settings.providerCatalog')}
+                  showSearch
+                  allowClear
+                  placeholder={t('settings.providerCatalogPlaceholder')}
+                  options={catalogProviders.map((entry) => ({
+                    value: entry.id,
+                    label: entry.name,
+                    title: entry.name
+                  }))}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '')
+                      .toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
+                  onChange={(value: string | undefined) => {
+                    if (value) applyCatalog(value)
+                  }}
+                />
+              </Form.Item>
+            </div>
+          )}
           <Form.Item
             name="name"
             label={t('settings.providerName')}
@@ -156,6 +231,7 @@ function ProviderForm({
           </Form.Item>
           <Form.Item name="type" label={t('settings.providerType')}>
             <Select
+              aria-label={t('settings.providerType')}
               options={PROVIDER_TYPES.map((providerType) => ({
                 value: providerType,
                 label: t(`providerTypes.${providerType}`)

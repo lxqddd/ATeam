@@ -128,6 +128,10 @@ function Composer(): React.JSX.Element {
 
   const hasModels = (models?.models.length ?? 0) > 0
   const effectiveModel = session?.model ?? models?.defaultModel ?? null
+  const effectiveModelInfo = models?.models.find(
+    (model) =>
+      model.providerId === effectiveModel?.providerId && model.modelId === effectiveModel?.modelId
+  )
   const running = session?.status === 'running' || session?.status === 'waiting-permission'
   const ready = status.status === 'ready'
   const reasoningEffort = session?.reasoningEffort ?? null
@@ -165,6 +169,7 @@ function Composer(): React.JSX.Element {
         : agent.description
   }))
 
+  const attachmentsDisabled = effectiveModelInfo?.attachment === false
   const commandItems: CommandDefinition[] =
     commandQuery === null
       ? []
@@ -519,6 +524,7 @@ function Composer(): React.JSX.Element {
               multiple
               aria-label={t('chat.chooseFiles')}
               className="sr-only"
+              disabled={attachmentsDisabled}
               onChange={(event) => {
                 void addFiles(Array.from(event.target.files ?? []))
               }}
@@ -527,7 +533,7 @@ function Composer(): React.JSX.Element {
               type="button"
               aria-label={t('chat.attachFiles')}
               title={t('chat.attachFiles')}
-              disabled={!ready || sending || attaching}
+              disabled={!ready || sending || attaching || attachmentsDisabled}
               onClick={() => fileInputRef.current?.click()}
               className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55"
             >
@@ -563,20 +569,22 @@ function Composer(): React.JSX.Element {
                 icon={<AgentIcon />}
               />
             )}
-            <ComposerChoiceChip
-              ariaLabel={t('chat.reasoning')}
-              accessibleLabel={`${t('chat.reasoning')}: ${reasoningLabel}`}
-              label={`${t('chat.reasoningShort')} · ${reasoningLabel}`}
-              value={reasoningEffort ?? 'default'}
-              options={reasoningOptions}
-              onChange={(value) => {
-                void changeSettings({
-                  reasoningEffort: value === 'default' ? null : (value as ReasoningEffort)
-                })
-              }}
-              disabled={!ready || sending}
-              icon={<ReasoningIcon />}
-            />
+            {effectiveModelInfo?.reasoning !== false && (
+              <ComposerChoiceChip
+                ariaLabel={t('chat.reasoning')}
+                accessibleLabel={`${t('chat.reasoning')}: ${reasoningLabel}`}
+                label={`${t('chat.reasoningShort')} · ${reasoningLabel}`}
+                value={reasoningEffort ?? 'default'}
+                options={reasoningOptions}
+                onChange={(value) => {
+                  void changeSettings({
+                    reasoningEffort: value === 'default' ? null : (value as ReasoningEffort)
+                  })
+                }}
+                disabled={!ready || sending}
+                icon={<ReasoningIcon />}
+              />
+            )}
             <ComposerChoiceChip
               ariaLabel={t('chat.permissionMode')}
               label={t(PERMISSION_LABEL_KEYS[permissionMode])}

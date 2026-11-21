@@ -131,6 +131,8 @@ export interface ChatMessage {
   error?: string
   usage?: TokenUsage
   durationMs?: number
+  /** Estimated USD cost for this message when the model has pricing metadata. */
+  costUsd?: number
   snapshotBefore?: string
   snapshotAfter?: string
   snapshotSteps?: MessageSnapshotStep[]

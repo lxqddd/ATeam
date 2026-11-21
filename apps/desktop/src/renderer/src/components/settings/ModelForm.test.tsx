@@ -102,7 +102,12 @@ describe('ModelForm', () => {
       expect(onSubmit).toHaveBeenCalledWith({
         id: 'm1',
         name: 'claude-sonnet-5',
-        contextWindow: null
+        contextWindow: null,
+        maxOutputTokens: null,
+        reasoning: false,
+        attachment: false,
+        costInput: null,
+        costOutput: null
       })
     )
   })
@@ -116,5 +121,65 @@ describe('ModelForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('This model ID already exists.')).toBeInTheDocument()
+  })
+})
+
+describe('model capability metadata', () => {
+  it('submits capability fields', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ModelForm providers={[provider]} onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Model ID'), 'claude-new')
+    await user.type(screen.getByLabelText('Max output tokens'), '8192')
+    await user.click(screen.getByRole('checkbox', { name: 'Reasoning model' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Supports attachments' }))
+    await user.type(screen.getByLabelText('Input cost (USD / 1M tokens)'), '3')
+    await user.type(screen.getByLabelText('Output cost (USD / 1M tokens)'), '15')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelId: 'claude-new',
+          maxOutputTokens: 8192,
+          reasoning: true,
+          attachment: true,
+          costInput: 3,
+          costOutput: 15
+        })
+      )
+    )
+  })
+
+  it('fills fields from the model catalog', async () => {
+    const mock = createApiMock()
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    vi.mocked(mock.api.models.catalog).mockResolvedValue([
+      {
+        providerId: 'anthropic',
+        providerName: 'Anthropic',
+        providerApi: 'https://api.anthropic.com',
+        providerType: 'anthropic',
+        modelId: 'claude-sonnet-4',
+        name: 'Claude Sonnet 4',
+        contextWindow: 200_000,
+        maxOutputTokens: 64_000,
+        reasoning: true,
+        attachment: true,
+        costInput: 3,
+        costOutput: 15
+      }
+    ])
+    const user = userEvent.setup()
+    render(<ModelForm providers={[provider]} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+
+    await user.click(await screen.findByRole('combobox', { name: 'Fill from model catalog' }))
+    await user.click(await screen.findByTitle('Anthropic · Claude Sonnet 4'))
+
+    expect(screen.getByLabelText('Model ID')).toHaveValue('claude-sonnet-4')
+    expect(screen.getByLabelText('Display name')).toHaveValue('Claude Sonnet 4')
+    expect(screen.getByLabelText('Context window')).toHaveValue('200000')
+    expect(screen.getByLabelText('Max output tokens')).toHaveValue('64000')
   })
 })

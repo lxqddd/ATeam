@@ -42,7 +42,7 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       abortSignal: input.abortSignal,
       reasoning: input.reasoning ?? undefined,
       maxRetries: 1,
-      maxOutputTokens: 8_192,
+      maxOutputTokens: input.maxOutputTokens ?? 8_192,
       onError: () => undefined
     }).stream
   }),

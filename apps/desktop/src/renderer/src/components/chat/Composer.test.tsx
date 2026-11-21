@@ -543,3 +543,37 @@ describe('Composer', () => {
     await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
   })
 })
+
+describe('model capabilities', () => {
+  it('hides the reasoning control for models without reasoning support', () => {
+    const state = baseState()
+    if (state.models) {
+      state.models = {
+        ...state.models,
+        models: state.models.models.map((model) => ({ ...model, reasoning: false }))
+      }
+    }
+    storeState.current = state
+    renderComposer()
+
+    expect(
+      screen.queryByRole('button', { name: 'Reasoning effort: Default' })
+    ).not.toBeInTheDocument()
+  })
+})
+
+describe('attachment capabilities', () => {
+  it('disables attachments for models without attachment support', () => {
+    const state = baseState()
+    if (state.models) {
+      state.models = {
+        ...state.models,
+        models: state.models.models.map((model) => ({ ...model, attachment: false }))
+      }
+    }
+    storeState.current = state
+    renderComposer()
+
+    expect(screen.getByRole('button', { name: 'Attach files' })).toBeDisabled()
+  })
+})

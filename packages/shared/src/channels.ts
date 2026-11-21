@@ -59,5 +59,6 @@ export const MODEL_CHANNELS = {
   defaultSet: 'ateam:models:default:set',
   test: 'ateam:models:test',
   providerModels: 'ateam:models:providers:models',
-  providerModelsPreview: 'ateam:models:providers:preview-models'
+  providerModelsPreview: 'ateam:models:providers:preview-models',
+  catalog: 'ateam:models:catalog'
 } as const

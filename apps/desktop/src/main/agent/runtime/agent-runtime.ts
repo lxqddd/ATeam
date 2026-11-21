@@ -73,6 +73,7 @@ import { filterToolsForAgent, loadAgents } from '../config/agents'
 import { loadCommands } from '../commands'
 import { loadSkills, skillsPrompt } from '../skills'
 import { formatTodoList, normalizeTodos } from '../todos'
+import { computeMessageCost } from '../cost'
 import {
   discoverFormatters,
   formatFile,
@@ -694,6 +695,16 @@ export class AgentRuntime {
     return formatTodoList(this.store.getSession(run.sessionId)?.todos ?? [])
   }
 
+  private messageCost(target: ModelRef | null, usage?: TokenUsage): number | undefined {
+    try {
+      return (
+        computeMessageCost(usage ?? {}, resolveModelRef(this.models, target).model) ?? undefined
+      )
+    } catch {
+      return undefined
+    }
+  }
+
   private askQuestion(run: Run, input: QuestionInput, toolCallId: string): Promise<string> {
     const id = randomUUID()
     const request: QuestionRequest = {
@@ -1184,6 +1195,7 @@ export class AgentRuntime {
     const textParts = new Map<string, number>()
     const reasoningParts = new Map<string, number>()
     let usage: TokenUsage | undefined
+    let runTarget: ModelRef | null = null
     let finishReason = ''
 
     try {
@@ -1196,11 +1208,12 @@ export class AgentRuntime {
           : null)
       run.agent = agent
       const target = this.resolveAgentTarget(agent, record.session.model)
+      runTarget = target
       const model = this.deps.createLanguageModel(this.models, target, {
         sessionId: run.sessionId
       })
-      const contextWindow =
-        resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+      const targetInfo = resolveModelRef(this.models, target).model
+      const contextWindow = targetInfo.contextWindow ?? DEFAULT_CONTEXT_WINDOW
       const history = this.historyMessages(run, message.id)
       if (shouldCompact(history, contextWindow)) {
         await this.compactMessages(run.sessionId, history, model, run.abort.signal)
@@ -1290,7 +1303,8 @@ export class AgentRuntime {
         tools,
         abortSignal: run.abort.signal,
         reasoning: current.session.reasoningEffort,
-        maxSteps: agent?.maxSteps ?? undefined
+        maxSteps: agent?.maxSteps ?? undefined,
+        maxOutputTokens: targetInfo.maxOutputTokens
       })
 
       for await (const part of result.stream) {
@@ -1420,6 +1434,7 @@ export class AgentRuntime {
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
+      message.costUsd = this.messageCost(runTarget, usage)
       this.settleTools(message, 'Tool call did not finish')
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
@@ -1460,6 +1475,7 @@ export class AgentRuntime {
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
+      message.costUsd = this.messageCost(runTarget, usage)
       this.settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)

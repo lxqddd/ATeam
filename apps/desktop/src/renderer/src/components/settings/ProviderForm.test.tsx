@@ -21,7 +21,7 @@ const compatibleKeyProvider: ProviderPublic = {
 }
 
 async function chooseOpenAiCompatible(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await user.click(screen.getByRole('combobox'))
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
   await user.click(await screen.findByTitle('OpenAI compatible'))
 }
 
@@ -147,5 +147,39 @@ describe('ProviderForm', () => {
     expect(mock.api.models.previewModels).toHaveBeenCalledWith(
       expect.objectContaining({ providerId: 'p1', type: 'openai' })
     )
+  })
+})
+
+describe('provider catalog', () => {
+  it('fills provider details from the model catalog', async () => {
+    const mock = createApiMock()
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    vi.mocked(mock.api.models.catalog).mockResolvedValue([
+      {
+        providerId: 'anthropic',
+        providerName: 'Anthropic',
+        providerApi: 'https://api.anthropic.com',
+        providerType: 'anthropic',
+        modelId: 'claude-sonnet-4',
+        name: 'Claude Sonnet 4',
+        contextWindow: 200_000,
+        maxOutputTokens: 64_000,
+        reasoning: true,
+        attachment: true,
+        costInput: 3,
+        costOutput: 15
+      }
+    ])
+    const user = userEvent.setup()
+    render(<ProviderForm onSubmit={vi.fn()} onCancel={vi.fn()} />)
+
+    const combobox = await screen.findByRole('combobox', { name: 'Fill from provider catalog' })
+    await user.click(combobox)
+    await screen.findByRole('option', { name: 'Anthropic' })
+    const matches = await screen.findAllByTitle('Anthropic')
+    await user.click(matches[matches.length - 1])
+
+    await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue('Anthropic'))
+    expect(screen.getByLabelText('Base URL')).toHaveValue('https://api.anthropic.com')
   })
 })

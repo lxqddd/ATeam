@@ -168,6 +168,9 @@ function AssistantMessage({
           {message.usage?.totalTokens !== undefined && (
             <span>{t('chat.tokens', { count: message.usage.totalTokens })}</span>
           )}
+          {message.costUsd !== undefined && (
+            <span title={t('chat.cost')}>${message.costUsd.toFixed(6)}</span>
+          )}
           {text && (
             <button
               type="button"

@@ -441,3 +441,78 @@ describe('ModelsStore', () => {
     expect(after.defaultModel).toEqual({ providerId, modelId: 'm1' })
   })
 })
+
+describe('model capabilities', () => {
+  it('persists capability metadata', async () => {
+    const providerId = await addAnthropic()
+
+    const config = await store.addModel({
+      providerId,
+      modelId: 'claude-x',
+      contextWindow: 200_000,
+      maxOutputTokens: 8_192,
+      reasoning: true,
+      attachment: true,
+      costInput: 3,
+      costOutput: 15
+    })
+
+    expect(config.models[0]).toMatchObject({
+      contextWindow: 200_000,
+      maxOutputTokens: 8_192,
+      reasoning: true,
+      attachment: true,
+      costInput: 3,
+      costOutput: 15
+    })
+
+    const reloaded = new ModelsStore(directory)
+    await reloaded.init()
+    expect(reloaded.publicConfig().models[0]).toMatchObject({
+      maxOutputTokens: 8_192,
+      reasoning: true,
+      attachment: true,
+      costInput: 3,
+      costOutput: 15
+    })
+  })
+
+  it('updates and clears capability metadata', async () => {
+    const providerId = await addAnthropic()
+    const created = await store.addModel({
+      providerId,
+      modelId: 'claude-x',
+      maxOutputTokens: 8_192,
+      reasoning: true,
+      costInput: 3
+    })
+    const id = created.models[0].id
+
+    const updated = await store.updateModel({
+      id,
+      name: 'Claude X',
+      maxOutputTokens: 4_096,
+      reasoning: false,
+      costInput: null,
+      costOutput: null
+    })
+
+    expect(updated.models[0]).toMatchObject({ maxOutputTokens: 4_096, reasoning: false })
+    expect(updated.models[0].costInput).toBeUndefined()
+    expect(updated.models[0].costOutput).toBeUndefined()
+  })
+
+  it('validates capability metadata', async () => {
+    const providerId = await addAnthropic()
+
+    await expect(
+      store.addModel({ providerId, modelId: 'bad-output', maxOutputTokens: -1 })
+    ).rejects.toThrow('INVALID_MAX_OUTPUT_TOKENS')
+    await expect(
+      store.addModel({ providerId, modelId: 'bad-cost', costInput: -1 })
+    ).rejects.toThrow('INVALID_COST')
+    await expect(
+      store.addModel({ providerId, modelId: 'huge-output', maxOutputTokens: 2_000_000 })
+    ).rejects.toThrow('INVALID_MAX_OUTPUT_TOKENS')
+  })
+})

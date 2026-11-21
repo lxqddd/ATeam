@@ -72,6 +72,7 @@ export interface AgentTurnInput {
   abortSignal: AbortSignal
   reasoning?: ReasoningEffort | null
   maxSteps?: number
+  maxOutputTokens?: number
 }
 
 export interface AgentTurnStream {

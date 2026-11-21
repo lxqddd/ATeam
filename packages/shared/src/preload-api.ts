@@ -23,6 +23,7 @@ import type {
   WebSearchProviderPublic
 } from './agent-types'
 import type {
+  ModelCatalogEntry,
   ModelCreateInput,
   ModelRef,
   ModelTestResult,
@@ -119,6 +120,7 @@ export interface ModelsBridge {
   test: (providerId: string, modelId: string) => Promise<ModelTestResult>
   listModels: (providerId: string) => Promise<AvailableModel[]>
   previewModels: (input: ProviderModelListInput) => Promise<AvailableModel[]>
+  catalog: (refresh?: boolean) => Promise<ModelCatalogEntry[]>
 }
 
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'

@@ -12,6 +12,7 @@ import type {
   McpServerStatus,
   MessageAttachment,
   MessagesSnapshot,
+  ModelCatalogEntry,
   ModelRef,
   ModelsConfigPublic,
   PermissionRequest,
@@ -280,7 +281,8 @@ export function createApiMock(
       setDefault: vi.fn(async () => models),
       test: vi.fn(async () => ({ ok: true, message: 'ok' })),
       listModels: vi.fn(async () => []),
-      previewModels: vi.fn(async () => [])
+      previewModels: vi.fn(async () => []),
+      catalog: vi.fn(async () => [] as ModelCatalogEntry[])
     }
   }
 

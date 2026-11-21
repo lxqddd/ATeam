@@ -12,6 +12,7 @@ import {
 } from '@ateam/shared'
 import { AgentManager } from './agent/agent-manager'
 import { ModelsStore } from './stores/models'
+import { ModelCatalogStore } from './models/catalog-store'
 import { WebSearchStore } from './stores/websearch'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
@@ -144,6 +145,7 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('[websearch] failed to load the web search configuration', error)
     }
+    const catalogStore = new ModelCatalogStore({ userDataPath })
     try {
       await mkdir(workspacePath, { recursive: true })
     } catch (error) {
@@ -183,7 +185,7 @@ if (!hasSingleInstanceLock) {
 
     const isTrustedSender = createTrustedSender(() => mainWindow)
     registerAgentIpc({ manager, modelsStore, webSearchStore, workspacePath, isTrustedSender })
-    registerModelsIpc({ manager, modelsStore, isTrustedSender })
+    registerModelsIpc({ manager, modelsStore, catalogStore, isTrustedSender })
 
     // Default development shortcuts (F12 for DevTools, etc.).
     app.on('browser-window-created', (_, window) => {

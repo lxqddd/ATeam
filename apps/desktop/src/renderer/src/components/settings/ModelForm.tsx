@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, AutoComplete, Button, Form, Input, InputNumber, Select } from 'antd'
+import { Alert, AutoComplete, Button, Checkbox, Form, Input, InputNumber, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import type {
   AvailableModel,
+  ModelCatalogEntry,
   ModelCreateInput,
   ModelPublic,
   ModelUpdateInput,
@@ -24,6 +25,11 @@ interface ModelFormValues {
   modelId: string
   name?: string
   contextWindow?: number | null
+  maxOutputTokens?: number | null
+  reasoning?: boolean
+  attachment?: boolean
+  costInput?: number | null
+  costOutput?: number | null
 }
 
 function ModelForm({
@@ -39,6 +45,7 @@ function ModelForm({
   const [error, setError] = useState<string | null>(null)
   const [available, setAvailable] = useState<AvailableModel[]>([])
   const [modelsError, setModelsError] = useState(false)
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([])
   const [form] = Form.useForm<ModelFormValues>()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const providerId = Form.useWatch('providerId', form)
@@ -67,6 +74,20 @@ function ModelForm({
     }
   }, [model, providerId])
 
+  useEffect(() => {
+    if (model) return
+    let active = true
+    window.api.models
+      .catalog()
+      .then((entries) => {
+        if (active) setCatalog(entries)
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [model])
+
   async function handleFinish(values: ModelFormValues): Promise<void> {
     setSaving(true)
     setError(null)
@@ -75,21 +96,49 @@ function ModelForm({
         await onSubmit({
           id: model.id,
           name: values.name?.trim() || model.modelId,
-          contextWindow: values.contextWindow ?? null
+          contextWindow: values.contextWindow ?? null,
+          maxOutputTokens: values.maxOutputTokens ?? null,
+          reasoning: values.reasoning ?? false,
+          attachment: values.attachment ?? false,
+          costInput: values.costInput ?? null,
+          costOutput: values.costOutput ?? null
         })
       } else {
-        await onSubmit({
+        const input: ModelCreateInput = {
           providerId: values.providerId,
           modelId: values.modelId,
           name: values.name?.trim() || undefined,
           contextWindow: values.contextWindow ?? undefined
-        })
+        }
+        if (values.maxOutputTokens != null) input.maxOutputTokens = values.maxOutputTokens
+        if (values.reasoning) input.reasoning = true
+        if (values.attachment) input.attachment = true
+        if (values.costInput != null) input.costInput = values.costInput
+        if (values.costOutput != null) input.costOutput = values.costOutput
+        await onSubmit(input)
       }
     } catch (caught) {
       setError(modelErrorMessage((key) => t(key), caught))
     } finally {
       setSaving(false)
     }
+  }
+
+  function applyCatalog(value: string): void {
+    const entry = catalog.find(
+      (candidate) => `${candidate.providerId}:${candidate.modelId}` === value
+    )
+    if (!entry) return
+    form.setFieldsValue({
+      modelId: entry.modelId,
+      name: entry.name,
+      contextWindow: entry.contextWindow ?? undefined,
+      maxOutputTokens: entry.maxOutputTokens ?? undefined,
+      reasoning: entry.reasoning,
+      attachment: entry.attachment,
+      costInput: entry.costInput ?? undefined,
+      costOutput: entry.costOutput ?? undefined
+    })
   }
 
   if (providers.length === 0) {
@@ -128,13 +177,43 @@ function ModelForm({
           providerId: model?.providerId ?? defaultProviderId ?? providers[0]?.id ?? '',
           modelId: model?.modelId ?? '',
           name: model?.name ?? '',
-          contextWindow: model?.contextWindow
+          contextWindow: model?.contextWindow,
+          maxOutputTokens: model?.maxOutputTokens,
+          reasoning: model?.reasoning ?? false,
+          attachment: model?.attachment ?? false,
+          costInput: model?.costInput,
+          costOutput: model?.costOutput
         }}
         onFinish={(values) => {
           void handleFinish(values)
         }}
       >
         <div className="grid gap-x-3 sm:grid-cols-2">
+          {!model && (
+            <div className="sm:col-span-2">
+              <Form.Item label={t('settings.catalog')} extra={t('settings.catalogHint')}>
+                <Select
+                  aria-label={t('settings.catalog')}
+                  showSearch
+                  allowClear
+                  placeholder={t('settings.catalogPlaceholder')}
+                  options={catalog.map((entry) => ({
+                    value: `${entry.providerId}:${entry.modelId}`,
+                    label: `${entry.providerName} · ${entry.name}`,
+                    title: `${entry.providerName} · ${entry.name}`
+                  }))}
+                  filterOption={(input, option) =>
+                    String(option?.label ?? '')
+                      .toLowerCase()
+                      .includes(input.toLowerCase())
+                  }
+                  onChange={(value: string | undefined) => {
+                    if (value) applyCatalog(value)
+                  }}
+                />
+              </Form.Item>
+            </div>
+          )}
           <Form.Item name="providerId" label={t('settings.modelProvider')}>
             <Select
               disabled={Boolean(model)}
@@ -188,6 +267,27 @@ function ModelForm({
               />
             </Form.Item>
           </div>
+          <div className="sm:col-span-2">
+            <Form.Item name="maxOutputTokens" label={t('settings.maxOutputTokens')}>
+              <InputNumber min={1} max={1_000_000} step={1_000} style={{ width: '100%' }} />
+            </Form.Item>
+          </div>
+          <Form.Item name="reasoning" label={t('settings.modelReasoning')} valuePropName="checked">
+            <Checkbox />
+          </Form.Item>
+          <Form.Item
+            name="attachment"
+            label={t('settings.modelAttachment')}
+            valuePropName="checked"
+          >
+            <Checkbox />
+          </Form.Item>
+          <Form.Item name="costInput" label={t('settings.costInput')}>
+            <InputNumber min={0} max={1_000} step={0.01} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="costOutput" label={t('settings.costOutput')}>
+            <InputNumber min={0} max={1_000} step={0.01} style={{ width: '100%' }} />
+          </Form.Item>
         </div>
 
         {error && (

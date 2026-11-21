@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   MODEL_CHANNELS,
   type AvailableModel,
+  type ModelCatalogEntry,
   type ModelCreateInput,
   type ModelTestResult,
   type ModelUpdateInput,
@@ -13,6 +14,7 @@ import {
 import type { AgentManager } from '../agent/agent-manager'
 import { normalizeError } from '../agent/errors'
 import { listProviderModels } from '../models/available'
+import type { ModelCatalogStore } from '../models/catalog-store'
 import type { ModelsStore } from '../stores/models'
 import type { TrustedSender } from './trusted-sender'
 
@@ -36,18 +38,30 @@ const providerUpdateSchema = z.object({
 })
 
 const contextWindowSchema = z.number().int().min(1_000).max(10_000_000)
+const maxOutputTokensSchema = z.number().int().min(1).max(1_000_000)
+const costSchema = z.number().min(0).max(1_000)
 
 const modelCreateSchema = z.object({
   providerId: idSchema,
   modelId: z.string().min(1).max(200),
   name: z.string().max(100).optional(),
-  contextWindow: contextWindowSchema.optional()
+  contextWindow: contextWindowSchema.optional(),
+  maxOutputTokens: maxOutputTokensSchema.optional(),
+  reasoning: z.boolean().optional(),
+  attachment: z.boolean().optional(),
+  costInput: costSchema.optional(),
+  costOutput: costSchema.optional()
 })
 
 const modelUpdateSchema = z.object({
   id: idSchema,
   name: z.string().min(1).max(100),
-  contextWindow: contextWindowSchema.nullable().optional()
+  contextWindow: contextWindowSchema.nullable().optional(),
+  maxOutputTokens: maxOutputTokensSchema.nullable().optional(),
+  reasoning: z.boolean().optional(),
+  attachment: z.boolean().optional(),
+  costInput: costSchema.nullable().optional(),
+  costOutput: costSchema.nullable().optional()
 })
 
 const idPayloadSchema = z.object({ id: idSchema })
@@ -67,11 +81,12 @@ const providerPreviewSchema = z.object({
 export interface ModelsIpcOptions {
   manager: AgentManager
   modelsStore: ModelsStore
+  catalogStore: ModelCatalogStore
   isTrustedSender: TrustedSender
 }
 
 export function registerModelsIpc(options: ModelsIpcOptions): void {
-  const { manager, modelsStore, isTrustedSender } = options
+  const { manager, modelsStore, catalogStore, isTrustedSender } = options
 
   let syncChain: Promise<void> = Promise.resolve()
 
@@ -116,6 +131,11 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     const config = await modelsStore.deleteProvider(id)
     await sync()
     return config
+  })
+
+  handle(MODEL_CHANNELS.catalog, (payload): Promise<ModelCatalogEntry[]> => {
+    const { refresh } = z.object({ refresh: z.boolean().optional() }).parse(payload ?? {})
+    return catalogStore.get(refresh === true)
   })
 
   handle(MODEL_CHANNELS.providerRevealKey, (payload): string | null => {
