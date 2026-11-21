@@ -12,7 +12,7 @@ const safeStorage = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ safeStorage }))
 
-import { ModelsStore } from './store'
+import { ModelsStore } from './models'
 
 let directory: string
 let store: ModelsStore

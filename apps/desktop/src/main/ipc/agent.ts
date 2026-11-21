@@ -20,8 +20,8 @@ import { AgentConfigStore } from '../agent/config/config-store'
 import { discoverInstructionFiles } from '../agent/config/instructions'
 import { discoverFormatters } from '../agent/integrations/formatters'
 import { availableLspServers } from '../agent/integrations/lsp'
-import type { ModelsStore } from '../models/store'
-import type { WebSearchStore } from '../websearch/store'
+import type { ModelsStore } from '../stores/models'
+import type { WebSearchStore } from '../stores/websearch'
 import type { TrustedSender } from './trusted-sender'
 
 const idSchema = z.string().min(1).max(200)

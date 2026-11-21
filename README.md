@@ -25,8 +25,8 @@ ATeam/
 │           │   │   ├── integrations/ # MCP、LSP、格式化、Web 抓取与搜索
 │           │   │   ├── tools.ts      # 内置工具
 │           │   │   └── worker.ts / agent-manager.ts
-│           │   ├── models/           # 模型配置与 safeStorage 密钥
-│           │   ├── websearch/        # 搜索配置与 safeStorage 密钥
+│           │   ├── stores/           # 主进程配置存储（模型 / 搜索，safeStorage 密钥）
+│           │   ├── models/           # 供应商模型目录查询
 │           │   └── ipc/              # 类型化 IPC、入参校验
 │           ├── preload/              # 窄接口 window.api
 │           └── renderer/src/
@@ -40,7 +40,7 @@ ATeam/
 └── pnpm-workspace.yaml
 ```
 
-`main/agent` 运行在 Agent utilityProcess 中；`main/models` 与 `main/websearch` 只在主进程运行（需要 `safeStorage`），解密后的配置通过 worker 请求下发给 Agent。
+`main/agent` 运行在 Agent utilityProcess 中；`main/stores` 只在主进程运行（需要 `safeStorage`），解密后的配置通过 worker 请求下发给 Agent。
 
 ## 环境要求
 

@@ -41,7 +41,7 @@ export default defineConfig({
         'src/main/agent/runtime/agent-runtime.ts',
         'src/main/agent/providers.ts',
         'src/main/models/available.ts',
-        'src/main/models/store.ts',
+        'src/main/stores/models.ts',
         'src/renderer/src/chat/store.ts',
         'src/renderer/src/hooks/useElapsed.ts',
         'src/renderer/src/components/chat/PermissionCard.tsx',

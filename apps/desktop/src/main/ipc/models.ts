@@ -13,7 +13,7 @@ import {
 import type { AgentManager } from '../agent/agent-manager'
 import { normalizeError } from '../agent/errors'
 import { listProviderModels } from '../models/available'
-import type { ModelsStore } from '../models/store'
+import type { ModelsStore } from '../stores/models'
 import type { TrustedSender } from './trusted-sender'
 
 const providerTypeSchema = z.enum(['anthropic', 'openai', 'google', 'openai-compatible'])

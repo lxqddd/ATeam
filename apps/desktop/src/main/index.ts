@@ -11,8 +11,8 @@ import {
   type AgentEventEnvelope
 } from '@ateam/shared'
 import { AgentManager } from './agent/agent-manager'
-import { ModelsStore } from './models/store'
-import { WebSearchStore } from './websearch/store'
+import { ModelsStore } from './stores/models'
+import { WebSearchStore } from './stores/websearch'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
 import { createTrustedSender } from './ipc/trusted-sender'
