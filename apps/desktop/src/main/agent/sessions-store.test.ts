@@ -44,7 +44,8 @@ describe('SessionsStore', () => {
       model: null,
       status: 'idle',
       reasoningEffort: null,
-      permissionMode: 'ask'
+      permissionMode: 'ask',
+      compaction: null
     })
     await expect(fs.stat(path.join(sessionsDirectory, `${session.id}.json`))).resolves.toBeDefined()
   })
@@ -111,14 +112,37 @@ describe('SessionsStore', () => {
     expect(await store.setSettings('missing', settings)).toBeUndefined()
   })
 
+  it('stores, reloads and clears a compaction boundary', async () => {
+    const session = await store.create()
+    const compaction = {
+      summary: 'The parser bug was fixed.',
+      throughMessageId: 'message-3',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      tokensBefore: 42_000,
+      tokensAfter: 3_000
+    }
+
+    expect((await store.setCompaction(session.id, compaction))?.compaction).toMatchObject(
+      compaction
+    )
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)?.compaction).toMatchObject(compaction)
+
+    expect((await store.setCompaction(session.id, null))?.compaction).toBeNull()
+    expect(await store.setCompaction('missing', compaction)).toBeUndefined()
+  })
+
   it('fills session settings for records written before they existed', async () => {
     const session = await store.create()
     const file = path.join(sessionsDirectory, `${session.id}.json`)
     const data = JSON.parse(await fs.readFile(file, 'utf8')) as {
-      session: { permissionMode?: string; reasoningEffort?: string | null }
+      session: { permissionMode?: string; reasoningEffort?: string | null; compaction?: unknown }
     }
     delete data.session.permissionMode
     delete data.session.reasoningEffort
+    delete data.session.compaction
     await fs.writeFile(file, JSON.stringify(data))
 
     const reloaded = new SessionsStore(directory)
@@ -126,7 +150,8 @@ describe('SessionsStore', () => {
 
     expect(reloaded.getSession(session.id)).toMatchObject({
       reasoningEffort: null,
-      permissionMode: 'ask'
+      permissionMode: 'ask',
+      compaction: null
     })
   })
 

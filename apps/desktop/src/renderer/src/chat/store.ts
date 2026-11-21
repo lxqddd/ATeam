@@ -237,6 +237,13 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
+  async compactSession(): Promise<void> {
+    const sessionId = this.state.selectedSessionId
+    if (!sessionId) return
+    const session = await window.api.agent.sessions.compact(sessionId)
+    this.upsertSession(session)
+  }
+
   async send(text: string): Promise<void> {
     const content = text.trim()
     if (!content) return

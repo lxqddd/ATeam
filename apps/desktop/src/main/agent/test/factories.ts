@@ -26,6 +26,7 @@ export function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
     status: 'idle',
     reasoningEffort: null,
     permissionMode: 'ask',
+    compaction: null,
     ...overrides
   }
 }

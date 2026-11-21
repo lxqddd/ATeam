@@ -243,6 +243,31 @@ describe('ModelsStore', () => {
     await expect(store.updateModel({ id: 'missing', name: 'x' })).rejects.toThrow('MODEL_NOT_FOUND')
   })
 
+  it('stores and clears a model context window', async () => {
+    const providerId = await addAnthropic()
+    const config = await store.addModel({
+      providerId,
+      modelId: 'm1',
+      contextWindow: 200_000
+    })
+    expect(config.models[0].contextWindow).toBe(200_000)
+
+    const modelId = config.models[0].id
+    const updated = await store.updateModel({
+      id: modelId,
+      name: 'Model One',
+      contextWindow: 128_000
+    })
+    expect(updated.models[0].contextWindow).toBe(128_000)
+
+    const cleared = await store.updateModel({ id: modelId, name: 'Model One', contextWindow: null })
+    expect(cleared.models[0].contextWindow).toBeUndefined()
+
+    await expect(store.addModel({ providerId, modelId: 'm2', contextWindow: 10 })).rejects.toThrow(
+      'INVALID_CONTEXT_WINDOW'
+    )
+  })
+
   it('keeps the previous key when re-encryption is unavailable', async () => {
     const providerId = await addAnthropic()
     safeStorage.isEncryptionAvailable.mockReturnValue(false)

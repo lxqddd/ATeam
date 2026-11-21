@@ -60,6 +60,25 @@ describe('ModelForm', () => {
     )
   })
 
+  it('submits a model context window', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ModelForm providers={[provider]} onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Model ID'), 'claude-new')
+    await user.type(screen.getByLabelText('Context window'), '200000')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        providerId: 'p1',
+        modelId: 'claude-new',
+        name: undefined,
+        contextWindow: 200_000
+      })
+    )
+  })
+
   it('requires a model ID', async () => {
     const user = userEvent.setup()
     render(<ModelForm providers={[provider]} onSubmit={vi.fn()} onCancel={vi.fn()} />)
@@ -80,7 +99,11 @@ describe('ModelForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith({ id: 'm1', name: 'claude-sonnet-5' })
+      expect(onSubmit).toHaveBeenCalledWith({
+        id: 'm1',
+        name: 'claude-sonnet-5',
+        contextWindow: null
+      })
     )
   })
 

@@ -96,6 +96,10 @@ export function createApiMock(
           session.reasoningEffort = settings.reasoningEffort
           session.permissionMode = settings.permissionMode
           return { ...session }
+        }),
+        compact: vi.fn(async (id: string) => {
+          const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          return { ...session }
         })
       },
       messages: {

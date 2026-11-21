@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import type { ChatMessage, PermissionRequest, RunOutcome } from '@ateam/shared'
+import type { ChatMessage, PermissionRequest, RunOutcome, SessionCompaction } from '@ateam/shared'
 import { useStickToBottom } from '../../hooks/useStickToBottom'
 import AssistantMessage from './AssistantMessage'
 import PermissionCard from './PermissionCard'
@@ -10,6 +10,7 @@ interface MessageListProps {
   permissions: PermissionRequest[]
   sessionRunning: boolean
   runOutcomes: Record<string, RunOutcome>
+  compaction: SessionCompaction | null
 }
 
 function groupTurns(messages: ChatMessage[]): ChatMessage[][] {
@@ -28,7 +29,8 @@ function MessageList({
   messages,
   permissions,
   sessionRunning,
-  runOutcomes
+  runOutcomes,
+  compaction
 }: MessageListProps): React.JSX.Element {
   const { t } = useTranslation()
   const lastMessage = messages[messages.length - 1]
@@ -36,6 +38,10 @@ function MessageList({
   const { ref, atBottom, onScroll, scrollToBottom } = useStickToBottom(scrollKey)
   const turns = groupTurns(messages)
   const lastMessageId = lastMessage?.id
+  const boundaryIndex = compaction
+    ? messages.findIndex((message) => message.id === compaction.throughMessageId)
+    : -1
+  const firstKeptId = boundaryIndex >= 0 ? messages[boundaryIndex + 1]?.id : undefined
   const matchedMessageIds = new Set(messages.map((message) => message.id))
   const orphanPermissions = permissions.filter(
     (permission) => !matchedMessageIds.has(permission.messageId)
@@ -54,6 +60,16 @@ function MessageList({
             const first = turn[0]
             return (
               <div key={first.id} className="flex min-w-0 flex-col gap-3">
+                {compaction && firstKeptId === first.id && (
+                  <div
+                    className="flex items-center gap-3 text-caption text-subtle"
+                    title={compaction.summary}
+                  >
+                    <span className="h-px flex-1 bg-border" />
+                    <span>{t('chat.compactedHistory')}</span>
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                )}
                 {turn.map((message) => {
                   if (message.role === 'user') {
                     return <UserMessage key={message.id} message={message} />

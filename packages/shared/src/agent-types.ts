@@ -15,6 +15,14 @@ export interface SessionSettings {
   permissionMode: PermissionMode
 }
 
+export interface SessionCompaction {
+  summary: string
+  throughMessageId: string
+  createdAt: string
+  tokensBefore: number
+  tokensAfter: number
+}
+
 export interface SessionMeta extends SessionSettings {
   id: string
   title: string
@@ -22,6 +30,7 @@ export interface SessionMeta extends SessionSettings {
   updatedAt: string
   model: ModelRef | null
   status: SessionRuntimeStatus
+  compaction: SessionCompaction | null
 }
 
 export type ToolState =

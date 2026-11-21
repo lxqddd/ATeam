@@ -35,15 +35,19 @@ const providerUpdateSchema = z.object({
   clearApiKey: z.boolean().optional()
 })
 
+const contextWindowSchema = z.number().int().min(1_000).max(10_000_000)
+
 const modelCreateSchema = z.object({
   providerId: idSchema,
   modelId: z.string().min(1).max(200),
-  name: z.string().max(100).optional()
+  name: z.string().max(100).optional(),
+  contextWindow: contextWindowSchema.optional()
 })
 
 const modelUpdateSchema = z.object({
   id: idSchema,
-  name: z.string().min(1).max(100)
+  name: z.string().min(1).max(100),
+  contextWindow: contextWindowSchema.nullable().optional()
 })
 
 const idPayloadSchema = z.object({ id: idSchema })

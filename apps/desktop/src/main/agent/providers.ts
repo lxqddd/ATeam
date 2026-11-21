@@ -9,7 +9,11 @@ import type { ModelRef, RuntimeModelsConfig } from '@ateam/shared'
 export function resolveModelRef(
   config: RuntimeModelsConfig,
   ref: ModelRef | null
-): { ref: ModelRef; provider: RuntimeModelsConfig['providers'][number] } {
+): {
+  ref: ModelRef
+  provider: RuntimeModelsConfig['providers'][number]
+  model: RuntimeModelsConfig['models'][number]
+} {
   const target = ref ?? config.defaultModel
   if (!target) throw new Error('NO_MODEL')
 
@@ -22,7 +26,7 @@ export function resolveModelRef(
   )
   if (!model) throw new Error(`MODEL_NOT_FOUND: ${target.providerId}/${target.modelId}`)
 
-  return { ref: target, provider }
+  return { ref: target, provider, model }
 }
 
 /** OpenCode Go requires a per-conversation routing header on every request. */

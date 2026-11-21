@@ -1,14 +1,19 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatHeader from './ChatHeader'
 import type { ChatStoreState } from '../../chat/store'
 import { createApiMock } from '../../test/api-mock'
-import { makeSession } from '../../test/factories'
+import { makeMessage, makeSession, makeTextPart } from '../../test/factories'
+
+const chatMocks = vi.hoisted(() => ({
+  compactSession: vi.fn(async () => undefined)
+}))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
 
 vi.mock('../../chat/store', () => ({
+  chatStore: chatMocks,
   useChatStore: () => storeState.current
 }))
 
@@ -65,6 +70,8 @@ function baseState(): ChatStoreState {
 
 beforeEach(() => {
   storeState.current = baseState()
+  chatMocks.compactSession.mockClear()
+  chatMocks.compactSession.mockResolvedValue(undefined)
   Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
 })
 
@@ -85,6 +92,39 @@ describe('ChatHeader', () => {
 
     expect(screen.queryByRole('button', { name: /Claude/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('compacts the selected session from the header', async () => {
+    const state = baseState()
+    state.messagesBySession = {
+      s1: [
+        makeMessage({
+          id: 'm1',
+          sessionId: 's1',
+          role: 'user',
+          parts: [makeTextPart('hello')]
+        })
+      ]
+    }
+    storeState.current = state
+    const user = userEvent.setup()
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'Compact context' }))
+
+    await waitFor(() => expect(chatMocks.compactSession).toHaveBeenCalled())
+  })
+
+  it('disables compaction while the session is running', () => {
+    const state = baseState()
+    state.sessions[0].status = 'running'
+    state.messagesBySession = {
+      s1: [makeMessage({ id: 'm1', sessionId: 's1', role: 'user', parts: [makeTextPart('hi')] })]
+    }
+    storeState.current = state
+    render(<ChatHeader />)
+
+    expect(screen.getByRole('button', { name: 'Compact context' })).toBeDisabled()
   })
 
   it('opens the workspace from the header', async () => {

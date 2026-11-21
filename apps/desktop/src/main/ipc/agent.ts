@@ -110,6 +110,11 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return manager.request('sessions.setSettings', { id, settings })
   })
 
+  handle(AGENT_CHANNELS.sessionCompact, (payload): Promise<SessionMeta> => {
+    const { id } = idPayloadSchema.parse(payload)
+    return manager.request('sessions.compact', { id })
+  })
+
   handle(AGENT_CHANNELS.messagesList, (payload): Promise<MessagesSnapshot> => {
     const { sessionId } = sessionIdSchema.parse(payload)
     return manager.request('messages.list', { sessionId })

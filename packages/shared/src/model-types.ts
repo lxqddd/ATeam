@@ -21,6 +21,7 @@ export interface ModelPublic {
   modelId: string
   name: string
   createdAt: string
+  contextWindow?: number
 }
 
 /** A model exposed by the provider's own model-listing endpoint. */
@@ -65,11 +66,13 @@ export interface ModelCreateInput {
   providerId: string
   modelId: string
   name?: string
+  contextWindow?: number
 }
 
 export interface ModelUpdateInput {
   id: string
   name: string
+  contextWindow?: number | null
 }
 
 export interface ModelTestResult {

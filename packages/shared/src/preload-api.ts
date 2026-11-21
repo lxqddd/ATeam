@@ -32,6 +32,7 @@ export interface AgentBridge {
     remove: (id: string) => Promise<void>
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
     setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
+    compact: (id: string) => Promise<SessionMeta>
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>

@@ -57,6 +57,14 @@ function normalizeModelId(value: string): string {
   return modelId
 }
 
+function normalizeContextWindow(value: number | null | undefined): number | undefined {
+  if (value === undefined || value === null) return undefined
+  if (!Number.isInteger(value) || value < 1_000 || value > 10_000_000) {
+    throw new Error('INVALID_CONTEXT_WINDOW')
+  }
+  return value
+}
+
 function normalizeBaseUrl(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   const trimmed = value.trim()
@@ -251,6 +259,8 @@ export class ModelsStore {
         name: input.name?.trim() || modelId,
         createdAt: nowIso()
       }
+      const contextWindow = normalizeContextWindow(input.contextWindow)
+      if (contextWindow !== undefined) model.contextWindow = contextWindow
       this.config.models.push(model)
       if (!this.config.defaultModel) {
         this.config.defaultModel = { providerId: model.providerId, modelId: model.modelId }
@@ -264,6 +274,11 @@ export class ModelsStore {
       const model = this.config.models.find((candidate) => candidate.id === input.id)
       if (!model) throw new Error('MODEL_NOT_FOUND')
       model.name = normalizeName(input.name)
+      if (input.contextWindow !== undefined) {
+        const contextWindow = normalizeContextWindow(input.contextWindow)
+        if (contextWindow === undefined) delete model.contextWindow
+        else model.contextWindow = contextWindow
+      }
       await this.persist()
     })
   }

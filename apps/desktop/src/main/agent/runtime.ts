@@ -21,6 +21,17 @@ import type {
   TokenUsage
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
+import {
+  compactionKeepTokens,
+  DEFAULT_CONTEXT_WINDOW,
+  estimateMessagesTokens,
+  estimateTextTokens,
+  messagesAfterCompaction,
+  planCompaction,
+  shouldCompact,
+  summaryPrompt,
+  systemWithSummary
+} from './context'
 import { SessionsStore, type SessionRecord } from './sessions-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
@@ -38,6 +49,7 @@ interface Run {
   steps: number
   allowed: Set<PermissionAction>
   skipHistoryIds?: Set<string>
+  retried?: boolean
 }
 
 interface PendingPermission {
@@ -75,6 +87,25 @@ export interface AgentRuntimeDependencies {
   ) => LanguageModel
   createTools: (context: ToolContext) => ToolSet
   createTurn: (input: AgentTurnInput) => AgentTurnStream
+  generateSummary: (input: {
+    model: LanguageModel
+    prompt: string
+    abortSignal?: AbortSignal
+  }) => Promise<string>
+}
+
+async function generateSummary(input: {
+  model: LanguageModel
+  prompt: string
+  abortSignal?: AbortSignal
+}): Promise<string> {
+  const result = await generateText({
+    model: input.model,
+    prompt: input.prompt,
+    maxOutputTokens: 2_048,
+    abortSignal: input.abortSignal
+  })
+  return result.text
 }
 
 const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
@@ -93,7 +124,8 @@ const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       maxOutputTokens: 8_192,
       onError: () => undefined
     }).stream
-  })
+  }),
+  generateSummary
 }
 
 function nowIso(): string {
@@ -196,6 +228,24 @@ export class AgentRuntime {
     const session = await this.store.setSettings(id, settings)
     if (!session) throw new Error('SESSION_NOT_FOUND')
     this.emit({ type: 'session.upsert', session })
+    return session
+  }
+
+  async compactSession(id: string): Promise<SessionMeta> {
+    const record = this.store.get(id)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+
+    const model = this.deps.createLanguageModel(
+      this.models,
+      record.session.model ?? this.models.defaultModel,
+      { sessionId: id }
+    )
+    const compacted = await this.compactMessages(id, record.messages, model)
+    if (compacted) return compacted
+
+    const session = this.store.getSession(id)
+    if (!session) throw new Error('SESSION_NOT_FOUND')
     return session
   }
 
@@ -518,6 +568,76 @@ export class AgentRuntime {
     }
   }
 
+  private historyMessages(run: Run, assistantMessageId: string): ChatMessage[] {
+    const record = this.record(run.sessionId)
+    return messagesAfterCompaction(record.messages, record.session.compaction).filter(
+      (item) =>
+        item.id !== assistantMessageId &&
+        !run.skipHistoryIds?.has(item.id) &&
+        item.status !== 'streaming'
+    )
+  }
+
+  private async compactMessages(
+    sessionId: string,
+    messages: ChatMessage[],
+    model: LanguageModel,
+    abortSignal?: AbortSignal
+  ): Promise<SessionMeta | null> {
+    const record = this.record(sessionId)
+    const target = record.session.model ?? this.models.defaultModel
+    const contextWindow =
+      resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+    const plan = planCompaction(messages, contextWindow, compactionKeepTokens(contextWindow))
+    if (!plan) return null
+
+    const summary = (
+      await this.deps.generateSummary({
+        model,
+        prompt: summaryPrompt(plan.older, record.session.compaction?.summary),
+        abortSignal
+      })
+    ).trim()
+    if (!summary) return null
+
+    const session = await this.store.setCompaction(sessionId, {
+      summary,
+      throughMessageId: plan.throughMessageId,
+      createdAt: nowIso(),
+      tokensBefore: plan.tokensBefore,
+      tokensAfter: estimateMessagesTokens(plan.keep) + estimateTextTokens(summary)
+    })
+    if (!session) return null
+    this.emit({ type: 'session.upsert', session })
+    return session
+  }
+
+  private async compactForOverflow(run: Run): Promise<boolean> {
+    const record = this.record(run.sessionId)
+    const target = record.session.model ?? this.models.defaultModel
+    const model = this.deps.createLanguageModel(this.models, target, {
+      sessionId: run.sessionId
+    })
+    const session = await this.compactMessages(
+      run.sessionId,
+      this.historyMessages(run, run.messageId),
+      model,
+      run.abort.signal
+    )
+    return session !== null
+  }
+
+  private resetAssistantMessage(run: Run, message: ChatMessage): void {
+    message.parts = []
+    message.error = undefined
+    message.usage = undefined
+    message.durationMs = undefined
+    message.status = 'streaming'
+    message.updatedAt = nowIso()
+    run.steps = 0
+    this.emit({ type: 'message.upsert', message: structuredClone(message) })
+  }
+
   private async runAgent(run: Run): Promise<void> {
     const message = this.assistantFor(run)
     let persistTimer: NodeJS.Timeout | null = null
@@ -540,11 +660,18 @@ export class AgentRuntime {
 
     try {
       const record = this.record(run.sessionId)
-      const model = this.deps.createLanguageModel(
-        this.models,
-        record.session.model ?? this.models.defaultModel,
-        { sessionId: run.sessionId }
-      )
+      const target = record.session.model ?? this.models.defaultModel
+      const model = this.deps.createLanguageModel(this.models, target, {
+        sessionId: run.sessionId
+      })
+      const contextWindow =
+        resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+      const history = this.historyMessages(run, message.id)
+      if (shouldCompact(history, contextWindow)) {
+        await this.compactMessages(run.sessionId, history, model, run.abort.signal)
+      }
+
+      const current = this.record(run.sessionId)
       const tools = this.deps.createTools({
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
@@ -554,18 +681,14 @@ export class AgentRuntime {
 
       const result = this.deps.createTurn({
         model,
-        system: buildSystemPrompt(
-          this.options.workspacePath,
-          record.session.permissionMode ?? 'ask'
+        system: systemWithSummary(
+          buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
+          current.session.compaction?.summary
         ),
-        messages: buildModelMessages(
-          record.messages.filter(
-            (item) => item.id !== message.id && !run.skipHistoryIds?.has(item.id)
-          )
-        ),
+        messages: buildModelMessages(this.historyMessages(run, message.id)),
         tools,
         abortSignal: run.abort.signal,
-        reasoning: record.session.reasoningEffort
+        reasoning: current.session.reasoningEffort
       })
 
       for await (const part of result.stream) {
@@ -710,6 +833,20 @@ export class AgentRuntime {
         durationMs: message.durationMs
       })
     } catch (error) {
+      if (!run.retried && isContextLengthError(error)) {
+        try {
+          const compacted = await this.compactForOverflow(run)
+          if (compacted) {
+            run.retried = true
+            this.resetAssistantMessage(run, message)
+            await this.runAgent(run)
+            return
+          }
+        } catch {
+          /* fall through to the original failure */
+        }
+      }
+
       const interrupted =
         run.abort.signal.aborted || /ABORTED|AbortError|interrupted/i.test(normalizeError(error))
       message.status = interrupted ? 'interrupted' : 'error'
@@ -737,6 +874,23 @@ export class AgentRuntime {
       this.emitSession(run.sessionId)
     }
   }
+}
+
+function isContextLengthError(error: unknown): boolean {
+  const message = normalizeError(error).toLowerCase()
+  return [
+    'context length',
+    'context_length',
+    'maximum context',
+    'context window',
+    'too many tokens',
+    'token limit',
+    'prompt is too long',
+    'input is too long',
+    'exceeds the maximum',
+    'request too large',
+    '413'
+  ].some((fragment) => message.includes(fragment))
 }
 
 function buildSystemPrompt(workspacePath: string, permissionMode: PermissionMode): string {

@@ -91,6 +91,12 @@ function errorScript(message: string): Script {
   }
 }
 
+function contextErrorScript(): Script {
+  return async function* () {
+    yield part({ type: 'error', error: new Error('maximum context length exceeded') })
+  }
+}
+
 function maxStepsScript(steps: number): Script {
   return async function* () {
     for (let index = 0; index < steps; index += 1) {
@@ -104,6 +110,7 @@ let directory: string
 let sink: Sink
 let scripts: Script[]
 let turns: AgentTurnInput[]
+let summaries: string[]
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
 let resumeTurn: (() => void) | null
 let runtime: AgentRuntime
@@ -129,6 +136,10 @@ function createRuntime(): AgentRuntime {
         const script = scripts.shift()
         if (!script) throw new Error('No scripted turn')
         return { stream: script(input) }
+      },
+      generateSummary: async (input) => {
+        summaries.push(input.prompt)
+        return 'SUMMARY'
       }
     }
   })
@@ -336,6 +347,7 @@ beforeEach(async () => {
   sink = createSink()
   scripts = []
   turns = []
+  summaries = []
   toolExecutor = null
   resumeTurn = null
   runtime = createRuntime()
@@ -915,5 +927,93 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
 
     expect(runtime.permissions()).toEqual([])
+  })
+
+  it('compacts an oversized history before sending the next turn', async () => {
+    runtime.setModels({
+      ...MODELS,
+      models: [{ ...MODELS.models[0], contextWindow: 20_000 }]
+    })
+    scripts.push(textScript('first'))
+    await runtime.sendChat(sessionId, 'a'.repeat(20_000))
+    await sink.next('run.finished')
+
+    scripts.push(textScript('second'))
+    await runtime.sendChat(sessionId, 'b'.repeat(20_000))
+    await sink.next('run.finished')
+
+    expect(summaries).toHaveLength(1)
+    expect(turns[1].system).toContain('SUMMARY')
+    expect(turns[1].messages).toHaveLength(1)
+    expect(turns[1].messages[0]).toMatchObject({ role: 'user', content: 'b'.repeat(20_000) })
+    expect(runtime.listSessions()[0].compaction).toMatchObject({ summary: 'SUMMARY' })
+  })
+
+  it('leaves a history under the limit untouched', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'short')
+    await sink.next('run.finished')
+
+    expect(summaries).toEqual([])
+    expect(turns[0].messages).toEqual([{ role: 'user', content: 'short' }])
+  })
+
+  it('compacts a session on demand without deleting stored messages', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'a'.repeat(70_000))
+    await sink.next('run.finished')
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'b'.repeat(70_000))
+    await sink.next('run.finished')
+    const before = runtime.messages(sessionId).messages.length
+
+    const session = await runtime.compactSession(sessionId)
+
+    expect(session.compaction).toMatchObject({ summary: 'SUMMARY' })
+    expect(summaries).toHaveLength(1)
+    expect(runtime.messages(sessionId).messages).toHaveLength(before)
+  })
+
+  it('does not compact a short session', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const session = await runtime.compactSession(sessionId)
+
+    expect(session.compaction).toBeNull()
+    expect(summaries).toEqual([])
+  })
+
+  it('rejects manual compaction for unknown or running sessions', async () => {
+    await expect(runtime.compactSession('missing')).rejects.toThrow('SESSION_NOT_FOUND')
+
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    await expect(runtime.compactSession(sessionId)).rejects.toThrow('SESSION_BUSY')
+
+    runtime.stopChat(sessionId)
+    await sink.next('run.finished')
+  })
+
+  it('compacts and retries once when the provider reports context overflow', async () => {
+    scripts.push(textScript('first'))
+    await runtime.sendChat(sessionId, 'a'.repeat(40_000))
+    await sink.next('run.finished')
+
+    scripts.push(contextErrorScript())
+    scripts.push(textScript('recovered'))
+    await runtime.sendChat(sessionId, 'b'.repeat(40_000))
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(summaries).toHaveLength(1)
+    expect(turns).toHaveLength(3)
+    expect(turns[2].system).toContain('SUMMARY')
+    expect(turns[2].messages).toHaveLength(1)
+    expect(assistantMessages().at(-1)?.status).toBe('complete')
+    expect(assistantMessages().at(-1)?.parts).toEqual([{ type: 'text', text: 'recovered' }])
   })
 })

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, AutoComplete, Button, Form, Input, Select } from 'antd'
+import { Alert, AutoComplete, Button, Form, Input, InputNumber, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import type {
   AvailableModel,
@@ -23,6 +23,7 @@ interface ModelFormValues {
   providerId: string
   modelId: string
   name?: string
+  contextWindow?: number | null
 }
 
 function ModelForm({
@@ -71,12 +72,17 @@ function ModelForm({
     setError(null)
     try {
       if (model) {
-        await onSubmit({ id: model.id, name: values.name?.trim() || model.modelId })
+        await onSubmit({
+          id: model.id,
+          name: values.name?.trim() || model.modelId,
+          contextWindow: values.contextWindow ?? null
+        })
       } else {
         await onSubmit({
           providerId: values.providerId,
           modelId: values.modelId,
-          name: values.name?.trim() || undefined
+          name: values.name?.trim() || undefined,
+          contextWindow: values.contextWindow ?? undefined
         })
       }
     } catch (caught) {
@@ -121,7 +127,8 @@ function ModelForm({
         initialValues={{
           providerId: model?.providerId ?? defaultProviderId ?? providers[0]?.id ?? '',
           modelId: model?.modelId ?? '',
-          name: model?.name ?? ''
+          name: model?.name ?? '',
+          contextWindow: model?.contextWindow
         }}
         onFinish={(values) => {
           void handleFinish(values)
@@ -164,6 +171,21 @@ function ModelForm({
           <div className="sm:col-span-2">
             <Form.Item name="name" label={t('settings.modelName')}>
               <Input placeholder={t('settings.modelNamePlaceholder')} autoFocus={Boolean(model)} />
+            </Form.Item>
+          </div>
+          <div className="sm:col-span-2">
+            <Form.Item
+              name="contextWindow"
+              label={t('settings.contextWindow')}
+              extra={t('settings.contextWindowHint')}
+            >
+              <InputNumber
+                min={1_000}
+                max={10_000_000}
+                step={1_000}
+                style={{ width: '100%' }}
+                placeholder={t('settings.contextWindowPlaceholder')}
+              />
             </Form.Item>
           </div>
         </div>

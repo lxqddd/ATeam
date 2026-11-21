@@ -432,7 +432,8 @@ describe('ModelsPage', () => {
     await waitFor(() =>
       expect(mock.api.models.updateModel).toHaveBeenCalledWith({
         id: 'm1',
-        name: 'Sonnet 5'
+        name: 'Sonnet 5',
+        contextWindow: null
       })
     )
   })

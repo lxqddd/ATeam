@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ChatMessage, PermissionRequest, RunOutcome } from '@ateam/shared'
+import type { ChatMessage, PermissionRequest, RunOutcome, SessionCompaction } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import MessageList from './MessageList'
 import { makeMessage, makePermission, makeTextPart, makeToolPart } from '../../test/factories'
@@ -17,6 +17,7 @@ interface RenderOptions {
   permissions?: PermissionRequest[]
   sessionRunning?: boolean
   runOutcomes?: Record<string, RunOutcome>
+  compaction?: SessionCompaction | null
 }
 
 function renderList(options: RenderOptions = {}): void {
@@ -26,6 +27,7 @@ function renderList(options: RenderOptions = {}): void {
       permissions={options.permissions ?? []}
       sessionRunning={options.sessionRunning ?? false}
       runOutcomes={options.runOutcomes ?? {}}
+      compaction={options.compaction ?? null}
     />
   )
 }
@@ -52,6 +54,25 @@ describe('MessageList', () => {
 
     expect(screen.getByText('hello')).toBeInTheDocument()
     expect(screen.getByText('hi there')).toBeInTheDocument()
+  })
+
+  it('marks where earlier messages were compacted', () => {
+    renderList({
+      messages: [
+        makeMessage({ id: 'u1', sessionId: 's1', role: 'user', parts: [makeTextPart('old')] }),
+        assistant({ id: 'a1', parts: [makeTextPart('older reply')] }),
+        makeMessage({ id: 'u2', sessionId: 's1', role: 'user', parts: [makeTextPart('new')] })
+      ],
+      compaction: {
+        summary: 'Earlier work summary',
+        throughMessageId: 'a1',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        tokensBefore: 5_000,
+        tokensAfter: 500
+      }
+    })
+
+    expect(screen.getByText('Earlier messages were compacted into a summary')).toBeInTheDocument()
   })
 
   it('renders tool rows and toggles their details', async () => {

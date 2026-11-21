@@ -124,6 +124,27 @@ describe('ChatStore sessions', () => {
     await vi.waitFor(() => expect(mock.api.agent.messages.list).toHaveBeenCalledWith('s1'))
   })
 
+  it('compacts the selected session', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.init()
+    const compaction = {
+      summary: 'Earlier work',
+      throughMessageId: 'm1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      tokensBefore: 42_000,
+      tokensAfter: 3_000
+    }
+    vi.mocked(mock.api.agent.sessions.compact).mockResolvedValue({
+      ...makeSession({ id: 's1' }),
+      compaction
+    })
+
+    await store.compactSession()
+
+    expect(mock.api.agent.sessions.compact).toHaveBeenCalledWith('s1')
+    expect(store.getSnapshot().sessions[0].compaction).toEqual(compaction)
+  })
+
   it('forwards rename, delete, setModel and run actions', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()

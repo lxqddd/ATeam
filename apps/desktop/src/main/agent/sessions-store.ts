@@ -6,6 +6,7 @@ import type {
   ModelRef,
   PermissionMode,
   ReasoningEffort,
+  SessionCompaction,
   SessionMeta,
   SessionSettings
 } from '@ateam/shared'
@@ -30,6 +31,18 @@ export interface SessionRecord {
 
 function nowIso(): string {
   return new Date().toISOString()
+}
+
+function isSessionCompaction(value: unknown): value is SessionCompaction {
+  if (!value || typeof value !== 'object') return false
+  const compaction = value as Partial<SessionCompaction>
+  return (
+    typeof compaction.summary === 'string' &&
+    typeof compaction.throughMessageId === 'string' &&
+    typeof compaction.createdAt === 'string' &&
+    typeof compaction.tokensBefore === 'number' &&
+    typeof compaction.tokensAfter === 'number'
+  )
 }
 
 function clone<T>(value: T): T {
@@ -57,6 +70,10 @@ function repairRecord(record: SessionRecord): boolean {
     !REASONING_EFFORTS.includes(record.session.reasoningEffort as ReasoningEffort)
   ) {
     record.session.reasoningEffort = null
+    changed = true
+  }
+  if (!isSessionCompaction(record.session.compaction)) {
+    record.session.compaction = null
     changed = true
   }
 
@@ -176,7 +193,8 @@ export class SessionsStore {
       model: null,
       status: 'idle',
       reasoningEffort: null,
-      permissionMode: 'ask'
+      permissionMode: 'ask',
+      compaction: null
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
@@ -206,6 +224,18 @@ export class SessionsStore {
     if (!record) return undefined
     record.session.reasoningEffort = settings.reasoningEffort
     record.session.permissionMode = settings.permissionMode
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
+  }
+
+  async setCompaction(
+    id: string,
+    compaction: SessionCompaction | null
+  ): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    record.session.compaction = compaction ? clone(compaction) : null
     record.session.updatedAt = nowIso()
     await this.persist(id)
     return clone(record.session)

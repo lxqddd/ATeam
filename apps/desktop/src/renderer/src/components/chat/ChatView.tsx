@@ -68,6 +68,7 @@ function ChatView(): React.JSX.Element {
           permissions={sessionPermissions}
           sessionRunning={sessionRunning}
           runOutcomes={runOutcomes}
+          compaction={session?.compaction ?? null}
         />
       )}
 
