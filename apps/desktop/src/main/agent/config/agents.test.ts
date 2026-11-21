@@ -349,6 +349,19 @@ describe('agent permission rules', () => {
 })
 
 describe('agent sampling parameters', () => {
+  it('accepts subagent permission rules', () => {
+    const agent = parseAgentMarkdown(
+      '/repo/.opencode/agent/limited.md',
+      ['---', 'description: Limited', 'permission: subagent|explore|deny', '---', 'Body.'].join(
+        '\n'
+      ),
+      'project'
+    )
+
+    expect(agent?.permissions).toEqual([
+      { action: 'subagent', resource: 'explore', effect: 'deny' }
+    ])
+  })
   it('parses temperature from markdown and json', () => {
     const markdown = parseAgentMarkdown(
       '/repo/.opencode/agent/creative.md',

@@ -16,7 +16,12 @@ export function modePermissionRules(mode: PermissionMode): PermissionRule[] {
   })
   const reads = [base('read', 'allow'), base('list', 'allow'), base('grep', 'allow')]
   const external = base('external_directory', 'allow')
-  const web = [base('webfetch', 'allow'), base('websearch', 'allow'), base('skill', 'allow')]
+  const web = [
+    base('webfetch', 'allow'),
+    base('websearch', 'allow'),
+    base('skill', 'allow'),
+    base('subagent', 'allow')
+  ]
   switch (mode) {
     case 'plan':
       return [

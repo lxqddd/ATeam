@@ -112,6 +112,7 @@ const permissionRuleInputSchema = z.object({
     'webfetch',
     'websearch',
     'skill',
+    'subagent',
     '*'
   ]),
   resource: z.string().trim().min(1).max(500),

@@ -14,7 +14,8 @@ const ACTION_LABEL: Record<PermissionAction, string> = {
   mcp: 'settings.permissionActionMcp',
   webfetch: 'settings.permissionActionWebfetch',
   websearch: 'settings.permissionActionWebsearch',
-  skill: 'settings.permissionActionSkill'
+  skill: 'settings.permissionActionSkill',
+  subagent: 'settings.permissionActionSubagent'
 }
 
 interface PermissionCardProps {

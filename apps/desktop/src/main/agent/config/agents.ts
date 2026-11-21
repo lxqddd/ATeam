@@ -27,6 +27,7 @@ const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'webfetch',
   'websearch',
   'skill',
+  'subagent',
   '*'
 ]
 const RULE_EFFECTS: readonly PermissionEffect[] = ['allow', 'ask', 'deny']

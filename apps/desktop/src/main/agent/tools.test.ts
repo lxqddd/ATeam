@@ -728,12 +728,22 @@ describe('formatting and diagnostics', () => {
 })
 
 describe('subagent tool', () => {
-  it('delegates to the runtime callback', async () => {
+  it('delegates to the runtime callback after asking permission', async () => {
     await expect(
       execute(tools.subagent, { prompt: 'Explore src', agent: 'explore' })
     ).resolves.toBe('child result')
 
+    expect(askPermission).toHaveBeenCalledWith('subagent', 'explore', 'subagent', 'call-1')
     expect(runSubagent).toHaveBeenCalledWith({ prompt: 'Explore src', agent: 'explore' }, 'call-1')
+  })
+
+  it('honours subagent denials', async () => {
+    askPermission.mockResolvedValueOnce(false)
+
+    await expect(
+      execute(tools.subagent, { prompt: 'Explore src', agent: 'explore' })
+    ).resolves.toBe('Permission denied; the subagent was not started.')
+    expect(runSubagent).not.toHaveBeenCalled()
   })
 
   it('reports unavailable subagents', async () => {
@@ -884,12 +894,7 @@ describe('mcp prompt and resource tools', () => {
     ).resolves.toBe('Hello from prompt')
 
     expect(getMcpPrompt).toHaveBeenCalledWith('demo', 'greet', { name: 'Ada' })
-    expect(askPermission).toHaveBeenCalledWith(
-      'mcp',
-      'demo/prompts/greet',
-      'mcp_prompt',
-      'call-1'
-    )
+    expect(askPermission).toHaveBeenCalledWith('mcp', 'demo/prompts/greet', 'mcp_prompt', 'call-1')
   })
 
   it('lists and reads resources with permission', async () => {
@@ -912,9 +917,9 @@ describe('mcp prompt and resource tools', () => {
 
   it('honours denials and missing callbacks', async () => {
     askPermission.mockResolvedValue(false)
-    await expect(
-      execute(tools.mcp_prompt, { server: 'demo', prompt: 'greet' })
-    ).resolves.toBe('Permission denied; the MCP prompt was not loaded.')
+    await expect(execute(tools.mcp_prompt, { server: 'demo', prompt: 'greet' })).resolves.toBe(
+      'Permission denied; the MCP prompt was not loaded.'
+    )
     await expect(
       execute(tools.mcp_resource, { server: 'demo', uri: 'demo://readme' })
     ).resolves.toBe('Permission denied; the MCP resource was not read.')

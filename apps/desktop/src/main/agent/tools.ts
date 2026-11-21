@@ -772,6 +772,14 @@ export function createTools(context: ToolContext): ToolSet {
     }),
     execute: async (input, options) => {
       if (!context.runSubagent) return 'Error: subagents are not available.'
+      const agentName = input.agent?.trim() || 'general'
+      const allowed = await context.askPermission(
+        'subagent',
+        agentName,
+        'subagent',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the subagent was not started.'
       return context.runSubagent(input, options.toolCallId)
     }
   })

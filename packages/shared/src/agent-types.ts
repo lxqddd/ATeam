@@ -160,6 +160,7 @@ export type PermissionAction =
   | 'webfetch'
   | 'websearch'
   | 'skill'
+  | 'subagent'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
