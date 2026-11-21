@@ -9,6 +9,7 @@ const enUS = {
   },
   nav: {
     chat: 'Chat',
+    models: 'Models',
     settings: 'Settings'
   },
   providerTypes: {
@@ -101,6 +102,11 @@ const enUS = {
     modelNotFound: 'The model no longer exists.',
     nameRequired: 'Name is required.',
     modelIdRequired: 'Model ID is required.'
+  },
+  modelsPage: {
+    setDefault: 'Set as default',
+    defaultChip: 'Default',
+    defaultEndpoint: 'Default endpoint'
   },
   chat: {
     newChat: 'New chat',

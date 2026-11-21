@@ -7,6 +7,8 @@ import { modelErrorMessage } from './model-errors'
 interface ModelFormProps {
   model?: ModelPublic
   providers: ProviderPublic[]
+  inModal?: boolean
+  defaultProviderId?: string
   onSubmit: (input: ModelCreateInput | ModelUpdateInput) => Promise<void>
   onCancel: () => void
 }
@@ -17,7 +19,14 @@ interface ModelFormValues {
   name?: string
 }
 
-function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): React.JSX.Element {
+function ModelForm({
+  model,
+  providers,
+  inModal = false,
+  defaultProviderId,
+  onSubmit,
+  onCancel
+}: ModelFormProps): React.JSX.Element {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,11 +59,19 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
 
   if (providers.length === 0) {
     return (
-      <div className="settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5">
+      <div
+        className={
+          inModal
+            ? 'settings-form'
+            : 'settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5'
+        }
+      >
         <p className="m-0 text-label text-muted">{t('settings.providerRequired')}</p>
-        <div className="mt-3 flex justify-end">
-          <Button onClick={onCancel}>{t('settings.cancel')}</Button>
-        </div>
+        {!inModal && (
+          <div className="mt-3 flex justify-end">
+            <Button onClick={onCancel}>{t('settings.cancel')}</Button>
+          </div>
+        )}
       </div>
     )
   }
@@ -62,14 +79,18 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
   return (
     <div
       ref={containerRef}
-      className="settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5"
+      className={
+        inModal
+          ? 'settings-form'
+          : 'settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5'
+      }
     >
       <Form
         form={form}
         name="model"
         layout="vertical"
         initialValues={{
-          providerId: model?.providerId ?? providers[0]?.id ?? '',
+          providerId: model?.providerId ?? defaultProviderId ?? providers[0]?.id ?? '',
           modelId: model?.modelId ?? '',
           name: model?.name ?? ''
         }}
@@ -109,9 +130,11 @@ function ModelForm({ model, providers, onSubmit, onCancel }: ModelFormProps): Re
         )}
 
         <div className="mt-3 flex items-center justify-end gap-2">
-          <Button onClick={onCancel} disabled={saving}>
-            {t('settings.cancel')}
-          </Button>
+          {!inModal && (
+            <Button onClick={onCancel} disabled={saving}>
+              {t('settings.cancel')}
+            </Button>
+          )}
           <Button type="primary" htmlType="submit" loading={saving}>
             {t('settings.save')}
           </Button>

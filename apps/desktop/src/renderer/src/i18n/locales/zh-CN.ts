@@ -7,6 +7,7 @@ const zhCN = {
   },
   nav: {
     chat: '会话',
+    models: '模型',
     settings: '设置'
   },
   providerTypes: {
@@ -95,6 +96,11 @@ const zhCN = {
     modelNotFound: '模型不存在。',
     nameRequired: '名称不能为空。',
     modelIdRequired: '请填写模型 ID。'
+  },
+  modelsPage: {
+    setDefault: '设为默认',
+    defaultChip: '默认',
+    defaultEndpoint: '默认端点'
   },
   chat: {
     newChat: '新建会话',

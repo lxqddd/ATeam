@@ -13,6 +13,7 @@ const PROVIDER_TYPES: ProviderType[] = ['anthropic', 'openai', 'google', 'openai
 
 interface ProviderFormProps {
   provider?: ProviderPublic
+  inModal?: boolean
   onSubmit: (input: ProviderCreateInput | ProviderUpdateInput) => Promise<void>
   onCancel: () => void
 }
@@ -25,7 +26,12 @@ interface ProviderFormValues {
   clearApiKey?: boolean
 }
 
-function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): React.JSX.Element {
+function ProviderForm({
+  provider,
+  inModal = false,
+  onSubmit,
+  onCancel
+}: ProviderFormProps): React.JSX.Element {
   const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,7 +70,13 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
   }
 
   return (
-    <div className="settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5">
+    <div
+      className={
+        inModal
+          ? 'settings-form'
+          : 'settings-form rounded-lg border border-border-subtle bg-background-subtle p-3.5'
+      }
+    >
       <Form
         form={form}
         name="provider"
@@ -152,9 +164,11 @@ function ProviderForm({ provider, onSubmit, onCancel }: ProviderFormProps): Reac
         )}
 
         <div className="mt-3 flex items-center justify-end gap-2">
-          <Button onClick={onCancel} disabled={saving}>
-            {t('settings.cancel')}
-          </Button>
+          {!inModal && (
+            <Button onClick={onCancel} disabled={saving}>
+              {t('settings.cancel')}
+            </Button>
+          )}
           <Button type="primary" htmlType="submit" loading={saving}>
             {t('settings.save')}
           </Button>

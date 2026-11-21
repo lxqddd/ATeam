@@ -2,7 +2,6 @@ import { Menu } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import LanguageSettings from '../components/settings/LanguageSettings'
-import ModelSettings from '../components/settings/ModelSettings'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
 
@@ -16,11 +15,6 @@ const SETTINGS_SECTIONS = [
     id: 'language',
     labelKey: 'settings.language',
     descriptionKey: 'settings.languageDescription'
-  },
-  {
-    id: 'models',
-    labelKey: 'settings.models',
-    descriptionKey: 'settings.modelsDescription'
   }
 ] as const
 
@@ -82,7 +76,6 @@ function SettingsPage(): React.JSX.Element {
                 actions={<LanguageSettings />}
               />
             )}
-            {section === 'models' && <ModelSettings />}
           </div>
         </div>
       </section>

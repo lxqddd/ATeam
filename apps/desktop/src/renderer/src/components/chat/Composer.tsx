@@ -98,10 +98,7 @@ function Composer(): React.JSX.Element {
       {!hasModels && (
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-caption text-warning">
           <span>{t('chat.noModel')}</span>
-          <Link
-            to="/settings?section=models"
-            className="font-medium text-warning underline underline-offset-2"
-          >
+          <Link to="/models" className="font-medium text-warning underline underline-offset-2">
             {t('chat.configureModel')}
           </Link>
         </div>

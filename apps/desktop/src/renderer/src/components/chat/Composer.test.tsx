@@ -141,7 +141,10 @@ describe('Composer', () => {
     renderComposer()
 
     expect(screen.getAllByText('No model configured').length).toBeGreaterThan(0)
-    expect(screen.getByRole('link', { name: 'Configure models' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Configure models' })).toHaveAttribute(
+      'href',
+      '/models'
+    )
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
   })
 

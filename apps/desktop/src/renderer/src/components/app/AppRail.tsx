@@ -19,6 +19,26 @@ function ChatIcon(): React.JSX.Element {
   )
 }
 
+function ModelsIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <ellipse cx="12" cy="6" rx="7.5" ry="3" />
+      <path d="M4.5 6v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V6" />
+      <path d="M4.5 12v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" />
+    </svg>
+  )
+}
+
 function SettingsIcon(): React.JSX.Element {
   return (
     <svg
@@ -62,6 +82,14 @@ function AppRail(): React.JSX.Element {
         aria-label={t('nav.chat')}
       >
         <ChatIcon />
+      </NavLink>
+      <NavLink
+        to="/models"
+        className={railLinkClass}
+        title={t('nav.models')}
+        aria-label={t('nav.models')}
+      >
+        <ModelsIcon />
       </NavLink>
       <span className="flex-1" />
       <NavLink
