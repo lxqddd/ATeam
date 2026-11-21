@@ -1,4 +1,5 @@
 import type {
+  AgentConfig,
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
@@ -36,7 +37,7 @@ export interface AgentBridge {
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
     setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
     compact: (id: string) => Promise<SessionMeta>
-    undo: (id: string) => Promise<SessionUndoResult>
+    undo: (id: string, messageId?: string) => Promise<SessionUndoResult>
     redo: (id: string) => Promise<SessionMeta>
   }
   messages: {
@@ -53,6 +54,10 @@ export interface AgentBridge {
     rules: (sessionId?: string) => Promise<PermissionRule[]>
     addRule: (input: PermissionRuleInput) => Promise<PermissionRule>
     removeRule: (id: string) => Promise<boolean>
+  }
+  config: {
+    get: () => Promise<AgentConfig>
+    update: (patch: Partial<AgentConfig>) => Promise<AgentConfig>
   }
 }
 

@@ -61,14 +61,14 @@ function MessageList({
             return (
               <div key={first.id} className="flex min-w-0 flex-col gap-3">
                 {compaction && firstKeptId === first.id && (
-                  <div
-                    className="flex items-center gap-3 text-caption text-subtle"
-                    title={compaction.summary}
-                  >
-                    <span className="h-px flex-1 bg-border" />
-                    <span>{t('chat.compactedHistory')}</span>
-                    <span className="h-px flex-1 bg-border" />
-                  </div>
+                  <details className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2 text-caption text-subtle">
+                    <summary className="cursor-pointer select-none">
+                      {t('chat.compactedHistory')}
+                    </summary>
+                    <p className="mb-0 mt-2 whitespace-pre-wrap text-caption leading-relaxed text-muted">
+                      {compaction.summary}
+                    </p>
+                  </details>
                 )}
                 {turn.map((message) => {
                   if (message.role === 'user') {

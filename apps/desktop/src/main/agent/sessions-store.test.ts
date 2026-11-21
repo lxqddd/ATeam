@@ -45,7 +45,9 @@ describe('SessionsStore', () => {
       status: 'idle',
       reasoningEffort: null,
       permissionMode: 'ask',
-      compaction: null
+      compaction: null,
+      contextTokens: null,
+      contextWindow: null
     })
     await expect(fs.stat(path.join(sessionsDirectory, `${session.id}.json`))).resolves.toBeDefined()
   })
@@ -132,6 +134,21 @@ describe('SessionsStore', () => {
 
     expect((await store.setCompaction(session.id, null))?.compaction).toBeNull()
     expect(await store.setCompaction('missing', compaction)).toBeUndefined()
+  })
+
+  it('stores context usage', async () => {
+    const session = await store.create()
+
+    const updated = await store.setContextUsage(session.id, 12_345, 128_000)
+
+    expect(updated).toMatchObject({ contextTokens: 12_345, contextWindow: 128_000 })
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)).toMatchObject({
+      contextTokens: 12_345,
+      contextWindow: 128_000
+    })
+    expect(await store.setContextUsage('missing', 1, 2)).toBeUndefined()
   })
 
   it('stages an undo and restores it with redo', async () => {

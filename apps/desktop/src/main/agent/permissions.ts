@@ -51,7 +51,9 @@ function resourceEffect(
 ): PermissionEffect | null {
   let effect: PermissionEffect | null = null
   for (const rule of rules) {
-    if (rule.action !== '*' && rule.action !== action) continue
+    const actionMatches =
+      rule.action === '*' || rule.action === action || (action === 'list' && rule.action === 'glob')
+    if (!actionMatches) continue
     if (!matchPermissionPattern(rule.resource, resource)) continue
     effect = rule.effect
   }
@@ -90,11 +92,58 @@ export function alwaysPermissionResource(action: PermissionRuleAction, resource:
   return `${directory}/*`
 }
 
+function splitShellSegments(command: string): string[] {
+  const segments: string[] = []
+  let current = ''
+  let quote: string | null = null
+  let escaped = false
+
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index]
+    if (escaped) {
+      current += character
+      escaped = false
+      continue
+    }
+    if (character === '\\' && quote !== "'") {
+      current += character
+      escaped = true
+      continue
+    }
+    if (quote) {
+      current += character
+      if (character === quote) quote = null
+      continue
+    }
+    if (character === "'" || character === '"') {
+      quote = character
+      current += character
+      continue
+    }
+    const next = command[index + 1]
+    if (
+      character === '\n' ||
+      character === ';' ||
+      (character === '&' && next === '&') ||
+      (character === '|' && next === '|') ||
+      character === '|'
+    ) {
+      const segment = current.trim()
+      if (segment) segments.push(segment)
+      current = ''
+      if ((character === '&' || character === '|') && next === character) index += 1
+      continue
+    }
+    current += character
+  }
+
+  const segment = current.trim()
+  if (segment) segments.push(segment)
+  return segments
+}
+
 export function scanShellCommand(command: string, workspace: string): ShellScan {
-  const segments = command
-    .split(/\s*(?:&&|\|\||;|\n|\|)\s*/)
-    .map((segment) => segment.trim())
-    .filter(Boolean)
+  const segments = splitShellSegments(command)
   const risky = RISKY_PATTERNS.some((pattern) => pattern.test(command))
   const root = path.resolve(workspace)
   const external = new Set<string>()

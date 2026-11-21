@@ -23,6 +23,7 @@ interface SessionFile {
   session: SessionMeta
   messages: ChatMessage[]
   redo?: RedoState
+  preparedCompaction?: PreparedCompaction
 }
 
 export interface RedoState {
@@ -32,10 +33,17 @@ export interface RedoState {
   prompt: string
 }
 
+export interface PreparedCompaction {
+  summary: string
+  throughMessageId: string
+  createdAt: string
+}
+
 export interface SessionRecord {
   session: SessionMeta
   messages: ChatMessage[]
   redo?: RedoState
+  preparedCompaction?: PreparedCompaction
 }
 
 function nowIso(): string {
@@ -88,6 +96,28 @@ function repairRecord(record: SessionRecord): boolean {
   const redoAvailable = Boolean(record.redo)
   if (record.session.redoAvailable !== redoAvailable) {
     record.session.redoAvailable = redoAvailable
+    changed = true
+  }
+  if (
+    record.session.contextTokens !== null &&
+    (typeof record.session.contextTokens !== 'number' || record.session.contextTokens < 0)
+  ) {
+    record.session.contextTokens = null
+    changed = true
+  }
+  if (
+    record.session.contextWindow !== null &&
+    (typeof record.session.contextWindow !== 'number' || record.session.contextWindow < 1)
+  ) {
+    record.session.contextWindow = null
+    changed = true
+  }
+  if (record.session.contextTokens === undefined) {
+    record.session.contextTokens = null
+    changed = true
+  }
+  if (record.session.contextWindow === undefined) {
+    record.session.contextWindow = null
     changed = true
   }
 
@@ -170,7 +200,12 @@ export class SessionsStore {
       }
       return null
     }
-    return { session: data.session, messages: data.messages, redo: data.redo }
+    return {
+      session: data.session,
+      messages: data.messages,
+      redo: data.redo,
+      preparedCompaction: data.preparedCompaction
+    }
   }
 
   private sessionFile(id: string): string {
@@ -209,7 +244,9 @@ export class SessionsStore {
       reasoningEffort: null,
       permissionMode: 'ask',
       compaction: null,
-      redoAvailable: false
+      redoAvailable: false,
+      contextTokens: null,
+      contextWindow: null
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
@@ -264,6 +301,19 @@ export class SessionsStore {
     await this.persist(id)
   }
 
+  async setContextUsage(
+    id: string,
+    tokens: number,
+    window: number
+  ): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    record.session.contextTokens = tokens
+    record.session.contextWindow = window
+    await this.persist(id)
+    return clone(record.session)
+  }
+
   async appendMessage(id: string, message: ChatMessage): Promise<void> {
     const record = this.records.get(id)
     if (!record) return
@@ -286,6 +336,25 @@ export class SessionsStore {
   getRedo(id: string): RedoState | undefined {
     const record = this.records.get(id)
     return record?.redo ? clone(record.redo) : undefined
+  }
+
+  getPreparedCompaction(id: string): PreparedCompaction | undefined {
+    const record = this.records.get(id)
+    return record?.preparedCompaction ? clone(record.preparedCompaction) : undefined
+  }
+
+  async setPreparedCompaction(id: string, prepared: PreparedCompaction): Promise<void> {
+    const record = this.records.get(id)
+    if (!record) return
+    record.preparedCompaction = clone(prepared)
+    await this.persist(id)
+  }
+
+  async clearPreparedCompaction(id: string): Promise<void> {
+    const record = this.records.get(id)
+    if (!record?.preparedCompaction) return
+    delete record.preparedCompaction
+    await this.persist(id)
   }
 
   async stageUndo(
@@ -347,7 +416,10 @@ export class SessionsStore {
           version: 1,
           session: clone(current.session),
           messages: clone(current.messages),
-          redo: current.redo ? clone(current.redo) : undefined
+          redo: current.redo ? clone(current.redo) : undefined,
+          preparedCompaction: current.preparedCompaction
+            ? clone(current.preparedCompaction)
+            : undefined
         }
         await writeJsonAtomic(this.sessionFile(id), data)
         await this.writeIndex()

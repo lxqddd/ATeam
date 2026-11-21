@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ChatMessage, PermissionRequest, RunOutcome, SessionCompaction } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,7 +7,8 @@ import { makeMessage, makePermission, makeTextPart, makeToolPart } from '../../t
 
 const chatMocks = vi.hoisted(() => ({
   retry: vi.fn(async () => undefined),
-  replyPermission: vi.fn(async () => undefined)
+  replyPermission: vi.fn(async () => undefined),
+  undoSession: vi.fn(async () => 'prompt')
 }))
 
 vi.mock('../../chat/store', () => ({ chatStore: chatMocks }))
@@ -41,6 +42,8 @@ beforeEach(() => {
   chatMocks.retry.mockResolvedValue(undefined)
   chatMocks.replyPermission.mockClear()
   chatMocks.replyPermission.mockResolvedValue(undefined)
+  chatMocks.undoSession.mockClear()
+  chatMocks.undoSession.mockResolvedValue('prompt')
 })
 
 describe('MessageList', () => {
@@ -56,7 +59,22 @@ describe('MessageList', () => {
     expect(screen.getByText('hi there')).toBeInTheDocument()
   })
 
-  it('marks where earlier messages were compacted', () => {
+  it('reverts to an assistant message', async () => {
+    const user = userEvent.setup()
+    renderList({
+      messages: [
+        makeMessage({ id: 'u1', sessionId: 's1', role: 'user', parts: [makeTextPart('hello')] }),
+        assistant({ parts: [makeTextPart('hi there')], snapshotBefore: 'snap-1' })
+      ]
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Revert to here' }))
+
+    await waitFor(() => expect(chatMocks.undoSession).toHaveBeenCalledWith('a1'))
+  })
+
+  it('marks where earlier messages were compacted and shows the summary', async () => {
+    const user = userEvent.setup()
     renderList({
       messages: [
         makeMessage({ id: 'u1', sessionId: 's1', role: 'user', parts: [makeTextPart('old')] }),
@@ -72,7 +90,8 @@ describe('MessageList', () => {
       }
     })
 
-    expect(screen.getByText('Earlier messages were compacted into a summary')).toBeInTheDocument()
+    await user.click(screen.getByText('Earlier messages were compacted into a summary'))
+    expect(screen.getByText('Earlier work summary')).toBeInTheDocument()
   })
 
   it('renders tool rows and toggles their details', async () => {

@@ -14,6 +14,9 @@ vi.mock('../components/settings/LanguageSettings', () => ({
 vi.mock('../components/settings/PermissionRules', () => ({
   default: () => <div>permissions-panel</div>
 }))
+vi.mock('../components/settings/AgentSettings', () => ({
+  default: () => <div>agent-panel</div>
+}))
 
 function renderPage(initialEntry = '/settings'): void {
   render(
@@ -53,6 +56,15 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Permissions' }))
 
     expect(await screen.findByText('permissions-panel')).toBeInTheDocument()
+  })
+
+  it('shows agent settings from the menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('menuitem', { name: 'Agent' }))
+
+    expect(await screen.findByText('agent-panel')).toBeInTheDocument()
   })
 
   it('honours the section query parameter', () => {

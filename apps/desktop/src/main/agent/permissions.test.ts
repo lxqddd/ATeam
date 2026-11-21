@@ -92,6 +92,18 @@ describe('evaluatePermissionRules', () => {
     ).toBe('allow')
   })
 
+  it('uses glob rules for list requests', () => {
+    const rules = [rule({ action: 'glob', resource: 'src*', effect: 'deny', sessionId: null })]
+
+    expect(
+      evaluatePermissionRules(rules, {
+        action: 'list',
+        resources: ['src'],
+        sessionId: 's1'
+      })
+    ).toBe('deny')
+  })
+
   it('asks when a matching rule says ask', () => {
     const rules = [rule({ action: 'write', resource: 'src/*', effect: 'ask' })]
 
@@ -206,6 +218,14 @@ describe('scanShellCommand', () => {
     expect(scanShellCommand('echo one; echo two', workspace).segments).toEqual([
       'echo one',
       'echo two'
+    ])
+  })
+
+  it('does not split inside quoted strings', () => {
+    expect(scanShellCommand('echo "a && b"', workspace).segments).toEqual(['echo "a && b"'])
+    expect(scanShellCommand("echo 'x | y' && pwd", workspace).segments).toEqual([
+      "echo 'x | y'",
+      'pwd'
     ])
   })
 

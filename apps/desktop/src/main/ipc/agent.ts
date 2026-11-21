@@ -2,6 +2,7 @@ import { app, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import {
   AGENT_CHANNELS,
+  type AgentConfig,
   type AgentInfo,
   type AgentStatus,
   type MessagesSnapshot,
@@ -11,6 +12,7 @@ import {
   type SessionUndoResult
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
+import { AgentConfigStore } from '../agent/config-store'
 import { discoverInstructionFiles } from '../agent/instructions'
 import type { ModelsStore } from '../models/store'
 import type { TrustedSender } from './trusted-sender'
@@ -49,7 +51,17 @@ const permissionReplySchema = z.object({
 })
 const permissionRulesSchema = z.object({ sessionId: idSchema.optional() }).optional()
 const permissionRuleInputSchema = z.object({
-  action: z.enum(['read', 'list', 'grep', 'write', 'edit', 'shell', 'external_directory', '*']),
+  action: z.enum([
+    'read',
+    'list',
+    'glob',
+    'grep',
+    'write',
+    'edit',
+    'shell',
+    'external_directory',
+    '*'
+  ]),
   resource: z.string().trim().min(1).max(500),
   effect: z.enum(['allow', 'ask', 'deny']),
   sessionId: idSchema.nullable()
@@ -72,6 +84,8 @@ export interface AgentIpcOptions {
 
 export function registerAgentIpc(options: AgentIpcOptions): void {
   const { manager, modelsStore, workspacePath, isTrustedSender } = options
+  const configStore = new AgentConfigStore(app.getPath('userData'))
+  const configReady = configStore.init()
 
   const handle = (channel: string, handler: (payload: unknown) => unknown): void => {
     ipcMain.handle(channel, (event: IpcMainInvokeEvent, payload: unknown) => {
@@ -136,8 +150,10 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   })
 
   handle(AGENT_CHANNELS.sessionUndo, (payload): Promise<SessionUndoResult> => {
-    const { id } = idPayloadSchema.parse(payload)
-    return manager.request('sessions.undo', { id })
+    const { id, messageId } = z
+      .object({ id: idSchema, messageId: idSchema.optional() })
+      .parse(payload)
+    return manager.request('sessions.undo', { id, messageId })
   })
 
   handle(AGENT_CHANNELS.sessionRedo, (payload): Promise<SessionMeta> => {
@@ -187,6 +203,22 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.permissionRuleRemove, (payload): Promise<boolean> => {
     const { id } = idPayloadSchema.parse(payload)
     return manager.request('permissions.removeRule', { id })
+  })
+
+  handle(AGENT_CHANNELS.agentConfig, async (): Promise<AgentConfig> => {
+    await configReady
+    return configStore.get()
+  })
+
+  handle(AGENT_CHANNELS.agentConfigUpdate, async (payload): Promise<AgentConfig> => {
+    const patch = z
+      .object({
+        snapshots: z.boolean().optional(),
+        instructions: z.array(z.string().max(2_000)).max(50).optional()
+      })
+      .parse(payload)
+    await configReady
+    return configStore.update(patch)
   })
 
   handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {

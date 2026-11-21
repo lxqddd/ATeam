@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatStore, useChatStore } from '../../chat/store'
 
@@ -13,6 +13,10 @@ function statusColor(sessionStatus: string | undefined): string {
   if (sessionStatus === 'waiting-permission') return 'text-warning'
   if (sessionStatus === 'error') return 'text-danger'
   return 'text-accent-strong'
+}
+
+function formatTokens(value: number): string {
+  return value >= 1_000 ? `${(value / 1_000).toFixed(1)}k` : String(value)
 }
 
 function ChatHeader(): React.JSX.Element {
@@ -64,6 +68,37 @@ function ChatHeader(): React.JSX.Element {
     }
   }
 
+  const runUndo = useCallback(() => {
+    void undo()
+  }, [])
+  const runRedo = useCallback(() => {
+    void redo()
+  }, [])
+
+  useEffect(() => {
+    if (running) return
+    const handleKey = (event: KeyboardEvent): void => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return
+      }
+      if (event.shiftKey) {
+        if (!canRedo || historyBusy !== null) return
+        event.preventDefault()
+        runRedo()
+      } else if (canUndo && historyBusy === null) {
+        event.preventDefault()
+        runUndo()
+      }
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [running, canUndo, canRedo, historyBusy, runUndo, runRedo])
+
   return (
     <header data-testid="chat-header" className="flex h-11 flex-none items-center gap-3 px-4">
       <h1 className="min-w-0 flex-1 truncate text-body font-semibold tracking-[-0.01em] text-foreground">
@@ -73,6 +108,12 @@ function ChatHeader(): React.JSX.Element {
       {headerError && (
         <span className="max-w-[200px] truncate text-caption text-danger" title={headerError}>
           {headerError}
+        </span>
+      )}
+
+      {session?.contextTokens != null && session.contextWindow != null && (
+        <span className="flex-none text-caption text-subtle" title={t('chat.contextUsageTitle')}>
+          {formatTokens(session.contextTokens)} / {formatTokens(session.contextWindow)}
         </span>
       )}
 

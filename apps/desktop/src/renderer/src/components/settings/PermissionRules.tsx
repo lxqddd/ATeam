@@ -5,6 +5,7 @@ import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@at
 const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
   read: 'chat.permissionRead',
   list: 'chat.permissionList',
+  glob: 'settings.permissionActionGlob',
   grep: 'chat.permissionGrep',
   write: 'chat.permissionWrite',
   edit: 'chat.permissionEdit',

@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import { generateText, stepCountIs, streamText } from 'ai'
 import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import type {
+  AgentConfig,
   AgentEvent,
   AgentEventEnvelope,
   ChatMessage,
@@ -27,6 +28,7 @@ import type {
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import {
   compactionKeepTokens,
+  contextTokenLimit,
   DEFAULT_CONTEXT_WINDOW,
   estimateMessagesTokens,
   estimateTextTokens,
@@ -40,9 +42,11 @@ import {
   discoverInstructionFiles,
   discoverNestedInstructions,
   formatInstructions,
+  loadConfiguredInstructions,
   systemWithInstructions,
   type InstructionFile
 } from './instructions'
+import { readAgentConfig } from './config-store'
 import { alwaysPermissionResource, evaluatePermissionRules, scanShellCommand } from './permissions'
 import { PermissionsStore } from './permissions-store'
 import { SessionsStore, type SessionRecord } from './sessions-store'
@@ -61,6 +65,7 @@ interface Run {
   abort: AbortController
   startedAt: number
   steps: number
+  config: AgentConfig
   skipHistoryIds?: Set<string>
   retried?: boolean
 }
@@ -342,6 +347,7 @@ export class AgentRuntime {
     )
     if (!staged) throw new Error('NOTHING_TO_UNDO')
     this.emit({ type: 'session.upsert', session: staged.session })
+    await this.updateContextUsage(id)
     return { session: staged.session, prompt }
   }
 
@@ -366,11 +372,47 @@ export class AgentRuntime {
     const session = await this.store.redo(id)
     if (!session) throw new Error('NOTHING_TO_REDO')
     this.emit({ type: 'session.upsert', session })
+    await this.updateContextUsage(id)
     return session
   }
 
   listPermissionRules(sessionId?: string): PermissionRule[] {
     return this.permissionRules.list(sessionId)
+  }
+
+  async prepareCompaction(id: string): Promise<boolean> {
+    const record = this.store.get(id)
+    if (!record || this.runs.has(id)) return false
+    const target = record.session.model ?? this.models.defaultModel
+    try {
+      const contextWindow =
+        resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+      const plan = planCompaction(
+        record.messages,
+        contextWindow,
+        compactionKeepTokens(contextWindow)
+      )
+      if (!plan) return false
+      const existing = this.store.getPreparedCompaction(id)
+      if (existing?.throughMessageId === plan.throughMessageId) return true
+
+      const model = this.deps.createLanguageModel(this.models, target, { sessionId: id })
+      const summary = (
+        await this.deps.generateSummary({
+          model,
+          prompt: summaryPrompt(plan.older, record.session.compaction?.summary)
+        })
+      ).trim()
+      if (!summary) return false
+      await this.store.setPreparedCompaction(id, {
+        summary,
+        throughMessageId: plan.throughMessageId,
+        createdAt: nowIso()
+      })
+      return true
+    } catch {
+      return false
+    }
   }
 
   addPermissionRule(input: PermissionRuleInput): Promise<PermissionRule> {
@@ -438,16 +480,24 @@ export class AgentRuntime {
 
     const user = makeUserMessage(sessionId, content)
     const assistant = makeAssistantMessage(sessionId)
-    assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+    const config = await readAgentConfig(this.options.userDataPath)
+    if (config.snapshots) {
+      assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+    }
     await this.store.appendMessage(sessionId, user)
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
 
     this.emit({ type: 'message.upsert', message: structuredClone(user) })
-    this.beginRun(sessionId, assistant)
+    this.beginRun(sessionId, assistant, undefined, config)
   }
 
-  private beginRun(sessionId: string, assistant: ChatMessage, skipHistoryIds?: Set<string>): void {
+  private beginRun(
+    sessionId: string,
+    assistant: ChatMessage,
+    skipHistoryIds: Set<string> | undefined,
+    config: AgentConfig
+  ): void {
     this.emit({ type: 'message.upsert', message: structuredClone(assistant) })
     this.emitSession(sessionId)
     this.emit({
@@ -463,6 +513,7 @@ export class AgentRuntime {
       abort: new AbortController(),
       startedAt: Date.now(),
       steps: 0,
+      config,
       skipHistoryIds
     }
     this.runs.set(sessionId, run)
@@ -494,10 +545,13 @@ export class AgentRuntime {
 
     resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
     const assistant = makeAssistantMessage(sessionId)
-    assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+    const config = await readAgentConfig(this.options.userDataPath)
+    if (config.snapshots) {
+      assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+    }
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
-    this.beginRun(sessionId, assistant, new Set([last.id]))
+    this.beginRun(sessionId, assistant, new Set([last.id]), config)
   }
 
   permissions(): PermissionRequest[] {
@@ -762,14 +816,21 @@ export class AgentRuntime {
     const plan = planCompaction(messages, contextWindow, compactionKeepTokens(contextWindow), force)
     if (!plan) return null
 
-    const summary = (
-      await this.deps.generateSummary({
-        model,
-        prompt: summaryPrompt(plan.older, record.session.compaction?.summary),
-        abortSignal
-      })
-    ).trim()
+    const prepared = this.store.getPreparedCompaction(sessionId)
+    let summary: string
+    if (prepared?.throughMessageId === plan.throughMessageId) {
+      summary = prepared.summary
+    } else {
+      summary = (
+        await this.deps.generateSummary({
+          model,
+          prompt: summaryPrompt(plan.older, record.session.compaction?.summary),
+          abortSignal
+        })
+      ).trim()
+    }
     if (!summary) return null
+    await this.store.clearPreparedCompaction(sessionId)
 
     const session = await this.store.setCompaction(sessionId, {
       summary,
@@ -780,6 +841,7 @@ export class AgentRuntime {
     })
     if (!session) return null
     this.emit({ type: 'session.upsert', session })
+    await this.updateContextUsage(sessionId)
     return session
   }
 
@@ -810,6 +872,33 @@ export class AgentRuntime {
     message.updatedAt = nowIso()
     run.steps = 0
     this.emit({ type: 'message.upsert', message: structuredClone(message) })
+  }
+
+  private schedulePreparedCompaction(sessionId: string): void {
+    const session = this.store.getSession(sessionId)
+    if (!session?.contextTokens || !session.contextWindow) return
+    if (session.contextTokens < contextTokenLimit(session.contextWindow) * 0.6) return
+    void this.prepareCompaction(sessionId)
+  }
+
+  private async updateContextUsage(sessionId: string): Promise<void> {
+    const record = this.store.get(sessionId)
+    if (!record) return
+    try {
+      const target = record.session.model ?? this.models.defaultModel
+      const window =
+        resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+      const history = messagesAfterCompaction(record.messages, record.session.compaction).filter(
+        (message) => message.status !== 'streaming'
+      )
+      const tokens =
+        estimateMessagesTokens(history) +
+        estimateTextTokens(record.session.compaction?.summary ?? '')
+      const session = await this.store.setContextUsage(sessionId, tokens, window)
+      if (session) this.emit({ type: 'session.upsert', session })
+    } catch {
+      /* usage display is best effort */
+    }
   }
 
   private async createSnapshotId(sessionId: string): Promise<string | undefined> {
@@ -891,10 +980,15 @@ export class AgentRuntime {
       }
 
       const current = this.record(run.sessionId)
-      const instructions = await this.deps.loadInstructions({
-        workspacePath: this.options.workspacePath,
-        globalDirectory: this.options.userDataPath
-      })
+      const instructions = [
+        ...(await this.deps.loadInstructions({
+          workspacePath: this.options.workspacePath,
+          globalDirectory: this.options.userDataPath
+        })),
+        ...(run.config.instructions.length > 0
+          ? await loadConfiguredInstructions(run.config.instructions, this.options.workspacePath)
+          : [])
+      ]
       const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
       const tools = this.deps.createTools({
         workspace: this.options.workspacePath,
@@ -1057,6 +1151,8 @@ export class AgentRuntime {
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
       this.emit({ type: 'message.upsert', message: structuredClone(message) })
+      await this.updateContextUsage(run.sessionId)
+      this.schedulePreparedCompaction(run.sessionId)
       await this.store.setStatus(run.sessionId, 'idle')
       this.emitSession(run.sessionId)
       const outcome: RunOutcome =
@@ -1095,6 +1191,8 @@ export class AgentRuntime {
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
       this.emit({ type: 'message.upsert', message: structuredClone(message) })
+      await this.updateContextUsage(run.sessionId)
+      this.schedulePreparedCompaction(run.sessionId)
       await this.store.setStatus(run.sessionId, interrupted ? 'idle' : 'error')
       this.emitSession(run.sessionId)
       this.emit({

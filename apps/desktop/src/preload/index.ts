@@ -39,7 +39,7 @@ const api: AteamApi = {
       setSettings: (id, settings) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionSetSettings, { id, settings }),
       compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id }),
-      undo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id }),
+      undo: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId }),
       redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id })
     },
     messages: {
@@ -57,6 +57,10 @@ const api: AteamApi = {
       rules: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.permissionsRules, { sessionId }),
       addRule: (input) => ipcRenderer.invoke(AGENT_CHANNELS.permissionRuleAdd, input),
       removeRule: (id) => ipcRenderer.invoke(AGENT_CHANNELS.permissionRuleRemove, { id })
+    },
+    config: {
+      get: () => ipcRenderer.invoke(AGENT_CHANNELS.agentConfig),
+      update: (patch) => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigUpdate, patch)
     }
   },
   models: {

@@ -1,4 +1,5 @@
 import type {
+  AgentConfig,
   AgentEvent,
   AgentEventEnvelope,
   AgentInfo,
@@ -132,6 +133,14 @@ export function createApiMock(
           createdAt: new Date().toISOString()
         })),
         removeRule: vi.fn(async () => true)
+      },
+      config: {
+        get: vi.fn(async () => ({ snapshots: true, instructions: [] })),
+        update: vi.fn(async (patch: Partial<AgentConfig>) => ({
+          snapshots: true,
+          instructions: [],
+          ...patch
+        }))
       }
     },
     models: {

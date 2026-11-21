@@ -166,6 +166,20 @@ describe('ChatStore sessions', () => {
     expect(store.getSnapshot().sessions[0].redoAvailable).toBe(false)
   })
 
+  it('reverts to a specific assistant message', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.init()
+    vi.mocked(mock.api.agent.sessions.undo).mockResolvedValue({
+      session: makeSession({ id: 's1', redoAvailable: true }),
+      prompt: 'older prompt'
+    })
+
+    await store.undoSession('a1')
+
+    expect(mock.api.agent.sessions.undo).toHaveBeenCalledWith('s1', 'a1')
+    expect(store.getSnapshot().revertPrompt).toBe('older prompt')
+  })
+
   it('forwards rename, delete, setModel and run actions', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatHeader from './ChatHeader'
@@ -178,6 +178,41 @@ describe('ChatHeader', () => {
 
     expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled()
+  })
+
+  it('undoes and redoes with keyboard shortcuts', async () => {
+    const state = baseState()
+    state.sessions[0].redoAvailable = true
+    state.messagesBySession = {
+      s1: [
+        makeMessage({
+          id: 'a1',
+          sessionId: 's1',
+          role: 'assistant',
+          parts: [makeTextPart('hi')],
+          snapshotBefore: 'snap-1'
+        })
+      ]
+    }
+    storeState.current = state
+    render(<ChatHeader />)
+
+    fireEvent.keyDown(document, { key: 'z', metaKey: true })
+    await waitFor(() => expect(chatMocks.undoSession).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Redo' })).toBeEnabled())
+
+    fireEvent.keyDown(document, { key: 'z', metaKey: true, shiftKey: true })
+    await waitFor(() => expect(chatMocks.redoSession).toHaveBeenCalled())
+  })
+
+  it('shows the context usage', () => {
+    const state = baseState()
+    state.sessions[0].contextTokens = 12_300
+    state.sessions[0].contextWindow = 128_000
+    storeState.current = state
+    render(<ChatHeader />)
+
+    expect(screen.getByText('12.3k / 128.0k')).toBeInTheDocument()
   })
 
   it('opens the workspace from the header', async () => {

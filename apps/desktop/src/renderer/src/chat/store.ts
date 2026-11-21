@@ -246,10 +246,12 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
-  async undoSession(): Promise<string | null> {
+  async undoSession(messageId?: string): Promise<string | null> {
     const sessionId = this.state.selectedSessionId
     if (!sessionId) return null
-    const result = await window.api.agent.sessions.undo(sessionId)
+    const result = messageId
+      ? await window.api.agent.sessions.undo(sessionId, messageId)
+      : await window.api.agent.sessions.undo(sessionId)
     this.upsertSession(result.session)
     await this.loadMessages(sessionId)
     this.setState({ revertPrompt: result.prompt })

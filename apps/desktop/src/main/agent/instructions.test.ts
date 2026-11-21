@@ -1,11 +1,12 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   discoverInstructionFiles,
   discoverNestedInstructions,
   formatInstructions,
+  loadConfiguredInstructions,
   systemWithInstructions
 } from './instructions'
 
@@ -127,6 +128,54 @@ describe('discoverNestedInstructions', () => {
 
     expect(nested.map((file) => file.content)).toEqual(['claude sub'])
     expect(outside).toEqual([])
+  })
+})
+
+describe('loadConfiguredInstructions', () => {
+  it('loads relative, absolute and home-relative files', async () => {
+    const home = path.join(directory, 'home')
+    await write(path.join(workspace, 'custom.md'), 'custom rules')
+    await write(path.join(directory, 'absolute.md'), 'absolute rules')
+    await write(path.join(home, 'rule.md'), 'home rules')
+
+    const files = await loadConfiguredInstructions(
+      ['custom.md', path.join(directory, 'absolute.md'), '~/rule.md'],
+      workspace,
+      home
+    )
+
+    expect(files.map((file) => file.content)).toEqual([
+      'custom rules',
+      'absolute rules',
+      'home rules'
+    ])
+  })
+
+  it('loads glob patterns and deduplicates files', async () => {
+    await write(path.join(workspace, 'docs', 'a.md'), 'a rules')
+    await write(path.join(workspace, 'docs', 'b.md'), 'b rules')
+
+    const files = await loadConfiguredInstructions(
+      ['docs/*.md', 'docs/a.md'],
+      workspace,
+      path.join(directory, 'home')
+    )
+
+    expect(files.map((file) => file.content)).toEqual(['a rules', 'b rules'])
+  })
+
+  it('loads remote instruction URLs', async () => {
+    const fetchMock = vi.fn(async () => new Response('remote rules', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const files = await loadConfiguredInstructions(
+      ['https://example.com/rules.md'],
+      workspace,
+      path.join(directory, 'home')
+    )
+
+    expect(files).toEqual([{ path: 'https://example.com/rules.md', content: 'remote rules' }])
+    vi.unstubAllGlobals()
   })
 })
 

@@ -32,6 +32,8 @@ export interface SessionMeta extends SessionSettings {
   status: SessionRuntimeStatus
   compaction: SessionCompaction | null
   redoAvailable: boolean
+  contextTokens: number | null
+  contextWindow: number | null
 }
 
 export type ToolState =
@@ -86,7 +88,7 @@ export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'
 
-export type PermissionRuleAction = PermissionAction | 'external_directory' | '*'
+export type PermissionRuleAction = PermissionAction | 'glob' | 'external_directory' | '*'
 
 export interface PermissionRule {
   id: string
@@ -132,6 +134,11 @@ export interface AgentInfo {
   appVersion: string
   encryptionAvailable: boolean
   instructionFiles: string[]
+}
+
+export interface AgentConfig {
+  snapshots: boolean
+  instructions: string[]
 }
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'

@@ -60,7 +60,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'sessions.compact':
       return requireRuntime().compactSession(request.params.id, { force: request.params.force })
     case 'sessions.undo':
-      return requireRuntime().undoSession(request.params.id)
+      return requireRuntime().undoSession(request.params.id, request.params.messageId)
     case 'sessions.redo':
       return requireRuntime().redoSession(request.params.id)
     case 'messages.list':

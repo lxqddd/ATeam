@@ -222,6 +222,18 @@ async function restartWithRules(
   await runtime.init()
 }
 
+async function writeAgentConfig(config: {
+  snapshots?: boolean
+  instructions?: string[]
+}): Promise<void> {
+  const directoryPath = path.join(directory, 'agent')
+  await fs.mkdir(directoryPath, { recursive: true })
+  await fs.writeFile(
+    path.join(directoryPath, 'config.json'),
+    JSON.stringify({ snapshots: true, instructions: [], ...config })
+  )
+}
+
 function stoppableScript(): Script {
   return async function* (input) {
     yield part({ type: 'text-start', id: 't1' })
@@ -1194,6 +1206,9 @@ describe('AgentRuntime', () => {
 
     expect(summaries).toEqual([])
     expect(turns[0].messages).toEqual([{ role: 'user', content: 'short' }])
+    const session = runtime.listSessions()[0]
+    expect(session.contextTokens).toBeGreaterThan(0)
+    expect(session.contextWindow).toBe(128_000)
   })
 
   it('injects discovered instruction files into the system prompt', async () => {
@@ -1222,6 +1237,30 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
 
     expect(turns[0].system).not.toContain('Project instructions')
+  })
+
+  it('injects configured instruction files', async () => {
+    await fs.mkdir(path.join(directory, 'workspace', 'custom'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'workspace', 'custom', 'AGENTS.md'), 'custom rule')
+    await writeAgentConfig({ instructions: ['custom/AGENTS.md'] })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('custom rule')
+  })
+
+  it('can disable workspace snapshots through the agent config', async () => {
+    await writeAgentConfig({ snapshots: false })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const assistant = assistantMessages().at(-1)
+    expect(assistant?.snapshotBefore).toBeUndefined()
+    expect(assistant?.snapshotAfter).toBeUndefined()
   })
 
   it('compacts a session on demand without deleting stored messages', async () => {
@@ -1254,6 +1293,25 @@ describe('AgentRuntime', () => {
     const forced = await runtime.compactSession(sessionId, { force: true })
     expect(forced.compaction).toMatchObject({ summary: 'SUMMARY' })
     expect(summaries).toHaveLength(1)
+  })
+
+  it('prepares a summary and reuses it for compaction', async () => {
+    scripts.push(textScript('first'))
+    await runtime.sendChat(sessionId, 'a'.repeat(70_000))
+    await sink.next('run.finished')
+    scripts.push(textScript('second'))
+    await runtime.sendChat(sessionId, 'b'.repeat(70_000))
+    await sink.next('run.finished')
+    summaries = []
+
+    expect(await runtime.prepareCompaction(sessionId)).toBe(true)
+    expect(summaries).toHaveLength(1)
+
+    summaries = []
+    const session = await runtime.compactSession(sessionId, { force: true })
+
+    expect(session.compaction).toMatchObject({ summary: 'SUMMARY' })
+    expect(summaries).toHaveLength(0)
   })
 
   it('captures workspace snapshots and changed files around a run', async () => {

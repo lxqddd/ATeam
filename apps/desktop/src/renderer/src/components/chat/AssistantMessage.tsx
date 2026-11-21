@@ -26,6 +26,8 @@ function AssistantMessage({
   const [copied, setCopied] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState<string | null>(null)
+  const [reverting, setReverting] = useState(false)
+  const [revertError, setRevertError] = useState<string | null>(null)
 
   const text = message.parts
     .filter((part) => part.type === 'text')
@@ -35,6 +37,7 @@ function AssistantMessage({
   const streaming = message.status === 'streaming'
   const canRetry =
     isLast && !sessionRunning && (message.status === 'error' || message.status === 'interrupted')
+  const canRevert = !sessionRunning && message.status !== 'streaming'
 
   async function copyText(): Promise<void> {
     try {
@@ -55,6 +58,18 @@ function AssistantMessage({
       setRetryError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setRetrying(false)
+    }
+  }
+
+  async function revert(): Promise<void> {
+    setReverting(true)
+    setRevertError(null)
+    try {
+      await chatStore.undoSession(message.id)
+    } catch (caught) {
+      setRevertError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setReverting(false)
     }
   }
 
@@ -163,6 +178,19 @@ function AssistantMessage({
               {copied ? t('chat.copied') : t('chat.copy')}
             </button>
           )}
+          {canRevert && (
+            <button
+              type="button"
+              disabled={reverting}
+              onClick={() => {
+                void revert()
+              }}
+              className="rounded px-1 text-caption text-subtle transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+            >
+              {t('chat.revertToHere')}
+            </button>
+          )}
+          {revertError && <span className="text-caption text-danger">{revertError}</span>}
         </div>
       )}
     </div>
