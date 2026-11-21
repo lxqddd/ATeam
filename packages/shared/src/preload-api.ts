@@ -101,6 +101,7 @@ export interface AgentBridge {
       input: { name: string; mimeType: string; data: Uint8Array }
     ) => Promise<MessageAttachment>
     remove: (sessionId: string, attachmentId: string) => Promise<void>
+    preview: (sessionId: string, path: string) => Promise<string | null>
   }
   files: {
     search: (query: string) => Promise<string[]>

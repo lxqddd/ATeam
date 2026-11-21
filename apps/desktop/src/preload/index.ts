@@ -86,7 +86,9 @@ const api: AteamApi = {
       import: (sessionId, input) =>
         ipcRenderer.invoke(AGENT_CHANNELS.attachmentsImport, { sessionId, ...input }),
       remove: (sessionId, attachmentId) =>
-        ipcRenderer.invoke(AGENT_CHANNELS.attachmentRemove, { sessionId, attachmentId })
+        ipcRenderer.invoke(AGENT_CHANNELS.attachmentRemove, { sessionId, attachmentId }),
+      preview: (sessionId, path) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.attachmentPreview, { sessionId, path })
     },
     files: {
       search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.filesSearch, { query })

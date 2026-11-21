@@ -1,7 +1,9 @@
-import type { ChatMessage } from '@ateam/shared'
+import { useEffect, useState } from 'react'
+import type { ChatMessage, MessageAttachment } from '@ateam/shared'
 
 interface UserMessageProps {
   message: ChatMessage
+  sessionId?: string
 }
 
 function formatFileSize(size: number): string {
@@ -10,7 +12,48 @@ function formatFileSize(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-function UserMessage({ message }: UserMessageProps): React.JSX.Element {
+function AttachmentChip({
+  attachment,
+  sessionId
+}: {
+  attachment: MessageAttachment
+  sessionId?: string
+}): React.JSX.Element {
+  const [preview, setPreview] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!sessionId || attachment.kind !== 'image') return
+    let cancelled = false
+    void window.api.agent.attachments
+      .preview(sessionId, attachment.path)
+      .then((url) => {
+        if (!cancelled) setPreview(url)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, attachment.kind, attachment.path])
+
+  return (
+    <span
+      title={attachment.name}
+      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border-subtle bg-background-subtle px-2 py-1 text-caption text-muted"
+    >
+      {preview && (
+        <img
+          src={preview}
+          alt={attachment.name}
+          className="h-10 w-10 flex-none rounded object-cover"
+        />
+      )}
+      <span className="max-w-[200px] truncate text-foreground">{attachment.name}</span>
+      <span className="flex-none">{formatFileSize(attachment.size)}</span>
+    </span>
+  )
+}
+
+function UserMessage({ message, sessionId }: UserMessageProps): React.JSX.Element {
   const text = message.parts
     .filter((part) => part.type === 'text')
     .map((part) => part.text)
@@ -28,16 +71,11 @@ function UserMessage({ message }: UserMessageProps): React.JSX.Element {
         <div className="flex max-w-[min(640px,82%)] flex-wrap justify-end gap-1.5">
           {attachments.map((part) =>
             part.type === 'attachment' ? (
-              <span
+              <AttachmentChip
                 key={part.attachment.id}
-                title={part.attachment.name}
-                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border-subtle bg-background-subtle px-2 py-1 text-caption text-muted"
-              >
-                <span className="max-w-[200px] truncate text-foreground">
-                  {part.attachment.name}
-                </span>
-                <span className="flex-none">{formatFileSize(part.attachment.size)}</span>
-              </span>
+                attachment={part.attachment}
+                sessionId={sessionId}
+              />
             ) : null
           )}
         </div>

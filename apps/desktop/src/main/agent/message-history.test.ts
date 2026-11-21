@@ -276,6 +276,42 @@ describe('buildModelMessages with attachments', () => {
     expect(buildModelMessages([empty], new Map())).toEqual([])
   })
 
+  it('prefers extracted PDF text over file parts', () => {
+    const message = makeMessage({
+      role: 'user',
+      parts: [
+        {
+          type: 'attachment',
+          attachment: attachment({
+            id: 'pdf',
+            kind: 'pdf',
+            name: 'doc.pdf',
+            mimeType: 'application/pdf'
+          })
+        }
+      ]
+    })
+
+    const messages = buildModelMessages(
+      [message],
+      new Map([
+        [
+          'pdf',
+          {
+            kind: 'pdf' as const,
+            name: 'doc.pdf',
+            mimeType: 'application/pdf',
+            text: 'PDF body'
+          }
+        ]
+      ])
+    )
+
+    expect(messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'File: doc.pdf\n```\nPDF body\n```' }] }
+    ])
+  })
+
   it('does not merge attachment messages into the previous user turn', () => {
     const first = makeMessage({ role: 'user', parts: [makeTextPart('one')] })
     const second = makeMessage({

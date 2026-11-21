@@ -22,7 +22,8 @@
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
-    "turndown": "^7.2.5"
+    "turndown": "^7.2.5",
+    "unpdf": "^2.2.1"
   },
   "devDependencies": {
     "@ai-sdk/anthropic": "4.0.106",

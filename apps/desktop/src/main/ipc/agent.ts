@@ -25,7 +25,12 @@ import { AgentConfigStore } from '../agent/config/config-store'
 import { discoverInstructionFiles } from '../agent/config/instructions'
 import { discoverFormatters } from '../agent/integrations/formatters'
 import { availableLspServers } from '../agent/integrations/lsp'
-import { attachmentDirectory, removeAttachment, saveAttachment } from '../agent/attachments'
+import {
+  attachmentDataUrl,
+  attachmentDirectory,
+  removeAttachment,
+  saveAttachment
+} from '../agent/attachments'
 import { normalizeImageAttachment } from '../attachments/image'
 import { searchWorkspaceFiles } from '../files/search'
 import type { ModelsStore } from '../stores/models'
@@ -296,6 +301,13 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
       .object({ sessionId: idSchema, attachmentId: idSchema })
       .parse(payload)
     await removeAttachment(app.getPath('userData'), sessionId, attachmentId)
+  })
+
+  handle(AGENT_CHANNELS.attachmentPreview, async (payload): Promise<string | null> => {
+    const { sessionId, path: attachmentPath } = z
+      .object({ sessionId: idSchema, path: z.string().min(1).max(2_000) })
+      .parse(payload)
+    return attachmentDataUrl(app.getPath('userData'), sessionId, attachmentPath)
   })
 
   handle(AGENT_CHANNELS.filesSearch, async (payload): Promise<string[]> => {

@@ -79,6 +79,7 @@ function ChatView(): React.JSX.Element {
       ) : (
         <MessageList
           key={selectedSessionId ?? 'empty'}
+          sessionId={selectedSessionId ?? undefined}
           messages={messages}
           permissions={sessionPermissions}
           sessionRunning={sessionRunning}

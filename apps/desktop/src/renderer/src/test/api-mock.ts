@@ -277,7 +277,8 @@ export function createApiMock(
             path: `/tmp/attachments/${sessionId}/${input.name}`
           })
         ),
-        remove: vi.fn(async () => undefined)
+        remove: vi.fn(async () => undefined),
+        preview: vi.fn(async (): Promise<string | null> => null)
       },
       files: {
         search: vi.fn(async () => [] as string[])

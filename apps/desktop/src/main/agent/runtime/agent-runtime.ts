@@ -68,7 +68,12 @@ import { SessionsStore, type SessionRecord, makeTitle } from '../sessions/sessio
 import { SnapshotStore } from '../sessions/snapshots'
 import { ToolOutputStore } from '../sessions/tool-output-store'
 import { buildModelMessages, type AttachmentPayload } from '../message-history'
-import { readAttachment, readTextAttachment, removeSessionAttachments } from '../attachments'
+import {
+  extractPdfText,
+  readAttachment,
+  readTextAttachment,
+  removeSessionAttachments
+} from '../attachments'
 import { resolveModelRef } from '../providers'
 import type { ToolContext } from '../tools'
 import { filterToolsForAgent, loadAgents } from '../config/agents'
@@ -1222,6 +1227,15 @@ export class AgentRuntime {
               name: attachment.name,
               mimeType: attachment.mimeType,
               text: await readTextAttachment(attachment)
+            })
+          } else if (attachment.kind === 'pdf') {
+            const data = await readAttachment(attachment)
+            payloads.set(attachment.id, {
+              kind: 'pdf',
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              data,
+              text: await extractPdfText(data)
             })
           } else {
             payloads.set(attachment.id, {

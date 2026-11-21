@@ -44,6 +44,11 @@ export function buildModelMessages(
             })
           } else if (payload.kind === 'image' && payload.data) {
             content.push({ type: 'image', image: payload.data, mediaType: payload.mimeType })
+          } else if (payload.kind === 'pdf' && payload.text) {
+            content.push({
+              type: 'text',
+              text: `File: ${payload.name}\n\`\`\`\n${payload.text}\n\`\`\``
+            })
           } else if (payload.kind === 'pdf' && payload.data) {
             content.push({
               type: 'file',

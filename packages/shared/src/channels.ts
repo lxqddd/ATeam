@@ -43,6 +43,7 @@ export const AGENT_CHANNELS = {
   webSearchUpdate: 'ateam:agent:websearch:update',
   attachmentsImport: 'ateam:agent:attachments:import',
   attachmentRemove: 'ateam:agent:attachments:remove',
+  attachmentPreview: 'ateam:agent:attachments:preview',
   filesSearch: 'ateam:agent:files:search',
   commandsList: 'ateam:agent:commands:list',
   workspaceOpen: 'ateam:workspace:open',

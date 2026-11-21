@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { extractText } from 'unpdf'
 import type { AttachmentKind, MessageAttachment } from '@ateam/shared'
 
 export const MAX_TEXT_BYTES = 200_000
@@ -147,4 +148,44 @@ export async function removeSessionAttachments(
 ): Promise<void> {
   if (!SESSION_ID_PATTERN.test(sessionId)) return
   await fs.rm(attachmentDirectory(userDataPath, sessionId), { recursive: true, force: true })
+}
+
+const MAX_PREVIEW_BYTES = 5 * 1024 * 1024
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
+}
+
+export const MAX_PDF_TEXT_CHARS = 100_000
+
+/** Best-effort text extraction for PDF attachments; empty when the file cannot be parsed. */
+export async function extractPdfText(data: Uint8Array): Promise<string> {
+  try {
+    const result = await extractText(data, { mergePages: true })
+    const text = Array.isArray(result.text) ? result.text.join('\n\n') : result.text
+    return text.trim().slice(0, MAX_PDF_TEXT_CHARS)
+  } catch {
+    return ''
+  }
+}
+
+export async function attachmentDataUrl(
+  userDataPath: string,
+  sessionId: string,
+  attachmentPath: string
+): Promise<string | null> {
+  assertSessionId(sessionId)
+  const directory = path.resolve(attachmentDirectory(userDataPath, sessionId))
+  const resolved = path.resolve(attachmentPath)
+  if (!resolved.startsWith(`${directory}${path.sep}`)) return null
+  const mimeType = IMAGE_MIME[path.extname(resolved).toLowerCase()]
+  if (!mimeType) return null
+  const stats = await fs.stat(resolved).catch(() => null)
+  if (!stats?.isFile() || stats.size > MAX_PREVIEW_BYTES) return null
+  const data = await fs.readFile(resolved).catch(() => null)
+  if (!data) return null
+  return `data:${mimeType};base64,${data.toString('base64')}`
 }

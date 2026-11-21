@@ -6,6 +6,7 @@ import PermissionCard from './PermissionCard'
 import UserMessage from './UserMessage'
 
 interface MessageListProps {
+  sessionId?: string
   messages: ChatMessage[]
   permissions: PermissionRequest[]
   sessionRunning: boolean
@@ -26,6 +27,7 @@ function groupTurns(messages: ChatMessage[]): ChatMessage[][] {
 }
 
 function MessageList({
+  sessionId,
   messages,
   permissions,
   sessionRunning,
@@ -72,7 +74,7 @@ function MessageList({
                 )}
                 {turn.map((message) => {
                   if (message.role === 'user') {
-                    return <UserMessage key={message.id} message={message} />
+                    return <UserMessage key={message.id} message={message} sessionId={sessionId} />
                   }
                   return (
                     <AssistantMessage
