@@ -50,6 +50,7 @@
 - 上下文窗口、最大输出 token、是否支持推理、是否支持附件、输入 / 输出价格（USD / 百万 token）。
 - 运行时使用上下文窗口做压缩判断、最大输出限制单次生成；推理与附件控件按能力显隐。
 - 每条消息按实际用量与模型价格计算成本。
+- 模型变体（variants）：每个模型可定义命名预设（推理强度、温度、最大输出），在输入框选择；选择结果保存为 `provider/model#variant`，运行时按“Agent 设置 > 变体 > 模型默认”应用。
 
 ### 2.3 模型目录（models.dev）
 
@@ -71,15 +72,19 @@
 ### 3.2 自定义 Agent
 
 - 位置：用户目录 `agent/agents/*.md` 与 `agent/agents.json`，项目 `.opencode/agent(s)/*.md`；项目覆盖用户、用户覆盖内置。
-- 字段：description（必填）、mode（primary / subagent / all）、model、tools、permission、steps、prompt（正文）。
+- 字段：description（必填）、mode（primary / subagent / all）、model（支持 `provider/model#variant`）、tools、permission、steps、temperature（0–2）、prompt（正文）。
 - Markdown 的 `permission` 使用 `action|resource|effect` 列表（逗号分隔），例如 `permission: edit|*|deny, shell|git *|ask`；JSON Agent 使用对象数组 `{ action, resource, effect }`。agent 权限在全局规则之后、会话规则之前生效，可收紧或放宽全局策略。
 - 会话头部（输入框上方）可选择主 Agent；选择结果持久化到会话。
+- 温度按 Agent 覆盖模型默认值；未配置时沿用模型 / 变体设置。
 
 ### 3.3 子代理工具
 
 - `subagent` 工具创建隐藏子会话，在独立上下文中运行指定子 Agent，完成后把结果与子会话 id 返回主对话。
 - 传 `sessionId` 可继续已有子会话；子会话的权限请求上抛到父会话审批；禁止子代理再嵌套（深度 1）。
-- 隐藏子会话不出现在会话列表、不向 UI 推送事件；删除父会话级联清理。
+- 支持后台运行：工具立即返回子会话 id，完成后主会话收到 `subagent.finished` 通知（可在提示条中查看结果并关闭）。
+- 子代理发起的 Question 会以父会话身份展示，回答后继续子代理执行。
+- 隐藏子会话不出现在会话列表、不向 UI 推送事件（完成通知除外）；删除父会话级联清理。
+- `subagent` 工具纳入权限动作 `subagent`，资源为请求的 Agent 名称，默认允许。
 
 ## 4. 工具集
 
@@ -93,10 +98,12 @@
 | `edit`      | 精确字符串替换，唯一匹配或 replaceAll                              | `edit`             |
 | `patch`     | 单次多文件新增 / 更新 / 删除，逐文件审批                           | `edit`             |
 | `shell`     | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`            |
-| `webfetch`  | 抓取网页，markdown / text / html，超时与 5 MB 截断                 | `webfetch`         |
-| `websearch` | Tavily / Exa / Brave 搜索，结果格式化                              | `websearch`        |
-| `skill`     | 按名称加载 Skill 全文                                              | `skill`            |
-| `subagent`  | 委派子任务到子代理                                                 | 子代理内部工具权限 |
+| `webfetch`  | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`         |
+| `websearch` | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch`        |
+| `skill`     | 按名称加载 Skill 全文与附带资源清单                                | `skill`            |
+| `subagent`  | 委派子任务到子代理（可后台运行）                                   | `subagent`         |
+| `mcp_prompt` | 列出 / 获取 MCP prompts 并展开为提示词                            | `mcp`              |
+| `mcp_resource` | 列出 / 读取 MCP resources                                      | `mcp`              |
 | `todowrite` | 替换会话任务列表                                                   | 不需要审批         |
 | `todoread`  | 读取任务列表                                                       | 不需要审批         |
 | `question`  | 向用户提出结构化问题                                               | 不需要审批         |
@@ -109,12 +116,12 @@
 
 ### 5.1 权限模式
 
-| 模式          | 读 / 列表 / 搜索 | 写 / 编辑 | shell | MCP  | Web / Skill |
-| ------------- | ---------------- | --------- | ----- | ---- | ----------- |
-| `plan`        | 允许             | 拒绝      | 拒绝  | 拒绝 | 允许        |
-| `ask`（默认） | 允许             | 询问      | 询问  | 询问 | 允许        |
-| `acceptEdits` | 允许             | 允许      | 询问  | 询问 | 允许        |
-| `auto`        | 允许             | 允许      | 允许  | 允许 | 允许        |
+| 模式          | 读 / 列表 / 搜索 | 写 / 编辑 | shell | MCP  | Web / Skill / 子代理 |
+| ------------- | ---------------- | --------- | ----- | ---- | -------------------- |
+| `plan`        | 允许             | 拒绝      | 拒绝  | 拒绝 | 允许                 |
+| `ask`（默认） | 允许             | 询问      | 询问  | 询问 | 允许                 |
+| `acceptEdits` | 允许             | 允许      | 询问  | 询问 | 允许                 |
+| `auto`        | 允许             | 允许      | 允许  | 允许 | 允许                 |
 
 ### 5.2 规则
 
@@ -151,7 +158,8 @@
 - 传输：本地 stdio（按行 JSON-RPC）与远程 Streamable HTTP（JSON / SSE、`Mcp-Session-Id` 复用、错误转 JSON-RPC 错误）。
 - 连接后读取 tools / prompts / resources；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
 - 工具列表变更自动刷新；单个服务器失败不影响其他服务器，下次运行或状态探测时重连。
-- 遗留：OAuth 授权流程；prompts 作为命令、resources 提供给 Agent 读取。
+- prompts 会作为斜杠命令出现在输入框菜单，按声明的参数顺序展开并返回渲染后的提示词；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
+- 遗留：OAuth 授权流程（按先前决定暂缓）。
 
 ## 10. LSP 诊断与自动格式化
 
@@ -163,14 +171,16 @@
 ## 11. Web 工具
 
 - `webfetch`：仅 http(s)；默认 30 秒超时；HTML 转 Markdown（turndown）或纯文本 / 原始 HTML；非 HTML 原样返回；5 MB 截断；回显最终 URL、状态码与 Content-Type。
-- `websearch`：Tavily / Exa / Brave；API Key 经 `safeStorage` 加密后由主进程下发给 worker；结果格式化为标题、URL、摘要；未配置时给出明确提示。
+- 安全与缓存：拒绝回环、私网、链路本地与云元数据地址，DNS 解析与每次重定向都校验；成功页面缓存 5 分钟（最多 20 条）。
+- `websearch`：Tavily / Exa / Brave / Serper；API Key 经 `safeStorage` 加密后由主进程下发给 worker；结果格式化为标题、URL、摘要；未配置时给出明确提示。
 - 权限：独立 `webfetch` / `websearch` 动作，默认允许，可配置为询问或拒绝。
 
 ## 12. 附件与 @ 文件引用
 
 - 添加方式：回形针选择、拖拽到输入框、粘贴剪贴板文件；附件 chip 显示名称与大小，可单独移除。
 - 类型与限制：文本 ≤200 KB（二进制拒绝）、图片 ≤5 MB（超过 1568px 自动等比缩放并转 PNG）、PDF ≤10 MB。
-- 文本文件在发送时以 `File: name` + 代码块注入；图片 / PDF 作为多模态输入；只有附件没有文字也可以发送。
+- 文本文件在发送时以 `File: name` + 代码块注入；PDF 优先用 unpdf 抽取文本注入，抽取失败时回退为原生文件输入；图片作为多模态输入；只有附件没有文字也可以发送。
+- 历史消息中的图片附件显示缩略图（按会话目录校验路径后经 IPC 读取）。
 - 附件保存在 `agent/attachments/<session>/`，消息持久化引用；删除会话时清理。
 - `@` 触发工作区文件搜索（忽略依赖与构建目录、按匹配度排序），点击或回车插入 `@相对路径`。
 
@@ -179,13 +189,14 @@
 ### 命令
 
 - 发现位置：用户 `agent/commands/*.md`、`agent/commands.json`；项目 `.opencode/command(s)`、`.claude/commands`。
-- 支持 name / description frontmatter；模板支持 `$ARGUMENTS`、`$1`–`$9`，无占位符时在末尾追加参数。
-- 输入框输入 `/` 弹出命令菜单（按名称 / 描述过滤），插入 `/命令 `；发送时识别 `/命令 参数` 并展开为最终提示词。
+- 支持 name / description / agent / model frontmatter；model 支持 `provider/model#variant`。
+- 模板支持 `$ARGUMENTS`、`$1`–`$9`，无占位符时在末尾追加参数；`!` 包裹的 shell 片段会在工作区执行并把 stdout 注入提示词（最多 5 段、每段 10 秒超时）。
+- 输入框输入 `/` 弹出命令菜单（含 MCP prompts），插入 `/命令 `；发送时识别 `/命令 参数` 并展开为最终提示词，同时应用命令绑定的 Agent 与模型。
 
 ### Skills
 
 - 发现位置：用户 `agent/skills`、项目 `.opencode/skill(s)`、`.claude/skills` 下的 `<name>/SKILL.md`；同名后者覆盖前者。
-- 启动时加载，并把技能名称与描述注入 system prompt；`skill` 工具按名称加载全文，纳入 `skill` 权限动作。
+- 启动时加载，并把技能名称与描述注入 system prompt；`skill` 工具按名称加载全文，附带技能目录路径与资源文件清单（最多 50 个），纳入 `skill` 权限动作。
 - 新增或修改 Skill 文件后需重启应用生效。
 
 ## 14. Todo 与 Question
@@ -198,7 +209,7 @@
 ### Question
 
 - `question` 工具支持单选、多选与自由输入，输入框上方展示问答卡片；答案回传给工具结果。
-- 10 分钟未回答自动超时；停止运行会取消待回答问题；子代理发起的提问暂不上抛。
+- 10 分钟未回答自动超时；停止运行会取消待回答问题；子代理发起的提问会路由到父会话展示，回答后继续子代理执行。
 
 ## 15. 设置页
 
@@ -238,13 +249,10 @@ models/                  # 供应商 / 模型配置与加密密钥
 
 ## 17. 已知限制与后续方向
 
-- MCP：OAuth 授权；prompts 作为命令、resources 供 Agent 读取；更多传输细节（重连退避、分页）。
-- 子代理：后台运行与完成通知、按 Agent 的采样参数；子代理的 Question 上抛。
-- 模型：模型 variants（不同推理配置）、OAuth 供应商认证、一键导入供应商及全部模型。
-- 附件：缩略图预览、PDF 文本抽取；私有地址访问策略与 webfetch 缓存。
-- 命令 / Skills：命令绑定 Agent / 模型、命令中的 shell 片段、Skill 附带资源。
-- 权限：Web / Skill 之外的 URL、MCP 等更细的资源匹配已支持，按 agent 的覆盖仍待补。
-- P2 方向：Code Mode、worktree、浏览器自动化、Headless CLI、Server API / SDK、ACP 集成等尚未开始。
+- MCP / 供应商 OAuth 授权（按先前决定暂缓）；模型一键导入与 MCP prompts 命令已完成。
+- 上下文压缩仍使用启发式 token 估算，尚未接入模型 tokenizer 或供应商原生压缩。
+- `patch` 与 `edit` / `write` 同时提供，尚未按模型能力隐藏其一。
+- P2 方向：Code Mode、并行工具编排、worktree、浏览器自动化、Headless CLI、Server API / SDK、ACP 集成等尚未开始。
 
 ## 18. 关键文件索引
 
