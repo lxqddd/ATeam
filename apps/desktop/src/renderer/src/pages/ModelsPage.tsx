@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Alert, Button, Modal, Popconfirm, Radio, Spin, Tag } from 'antd'
+import { Alert, Button, Modal, Popconfirm, Select, Spin, Tag } from 'antd'
 import type {
   AgentInfo,
   AvailableModel,
@@ -329,6 +329,8 @@ function ModelsPage(): React.JSX.Element {
               const providerModels = config.models.filter(
                 (model) => model.providerId === provider.id
               )
+              const selectedModel = providerModels.find(isDefaultModel)
+              const selectedTest = selectedModel ? tests[selectedModel.id] : undefined
               return (
                 <section
                   key={provider.id}
@@ -383,107 +385,96 @@ function ModelsPage(): React.JSX.Element {
                     </div>
                   </div>
 
-                  <div className="mt-3">
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
                     {providerModels.length === 0 ? (
-                      <p className="m-0 py-2 text-caption text-muted">{t('settings.noModels')}</p>
+                      <p className="m-0 flex-1 py-1 text-caption text-muted">
+                        {t('settings.noModels')}
+                      </p>
                     ) : (
-                      <div className="divide-y divide-border-subtle">
-                        {providerModels.map((model) => {
-                          const test = tests[model.id]
-                          const isDefault = isDefaultModel(model)
-                          return (
-                            <div
-                              key={model.id}
-                              role="group"
-                              aria-label={model.name}
-                              className="flex flex-wrap items-center gap-2 py-2"
-                            >
-                              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                                <Radio
-                                  checked={isDefault}
-                                  aria-label={model.name}
-                                  onChange={() => {
-                                    void setDefaultModel(model.providerId, model.modelId)
-                                  }}
-                                />
-                                <span className="truncate text-label font-medium text-foreground">
-                                  {model.name}
-                                </span>
-                                <span className="max-w-[320px] truncate font-mono text-caption text-muted">
-                                  {model.modelId}
-                                </span>
-                                {isDefault && (
-                                  <Chip tone="success">{t('modelsPage.defaultChip')}</Chip>
-                                )}
-                                {test && (
-                                  <Tag
-                                    variant="outlined"
-                                    color={
-                                      test.running
-                                        ? 'default'
-                                        : test.result?.ok
-                                          ? 'success'
-                                          : 'error'
-                                    }
-                                    style={{ marginInlineEnd: 0 }}
-                                  >
-                                    {test.running
-                                      ? t('settings.testing')
-                                      : test.result?.ok
-                                        ? `${t('settings.testSuccess')}${
-                                            test.result.latencyMs
-                                              ? ` · ${test.result.latencyMs}ms`
-                                              : ''
-                                          }`
-                                        : `${t('settings.testFailure')}: ${test.result?.message ?? ''}`}
-                                  </Tag>
-                                )}
-                              </div>
-                              <div className="ml-auto flex flex-none items-center gap-1">
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  loading={test?.running}
-                                  onClick={() => {
-                                    void testModel(model)
-                                  }}
-                                >
-                                  {test?.running ? t('settings.testing') : t('settings.test')}
-                                </Button>
-                                <Button
-                                  type="text"
-                                  size="small"
-                                  onClick={() => {
-                                    setModelForm({ providerId: model.providerId, model })
-                                  }}
-                                >
-                                  {t('settings.editModel')}
-                                </Button>
-                                <Popconfirm
-                                  title={t('settings.confirmDeleteModel')}
-                                  onConfirm={() => removeModel(model.id)}
-                                  okButtonProps={{ loading: busyId === model.id }}
-                                >
-                                  <Button type="text" size="small" danger>
-                                    {t('settings.deleteModel')}
-                                  </Button>
-                                </Popconfirm>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
+                      <Select
+                        className="min-w-[220px] flex-1"
+                        aria-label={t('modelsPage.selectModel')}
+                        placeholder={t('modelsPage.selectModel')}
+                        value={selectedModel?.id}
+                        options={providerModels.map((model) => ({
+                          value: model.id,
+                          label: `${model.name} · ${model.modelId}`
+                        }))}
+                        onChange={(modelId: string) => {
+                          const model = providerModels.find((item) => item.id === modelId)
+                          if (model) void setDefaultModel(model.providerId, model.modelId)
+                        }}
+                      />
                     )}
-                    <Button
-                      type="dashed"
-                      size="small"
-                      className="mt-2"
-                      onClick={() => {
-                        setModelForm({ providerId: provider.id })
-                      }}
-                    >
-                      + {t('settings.addModel')}
-                    </Button>
+                    {selectedTest && (
+                      <Tag
+                        variant="outlined"
+                        color={
+                          selectedTest.running
+                            ? 'default'
+                            : selectedTest.result?.ok
+                              ? 'success'
+                              : 'error'
+                        }
+                        style={{ marginInlineEnd: 0 }}
+                      >
+                        {selectedTest.running
+                          ? t('settings.testing')
+                          : selectedTest.result?.ok
+                            ? `${t('settings.testSuccess')}${
+                                selectedTest.result.latencyMs
+                                  ? ` · ${selectedTest.result.latencyMs}ms`
+                                  : ''
+                              }`
+                            : `${t('settings.testFailure')}: ${selectedTest.result?.message ?? ''}`}
+                      </Tag>
+                    )}
+                    <div className="ml-auto flex flex-none items-center gap-1">
+                      {selectedModel && (
+                        <>
+                          <Button
+                            type="text"
+                            size="small"
+                            loading={selectedTest?.running}
+                            onClick={() => {
+                              void testModel(selectedModel)
+                            }}
+                          >
+                            {selectedTest?.running ? t('settings.testing') : t('settings.test')}
+                          </Button>
+                          <Button
+                            type="text"
+                            size="small"
+                            onClick={() => {
+                              setModelForm({
+                                providerId: selectedModel.providerId,
+                                model: selectedModel
+                              })
+                            }}
+                          >
+                            {t('settings.editModel')}
+                          </Button>
+                          <Popconfirm
+                            title={t('settings.confirmDeleteModel')}
+                            onConfirm={() => removeModel(selectedModel.id)}
+                            okButtonProps={{ loading: busyId === selectedModel.id }}
+                          >
+                            <Button type="text" size="small" danger>
+                              {t('settings.deleteModel')}
+                            </Button>
+                          </Popconfirm>
+                        </>
+                      )}
+                      <Button
+                        type="dashed"
+                        size="small"
+                        onClick={() => {
+                          setModelForm({ providerId: provider.id })
+                        }}
+                      >
+                        + {t('settings.addModel')}
+                      </Button>
+                    </div>
                   </div>
                 </section>
               )

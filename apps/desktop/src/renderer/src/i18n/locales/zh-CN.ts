@@ -106,6 +106,7 @@ const zhCN = {
     setDefault: '设为默认',
     clearDefault: '清除默认',
     defaultChip: '默认',
+    selectModel: '选择模型',
     defaultEndpoint: '默认端点'
   },
   chat: {

@@ -1,8 +1,5 @@
-import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ModelRef } from '@ateam/shared'
-import { chatStore, useChatStore } from '../../chat/store'
-import ModelPicker from './ModelPicker'
+import { useChatStore } from '../../chat/store'
 
 function statusLabel(sessionStatus: string | undefined): string | null {
   if (sessionStatus === 'running') return 'chat.running'
@@ -19,45 +16,15 @@ function statusColor(sessionStatus: string | undefined): string {
 
 function ChatHeader(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId, models, status } = useChatStore()
+  const { sessions, selectedSessionId } = useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const label = statusLabel(session?.status)
-  const [modelError, setModelError] = useState<string | null>(null)
-
-  const effectiveModel = session?.model ?? models?.defaultModel ?? null
-  const running = session?.status === 'running' || session?.status === 'waiting-permission'
-
-  async function changeModel(model: ModelRef): Promise<void> {
-    setModelError(null)
-    try {
-      const target = await chatStore.ensureSession()
-      await chatStore.setSessionModel(target.id, model)
-    } catch (caught) {
-      setModelError(caught instanceof Error ? caught.message : String(caught))
-    }
-  }
 
   return (
     <header data-testid="chat-header" className="flex h-11 flex-none items-center gap-3 px-4">
       <h1 className="min-w-0 flex-1 truncate text-body font-semibold tracking-[-0.01em] text-foreground">
         {session?.title || t('chat.untitled')}
       </h1>
-
-      {modelError && (
-        <span className="max-w-[200px] truncate text-caption text-danger" title={modelError}>
-          {modelError}
-        </span>
-      )}
-
-      <ModelPicker
-        models={models}
-        value={effectiveModel}
-        onChange={(model) => {
-          void changeModel(model)
-        }}
-        disabled={status.status !== 'ready' || running}
-        placement="below"
-      />
 
       {label && (
         <span className={`flex items-center gap-1.5 text-caption ${statusColor(session?.status)}`}>

@@ -64,10 +64,6 @@ function providerCard(name: string): HTMLElement {
   return screen.getByRole('region', { name })
 }
 
-function modelRow(name: string): HTMLElement {
-  return screen.getByRole('group', { name })
-}
-
 let mock: ApiMock
 
 beforeEach(() => {
@@ -77,20 +73,21 @@ beforeEach(() => {
 
 describe('ModelsPage', () => {
   it('loads and renders provider cards, models, chips and the workspace', async () => {
+    const user = userEvent.setup()
     render(<ModelsPage />)
 
     expect(await screen.findByRole('region', { name: 'Acme' })).toBeInTheDocument()
-    expect(screen.getByText('Sonnet')).toBeInTheDocument()
-    expect(screen.getByText('Opus')).toBeInTheDocument()
-    expect(screen.getByText('claude-sonnet-5')).toBeInTheDocument()
+    expect(within(providerCard('Acme')).getByText('Sonnet · claude-sonnet-5')).toBeInTheDocument()
     expect(screen.getByText('Anthropic')).toBeInTheDocument()
     expect(screen.getByText('Key configured')).toBeInTheDocument()
     expect(screen.getByText('Default endpoint')).toBeInTheDocument()
     expect(screen.getByText('/tmp/workspace')).toBeInTheDocument()
 
-    // Both the provider (it contributes the default model) and the Sonnet row carry the chip.
-    expect(within(providerCard('Acme')).getAllByText('Default')).toHaveLength(2)
-    expect(within(modelRow('Opus')).queryByText('Default')).not.toBeInTheDocument()
+    // The provider card carries the default chip; the dropdown selection marks the same model.
+    expect(within(providerCard('Acme')).getAllByText('Default')).toHaveLength(1)
+
+    await user.click(within(providerCard('Acme')).getByRole('combobox'))
+    expect(await screen.findByTitle('Opus · claude-opus-5')).toBeInTheDocument()
   })
 
   it('renders the configured base URL and a missing key chip', async () => {
@@ -140,10 +137,11 @@ describe('ModelsPage', () => {
   it('sets a model as the default', async () => {
     const user = userEvent.setup()
     render(<ModelsPage />)
-    await screen.findByRole('region', { name: 'Acme' })
+    const card = await screen.findByRole('region', { name: 'Acme' })
 
-    expect(within(modelRow('Sonnet')).getByRole('radio')).toBeChecked()
-    await user.click(within(modelRow('Opus')).getByRole('radio'))
+    expect(within(card).getByText('Sonnet · claude-sonnet-5')).toBeInTheDocument()
+    await user.click(within(card).getByRole('combobox'))
+    await user.click(await screen.findByTitle('Opus · claude-opus-5'))
 
     await waitFor(() =>
       expect(mock.api.models.setDefault).toHaveBeenCalledWith({
@@ -420,12 +418,12 @@ describe('ModelsPage', () => {
     )
   })
 
-  it('edits a model from its row', async () => {
+  it('edits the selected model', async () => {
     const user = userEvent.setup()
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Edit model' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Edit model' }))
     const name = await screen.findByLabelText('Display name')
     await user.clear(name)
     await user.type(name, 'Sonnet 5')
@@ -444,7 +442,7 @@ describe('ModelsPage', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Delete model' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Delete model' }))
     expect(await screen.findByText('Delete this model?')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'OK' }))
 
@@ -461,7 +459,7 @@ describe('ModelsPage', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Test connection' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Test connection' }))
 
     expect(await screen.findByText(/Connection succeeded/)).toBeInTheDocument()
   })
@@ -472,7 +470,7 @@ describe('ModelsPage', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Test connection' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Test connection' }))
 
     expect(await screen.findByText(/Connection failed: bad key/)).toBeInTheDocument()
   })
@@ -519,7 +517,7 @@ describe('ModelsPage edge cases', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Delete model' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Delete model' }))
     await user.click(await screen.findByRole('button', { name: 'OK' }))
 
     expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
@@ -529,9 +527,10 @@ describe('ModelsPage edge cases', () => {
     vi.mocked(mock.api.models.setDefault).mockRejectedValueOnce(new Error('MODEL_NOT_FOUND'))
     const user = userEvent.setup()
     render(<ModelsPage />)
-    await screen.findByRole('region', { name: 'Acme' })
+    const card = await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Opus')).getByRole('radio'))
+    await user.click(within(card).getByRole('combobox'))
+    await user.click(await screen.findByTitle('Opus · claude-opus-5'))
 
     expect(await screen.findByText('The model no longer exists.')).toBeInTheDocument()
   })
@@ -595,14 +594,14 @@ describe('ModelsPage edge cases', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Delete model' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Delete model' }))
     await user.click(await screen.findByRole('button', { name: 'Cancel' }))
 
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'OK' })).not.toBeInTheDocument()
     )
     expect(
-      within(modelRow('Sonnet')).getByRole('button', { name: 'Test connection' })
+      within(providerCard('Acme')).getByRole('button', { name: 'Test connection' })
     ).toBeInTheDocument()
   })
 
@@ -636,7 +635,7 @@ describe('ModelsPage edge cases', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Test connection' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Test connection' }))
 
     expect(await screen.findByText('Connection succeeded')).toBeInTheDocument()
   })
@@ -650,7 +649,7 @@ describe('ModelsPage edge cases', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Test connection' }))
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Test connection' }))
 
     expect(await screen.findByText(/Connection failed/)).toBeInTheDocument()
   })

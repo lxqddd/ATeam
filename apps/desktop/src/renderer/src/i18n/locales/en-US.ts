@@ -112,6 +112,7 @@ const enUS = {
     setDefault: 'Set as default',
     clearDefault: 'Clear default',
     defaultChip: 'Default',
+    selectModel: 'Select model',
     defaultEndpoint: 'Default endpoint'
   },
   chat: {
