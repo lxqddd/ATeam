@@ -11,7 +11,8 @@ const chatMocks = vi.hoisted(() => ({
   stop: vi.fn(async () => undefined),
   ensureSession: vi.fn(),
   setSessionModel: vi.fn(),
-  setSessionSettings: vi.fn()
+  setSessionSettings: vi.fn(),
+  clearRevertPrompt: vi.fn()
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -55,7 +56,8 @@ function baseState(): ChatStoreState {
     permissions: [],
     runOutcomes: {},
     actionError: null,
-    restarting: false
+    restarting: false,
+    revertPrompt: null
   }
 }
 
@@ -75,6 +77,7 @@ beforeEach(() => {
   chatMocks.ensureSession.mockReset()
   chatMocks.setSessionModel.mockReset()
   chatMocks.setSessionSettings.mockReset()
+  chatMocks.clearRevertPrompt.mockClear()
 })
 
 describe('Composer', () => {
@@ -336,6 +339,16 @@ describe('Composer', () => {
         permissionMode: 'acceptEdits'
       })
     )
+  })
+
+  it('restores a reverted prompt into the composer', async () => {
+    const state = baseState()
+    state.revertPrompt = 'please try again'
+    storeState.current = state
+    renderComposer()
+
+    expect(screen.getByRole('textbox', { name: 'Message ATeam…' })).toHaveValue('please try again')
+    await waitFor(() => expect(chatMocks.clearRevertPrompt).toHaveBeenCalled())
   })
 
   it('shows errors when changing session settings fails', async () => {

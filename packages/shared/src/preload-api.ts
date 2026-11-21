@@ -8,7 +8,8 @@ import type {
   PermissionRule,
   PermissionRuleInput,
   SessionMeta,
-  SessionSettings
+  SessionSettings,
+  SessionUndoResult
 } from './agent-types'
 import type {
   ModelCreateInput,
@@ -35,6 +36,8 @@ export interface AgentBridge {
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
     setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
     compact: (id: string) => Promise<SessionMeta>
+    undo: (id: string) => Promise<SessionUndoResult>
+    redo: (id: string) => Promise<SessionMeta>
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>

@@ -153,6 +153,8 @@ const enUS = {
     compactContext: 'Compact context',
     compacting: 'Compacting…',
     compactedHistory: 'Earlier messages were compacted into a summary',
+    undo: 'Undo',
+    redo: 'Redo',
     reasoning: 'Reasoning effort',
     reasoningShort: 'Reasoning',
     reasoningDefault: 'Default',

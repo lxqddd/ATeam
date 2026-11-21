@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import type { ModelRef, PermissionMode, ReasoningEffort, SessionSettings } from '@ateam/shared'
@@ -71,7 +71,7 @@ function errorMessage(error: unknown): string {
 
 function Composer(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId, models, status } = useChatStore()
+  const { sessions, selectedSessionId, models, status, revertPrompt } = useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -107,6 +107,15 @@ function Composer(): React.JSX.Element {
     element.style.height = '0px'
     element.style.height = `${Math.min(200, Math.max(44, element.scrollHeight))}px`
   }, [text])
+
+  useEffect(() => {
+    if (revertPrompt === null) return
+    // An undo result arrives from the store; seed the local draft once.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setText(revertPrompt)
+    chatStore.clearRevertPrompt()
+    textareaRef.current?.focus()
+  }, [revertPrompt])
 
   async function submit(): Promise<void> {
     const content = text.trim()

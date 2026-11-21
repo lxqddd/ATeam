@@ -134,6 +134,67 @@ describe('SessionsStore', () => {
     expect(await store.setCompaction('missing', compaction)).toBeUndefined()
   })
 
+  it('stages an undo and restores it with redo', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'a1', role: 'assistant', parts: [makeTextPart('hi')] })
+    )
+
+    const staged = await store.stageUndo(session.id, 1, 'snapshot-after', 'hello')
+
+    expect(staged?.session.redoAvailable).toBe(true)
+    expect(staged?.removed.map((message) => message.id)).toEqual(['a1'])
+    expect(store.getMessages(session.id)).toHaveLength(1)
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getRedo(session.id)).toMatchObject({
+      snapshotAfter: 'snapshot-after',
+      prompt: 'hello'
+    })
+
+    const redone = await reloaded.redo(session.id)
+    expect(redone?.redoAvailable).toBe(false)
+    expect(reloaded.getMessages(session.id)?.map((message) => message.id)).toEqual(['u1', 'a1'])
+    expect(reloaded.getRedo(session.id)).toBeUndefined()
+  })
+
+  it('clears a staged redo when a new message is appended', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+    await store.stageUndo(session.id, 0, null, 'hello')
+    expect(store.getRedo(session.id)).toBeDefined()
+
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u2', role: 'user', parts: [makeTextPart('new direction')] })
+    )
+
+    expect(store.getRedo(session.id)).toBeUndefined()
+    expect(store.getSession(session.id)?.redoAvailable).toBe(false)
+  })
+
+  it('rejects invalid undo indexes and missing redo state', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+
+    expect(await store.stageUndo(session.id, 5, null, 'hello')).toBeUndefined()
+    expect(await store.stageUndo('missing', 0, null, 'hello')).toBeUndefined()
+    expect(await store.redo(session.id)).toBeUndefined()
+    await store.clearRedo(session.id)
+  })
+
   it('fills session settings for records written before they existed', async () => {
     const session = await store.create()
     const file = path.join(sessionsDirectory, `${session.id}.json`)

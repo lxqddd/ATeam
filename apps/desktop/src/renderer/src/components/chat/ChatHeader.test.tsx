@@ -7,7 +7,9 @@ import { createApiMock } from '../../test/api-mock'
 import { makeMessage, makeSession, makeTextPart } from '../../test/factories'
 
 const chatMocks = vi.hoisted(() => ({
-  compactSession: vi.fn(async () => undefined)
+  compactSession: vi.fn(async () => undefined),
+  undoSession: vi.fn(async () => 'prompt'),
+  redoSession: vi.fn(async () => undefined)
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -64,7 +66,8 @@ function baseState(): ChatStoreState {
     permissions: [],
     runOutcomes: {},
     actionError: null,
-    restarting: false
+    restarting: false,
+    revertPrompt: null
   }
 }
 
@@ -72,6 +75,10 @@ beforeEach(() => {
   storeState.current = baseState()
   chatMocks.compactSession.mockClear()
   chatMocks.compactSession.mockResolvedValue(undefined)
+  chatMocks.undoSession.mockClear()
+  chatMocks.undoSession.mockResolvedValue('prompt')
+  chatMocks.redoSession.mockClear()
+  chatMocks.redoSession.mockResolvedValue(undefined)
   Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
 })
 
@@ -125,6 +132,52 @@ describe('ChatHeader', () => {
     render(<ChatHeader />)
 
     expect(screen.getByRole('button', { name: 'Compact context' })).toBeDisabled()
+  })
+
+  it('undoes the last turn from the header', async () => {
+    const state = baseState()
+    state.messagesBySession = {
+      s1: [
+        makeMessage({ id: 'u1', sessionId: 's1', role: 'user', parts: [makeTextPart('hi')] }),
+        makeMessage({
+          id: 'a1',
+          sessionId: 's1',
+          role: 'assistant',
+          parts: [makeTextPart('hello')],
+          snapshotBefore: 'snap-1'
+        })
+      ]
+    }
+    storeState.current = state
+    const user = userEvent.setup()
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    await waitFor(() => expect(chatMocks.undoSession).toHaveBeenCalled())
+  })
+
+  it('redoes a staged undo', async () => {
+    const state = baseState()
+    state.sessions[0].redoAvailable = true
+    storeState.current = state
+    const user = userEvent.setup()
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'Redo' }))
+
+    await waitFor(() => expect(chatMocks.redoSession).toHaveBeenCalled())
+  })
+
+  it('disables undo and redo while the session is running', () => {
+    const state = baseState()
+    state.sessions[0].status = 'running'
+    state.sessions[0].redoAvailable = true
+    storeState.current = state
+    render(<ChatHeader />)
+
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled()
   })
 
   it('opens the workspace from the header', async () => {

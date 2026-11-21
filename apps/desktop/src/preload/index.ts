@@ -38,7 +38,9 @@ const api: AteamApi = {
       setModel: (id, model) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetModel, { id, model }),
       setSettings: (id, settings) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionSetSettings, { id, settings }),
-      compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id })
+      compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id }),
+      undo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id }),
+      redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id })
     },
     messages: {
       list: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.messagesList, { sessionId })

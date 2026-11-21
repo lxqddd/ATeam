@@ -31,6 +31,7 @@ export interface SessionMeta extends SessionSettings {
   model: ModelRef | null
   status: SessionRuntimeStatus
   compaction: SessionCompaction | null
+  redoAvailable: boolean
 }
 
 export type ToolState =
@@ -68,6 +69,9 @@ export interface ChatMessage {
   error?: string
   usage?: TokenUsage
   durationMs?: number
+  snapshotBefore?: string
+  snapshotAfter?: string
+  changedFiles?: string[]
 }
 
 export type PermissionAction = 'write' | 'edit' | 'shell'
@@ -92,6 +96,11 @@ export interface PermissionRuleInput {
   resource: string
   effect: PermissionEffect
   sessionId: string | null
+}
+
+export interface SessionUndoResult {
+  session: SessionMeta
+  prompt: string
 }
 
 export interface PermissionRequest {

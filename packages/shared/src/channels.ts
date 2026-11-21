@@ -15,6 +15,8 @@ export const AGENT_CHANNELS = {
   sessionSetModel: 'ateam:agent:sessions:set-model',
   sessionSetSettings: 'ateam:agent:sessions:set-settings',
   sessionCompact: 'ateam:agent:sessions:compact',
+  sessionUndo: 'ateam:agent:sessions:undo',
+  sessionRedo: 'ateam:agent:sessions:redo',
   messagesList: 'ateam:agent:messages:list',
   chatSend: 'ateam:agent:chat:send',
   chatStop: 'ateam:agent:chat:stop',

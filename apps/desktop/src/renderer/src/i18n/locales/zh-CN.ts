@@ -146,6 +146,8 @@ const zhCN = {
     compactContext: '压缩上下文',
     compacting: '压缩中…',
     compactedHistory: '更早的对话已压缩为摘要',
+    undo: '撤销上一步',
+    redo: '重做',
     reasoning: '推理强度',
     reasoningShort: '推理',
     reasoningDefault: '默认',

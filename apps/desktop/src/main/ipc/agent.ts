@@ -7,7 +7,8 @@ import {
   type MessagesSnapshot,
   type PermissionRequest,
   type PermissionRule,
-  type SessionMeta
+  type SessionMeta,
+  type SessionUndoResult
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
 import { discoverInstructionFiles } from '../agent/instructions'
@@ -132,6 +133,16 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.sessionCompact, (payload): Promise<SessionMeta> => {
     const { id } = idPayloadSchema.parse(payload)
     return manager.request('sessions.compact', { id })
+  })
+
+  handle(AGENT_CHANNELS.sessionUndo, (payload): Promise<SessionUndoResult> => {
+    const { id } = idPayloadSchema.parse(payload)
+    return manager.request('sessions.undo', { id })
+  })
+
+  handle(AGENT_CHANNELS.sessionRedo, (payload): Promise<SessionMeta> => {
+    const { id } = idPayloadSchema.parse(payload)
+    return manager.request('sessions.redo', { id })
   })
 
   handle(AGENT_CHANNELS.messagesList, (payload): Promise<MessagesSnapshot> => {

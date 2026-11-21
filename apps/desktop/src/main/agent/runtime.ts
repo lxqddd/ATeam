@@ -43,6 +43,7 @@ import {
 import { alwaysPermissionResource, evaluatePermissionRules, scanShellCommand } from './permissions'
 import { PermissionsStore } from './permissions-store'
 import { SessionsStore, type SessionRecord } from './sessions-store'
+import { SnapshotStore } from './snapshots'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
 import { createTools as createDefaultTools, type ToolContext } from './tools'
@@ -194,6 +195,7 @@ function usageFrom(total: {
 export class AgentRuntime {
   private readonly store: SessionsStore
   private readonly permissionRules: PermissionsStore
+  private readonly snapshots: SnapshotStore
   private readonly runs = new Map<string, Run>()
   private readonly pending = new Map<string, PendingPermission>()
   private models: RuntimeModelsConfig
@@ -203,6 +205,7 @@ export class AgentRuntime {
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
     this.permissionRules = new PermissionsStore(options.userDataPath)
+    this.snapshots = new SnapshotStore(options.userDataPath)
     this.models = options.models
     this.deps = { ...DEFAULT_DEPENDENCIES, ...options.dependencies }
   }
@@ -211,6 +214,7 @@ export class AgentRuntime {
     await fs.mkdir(this.options.workspacePath, { recursive: true })
     await this.store.init()
     await this.permissionRules.init()
+    await this.snapshots.init()
   }
 
   listSessions(): SessionMeta[] {
@@ -269,6 +273,68 @@ export class AgentRuntime {
 
     const session = this.store.getSession(id)
     if (!session) throw new Error('SESSION_NOT_FOUND')
+    return session
+  }
+
+  async undoSession(id: string): Promise<{ session: SessionMeta; prompt: string }> {
+    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    const record = this.store.get(id)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+
+    let assistantIndex = -1
+    for (let index = record.messages.length - 1; index >= 0; index -= 1) {
+      if (record.messages[index].role === 'assistant') {
+        assistantIndex = index
+        break
+      }
+    }
+    if (assistantIndex < 0) throw new Error('NOTHING_TO_UNDO')
+
+    let userIndex = assistantIndex - 1
+    while (userIndex >= 0 && record.messages[userIndex].role !== 'user') userIndex -= 1
+    if (userIndex < 0) throw new Error('NOTHING_TO_UNDO')
+
+    const assistant = record.messages[assistantIndex]
+    if (assistant.snapshotBefore) {
+      try {
+        await this.snapshots.restore(this.options.workspacePath, assistant.snapshotBefore)
+      } catch {
+        throw new Error('SNAPSHOT_RESTORE_FAILED')
+      }
+    }
+
+    const prompt = record.messages[userIndex].parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('')
+    const staged = await this.store.stageUndo(
+      id,
+      userIndex,
+      assistant.snapshotAfter ?? null,
+      prompt
+    )
+    if (!staged) throw new Error('NOTHING_TO_UNDO')
+    this.emit({ type: 'session.upsert', session: staged.session })
+    return { session: staged.session, prompt }
+  }
+
+  async redoSession(id: string): Promise<SessionMeta> {
+    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
+    const redo = this.store.getRedo(id)
+    if (!redo) throw new Error('NOTHING_TO_REDO')
+
+    if (redo.snapshotAfter) {
+      try {
+        await this.snapshots.restore(this.options.workspacePath, redo.snapshotAfter)
+      } catch {
+        throw new Error('SNAPSHOT_RESTORE_FAILED')
+      }
+    }
+
+    const session = await this.store.redo(id)
+    if (!session) throw new Error('NOTHING_TO_REDO')
+    this.emit({ type: 'session.upsert', session })
     return session
   }
 
@@ -340,6 +406,7 @@ export class AgentRuntime {
 
     const user = makeUserMessage(sessionId, content)
     const assistant = makeAssistantMessage(sessionId)
+    assistant.snapshotBefore = await this.createSnapshotId()
     await this.store.appendMessage(sessionId, user)
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
@@ -395,6 +462,7 @@ export class AgentRuntime {
 
     resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
     const assistant = makeAssistantMessage(sessionId)
+    assistant.snapshotBefore = await this.createSnapshotId()
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
     this.beginRun(sessionId, assistant, new Set([last.id]))
@@ -717,6 +785,28 @@ export class AgentRuntime {
     this.emit({ type: 'message.upsert', message: structuredClone(message) })
   }
 
+  private async createSnapshotId(): Promise<string | undefined> {
+    try {
+      const snapshot = await this.snapshots.create(this.options.workspacePath)
+      return snapshot.id
+    } catch {
+      return undefined
+    }
+  }
+
+  private async recordAfterSnapshot(run: Run, message: ChatMessage): Promise<void> {
+    if (!message.snapshotBefore) return
+    try {
+      const snapshot = await this.snapshots.create(this.options.workspacePath)
+      const diff = await this.snapshots.diff(message.snapshotBefore, snapshot.id)
+      message.snapshotAfter = snapshot.id
+      message.changedFiles = [...diff.added, ...diff.modified, ...diff.deleted]
+      await this.store.persist(run.sessionId)
+    } catch {
+      /* snapshots are best effort */
+    }
+  }
+
   private async runAgent(run: Run): Promise<void> {
     const message = this.assistantFor(run)
     let persistTimer: NodeJS.Timeout | null = null
@@ -904,6 +994,7 @@ export class AgentRuntime {
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
       this.settleTools(message, 'Tool call did not finish')
+      await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
       this.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.store.setStatus(run.sessionId, 'idle')
@@ -941,6 +1032,7 @@ export class AgentRuntime {
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
       this.settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
+      await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
       this.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.store.setStatus(run.sessionId, interrupted ? 'idle' : 'error')

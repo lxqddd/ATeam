@@ -22,11 +22,19 @@ interface SessionFile {
   version: 1
   session: SessionMeta
   messages: ChatMessage[]
+  redo?: RedoState
+}
+
+export interface RedoState {
+  messages: ChatMessage[]
+  snapshotAfter: string | null
+  prompt: string
 }
 
 export interface SessionRecord {
   session: SessionMeta
   messages: ChatMessage[]
+  redo?: RedoState
 }
 
 function nowIso(): string {
@@ -74,6 +82,11 @@ function repairRecord(record: SessionRecord): boolean {
   }
   if (!isSessionCompaction(record.session.compaction)) {
     record.session.compaction = null
+    changed = true
+  }
+  const redoAvailable = Boolean(record.redo)
+  if (record.session.redoAvailable !== redoAvailable) {
+    record.session.redoAvailable = redoAvailable
     changed = true
   }
 
@@ -156,7 +169,7 @@ export class SessionsStore {
       }
       return null
     }
-    return { session: data.session, messages: data.messages }
+    return { session: data.session, messages: data.messages, redo: data.redo }
   }
 
   private sessionFile(id: string): string {
@@ -194,7 +207,8 @@ export class SessionsStore {
       status: 'idle',
       reasoningEffort: null,
       permissionMode: 'ask',
-      compaction: null
+      compaction: null,
+      redoAvailable: false
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
@@ -253,6 +267,10 @@ export class SessionsStore {
     const record = this.records.get(id)
     if (!record) return
     record.messages.push(message)
+    if (record.redo) {
+      delete record.redo
+      record.session.redoAvailable = false
+    }
     record.session.updatedAt = nowIso()
     if (!record.session.title && message.role === 'user') {
       const text = message.parts
@@ -261,6 +279,55 @@ export class SessionsStore {
         .join(' ')
       record.session.title = makeTitle(text)
     }
+    await this.persist(id)
+  }
+
+  getRedo(id: string): RedoState | undefined {
+    const record = this.records.get(id)
+    return record?.redo ? clone(record.redo) : undefined
+  }
+
+  async stageUndo(
+    id: string,
+    fromIndex: number,
+    snapshotAfter: string | null,
+    prompt: string
+  ): Promise<{ session: SessionMeta; removed: ChatMessage[] } | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= record.messages.length) {
+      return undefined
+    }
+    const removed = record.messages.splice(fromIndex)
+    record.redo = {
+      messages: clone(removed),
+      snapshotAfter,
+      prompt
+    }
+    record.session.redoAvailable = true
+    record.session.status = 'idle'
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return { session: clone(record.session), removed: clone(removed) }
+  }
+
+  async redo(id: string): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record?.redo) return undefined
+    record.messages.push(...clone(record.redo.messages))
+    delete record.redo
+    record.session.redoAvailable = false
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
+  }
+
+  async clearRedo(id: string): Promise<void> {
+    const record = this.records.get(id)
+    if (!record?.redo) return
+    delete record.redo
+    record.session.redoAvailable = false
+    record.session.updatedAt = nowIso()
     await this.persist(id)
   }
 
@@ -276,7 +343,8 @@ export class SessionsStore {
         const data: SessionFile = {
           version: 1,
           session: clone(current.session),
-          messages: clone(current.messages)
+          messages: clone(current.messages),
+          redo: current.redo ? clone(current.redo) : undefined
         }
         await writeJsonAtomic(this.sessionFile(id), data)
         await this.writeIndex()

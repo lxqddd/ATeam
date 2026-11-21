@@ -145,6 +145,27 @@ describe('ChatStore sessions', () => {
     expect(store.getSnapshot().sessions[0].compaction).toEqual(compaction)
   })
 
+  it('undoes and redoes the selected session', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.init()
+    vi.mocked(mock.api.agent.sessions.undo).mockResolvedValue({
+      session: makeSession({ id: 's1', redoAvailable: true }),
+      prompt: 'restore me'
+    })
+
+    await store.undoSession()
+
+    expect(mock.api.agent.sessions.undo).toHaveBeenCalledWith('s1')
+    expect(store.getSnapshot().revertPrompt).toBe('restore me')
+    expect(store.getSnapshot().sessions[0].redoAvailable).toBe(true)
+
+    vi.mocked(mock.api.agent.sessions.redo).mockResolvedValue(makeSession({ id: 's1' }))
+    await store.redoSession()
+
+    expect(mock.api.agent.sessions.redo).toHaveBeenCalledWith('s1')
+    expect(store.getSnapshot().sessions[0].redoAvailable).toBe(false)
+  })
+
   it('forwards rename, delete, setModel and run actions', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()

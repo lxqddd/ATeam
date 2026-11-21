@@ -27,6 +27,7 @@ export function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
     reasoningEffort: null,
     permissionMode: 'ask',
     compaction: null,
+    redoAvailable: false,
     ...overrides
   }
 }

@@ -27,6 +27,7 @@ export interface ChatStoreState {
   runOutcomes: Record<string, RunOutcome>
   actionError: string | null
   restarting: boolean
+  revertPrompt: string | null
 }
 
 const INITIAL_STATUS: AgentStatus = { status: 'stopped' }
@@ -68,7 +69,8 @@ export class ChatStore {
     permissions: [],
     runOutcomes: {},
     actionError: null,
-    restarting: false
+    restarting: false,
+    revertPrompt: null
   }
 
   private listeners = new Set<() => void>()
@@ -244,6 +246,28 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
+  async undoSession(): Promise<string | null> {
+    const sessionId = this.state.selectedSessionId
+    if (!sessionId) return null
+    const result = await window.api.agent.sessions.undo(sessionId)
+    this.upsertSession(result.session)
+    await this.loadMessages(sessionId)
+    this.setState({ revertPrompt: result.prompt })
+    return result.prompt
+  }
+
+  async redoSession(): Promise<void> {
+    const sessionId = this.state.selectedSessionId
+    if (!sessionId) return
+    const session = await window.api.agent.sessions.redo(sessionId)
+    this.upsertSession(session)
+    await this.loadMessages(sessionId)
+  }
+
+  clearRevertPrompt(): void {
+    this.setState({ revertPrompt: null })
+  }
+
   async send(text: string): Promise<void> {
     const content = text.trim()
     if (!content) return
@@ -303,7 +327,8 @@ export class ChatStore {
         messagesBySession: {},
         loadedBySession: {},
         permissions: [],
-        runOutcomes: {}
+        runOutcomes: {},
+        revertPrompt: null
       })
       await this.loadSessions()
       try {

@@ -87,6 +87,17 @@ function textScript(text: string, finishReason = 'stop'): Script {
   }
 }
 
+function mutatingScript(changes: Record<string, string>): Script {
+  return async function* () {
+    for (const [relative, content] of Object.entries(changes)) {
+      await fs.writeFile(path.join(directory, 'workspace', relative), content)
+    }
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'done' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function errorScript(message: string): Script {
   return async function* () {
     yield part({ type: 'text-start', id: 't1' })
@@ -1177,6 +1188,71 @@ describe('AgentRuntime', () => {
 
     expect(session.compaction).toBeNull()
     expect(summaries).toEqual([])
+  })
+
+  it('captures workspace snapshots and changed files around a run', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after', 'new.txt': 'created' }))
+
+    await runtime.sendChat(sessionId, 'change files')
+    await sink.next('run.finished')
+
+    const assistant = assistantMessages().at(-1)
+    expect(assistant?.snapshotBefore).toBeTruthy()
+    expect(assistant?.snapshotAfter).toBeTruthy()
+    expect(assistant?.changedFiles).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
+  })
+
+  it('restores files and conversation on undo, then replays them on redo', async () => {
+    const notes = path.join(directory, 'workspace', 'notes.txt')
+    const created = path.join(directory, 'workspace', 'new.txt')
+    await fs.writeFile(notes, 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after', 'new.txt': 'created' }))
+    await runtime.sendChat(sessionId, 'change files')
+    await sink.next('run.finished')
+
+    const undone = await runtime.undoSession(sessionId)
+
+    expect(undone.prompt).toBe('change files')
+    expect(undone.session.redoAvailable).toBe(true)
+    expect(runtime.messages(sessionId).messages).toHaveLength(0)
+    expect(await fs.readFile(notes, 'utf8')).toBe('before')
+    await expect(fs.stat(created)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const redone = await runtime.redoSession(sessionId)
+
+    expect(redone.redoAvailable).toBe(false)
+    expect(runtime.messages(sessionId).messages).toHaveLength(2)
+    expect(await fs.readFile(notes, 'utf8')).toBe('after')
+    expect(await fs.readFile(created, 'utf8')).toBe('created')
+  })
+
+  it('clears redo after a new message is sent', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after' }))
+    await runtime.sendChat(sessionId, 'change')
+    await sink.next('run.finished')
+    await runtime.undoSession(sessionId)
+
+    scripts.push(textScript('new answer'))
+    await runtime.sendChat(sessionId, 'new direction')
+    await sink.next('run.finished')
+
+    expect(runtime.listSessions()[0].redoAvailable).toBe(false)
+    await expect(runtime.redoSession(sessionId)).rejects.toThrow('NOTHING_TO_REDO')
+  })
+
+  it('rejects undo while running and redo without a staged undo', async () => {
+    await expect(runtime.redoSession(sessionId)).rejects.toThrow('NOTHING_TO_REDO')
+
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    await expect(runtime.undoSession(sessionId)).rejects.toThrow('SESSION_BUSY')
+
+    runtime.stopChat(sessionId)
+    await sink.next('run.finished')
   })
 
   it('rejects manual compaction for unknown or running sessions', async () => {

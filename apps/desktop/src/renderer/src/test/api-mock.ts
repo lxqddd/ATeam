@@ -102,6 +102,14 @@ export function createApiMock(
         compact: vi.fn(async (id: string) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           return { ...session }
+        }),
+        undo: vi.fn(async (id: string) => {
+          const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          return { session: { ...session, redoAvailable: true }, prompt: '' }
+        }),
+        redo: vi.fn(async (id: string) => {
+          const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          return { ...session, redoAvailable: false }
         })
       },
       messages: {

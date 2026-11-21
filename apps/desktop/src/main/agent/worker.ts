@@ -59,6 +59,10 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().setSessionSettings(request.params.id, request.params.settings)
     case 'sessions.compact':
       return requireRuntime().compactSession(request.params.id)
+    case 'sessions.undo':
+      return requireRuntime().undoSession(request.params.id)
+    case 'sessions.redo':
+      return requireRuntime().redoSession(request.params.id)
     case 'messages.list':
       return requireRuntime().messages(request.params.sessionId)
     case 'chat.send':

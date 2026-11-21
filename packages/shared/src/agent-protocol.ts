@@ -43,6 +43,8 @@ export type WorkerRequest =
       params: { id: string; settings: SessionSettings }
     }
   | { id: string; method: 'sessions.compact'; params: { id: string } }
+  | { id: string; method: 'sessions.undo'; params: { id: string } }
+  | { id: string; method: 'sessions.redo'; params: { id: string } }
   | { id: string; method: 'messages.list'; params: { sessionId: string } }
   | {
       id: string

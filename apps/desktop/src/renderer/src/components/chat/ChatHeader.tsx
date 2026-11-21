@@ -23,17 +23,44 @@ function ChatHeader(): React.JSX.Element {
   const messages = selectedSessionId ? (messagesBySession[selectedSessionId] ?? []) : []
   const running = session?.status === 'running' || session?.status === 'waiting-permission'
   const [compacting, setCompacting] = useState(false)
-  const [compactError, setCompactError] = useState<string | null>(null)
+  const [historyBusy, setHistoryBusy] = useState<'undo' | 'redo' | null>(null)
+  const [headerError, setHeaderError] = useState<string | null>(null)
+  const canUndo = !running && messages.some((message) => message.role === 'assistant')
+  const canRedo = !running && session?.redoAvailable === true
 
   async function compactSession(): Promise<void> {
     setCompacting(true)
-    setCompactError(null)
+    setHeaderError(null)
     try {
       await chatStore.compactSession()
     } catch (caught) {
-      setCompactError(caught instanceof Error ? caught.message : String(caught))
+      setHeaderError(caught instanceof Error ? caught.message : String(caught))
     } finally {
       setCompacting(false)
+    }
+  }
+
+  async function undo(): Promise<void> {
+    setHistoryBusy('undo')
+    setHeaderError(null)
+    try {
+      await chatStore.undoSession()
+    } catch (caught) {
+      setHeaderError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setHistoryBusy(null)
+    }
+  }
+
+  async function redo(): Promise<void> {
+    setHistoryBusy('redo')
+    setHeaderError(null)
+    try {
+      await chatStore.redoSession()
+    } catch (caught) {
+      setHeaderError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setHistoryBusy(null)
     }
   }
 
@@ -43,17 +70,83 @@ function ChatHeader(): React.JSX.Element {
         {session?.title || t('chat.untitled')}
       </h1>
 
-      {compactError && (
-        <span className="max-w-[200px] truncate text-caption text-danger" title={compactError}>
-          {compactError}
+      {headerError && (
+        <span className="max-w-[200px] truncate text-caption text-danger" title={headerError}>
+          {headerError}
         </span>
       )}
 
       <button
         type="button"
+        title={t('chat.undo')}
+        aria-label={t('chat.undo')}
+        disabled={!canUndo || historyBusy !== null}
+        onClick={() => {
+          void undo()
+        }}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55 disabled:hover:bg-transparent"
+      >
+        {historyBusy === 'undo' ? (
+          <span
+            aria-hidden
+            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+          />
+        ) : (
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="m9 7-5 5 5 5" />
+            <path d="M4 12h9a6 6 0 0 1 6 6v1" />
+          </svg>
+        )}
+      </button>
+
+      <button
+        type="button"
+        title={t('chat.redo')}
+        aria-label={t('chat.redo')}
+        disabled={!canRedo || historyBusy !== null}
+        onClick={() => {
+          void redo()
+        }}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55 disabled:hover:bg-transparent"
+      >
+        {historyBusy === 'redo' ? (
+          <span
+            aria-hidden
+            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+          />
+        ) : (
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="m15 7 5 5-5 5" />
+            <path d="M20 12h-9a6 6 0 0 0-6 6v1" />
+          </svg>
+        )}
+      </button>
+
+      <button
+        type="button"
         title={t('chat.compactContext')}
         aria-label={t('chat.compactContext')}
-        disabled={compacting || running || messages.length === 0}
+        disabled={compacting || historyBusy !== null || running || messages.length === 0}
         onClick={() => {
           void compactSession()
         }}
