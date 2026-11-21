@@ -24,7 +24,8 @@ const EMPTY_MODELS: ModelsConfigPublic = {
 const DEFAULT_INFO: AgentInfo = {
   workspacePath: '/tmp/workspace',
   appVersion: '0.1.0',
-  encryptionAvailable: true
+  encryptionAvailable: true,
+  instructionFiles: []
 }
 
 export interface ApiMock {

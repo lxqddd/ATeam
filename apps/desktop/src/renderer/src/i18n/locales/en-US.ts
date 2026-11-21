@@ -86,6 +86,7 @@ const enUS = {
     providerRequired: 'Add a provider first.',
     workspace: 'Workspace',
     workspaceDescription: 'Agent file and shell tools can only operate inside this directory.',
+    instructionFiles: 'Loaded instructions',
     openWorkspace: 'Open folder',
     loading: 'Loading…',
     loadFailed: 'Could not load the model configuration.',

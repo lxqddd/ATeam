@@ -496,6 +496,14 @@ function ModelsPage(): React.JSX.Element {
                 <p className="m-0 mt-0.5 text-caption text-muted">
                   {t('settings.workspaceDescription')}
                 </p>
+                {info?.instructionFiles && info.instructionFiles.length > 0 && (
+                  <p
+                    className="m-0 mt-1 truncate text-caption text-subtle"
+                    title={info.instructionFiles.join('\n')}
+                  >
+                    {t('settings.instructionFiles')}: {info.instructionFiles.join(', ')}
+                  </p>
+                )}
               </div>
               <div className="flex flex-none items-center gap-2">
                 <code className="max-w-[300px] truncate font-mono text-caption font-normal text-muted">

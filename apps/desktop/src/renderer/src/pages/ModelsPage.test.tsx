@@ -497,6 +497,23 @@ describe('ModelsPage', () => {
 
     expect(mock.api.workspace.open).toHaveBeenCalled()
   })
+
+  it('shows the loaded instruction files', async () => {
+    mock = createApiMock({
+      models: makeConfig(),
+      info: {
+        workspacePath: '/tmp/workspace',
+        appVersion: '0.1.0',
+        encryptionAvailable: true,
+        instructionFiles: ['/repo/AGENTS.md', '/repo/packages/web/CLAUDE.md']
+      }
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    render(<ModelsPage />)
+
+    expect(await screen.findByText(/\/repo\/AGENTS\.md/)).toBeInTheDocument()
+    expect(screen.getByText(/\/repo\/packages\/web\/CLAUDE\.md/)).toBeInTheDocument()
+  })
 })
 
 describe('ModelsPage edge cases', () => {

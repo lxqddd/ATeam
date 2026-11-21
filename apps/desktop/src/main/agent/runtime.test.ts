@@ -10,6 +10,7 @@ import type {
   RuntimeModelsConfig
 } from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './runtime'
+import type { InstructionFile } from './instructions'
 import { SessionsStore } from './sessions-store'
 import { makeMessage } from './test/factories'
 
@@ -111,6 +112,8 @@ let sink: Sink
 let scripts: Script[]
 let turns: AgentTurnInput[]
 let summaries: string[]
+let instructionFiles: InstructionFile[]
+let instructionInputs: Array<{ workspacePath: string; globalDirectory: string }>
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
 let resumeTurn: (() => void) | null
 let runtime: AgentRuntime
@@ -140,6 +143,10 @@ function createRuntime(): AgentRuntime {
       generateSummary: async (input) => {
         summaries.push(input.prompt)
         return 'SUMMARY'
+      },
+      loadInstructions: async (input) => {
+        instructionInputs.push(input)
+        return instructionFiles
       }
     }
   })
@@ -348,6 +355,8 @@ beforeEach(async () => {
   scripts = []
   turns = []
   summaries = []
+  instructionFiles = []
+  instructionInputs = []
   toolExecutor = null
   resumeTurn = null
   runtime = createRuntime()
@@ -956,6 +965,34 @@ describe('AgentRuntime', () => {
 
     expect(summaries).toEqual([])
     expect(turns[0].messages).toEqual([{ role: 'user', content: 'short' }])
+  })
+
+  it('injects discovered instruction files into the system prompt', async () => {
+    instructionFiles = [
+      { path: '/repo/AGENTS.md', content: 'Run bun test before committing' },
+      { path: '/repo/packages/web/CLAUDE.md', content: 'Keep components small' }
+    ]
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('Project instructions')
+    expect(turns[0].system).toContain('Run bun test before committing')
+    expect(turns[0].system).toContain('Keep components small')
+    expect(instructionInputs[0]).toEqual({
+      workspacePath: path.join(directory, 'workspace'),
+      globalDirectory: directory
+    })
+  })
+
+  it('keeps the base system prompt without instruction files', async () => {
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).not.toContain('Project instructions')
   })
 
   it('compacts a session on demand without deleting stored messages', async () => {

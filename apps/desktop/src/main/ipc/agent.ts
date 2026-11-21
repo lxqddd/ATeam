@@ -9,6 +9,7 @@ import {
   type SessionMeta
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
+import { discoverInstructionFiles } from '../agent/instructions'
 import type { ModelsStore } from '../models/store'
 import type { TrustedSender } from './trusted-sender'
 
@@ -76,11 +77,21 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return manager.restart(modelsStore.runtimeConfig())
   })
 
-  handle(AGENT_CHANNELS.info, (): AgentInfo => ({
-    workspacePath,
-    appVersion: app.getVersion(),
-    encryptionAvailable: modelsStore.isEncryptionAvailable()
-  }))
+  handle(AGENT_CHANNELS.info, async (): Promise<AgentInfo> => {
+    let instructionFiles: string[] = []
+    try {
+      const files = await discoverInstructionFiles(workspacePath, app.getPath('userData'))
+      instructionFiles = files.map((file) => file.path)
+    } catch {
+      /* instruction discovery is best effort */
+    }
+    return {
+      workspacePath,
+      appVersion: app.getVersion(),
+      encryptionAvailable: modelsStore.isEncryptionAvailable(),
+      instructionFiles
+    }
+  })
 
   handle(AGENT_CHANNELS.sessionsList, (): Promise<SessionMeta[]> =>
     manager.request('sessions.list')

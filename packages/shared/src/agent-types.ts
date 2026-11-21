@@ -94,6 +94,7 @@ export interface AgentInfo {
   workspacePath: string
   appVersion: string
   encryptionAvailable: boolean
+  instructionFiles: string[]
 }
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'

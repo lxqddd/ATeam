@@ -32,6 +32,11 @@ import {
   summaryPrompt,
   systemWithSummary
 } from './context'
+import {
+  discoverInstructionFiles,
+  systemWithInstructions,
+  type InstructionFile
+} from './instructions'
 import { SessionsStore, type SessionRecord } from './sessions-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
@@ -92,6 +97,10 @@ export interface AgentRuntimeDependencies {
     prompt: string
     abortSignal?: AbortSignal
   }) => Promise<string>
+  loadInstructions: (input: {
+    workspacePath: string
+    globalDirectory: string
+  }) => Promise<InstructionFile[]>
 }
 
 async function generateSummary(input: {
@@ -106,6 +115,13 @@ async function generateSummary(input: {
     abortSignal: input.abortSignal
   })
   return result.text
+}
+
+async function loadInstructions(input: {
+  workspacePath: string
+  globalDirectory: string
+}): Promise<InstructionFile[]> {
+  return discoverInstructionFiles(input.workspacePath, input.globalDirectory)
 }
 
 const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
@@ -125,7 +141,8 @@ const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       onError: () => undefined
     }).stream
   }),
-  generateSummary
+  generateSummary,
+  loadInstructions
 }
 
 function nowIso(): string {
@@ -672,6 +689,10 @@ export class AgentRuntime {
       }
 
       const current = this.record(run.sessionId)
+      const instructions = await this.deps.loadInstructions({
+        workspacePath: this.options.workspacePath,
+        globalDirectory: this.options.userDataPath
+      })
       const tools = this.deps.createTools({
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
@@ -681,9 +702,12 @@ export class AgentRuntime {
 
       const result = this.deps.createTurn({
         model,
-        system: systemWithSummary(
-          buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
-          current.session.compaction?.summary
+        system: systemWithInstructions(
+          systemWithSummary(
+            buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
+            current.session.compaction?.summary
+          ),
+          instructions
         ),
         messages: buildModelMessages(this.historyMessages(run, message.id)),
         tools,

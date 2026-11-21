@@ -80,6 +80,7 @@ const zhCN = {
     providerRequired: '请先添加供应商。',
     workspace: '工作区',
     workspaceDescription: 'Agent 的文件和命令工具只能在这个目录内操作。',
+    instructionFiles: '已加载规则',
     openWorkspace: '打开文件夹',
     loading: '加载中…',
     loadFailed: '无法读取模型配置。',
