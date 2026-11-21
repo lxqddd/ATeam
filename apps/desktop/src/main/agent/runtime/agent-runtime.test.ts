@@ -1611,6 +1611,24 @@ function subagentCallScript(input: {
   }
 }
 
+function questionScript(): Script {
+  return async function* () {
+    const input = {
+      header: 'Pick',
+      question: 'Continue?',
+      options: [{ label: 'yes' }]
+    }
+    yield part({ type: 'tool-input-start', id: 'call-q', toolName: 'question' })
+    yield part({ type: 'tool-call', toolCallId: 'call-q', toolName: 'question', input })
+    if (!questionExecutor) throw new Error('question executor is missing')
+    const output = await questionExecutor(input, 'call-q')
+    yield part({ type: 'tool-result', toolCallId: 'call-q', toolName: 'question', input, output })
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'child done' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function nestedSubagentScript(): Script {
   return async function* () {
     if (!subagentExecutor) throw new Error('subagent executor is missing')
@@ -1906,6 +1924,30 @@ describe('skills and commands', () => {
     expect(turns[0].system).not.toContain('Available skills')
   })
 
+  it('lists MCP prompts as commands', async () => {
+    vi.mocked(mcpManager.prompts).mockResolvedValueOnce([
+      {
+        server: 'docs',
+        name: 'search',
+        description: 'Search docs',
+        arguments: [{ name: 'query', required: true }]
+      }
+    ])
+
+    const commands = await runtime.listCommands()
+
+    expect(commands).toContainEqual({
+      id: 'mcp:docs:search',
+      name: 'search',
+      description: 'MCP · docs · Search docs',
+      template: '',
+      agent: null,
+      model: null,
+      mcp: { server: 'docs', prompt: 'search', arguments: ['query'] },
+      source: 'mcp'
+    })
+  })
+
   it('lists workspace commands', async () => {
     await writeWorkspace(
       '.opencode/commands/review.md',
@@ -1947,6 +1989,21 @@ describe('todo tools', () => {
 })
 
 describe('question tool', () => {
+  it('routes subagent questions to the parent session', async () => {
+    scripts.push(subagentCallScript({ prompt: 'Ask the user', agent: 'general' }))
+    scripts.push(questionScript())
+
+    await runtime.sendChat(sessionId, 'delegate')
+    const asked = await sink.next('question.asked')
+    if (asked.event.type !== 'question.asked') throw new Error('unexpected event')
+    expect(asked.event.question.sessionId).toBe(sessionId)
+
+    runtime.replyQuestion(asked.event.question.id, { selected: ['yes'], custom: null })
+    await sink.next('run.finished')
+
+    expect(runtime.questions()).toEqual([])
+  })
+
   it('asks the user and returns the answer', async () => {
     scripts.push(textScript('ok'))
     await runtime.sendChat(sessionId, 'hi')

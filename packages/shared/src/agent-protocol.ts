@@ -110,6 +110,11 @@ export type WorkerRequest =
   | { id: string; method: 'mcp.remove'; params: { id: string } }
   | {
       id: string
+      method: 'mcp.prompt'
+      params: { server: string; prompt: string; arguments?: Record<string, string> }
+    }
+  | {
+      id: string
       method: 'models.test'
       params: { providerId: string; modelId: string }
     }

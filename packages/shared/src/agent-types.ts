@@ -326,7 +326,8 @@ export interface CommandDefinition {
   template: string
   agent: string | null
   model: ModelRef | null
-  source: 'user' | 'project'
+  mcp?: { server: string; prompt: string; arguments?: string[] } | null
+  source: 'user' | 'project' | 'mcp'
 }
 
 export interface SkillDefinition {

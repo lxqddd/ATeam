@@ -151,11 +151,42 @@ export class AgentRuntime {
     return this.agents()
   }
 
-  listCommands(): Promise<CommandDefinition[]> {
-    return loadCommands({
+  async listCommands(): Promise<CommandDefinition[]> {
+    const commands = await loadCommands({
       userDataPath: this.options.userDataPath,
       workspacePath: this.options.workspacePath
     })
+    let prompts: Awaited<ReturnType<McpManagerLike['prompts']>> = []
+    try {
+      prompts = await this.mcp().prompts()
+    } catch {
+      /* MCP prompts are best effort */
+    }
+    const names = new Set(commands.map((command) => command.name.toLowerCase()))
+    const mcpCommands: CommandDefinition[] = prompts.map((prompt) => {
+      let name = prompt.name
+      if (names.has(name.toLowerCase())) name = `${prompt.name}-${prompt.server}`
+      names.add(name.toLowerCase())
+      return {
+        id: `mcp:${prompt.server}:${prompt.name}`,
+        name,
+        description: `MCP · ${prompt.server}${prompt.description ? ` · ${prompt.description}` : ''}`,
+        template: '',
+        agent: null,
+        model: null,
+        mcp: {
+          server: prompt.server,
+          prompt: prompt.name,
+          arguments: prompt.arguments?.map((arg) => arg.name) ?? []
+        },
+        source: 'mcp'
+      }
+    })
+    return [...commands, ...mcpCommands]
+  }
+
+  async mcpPrompt(server: string, prompt: string, args?: Record<string, string>): Promise<string> {
+    return this.getMcpPrompt(server, prompt, args)
   }
 
   async setSessionAgent(id: string, agentId: string | null): Promise<SessionMeta> {
@@ -901,7 +932,7 @@ export class AgentRuntime {
     const id = randomUUID()
     const request: QuestionRequest = {
       id,
-      sessionId: run.sessionId,
+      sessionId: run.parentSessionId ?? run.sessionId,
       messageId: run.messageId,
       toolCallId,
       header: input.header,

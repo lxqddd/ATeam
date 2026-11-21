@@ -273,6 +273,23 @@ function Composer(): React.JSX.Element {
     )
     if (!command) return { text: value, command: null }
     const args = match[2] ?? ''
+    if (command.source === 'mcp' && command.mcp) {
+      const tokens = args.trim() ? args.trim().split(/\s+/) : []
+      const argumentNames = command.mcp.arguments ?? []
+      const promptArgs: Record<string, string> = {}
+      if (argumentNames.length > 0) {
+        tokens.forEach((token, index) => {
+          const name = argumentNames[index]
+          if (name) promptArgs[name] = token
+        })
+      } else if (tokens.length > 0) {
+        promptArgs.input = tokens.join(' ')
+      }
+      return {
+        text: await window.api.agent.mcp.prompt(command.mcp.server, command.mcp.prompt, promptArgs),
+        command
+      }
+    }
     if (command.template.includes('!`')) {
       try {
         return {

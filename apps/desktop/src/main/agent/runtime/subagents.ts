@@ -93,6 +93,7 @@ export async function runSubagentTask(
     config: parent.config,
     agent,
     depth: parent.depth + 1,
+    parentSessionId: parent.sessionId,
     permissionDelegate: (action, resource, toolName) =>
       host.askPermission(parent, action, resource, toolName, toolCallId, agent.permissions)
   }

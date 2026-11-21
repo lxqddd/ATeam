@@ -407,6 +407,21 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return manager.request('mcp.update', { id, input })
   })
 
+  handle(AGENT_CHANNELS.mcpPrompt, (payload): Promise<string> => {
+    const {
+      server,
+      prompt,
+      arguments: args
+    } = z
+      .object({
+        server: z.string().min(1).max(200),
+        prompt: z.string().min(1).max(500),
+        arguments: z.record(z.string(), z.string()).optional()
+      })
+      .parse(payload)
+    return manager.request('mcp.prompt', { server, prompt, arguments: args })
+  })
+
   handle(AGENT_CHANNELS.mcpRemove, (payload): Promise<boolean> => {
     const { id } = idPayloadSchema.parse(payload)
     return manager.request('mcp.remove', { id })

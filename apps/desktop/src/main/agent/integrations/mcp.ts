@@ -46,6 +46,7 @@ export interface McpPromptSummary {
   server: string
   name: string
   description?: string
+  arguments?: Array<{ name: string; required?: boolean }>
 }
 
 export interface McpResourceSummary {
@@ -201,7 +202,15 @@ export class McpManager implements McpManagerLike {
         summaries.push({
           server: config.name,
           name: prompt.name,
-          description: prompt.description
+          description: prompt.description,
+          ...(prompt.arguments
+            ? {
+                arguments: prompt.arguments.map((arg) => ({
+                  name: arg.name,
+                  required: arg.required
+                }))
+              }
+            : {})
         })
       }
     }

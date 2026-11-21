@@ -76,7 +76,9 @@ const api: AteamApi = {
       statuses: (options) => ipcRenderer.invoke(AGENT_CHANNELS.mcpStatuses, options ?? {}),
       add: (input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAdd, input),
       update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpUpdate, { id, input }),
-      remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id })
+      remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id }),
+      prompt: (server, prompt, args) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpPrompt, { server, prompt, arguments: args })
     },
     websearch: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.webSearchGet),

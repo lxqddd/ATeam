@@ -124,6 +124,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().updateMcpServer(request.params.id, request.params.input)
     case 'mcp.remove':
       return requireRuntime().removeMcpServer(request.params.id)
+    case 'mcp.prompt':
+      return requireRuntime().mcpPrompt(
+        request.params.server,
+        request.params.prompt,
+        request.params.arguments
+      )
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'shutdown':

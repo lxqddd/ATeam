@@ -218,9 +218,23 @@ describe('McpClient', () => {
     transport.emit({
       jsonrpc: '2.0',
       id: transport.requests()[0].id,
-      result: { prompts: [{ name: 'summarize', description: 'Summarize a file' }] }
+      result: {
+        prompts: [
+          {
+            name: 'summarize',
+            description: 'Summarize a file',
+            arguments: [{ name: 'path', required: true }]
+          }
+        ]
+      }
     })
-    await expect(prompts).resolves.toEqual([{ name: 'summarize', description: 'Summarize a file' }])
+    await expect(prompts).resolves.toEqual([
+      {
+        name: 'summarize',
+        description: 'Summarize a file',
+        arguments: [{ name: 'path', required: true }]
+      }
+    ])
 
     const resources = client.listResources()
     await vi.waitFor(() => expect(transport.requests()).toHaveLength(2))

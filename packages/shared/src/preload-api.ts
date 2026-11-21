@@ -90,6 +90,7 @@ export interface AgentBridge {
     add: (input: McpServerInput) => Promise<McpServerConfig>
     update: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>
     remove: (id: string) => Promise<boolean>
+    prompt: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
   }
   websearch: {
     get: () => Promise<WebSearchProviderPublic>

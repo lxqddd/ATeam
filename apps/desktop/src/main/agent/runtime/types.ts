@@ -35,6 +35,7 @@ export interface Run {
   retried?: boolean
   agent: AgentDefinition | null
   depth: number
+  parentSessionId?: string
   permissionDelegate?: (
     action: PermissionAction,
     resource: string,

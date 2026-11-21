@@ -245,7 +245,8 @@ export function createApiMock(
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         })),
-        remove: vi.fn(async () => true)
+        remove: vi.fn(async () => true),
+        prompt: vi.fn(async () => '')
       },
       websearch: {
         get: vi.fn(async (): Promise<WebSearchProviderPublic> => ({

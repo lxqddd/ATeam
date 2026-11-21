@@ -39,6 +39,7 @@ export const AGENT_CHANNELS = {
   mcpAdd: 'ateam:agent:mcp:add',
   mcpUpdate: 'ateam:agent:mcp:update',
   mcpRemove: 'ateam:agent:mcp:remove',
+  mcpPrompt: 'ateam:agent:mcp:prompt',
   webSearchGet: 'ateam:agent:websearch:get',
   webSearchUpdate: 'ateam:agent:websearch:update',
   attachmentsImport: 'ateam:agent:attachments:import',

@@ -31,9 +31,16 @@ export interface McpToolCallResult {
   isError: boolean
 }
 
+export interface McpPromptArgument {
+  name: string
+  description?: string
+  required?: boolean
+}
+
 export interface McpPromptDefinition {
   name: string
   description?: string
+  arguments?: McpPromptArgument[]
 }
 
 export interface McpResourceDefinition {
@@ -385,14 +392,26 @@ export class McpClient implements McpClientLike {
     let cursor: string | undefined
     for (let page = 0; page < 100; page += 1) {
       const result = (await this.request('prompts/list', cursor ? { cursor } : {})) as {
-        prompts?: Array<{ name?: unknown; description?: unknown }>
+        prompts?: Array<{
+          name?: unknown
+          description?: unknown
+          arguments?: Array<{ name?: unknown; description?: unknown; required?: unknown }>
+        }>
         nextCursor?: unknown
       }
       for (const prompt of result?.prompts ?? []) {
         if (!prompt || typeof prompt.name !== 'string') continue
+        const args = (prompt.arguments ?? [])
+          .filter((arg) => arg && typeof arg.name === 'string')
+          .map((arg) => ({
+            name: arg.name as string,
+            description: typeof arg.description === 'string' ? arg.description : undefined,
+            required: arg.required === true
+          }))
         prompts.push({
           name: prompt.name,
-          description: typeof prompt.description === 'string' ? prompt.description : undefined
+          description: typeof prompt.description === 'string' ? prompt.description : undefined,
+          ...(args.length > 0 ? { arguments: args } : {})
         })
       }
       cursor = typeof result?.nextCursor === 'string' ? result.nextCursor : undefined

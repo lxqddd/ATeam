@@ -580,6 +580,36 @@ describe('Composer', () => {
     })
   })
 
+  it('expands MCP prompt commands', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'mcp:docs:search',
+        name: 'search',
+        description: 'MCP · docs · Search docs',
+        template: '',
+        agent: null,
+        model: null,
+        mcp: { server: 'docs', prompt: 'search', arguments: ['query'] },
+        source: 'mcp'
+      }
+    ]
+    storeState.current = state
+    vi.mocked(api.api.agent.mcp.prompt).mockResolvedValueOnce('Search results for electron')
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/search electron')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() =>
+      expect(chatMocks.send).toHaveBeenCalledWith('Search results for electron', [])
+    )
+    expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith('docs', 'search', { query: 'electron' })
+  })
+
   it('expands shell snippets through the agent process', async () => {
     chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
     const state = baseState() as ChatStoreState
