@@ -15,6 +15,11 @@ const storedKeyProvider: ProviderPublic = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 }
 
+const compatibleKeyProvider: ProviderPublic = {
+  ...storedKeyProvider,
+  type: 'openai-compatible'
+}
+
 async function chooseOpenAiCompatible(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByRole('combobox'))
   await user.click(await screen.findByTitle('OpenAI compatible'))
@@ -59,7 +64,7 @@ describe('ProviderForm', () => {
 
   it('renders stored-key controls and disables clearing while a key is typed', async () => {
     const user = userEvent.setup()
-    render(<ProviderForm provider={storedKeyProvider} onSubmit={vi.fn()} onCancel={vi.fn()} />)
+    render(<ProviderForm provider={compatibleKeyProvider} onSubmit={vi.fn()} onCancel={vi.fn()} />)
 
     expect(screen.getByText('Stored securely')).toBeInTheDocument()
     const checkbox = screen.getByRole('checkbox', { name: 'Clear API key' })
@@ -68,6 +73,18 @@ describe('ProviderForm', () => {
     await user.type(screen.getByLabelText('API key'), 'sk-new')
 
     await waitFor(() => expect(checkbox).toBeDisabled())
+  })
+
+  it('disables clearing the key for provider types that require one', () => {
+    render(
+      <ProviderForm
+        provider={{ ...storedKeyProvider, type: 'anthropic', baseURL: undefined }}
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    )
+
+    expect(screen.getByRole('checkbox', { name: 'Clear API key' })).toBeDisabled()
   })
 
   it('submits an update that keeps the stored key when left blank', async () => {

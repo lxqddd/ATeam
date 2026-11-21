@@ -39,6 +39,7 @@ function ProviderForm({
   const [form] = Form.useForm<ProviderFormValues>()
   const type = Form.useWatch('type', form) ?? provider?.type ?? 'anthropic'
   const apiKey = Form.useWatch('apiKey', form) ?? ''
+  const requiresApiKey = type !== 'openai-compatible'
 
   useEffect(() => {
     if (!provider) return
@@ -48,7 +49,9 @@ function ProviderForm({
       .then((key) => {
         if (!active || !key) return
         setLoadedKey(key)
-        form.setFieldValue('apiKey', key)
+        if (!form.getFieldValue('apiKey')) {
+          form.setFieldValue('apiKey', key)
+        }
       })
       .catch(() => undefined)
     return () => {
@@ -168,7 +171,7 @@ function ProviderForm({
               {provider?.hasApiKey && <span>{t('settings.apiKeyStored')}</span>}
               {provider?.hasApiKey && (
                 <Form.Item name="clearApiKey" valuePropName="checked" noStyle>
-                  <Checkbox disabled={Boolean(apiKey) && apiKey !== loadedKey}>
+                  <Checkbox disabled={requiresApiKey || (Boolean(apiKey) && apiKey !== loadedKey)}>
                     {t('settings.clearApiKey')}
                   </Checkbox>
                 </Form.Item>

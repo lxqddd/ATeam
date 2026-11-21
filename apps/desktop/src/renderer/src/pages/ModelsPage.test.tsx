@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AgentInfo, ModelPublic, ModelsConfigPublic, ProviderPublic } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,6 +18,16 @@ const secondProvider: ProviderPublic = {
   id: 'p2',
   name: 'Second',
   type: 'openai',
+  baseURL: 'https://api.example.com/v1',
+  hasApiKey: true,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+}
+
+const compatibleProvider: ProviderPublic = {
+  id: 'p1',
+  name: 'Acme',
+  type: 'openai-compatible',
   baseURL: 'https://api.example.com/v1',
   hasApiKey: true,
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -256,6 +266,8 @@ describe('ModelsPage', () => {
   })
 
   it('clears the prefilled key when the clear checkbox is checked', async () => {
+    mock = createApiMock({ models: makeConfig({ providers: [compatibleProvider] }) })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
     vi.mocked(mock.api.models.revealApiKey).mockResolvedValue('sk-stored-secret')
     const user = userEvent.setup()
     render(<ModelsPage />)
@@ -273,8 +285,8 @@ describe('ModelsPage', () => {
       expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
         id: 'p1',
         name: 'Acme',
-        type: 'anthropic',
-        baseURL: '',
+        type: 'openai-compatible',
+        baseURL: 'https://api.example.com/v1',
         clearApiKey: true,
         apiKey: 'sk-stored-secret'
       })
@@ -282,6 +294,8 @@ describe('ModelsPage', () => {
   })
 
   it('unchecks clear and submits a new key typed after prefill', async () => {
+    mock = createApiMock({ models: makeConfig({ providers: [compatibleProvider] }) })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
     vi.mocked(mock.api.models.revealApiKey).mockResolvedValue('sk-stored-secret')
     const user = userEvent.setup()
     render(<ModelsPage />)
@@ -303,12 +317,35 @@ describe('ModelsPage', () => {
       expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
         id: 'p1',
         name: 'Acme',
-        type: 'anthropic',
-        baseURL: '',
+        type: 'openai-compatible',
+        baseURL: 'https://api.example.com/v1',
         clearApiKey: false,
         apiKey: 'sk-brand-new'
       })
     )
+  })
+
+  it('keeps a key typed before the reveal reply arrives', async () => {
+    let resolveReveal: (key: string | null) => void = () => undefined
+    vi.mocked(mock.api.models.revealApiKey).mockImplementation(
+      () =>
+        new Promise<string | null>((resolve) => {
+          resolveReveal = resolve
+        })
+    )
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(within(providerCard('Acme')).getByRole('button', { name: 'Edit provider' }))
+    const input = await screen.findByLabelText('API key')
+    await user.type(input, 'sk-typed-first')
+    await act(async () => {
+      resolveReveal('sk-stored-secret')
+    })
+
+    expect(mock.api.models.revealApiKey).toHaveBeenCalledWith('p1')
+    expect(input).toHaveValue('sk-typed-first')
   })
 
   it('adds a model through the provider card', async () => {
@@ -516,6 +553,8 @@ describe('ModelsPage edge cases', () => {
   })
 
   it('resets the clear-key flag when a new key is typed', async () => {
+    mock = createApiMock({ models: makeConfig({ providers: [compatibleProvider] }) })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
     const user = userEvent.setup()
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
@@ -529,8 +568,8 @@ describe('ModelsPage edge cases', () => {
       expect(mock.api.models.updateProvider).toHaveBeenCalledWith({
         id: 'p1',
         name: 'Acme',
-        type: 'anthropic',
-        baseURL: '',
+        type: 'openai-compatible',
+        baseURL: 'https://api.example.com/v1',
         clearApiKey: false,
         apiKey: 'sk-new'
       })
