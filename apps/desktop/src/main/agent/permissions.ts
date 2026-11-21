@@ -24,12 +24,18 @@ const RISKY_PATTERNS: RegExp[] = [
   /\bcurl\b[^|;\n]*\|\s*(?:ba|z|da)?sh\b/i
 ]
 
-export function matchPermissionPattern(pattern: string, value: string): boolean {
+export function matchPermissionPattern(
+  pattern: string,
+  value: string,
+  caseInsensitive = process.platform === 'win32'
+): boolean {
+  const barePattern = pattern.endsWith(' *') ? pattern.slice(0, -2) : null
+  if (barePattern !== null && value === barePattern) return true
   const expression = pattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '.*')
     .replace(/\?/g, '.')
-  return new RegExp(`^${expression}$`).test(value)
+  return new RegExp(`^${expression}$`, caseInsensitive ? 'i' : '').test(value)
 }
 
 function normalizeResource(action: PermissionRuleAction, resource: string): string {
@@ -38,48 +44,36 @@ function normalizeResource(action: PermissionRuleAction, resource: string): stri
   return trimmed.replace(/\\/g, '/').replace(/^\.\//, '')
 }
 
-function effectWithinScope(rules: PermissionRule[]): PermissionEffect | null {
-  if (rules.length === 0) return null
-  return rules.some((rule) => rule.effect === 'ask') ? 'ask' : 'allow'
-}
-
 function resourceEffect(
   rules: PermissionRule[],
   action: PermissionRuleAction,
-  resource: string,
-  sessionId: string | null
+  resource: string
 ): PermissionEffect | null {
-  const matching = rules.filter(
-    (rule) =>
-      (rule.action === '*' || rule.action === action) &&
-      matchPermissionPattern(rule.resource, resource)
-  )
-  if (matching.some((rule) => rule.effect === 'deny')) return 'deny'
-
-  const sessionRules = matching.filter((rule) => rule.sessionId === sessionId)
-  const globalRules = matching.filter((rule) => rule.sessionId === null)
-  return effectWithinScope(sessionRules) ?? effectWithinScope(globalRules)
+  let effect: PermissionEffect | null = null
+  for (const rule of rules) {
+    if (rule.action !== '*' && rule.action !== action) continue
+    if (!matchPermissionPattern(rule.resource, resource)) continue
+    effect = rule.effect
+  }
+  return effect
 }
 
 /**
- * Evaluates ordered permission rules for one or more resources.
- * Deny always wins; a mix of allowed and unmatched resources asks.
+ * Evaluates ordered permission rules for one or more resources. Later rules
+ * override earlier ones; a multi-resource operation is denied if any resource
+ * is denied.
  */
 export function evaluatePermissionRules(
   rules: PermissionRule[],
   request: PermissionRuleRequest
 ): PermissionEffect | null {
   if (request.resources.length === 0) return null
-  const applicable = rules.filter(
-    (rule) => rule.sessionId === null || rule.sessionId === request.sessionId
-  )
+  const ordered = [
+    ...rules.filter((rule) => rule.sessionId === null),
+    ...rules.filter((rule) => rule.sessionId === request.sessionId)
+  ]
   const effects = request.resources.map((resource) =>
-    resourceEffect(
-      applicable,
-      request.action,
-      normalizeResource(request.action, resource),
-      request.sessionId
-    )
+    resourceEffect(ordered, request.action, normalizeResource(request.action, resource))
   )
 
   if (effects.includes('deny')) return 'deny'

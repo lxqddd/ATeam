@@ -98,6 +98,19 @@ function mutatingScript(changes: Record<string, string>): Script {
   }
 }
 
+function twoStepMutatingScript(): Script {
+  return async function* () {
+    await fs.writeFile(path.join(directory, 'workspace', 'step-one.txt'), 'one')
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'step one' })
+    yield part({ type: 'finish-step' })
+    await fs.writeFile(path.join(directory, 'workspace', 'step-two.txt'), 'two')
+    yield part({ type: 'text-delta', id: 't1', text: 'step two' })
+    yield part({ type: 'finish-step' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function errorScript(message: string): Script {
   return async function* () {
     yield part({ type: 'text-start', id: 't1' })
@@ -558,7 +571,25 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
   })
 
-  it('asks before shell commands that touch paths outside the workspace', async () => {
+  it('allows shell commands that touch external paths in auto mode by default', async () => {
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    toolAction = 'shell'
+    scripts.push(toolScript(['cat /etc/hosts']))
+
+    await runtime.sendChat(sessionId, 'shell')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('done:cat /etc/hosts')
+  })
+
+  it('asks when an external_directory rule asks', async () => {
+    await restartWithRules([
+      { action: 'external_directory', resource: '/etc/*', effect: 'ask', sessionId: null }
+    ])
     await runtime.setSessionSettings(sessionId, {
       reasoningEffort: null,
       permissionMode: 'auto'
@@ -569,15 +600,11 @@ describe('AgentRuntime', () => {
     await runtime.sendChat(sessionId, 'shell')
     const asked = await sink.next('permission.asked')
     if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
-    expect(asked.event.permission).toMatchObject({
-      action: 'shell',
-      resource: 'cat /etc/hosts'
-    })
     runtime.replyPermission(asked.event.permission.id, 'reject')
     await sink.next('run.finished')
   })
 
-  it('asks before risky shell commands in auto mode', async () => {
+  it('allows risky shell commands in auto mode unless a rule denies them', async () => {
     await runtime.setSessionSettings(sessionId, {
       reasoningEffort: null,
       permissionMode: 'auto'
@@ -586,10 +613,44 @@ describe('AgentRuntime', () => {
     scripts.push(toolScript(['rm -rf /']))
 
     await runtime.sendChat(sessionId, 'shell')
-    const asked = await sink.next('permission.asked')
-    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
-    runtime.replyPermission(asked.event.permission.id, 'reject')
     await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('done:rm -rf /')
+  })
+
+  it('denies risky shell commands matched by a deny rule', async () => {
+    await restartWithRules([{ action: 'shell', resource: 'rm *', effect: 'deny', sessionId: null }])
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    toolAction = 'shell'
+    scripts.push(toolScript(['rm -rf /']))
+
+    await runtime.sendChat(sessionId, 'shell')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('Permission denied')
+  })
+
+  it('lets a later allow rule override an earlier deny', async () => {
+    await restartWithRules([
+      { action: 'write', resource: '*', effect: 'deny', sessionId: null },
+      { action: 'write', resource: 'src/*', effect: 'allow', sessionId: null }
+    ])
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'ask'
+    })
+    scripts.push(toolScript(['src/a.txt']))
+
+    await runtime.sendChat(sessionId, 'write')
+    await sink.next('run.finished')
+
+    expect(sink.count('permission.asked')).toBe(0)
+    expect(toolPart('call-1').output).toBe('done:src/a.txt')
   })
 
   it('marks the tool as denied after a reject reply', async () => {
@@ -1179,15 +1240,20 @@ describe('AgentRuntime', () => {
     expect(runtime.messages(sessionId).messages).toHaveLength(before)
   })
 
-  it('does not compact a short session', async () => {
-    scripts.push(textScript('ok'))
-    await runtime.sendChat(sessionId, 'hi')
+  it('does not compact a short session unless compaction is forced', async () => {
+    scripts.push(textScript('first'))
+    await runtime.sendChat(sessionId, 'one')
+    await sink.next('run.finished')
+    scripts.push(textScript('second'))
+    await runtime.sendChat(sessionId, 'two')
     await sink.next('run.finished')
 
     const session = await runtime.compactSession(sessionId)
-
     expect(session.compaction).toBeNull()
-    expect(summaries).toEqual([])
+
+    const forced = await runtime.compactSession(sessionId, { force: true })
+    expect(forced.compaction).toMatchObject({ summary: 'SUMMARY' })
+    expect(summaries).toHaveLength(1)
   })
 
   it('captures workspace snapshots and changed files around a run', async () => {
@@ -1203,13 +1269,31 @@ describe('AgentRuntime', () => {
     expect(assistant?.changedFiles).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
   })
 
+  it('records a snapshot for each model step', async () => {
+    scripts.push(twoStepMutatingScript())
+
+    await runtime.sendChat(sessionId, 'two steps')
+    await sink.next('run.finished')
+
+    const assistant = assistantMessages().at(-1)
+    expect(assistant?.snapshotSteps).toHaveLength(2)
+    expect(assistant?.snapshotSteps?.[0].files).toContain('step-one.txt')
+    expect(assistant?.snapshotSteps?.[1].files).toContain('step-two.txt')
+    expect(assistant?.snapshotAfter).toBe(assistant?.snapshotSteps?.[1].after)
+    expect(assistant?.changedFiles).toEqual(
+      expect.arrayContaining(['step-one.txt', 'step-two.txt'])
+    )
+  })
+
   it('restores files and conversation on undo, then replays them on redo', async () => {
     const notes = path.join(directory, 'workspace', 'notes.txt')
     const created = path.join(directory, 'workspace', 'new.txt')
+    const outside = path.join(directory, 'workspace', 'outside.txt')
     await fs.writeFile(notes, 'before')
     scripts.push(mutatingScript({ 'notes.txt': 'after', 'new.txt': 'created' }))
     await runtime.sendChat(sessionId, 'change files')
     await sink.next('run.finished')
+    await fs.writeFile(outside, 'unrelated')
 
     const undone = await runtime.undoSession(sessionId)
 
@@ -1218,6 +1302,7 @@ describe('AgentRuntime', () => {
     expect(runtime.messages(sessionId).messages).toHaveLength(0)
     expect(await fs.readFile(notes, 'utf8')).toBe('before')
     await expect(fs.stat(created)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await fs.readFile(outside, 'utf8')).toBe('unrelated')
 
     const redone = await runtime.redoSession(sessionId)
 
@@ -1225,6 +1310,7 @@ describe('AgentRuntime', () => {
     expect(runtime.messages(sessionId).messages).toHaveLength(2)
     expect(await fs.readFile(notes, 'utf8')).toBe('after')
     expect(await fs.readFile(created, 'utf8')).toBe('created')
+    expect(await fs.readFile(outside, 'utf8')).toBe('unrelated')
   })
 
   it('clears redo after a new message is sent', async () => {
@@ -1240,6 +1326,39 @@ describe('AgentRuntime', () => {
 
     expect(runtime.listSessions()[0].redoAvailable).toBe(false)
     await expect(runtime.redoSession(sessionId)).rejects.toThrow('NOTHING_TO_REDO')
+  })
+
+  it('reverts to an earlier assistant turn and redoes the removed turns', async () => {
+    scripts.push(mutatingScript({ 'a.txt': 'a' }))
+    await runtime.sendChat(sessionId, 'first')
+    await sink.next('run.finished')
+    scripts.push(mutatingScript({ 'b.txt': 'b' }))
+    await runtime.sendChat(sessionId, 'second')
+    await sink.next('run.finished')
+    scripts.push(mutatingScript({ 'c.txt': 'c' }))
+    await runtime.sendChat(sessionId, 'third')
+    await sink.next('run.finished')
+
+    const assistants = assistantMessages()
+    const second = assistants[1]
+
+    const undone = await runtime.undoSession(sessionId, second.id)
+
+    expect(undone.session.redoAvailable).toBe(true)
+    expect(runtime.messages(sessionId).messages).toHaveLength(2)
+    expect(await fs.readFile(path.join(directory, 'workspace', 'a.txt'), 'utf8')).toBe('a')
+    await expect(fs.stat(path.join(directory, 'workspace', 'b.txt'))).rejects.toMatchObject({
+      code: 'ENOENT'
+    })
+    await expect(fs.stat(path.join(directory, 'workspace', 'c.txt'))).rejects.toMatchObject({
+      code: 'ENOENT'
+    })
+
+    await runtime.redoSession(sessionId)
+
+    expect(runtime.messages(sessionId).messages).toHaveLength(6)
+    expect(await fs.readFile(path.join(directory, 'workspace', 'b.txt'), 'utf8')).toBe('b')
+    expect(await fs.readFile(path.join(directory, 'workspace', 'c.txt'), 'utf8')).toBe('c')
   })
 
   it('rejects undo while running and redo without a staged undo', async () => {

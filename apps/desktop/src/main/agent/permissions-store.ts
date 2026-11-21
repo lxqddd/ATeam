@@ -10,6 +10,9 @@ interface PermissionsFile {
 }
 
 const RULE_ACTIONS = new Set<PermissionRuleAction>([
+  'read',
+  'list',
+  'grep',
   'write',
   'edit',
   'shell',

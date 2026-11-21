@@ -20,6 +20,7 @@ export interface ToolContext {
     toolName: string,
     toolCallId: string
   ) => Promise<boolean>
+  loadNestedInstructions?: (targetPath: string) => Promise<string>
 }
 
 function truncate(value: string): string {
@@ -145,8 +146,10 @@ export function createTools(context: ToolContext): ToolSet {
       offset: z.number().int().min(1).optional().describe('First line (1-based)'),
       limit: z.number().int().min(1).max(MAX_READ_LINES).optional().describe('Maximum lines')
     }),
-    execute: async ({ path: inputPath, offset = 1, limit = MAX_READ_LINES }) => {
+    execute: async ({ path: inputPath, offset = 1, limit = MAX_READ_LINES }, options) => {
       try {
+        const allowed = await context.askPermission('read', inputPath, 'read', options.toolCallId)
+        if (!allowed) return 'Permission denied; the file was not read.'
         const filePath = await resolvePath(context.workspace, inputPath)
         const text = await readFileText(filePath)
         const lines = text.split(/\r?\n/)
@@ -159,7 +162,8 @@ export function createTools(context: ToolContext): ToolSet {
           start + limit < lines.length
             ? `\n[showing lines ${offset}-${start + slice.length} of ${lines.length}]`
             : ''
-        return truncate(numbered + suffix)
+        const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
+        return truncate(`${numbered}${suffix}${nested ? `\n\n${nested}` : ''}`)
       } catch (error) {
         return safeError(error)
       }
@@ -172,13 +176,17 @@ export function createTools(context: ToolContext): ToolSet {
       path: z.string().optional().describe('Directory relative to the workspace'),
       depth: z.number().int().min(1).max(4).optional().describe('Recursion depth')
     }),
-    execute: async ({ path: inputPath = '.', depth = 1 }) => {
+    execute: async ({ path: inputPath = '.', depth = 1 }, options) => {
       try {
+        const allowed = await context.askPermission('list', inputPath, 'list', options.toolCallId)
+        if (!allowed) return 'Permission denied; the directory was not listed.'
         const root = await resolvePath(context.workspace, inputPath)
         const base = path.resolve(context.workspace)
         const entries: string[] = []
         await listDirectory(root, base, 1, depth, entries)
-        return truncate(entries.join('\n') || '(empty directory)')
+        const listed = entries.join('\n') || '(empty directory)'
+        const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
+        return truncate(`${listed}${nested ? `\n\n${nested}` : ''}`)
       } catch (error) {
         return safeError(error)
       }
@@ -193,13 +201,13 @@ export function createTools(context: ToolContext): ToolSet {
       include: z.string().optional().describe('Optional filename filter, e.g. *.ts'),
       maxResults: z.number().int().min(1).max(500).optional()
     }),
-    execute: async ({
-      pattern,
-      path: inputPath = '.',
-      include = '',
-      maxResults = MAX_GREP_MATCHES
-    }) => {
+    execute: async (
+      { pattern, path: inputPath = '.', include = '', maxResults = MAX_GREP_MATCHES },
+      options
+    ) => {
       try {
+        const allowed = await context.askPermission('grep', pattern, 'grep', options.toolCallId)
+        if (!allowed) return 'Permission denied; the search was not run.'
         const expression = new RegExp(pattern, 'i')
         const root = await resolvePath(context.workspace, inputPath)
         const base = path.resolve(context.workspace)
@@ -229,7 +237,9 @@ export function createTools(context: ToolContext): ToolSet {
           8
         )
         const header = stop ? `[stopped at ${maxResults} matches]\n` : ''
-        return truncate(header + (matches.join('\n') || 'No matches'))
+        const matchesText = header + (matches.join('\n') || 'No matches')
+        const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
+        return truncate(`${matchesText}${nested ? `\n\n${nested}` : ''}`)
       } catch (error) {
         return safeError(error)
       }

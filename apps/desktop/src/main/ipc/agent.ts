@@ -49,7 +49,7 @@ const permissionReplySchema = z.object({
 })
 const permissionRulesSchema = z.object({ sessionId: idSchema.optional() }).optional()
 const permissionRuleInputSchema = z.object({
-  action: z.enum(['write', 'edit', 'shell', 'external_directory', '*']),
+  action: z.enum(['read', 'list', 'grep', 'write', 'edit', 'shell', 'external_directory', '*']),
   resource: z.string().trim().min(1).max(500),
   effect: z.enum(['allow', 'ask', 'deny']),
   sessionId: idSchema.nullable()
@@ -132,7 +132,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
 
   handle(AGENT_CHANNELS.sessionCompact, (payload): Promise<SessionMeta> => {
     const { id } = idPayloadSchema.parse(payload)
-    return manager.request('sessions.compact', { id })
+    return manager.request('sessions.compact', { id, force: true })
   })
 
   handle(AGENT_CHANNELS.sessionUndo, (payload): Promise<SessionUndoResult> => {

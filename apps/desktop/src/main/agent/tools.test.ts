@@ -27,14 +27,17 @@ function execute(
 let directory: string
 let tools: ReturnType<typeof createTools>
 let askPermission: Mock<ToolContext['askPermission']>
+let loadNested: Mock<(targetPath: string) => Promise<string>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
   askPermission = vi.fn<ToolContext['askPermission']>(async () => true)
+  loadNested = vi.fn(async () => '')
   tools = createTools({
     workspace: directory,
     signal: new AbortController().signal,
-    askPermission
+    askPermission,
+    loadNestedInstructions: loadNested
   })
 })
 
@@ -75,6 +78,27 @@ describe('read tool', () => {
     )
   })
 
+  it('honours read permission denials', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'one')
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.read, { path: 'a.txt' })).resolves.toBe(
+      'Permission denied; the file was not read.'
+    )
+    expect(askPermission).toHaveBeenCalledWith('read', 'a.txt', 'read', 'call-1')
+  })
+
+  it('appends nested project instructions to the read result', async () => {
+    await fs.mkdir(path.join(directory, 'sub'))
+    await fs.writeFile(path.join(directory, 'sub', 'a.txt'), 'one')
+    loadNested.mockResolvedValue('## Instructions from sub/AGENTS.md\n\nnested rule')
+
+    const result = await execute(tools.read, { path: 'sub/a.txt' })
+
+    expect(result).toContain('nested rule')
+    expect(loadNested).toHaveBeenCalledWith('sub/a.txt')
+  })
+
   it('blocks symlink escapes', async () => {
     const outside = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-outside-')))
     try {
@@ -100,6 +124,16 @@ describe('list tool', () => {
     await fs.writeFile(path.join(directory, 'node_modules', 'pkg.js'), 'x')
   }
 
+  it('honours list permission denials', async () => {
+    await seedTree()
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.list, { path: '.' })).resolves.toBe(
+      'Permission denied; the directory was not listed.'
+    )
+    expect(askPermission).toHaveBeenCalledWith('list', '.', 'list', 'call-1')
+  })
+
   it('lists one level with directory markers and sorted entries', async () => {
     await seedTree()
     await expect(execute(tools.list, {})).resolves.toBe('a.txt\nsub/')
@@ -120,6 +154,15 @@ describe('grep tool', () => {
   beforeEach(async () => {
     await fs.writeFile(path.join(directory, 'a.txt'), 'alpha\nbeta\ngamma')
     await fs.writeFile(path.join(directory, 'b.md'), 'beta')
+  })
+
+  it('honours grep permission denials', async () => {
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.grep, { pattern: 'beta' })).resolves.toBe(
+      'Permission denied; the search was not run.'
+    )
+    expect(askPermission).toHaveBeenCalledWith('grep', 'beta', 'grep', 'call-1')
   })
 
   it('reports matching lines with file and line number', async () => {

@@ -28,6 +28,7 @@ interface SessionFile {
 export interface RedoState {
   messages: ChatMessage[]
   snapshotAfter: string | null
+  files: string[]
   prompt: string
 }
 
@@ -291,7 +292,8 @@ export class SessionsStore {
     id: string,
     fromIndex: number,
     snapshotAfter: string | null,
-    prompt: string
+    prompt: string,
+    files: string[]
   ): Promise<{ session: SessionMeta; removed: ChatMessage[] } | undefined> {
     const record = this.records.get(id)
     if (!record) return undefined
@@ -302,6 +304,7 @@ export class SessionsStore {
     record.redo = {
       messages: clone(removed),
       snapshotAfter,
+      files: [...files],
       prompt
     }
     record.session.redoAvailable = true

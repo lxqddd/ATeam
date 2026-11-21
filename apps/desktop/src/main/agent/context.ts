@@ -63,17 +63,18 @@ export function shouldCompact(messages: ChatMessage[], contextWindow: number): b
 export function planCompaction(
   messages: ChatMessage[],
   contextWindow: number,
-  keepTokens = COMPACTION_KEEP_TOKENS
+  keepTokens = COMPACTION_KEEP_TOKENS,
+  force = false
 ): CompactionPlan | null {
   const tokensBefore = estimateMessagesTokens(messages)
   const limit = Math.min(keepTokens, compactionKeepTokens(contextWindow))
-  if (tokensBefore <= limit) return null
+  if (!force && tokensBefore <= limit) return null
 
   let accumulated = 0
   let start = messages.length
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const tokens = estimateMessageTokens(messages[index])
-    if (accumulated + tokens > limit) break
+    if (accumulated + tokens > (force ? 0 : limit)) break
     accumulated += tokens
     start = index
   }

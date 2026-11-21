@@ -1,12 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import { readJsonFile, writeJsonAtomic } from './atomic-json'
+
+const execFileAsync = promisify(execFile)
 
 export interface WorkspaceSnapshot {
   id: string
   createdAt: string
   root: string
+  sessionId?: string
   files: Record<string, string>
 }
 
@@ -24,6 +29,7 @@ export interface RestoreResult {
 const SNAPSHOT_DIR = 'snapshots'
 const BLOB_DIR = 'blobs'
 const IGNORED_NAMES = new Set(['.git'])
+const MAX_UNTRACKED_BYTES = 2 * 1024 * 1024
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -68,6 +74,47 @@ async function removeEmptyDirectories(root: string, directory = ''): Promise<voi
   }
 }
 
+async function isGitRepository(root: string): Promise<boolean> {
+  try {
+    const stat = await fs.stat(path.join(root, '.git'))
+    return stat.isDirectory() || stat.isFile()
+  } catch {
+    return false
+  }
+}
+
+async function gitPaths(root: string, args: string[]): Promise<string[]> {
+  const { stdout } = await execFileAsync('git', ['-C', root, ...args], {
+    maxBuffer: 20 * 1024 * 1024
+  })
+  return stdout.split('\0').filter(Boolean)
+}
+
+async function listGitFiles(root: string): Promise<string[]> {
+  const tracked = new Set(await gitPaths(root, ['ls-files', '-z', '--cached']))
+  const untracked = await gitPaths(root, ['ls-files', '-z', '--others', '--exclude-standard'])
+  const files: string[] = []
+  for (const relative of new Set([...tracked, ...untracked])) {
+    const entry = await fs.lstat(path.join(root, relative)).catch(() => null)
+    if (!entry?.isFile()) continue
+    if (!tracked.has(relative) && entry.size > MAX_UNTRACKED_BYTES) continue
+    files.push(relative)
+  }
+  return files
+}
+
+async function hashPaths(root: string, paths: string[]): Promise<Record<string, string>> {
+  const files: Record<string, string> = {}
+  for (const relative of paths) {
+    try {
+      files[relative] = hash(await fs.readFile(path.join(root, relative)))
+    } catch {
+      /* file disappeared */
+    }
+  }
+  return files
+}
+
 export class SnapshotStore {
   private readonly snapshotsDirectory: string
   private readonly blobsDirectory: string
@@ -81,9 +128,16 @@ export class SnapshotStore {
     await fs.mkdir(this.blobsDirectory, { recursive: true })
   }
 
-  async create(workspacePath: string): Promise<WorkspaceSnapshot> {
+  async create(workspacePath: string, sessionId?: string): Promise<WorkspaceSnapshot> {
     const root = path.resolve(workspacePath)
-    const files = await walkFiles(root)
+    let files: Record<string, string>
+    try {
+      files = (await isGitRepository(root))
+        ? await hashPaths(root, await listGitFiles(root))
+        : await walkFiles(root)
+    } catch {
+      files = await walkFiles(root)
+    }
     for (const [relative, blob] of Object.entries(files)) {
       const content = await fs.readFile(path.join(root, relative))
       await fs.writeFile(path.join(this.blobsDirectory, blob), content)
@@ -92,10 +146,37 @@ export class SnapshotStore {
       id: randomUUID(),
       createdAt: nowIso(),
       root,
+      sessionId,
       files
     }
     await writeJsonAtomic(this.manifestPath(snapshot.id), snapshot)
     return snapshot
+  }
+
+  async removeSession(sessionId: string): Promise<number> {
+    const files = await fs.readdir(this.snapshotsDirectory)
+    const remaining = new Set<string>()
+    let removed = 0
+
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue
+      const snapshot = await readJsonFile<WorkspaceSnapshot>(
+        path.join(this.snapshotsDirectory, file)
+      )
+      if (!snapshot) continue
+      if (snapshot.sessionId === sessionId) {
+        await fs.rm(path.join(this.snapshotsDirectory, file), { force: true })
+        removed += 1
+      } else {
+        for (const blob of Object.values(snapshot.files)) remaining.add(blob)
+      }
+    }
+
+    const blobs = await fs.readdir(this.blobsDirectory)
+    for (const blob of blobs) {
+      if (!remaining.has(blob)) await fs.rm(path.join(this.blobsDirectory, blob), { force: true })
+    }
+    return removed
   }
 
   async get(id: string): Promise<WorkspaceSnapshot | null> {
@@ -125,6 +206,33 @@ export class SnapshotStore {
       await fs.writeFile(target, content)
       written.push(relative)
     }
+
+    return { written: written.sort(), removed: removed.sort() }
+  }
+
+  async restorePaths(workspacePath: string, id: string, paths: string[]): Promise<RestoreResult> {
+    const snapshot = await this.get(id)
+    if (!snapshot) throw new Error('SNAPSHOT_NOT_FOUND')
+    const root = path.resolve(workspacePath)
+    const removed: string[] = []
+    const written: string[] = []
+
+    for (const raw of paths) {
+      const relative = raw.replace(/\\/g, '/').replace(/^\.\//, '')
+      if (!relative || relative.startsWith('/') || relative.split('/').includes('..')) continue
+      const target = path.join(root, relative)
+      const blob = snapshot.files[relative]
+      if (blob) {
+        const content = await fs.readFile(path.join(this.blobsDirectory, blob))
+        await fs.mkdir(path.dirname(target), { recursive: true })
+        await fs.writeFile(target, content)
+        written.push(relative)
+      } else {
+        await fs.rm(target, { force: true })
+        removed.push(relative)
+      }
+    }
+    if (removed.length > 0) await removeEmptyDirectories(root)
 
     return { written: written.sort(), removed: removed.sort() }
   }

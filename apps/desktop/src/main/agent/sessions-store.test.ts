@@ -145,7 +145,7 @@ describe('SessionsStore', () => {
       makeMessage({ id: 'a1', role: 'assistant', parts: [makeTextPart('hi')] })
     )
 
-    const staged = await store.stageUndo(session.id, 1, 'snapshot-after', 'hello')
+    const staged = await store.stageUndo(session.id, 1, 'snapshot-after', 'hello', ['a.txt'])
 
     expect(staged?.session.redoAvailable).toBe(true)
     expect(staged?.removed.map((message) => message.id)).toEqual(['a1'])
@@ -155,7 +155,8 @@ describe('SessionsStore', () => {
     await reloaded.init()
     expect(reloaded.getRedo(session.id)).toMatchObject({
       snapshotAfter: 'snapshot-after',
-      prompt: 'hello'
+      prompt: 'hello',
+      files: ['a.txt']
     })
 
     const redone = await reloaded.redo(session.id)
@@ -170,7 +171,7 @@ describe('SessionsStore', () => {
       session.id,
       makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
     )
-    await store.stageUndo(session.id, 0, null, 'hello')
+    await store.stageUndo(session.id, 0, null, 'hello', [])
     expect(store.getRedo(session.id)).toBeDefined()
 
     await store.appendMessage(
@@ -189,8 +190,8 @@ describe('SessionsStore', () => {
       makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
     )
 
-    expect(await store.stageUndo(session.id, 5, null, 'hello')).toBeUndefined()
-    expect(await store.stageUndo('missing', 0, null, 'hello')).toBeUndefined()
+    expect(await store.stageUndo(session.id, 5, null, 'hello', [])).toBeUndefined()
+    expect(await store.stageUndo('missing', 0, null, 'hello', [])).toBeUndefined()
     expect(await store.redo(session.id)).toBeUndefined()
     await store.clearRedo(session.id)
   })

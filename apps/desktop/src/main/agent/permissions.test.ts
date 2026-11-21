@@ -29,10 +29,21 @@ describe('matchPermissionPattern', () => {
     expect(matchPermissionPattern('rm -rf ?', 'rm -rf /tmp')).toBe(false)
     expect(matchPermissionPattern('src/*', 'lib/a.ts')).toBe(false)
   })
+
+  it('matches a trailing space-star against the bare command', () => {
+    expect(matchPermissionPattern('git status *', 'git status')).toBe(true)
+    expect(matchPermissionPattern('git status *', 'git status --short')).toBe(true)
+    expect(matchPermissionPattern('git status *', 'git statusx')).toBe(false)
+  })
+
+  it('supports case-insensitive matching for Windows-style paths', () => {
+    expect(matchPermissionPattern('SRC/*', 'src/a.ts', true)).toBe(true)
+    expect(matchPermissionPattern('SRC/*', 'src/a.ts', false)).toBe(false)
+  })
 })
 
 describe('evaluatePermissionRules', () => {
-  it('lets a deny rule win over an allow rule', () => {
+  it('uses the last matching rule', () => {
     const rules = [
       rule({ id: 'allow', action: 'shell', resource: '*', effect: 'allow' }),
       rule({ id: 'deny', action: 'shell', resource: 'rm *', effect: 'deny' })
@@ -42,6 +53,28 @@ describe('evaluatePermissionRules', () => {
       evaluatePermissionRules(rules, {
         action: 'shell',
         resources: ['rm -rf build'],
+        sessionId: 's1'
+      })
+    ).toBe('deny')
+  })
+
+  it('lets a later allow rule be an exception to an earlier deny', () => {
+    const rules = [
+      rule({ id: 'deny-all', action: 'write', resource: '*', effect: 'deny' }),
+      rule({ id: 'allow-src', action: 'write', resource: 'src/*', effect: 'allow' })
+    ]
+
+    expect(
+      evaluatePermissionRules(rules, {
+        action: 'write',
+        resources: ['src/a.ts'],
+        sessionId: 's1'
+      })
+    ).toBe('allow')
+    expect(
+      evaluatePermissionRules(rules, {
+        action: 'write',
+        resources: ['lib/a.ts'],
         sessionId: 's1'
       })
     ).toBe('deny')
@@ -115,7 +148,7 @@ describe('evaluatePermissionRules', () => {
     ).toBe('ask')
   })
 
-  it('does not let a session allow bypass a global deny', () => {
+  it('lets later session rules override global rules', () => {
     const rules = [
       rule({ id: 'global', action: 'shell', resource: '*', effect: 'deny', sessionId: null }),
       rule({ id: 'session', action: 'shell', resource: '*', effect: 'allow', sessionId: 's1' })
@@ -125,6 +158,21 @@ describe('evaluatePermissionRules', () => {
       evaluatePermissionRules(rules, {
         action: 'shell',
         resources: ['rm -rf build'],
+        sessionId: 's1'
+      })
+    ).toBe('allow')
+  })
+
+  it('denies a multi-resource operation when any resource is denied', () => {
+    const rules = [
+      rule({ id: 'allow', action: 'shell', resource: 'bun *', effect: 'allow' }),
+      rule({ id: 'deny', action: 'shell', resource: 'rm *', effect: 'deny' })
+    ]
+
+    expect(
+      evaluatePermissionRules(rules, {
+        action: 'shell',
+        resources: ['bun test', 'rm -rf build'],
         sessionId: 's1'
       })
     ).toBe('deny')

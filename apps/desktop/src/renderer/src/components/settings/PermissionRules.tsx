@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next'
 import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
 
 const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
+  read: 'chat.permissionRead',
+  list: 'chat.permissionList',
+  grep: 'chat.permissionGrep',
   write: 'chat.permissionWrite',
   edit: 'chat.permissionEdit',
   shell: 'chat.permissionShell',

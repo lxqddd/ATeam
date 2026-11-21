@@ -4,6 +4,9 @@ import type { PermissionAction, PermissionDecision, PermissionRequest } from '@a
 import { chatStore } from '../../chat/store'
 
 const ACTION_LABEL: Record<PermissionAction, string> = {
+  read: 'chat.permissionRead',
+  list: 'chat.permissionList',
+  grep: 'chat.permissionGrep',
   write: 'chat.permissionWrite',
   edit: 'chat.permissionEdit',
   shell: 'chat.permissionShell'

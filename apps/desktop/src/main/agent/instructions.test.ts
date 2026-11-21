@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   discoverInstructionFiles,
+  discoverNestedInstructions,
   formatInstructions,
   systemWithInstructions
 } from './instructions'
@@ -30,7 +31,7 @@ afterEach(async () => {
 })
 
 describe('discoverInstructionFiles', () => {
-  it('loads global, project root and workspace files in order', async () => {
+  it('loads global, then workspace rules from nearest to project root', async () => {
     const repo = path.join(directory, 'repo')
     await fs.mkdir(path.join(repo, '.git'))
     await write(path.join(globalDirectory, 'AGENTS.md'), 'global rules')
@@ -42,15 +43,15 @@ describe('discoverInstructionFiles', () => {
 
     expect(files.map((file) => path.relative(directory, file.path))).toEqual([
       'global/AGENTS.md',
-      'repo/AGENTS.md',
+      'repo/packages/web/AGENTS.md',
       'repo/packages/AGENTS.md',
-      'repo/packages/web/AGENTS.md'
+      'repo/AGENTS.md'
     ])
     expect(files.map((file) => file.content)).toEqual([
       'global rules',
-      'root rules',
+      'web rules',
       'packages rules',
-      'web rules'
+      'root rules'
     ])
   })
 
@@ -63,16 +64,29 @@ describe('discoverInstructionFiles', () => {
 
     const files = await discoverInstructionFiles(workspace, globalDirectory)
 
-    expect(files.map((file) => file.content)).toEqual(['agents root', 'claude web'])
+    expect(files.map((file) => file.content)).toEqual(['claude web', 'agents root'])
   })
 
-  it('stops at the workspace when there is no Git project root', async () => {
+  it('stops at the workspace when there is no Git project root outside home', async () => {
     await write(path.join(directory, 'repo', 'AGENTS.md'), 'parent rules')
     await write(path.join(workspace, 'AGENTS.md'), 'web rules')
 
     const files = await discoverInstructionFiles(workspace, globalDirectory)
 
     expect(files.map((file) => file.content)).toEqual(['web rules'])
+  })
+
+  it('walks toward home when there is no Git project root inside home', async () => {
+    const home = path.join(directory, 'home')
+    const projectWorkspace = path.join(home, 'project', 'web')
+    await fs.mkdir(projectWorkspace, { recursive: true })
+    await write(path.join(home, 'AGENTS.md'), 'home rules')
+    await write(path.join(home, 'project', 'AGENTS.md'), 'project rules')
+    await write(path.join(projectWorkspace, 'AGENTS.md'), 'web rules')
+
+    const files = await discoverInstructionFiles(projectWorkspace, globalDirectory, home)
+
+    expect(files.map((file) => file.content)).toEqual(['web rules', 'project rules', 'home rules'])
   })
 
   it('deduplicates symlinked instruction files', async () => {
@@ -89,6 +103,30 @@ describe('discoverInstructionFiles', () => {
 
   it('returns no files when nothing exists', async () => {
     expect(await discoverInstructionFiles(workspace, globalDirectory)).toEqual([])
+  })
+})
+
+describe('discoverNestedInstructions', () => {
+  it('loads nested instructions once, nearest directory first', async () => {
+    await write(path.join(workspace, 'sub', 'AGENTS.md'), 'sub rules')
+    await write(path.join(workspace, 'sub', 'deep', 'AGENTS.md'), 'deep rules')
+    const seen = new Set<string>()
+
+    const first = await discoverNestedInstructions(workspace, 'sub/deep/a.txt', seen)
+    const second = await discoverNestedInstructions(workspace, 'sub/deep/a.txt', seen)
+
+    expect(first.map((file) => file.content)).toEqual(['deep rules', 'sub rules'])
+    expect(second).toEqual([])
+  })
+
+  it('falls back to CLAUDE.md and ignores paths outside the workspace', async () => {
+    await write(path.join(workspace, 'sub', 'CLAUDE.md'), 'claude sub')
+
+    const nested = await discoverNestedInstructions(workspace, 'sub/a.txt', new Set())
+    const outside = await discoverNestedInstructions(workspace, '../outside.txt', new Set())
+
+    expect(nested.map((file) => file.content)).toEqual(['claude sub'])
+    expect(outside).toEqual([])
   })
 })
 

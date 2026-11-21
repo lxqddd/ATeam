@@ -1,8 +1,12 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SnapshotStore } from './snapshots'
+
+const run = promisify(execFile)
 
 let directory: string
 let workspace: string
@@ -85,6 +89,25 @@ describe('SnapshotStore', () => {
     expect(result.removed).toEqual(['c.txt'])
   })
 
+  it('restores only the requested paths and leaves everything else alone', async () => {
+    await write('a.txt', 'one')
+    await write('keep.txt', 'keep')
+    const snapshot = await store.create(workspace)
+
+    await write('a.txt', 'changed')
+    await write('b.txt', 'new')
+    await write('outside.txt', 'outside')
+    await write('keep.txt', 'keep changed')
+
+    const result = await store.restorePaths(workspace, snapshot.id, ['a.txt', 'b.txt'])
+
+    expect(await read('a.txt')).toBe('one')
+    expect(await exists('b.txt')).toBe(false)
+    expect(await read('outside.txt')).toBe('outside')
+    expect(await read('keep.txt')).toBe('keep changed')
+    expect(result).toEqual({ written: ['a.txt'], removed: ['b.txt'] })
+  })
+
   it('computes added, modified and deleted paths between snapshots', async () => {
     await write('a.txt', 'one')
     await write('dir/b.txt', 'two')
@@ -113,6 +136,28 @@ describe('SnapshotStore', () => {
     expect(await fs.readFile(path.join(workspace, 'data.bin'))).toEqual(content)
   })
 
+  it('respects Git ignores and the untracked file size limit', async () => {
+    await run('git', ['init'], { cwd: workspace })
+    await write('.gitignore', 'ignored.txt\n')
+    await write('tracked.txt', 'tracked')
+    await write('untracked.txt', 'untracked')
+    await write('ignored.txt', 'ignored')
+    await write('large-untracked.bin', Buffer.alloc(2 * 1024 * 1024 + 1))
+    await write('large-tracked.bin', Buffer.alloc(2 * 1024 * 1024 + 1))
+    await run('git', ['add', '.gitignore', 'tracked.txt', 'large-tracked.bin'], {
+      cwd: workspace
+    })
+
+    const snapshot = await store.create(workspace)
+
+    expect(Object.keys(snapshot.files).sort()).toEqual([
+      '.gitignore',
+      'large-tracked.bin',
+      'tracked.txt',
+      'untracked.txt'
+    ])
+  })
+
   it('treats a missing source or target snapshot as an empty side', async () => {
     await write('a.txt', 'one')
     const snapshot = await store.create(workspace)
@@ -127,5 +172,25 @@ describe('SnapshotStore', () => {
       modified: [],
       deleted: ['a.txt']
     })
+  })
+
+  it('removes a session snapshots and unreferenced blobs', async () => {
+    await write('a.txt', 'one')
+    const first = await store.create(workspace, 'session-1')
+    const oldBlob = first.files['a.txt']
+    await write('a.txt', 'two')
+    const second = await store.create(workspace, 'session-2')
+    const newBlob = second.files['a.txt']
+
+    expect(await store.removeSession('session-1')).toBe(1)
+
+    expect(await store.get(first.id)).toBeNull()
+    expect(await store.get(second.id)).not.toBeNull()
+    await expect(
+      fs.stat(path.join(directory, 'agent', 'snapshots', 'blobs', oldBlob))
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(
+      await fs.readFile(path.join(directory, 'agent', 'snapshots', 'blobs', newBlob), 'utf8')
+    ).toBe('two')
   })
 })

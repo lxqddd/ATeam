@@ -58,6 +58,12 @@ export interface TokenUsage {
   totalTokens?: number
 }
 
+export interface MessageSnapshotStep {
+  before: string
+  after: string
+  files: string[]
+}
+
 export interface ChatMessage {
   id: string
   sessionId: string
@@ -71,10 +77,11 @@ export interface ChatMessage {
   durationMs?: number
   snapshotBefore?: string
   snapshotAfter?: string
+  snapshotSteps?: MessageSnapshotStep[]
   changedFiles?: string[]
 }
 
-export type PermissionAction = 'write' | 'edit' | 'shell'
+export type PermissionAction = 'read' | 'list' | 'grep' | 'write' | 'edit' | 'shell'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'

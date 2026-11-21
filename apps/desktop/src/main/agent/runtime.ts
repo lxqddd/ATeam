@@ -15,6 +15,7 @@ import type {
   PermissionMode,
   PermissionRequest,
   PermissionRule,
+  PermissionRuleAction,
   PermissionRuleInput,
   ReasoningEffort,
   RunOutcome,
@@ -37,6 +38,8 @@ import {
 } from './context'
 import {
   discoverInstructionFiles,
+  discoverNestedInstructions,
+  formatInstructions,
   systemWithInstructions,
   type InstructionFile
 } from './instructions'
@@ -258,7 +261,7 @@ export class AgentRuntime {
     return session
   }
 
-  async compactSession(id: string): Promise<SessionMeta> {
+  async compactSession(id: string, options: { force?: boolean } = {}): Promise<SessionMeta> {
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
     if (this.runs.has(id)) throw new Error('SESSION_BUSY')
@@ -268,7 +271,13 @@ export class AgentRuntime {
       record.session.model ?? this.models.defaultModel,
       { sessionId: id }
     )
-    const compacted = await this.compactMessages(id, record.messages, model)
+    const compacted = await this.compactMessages(
+      id,
+      record.messages,
+      model,
+      undefined,
+      options.force
+    )
     if (compacted) return compacted
 
     const session = this.store.getSession(id)
@@ -276,16 +285,25 @@ export class AgentRuntime {
     return session
   }
 
-  async undoSession(id: string): Promise<{ session: SessionMeta; prompt: string }> {
+  async undoSession(
+    id: string,
+    messageId?: string
+  ): Promise<{ session: SessionMeta; prompt: string }> {
     if (this.runs.has(id)) throw new Error('SESSION_BUSY')
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
 
     let assistantIndex = -1
-    for (let index = record.messages.length - 1; index >= 0; index -= 1) {
-      if (record.messages[index].role === 'assistant') {
-        assistantIndex = index
-        break
+    if (messageId) {
+      assistantIndex = record.messages.findIndex(
+        (message) => message.id === messageId && message.role === 'assistant'
+      )
+    } else {
+      for (let index = record.messages.length - 1; index >= 0; index -= 1) {
+        if (record.messages[index].role === 'assistant') {
+          assistantIndex = index
+          break
+        }
       }
     }
     if (assistantIndex < 0) throw new Error('NOTHING_TO_UNDO')
@@ -295,9 +313,17 @@ export class AgentRuntime {
     if (userIndex < 0) throw new Error('NOTHING_TO_UNDO')
 
     const assistant = record.messages[assistantIndex]
-    if (assistant.snapshotBefore) {
+    const removedMessages = record.messages.slice(userIndex)
+    const removedAssistants = removedMessages.filter((item) => item.role === 'assistant')
+    const finalAssistant = removedAssistants[removedAssistants.length - 1]
+    const files = [...new Set(removedMessages.flatMap((message) => message.changedFiles ?? []))]
+    if (assistant.snapshotBefore && files.length > 0) {
       try {
-        await this.snapshots.restore(this.options.workspacePath, assistant.snapshotBefore)
+        await this.snapshots.restorePaths(
+          this.options.workspacePath,
+          assistant.snapshotBefore,
+          files
+        )
       } catch {
         throw new Error('SNAPSHOT_RESTORE_FAILED')
       }
@@ -310,8 +336,9 @@ export class AgentRuntime {
     const staged = await this.store.stageUndo(
       id,
       userIndex,
-      assistant.snapshotAfter ?? null,
-      prompt
+      finalAssistant?.snapshotAfter ?? null,
+      prompt,
+      files
     )
     if (!staged) throw new Error('NOTHING_TO_UNDO')
     this.emit({ type: 'session.upsert', session: staged.session })
@@ -324,9 +351,13 @@ export class AgentRuntime {
     const redo = this.store.getRedo(id)
     if (!redo) throw new Error('NOTHING_TO_REDO')
 
-    if (redo.snapshotAfter) {
+    if (redo.snapshotAfter && redo.files.length > 0) {
       try {
-        await this.snapshots.restore(this.options.workspacePath, redo.snapshotAfter)
+        await this.snapshots.restorePaths(
+          this.options.workspacePath,
+          redo.snapshotAfter,
+          redo.files
+        )
       } catch {
         throw new Error('SNAPSHOT_RESTORE_FAILED')
       }
@@ -358,6 +389,7 @@ export class AgentRuntime {
     }
     await this.store.delete(id)
     await this.permissionRules.removeForSession(id)
+    await this.snapshots.removeSession(id)
     this.emit({ type: 'session.deleted', sessionId: id })
   }
 
@@ -406,7 +438,7 @@ export class AgentRuntime {
 
     const user = makeUserMessage(sessionId, content)
     const assistant = makeAssistantMessage(sessionId)
-    assistant.snapshotBefore = await this.createSnapshotId()
+    assistant.snapshotBefore = await this.createSnapshotId(sessionId)
     await this.store.appendMessage(sessionId, user)
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
@@ -462,7 +494,7 @@ export class AgentRuntime {
 
     resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
     const assistant = makeAssistantMessage(sessionId)
-    assistant.snapshotBefore = await this.createSnapshotId()
+    assistant.snapshotBefore = await this.createSnapshotId(sessionId)
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
     this.beginRun(sessionId, assistant, new Set([last.id]))
@@ -586,11 +618,9 @@ export class AgentRuntime {
     toolCallId: string
   ): Promise<boolean> {
     const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
-    if (mode === 'plan') return false
-
     const scan = action === 'shell' ? scanShellCommand(resource, this.options.workspacePath) : null
     const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
-    const rules = this.permissionRules.list(run.sessionId)
+    const rules = [...modePermissionRules(mode), ...this.permissionRules.list(run.sessionId)]
     const effect = evaluatePermissionRules(rules, {
       action,
       resources,
@@ -598,25 +628,18 @@ export class AgentRuntime {
     })
     if (effect === 'deny') return false
 
-    let externalEffect: PermissionEffect | null = null
+    let externalEffect: PermissionEffect = 'allow'
     if (scan && scan.externalPaths.length > 0) {
-      externalEffect = evaluatePermissionRules(rules, {
-        action: 'external_directory',
-        resources: scan.externalPaths,
-        sessionId: run.sessionId
-      })
+      externalEffect =
+        evaluatePermissionRules(rules, {
+          action: 'external_directory',
+          resources: scan.externalPaths,
+          sessionId: run.sessionId
+        }) ?? 'ask'
       if (externalEffect === 'deny') return false
     }
 
-    const externalNeedsPrompt =
-      Boolean(scan && scan.externalPaths.length > 0) && externalEffect !== 'allow'
-    if (!scan?.risky && !externalNeedsPrompt) {
-      if (effect === 'allow') return true
-      if (effect !== 'ask') {
-        if (mode === 'auto') return true
-        if (mode === 'acceptEdits' && action !== 'shell') return true
-      }
-    }
+    if (effect === 'allow' && externalEffect === 'allow') return true
 
     const message = this.assistantFor(run)
     const part = this.ensureToolPart(message, toolCallId, toolName)
@@ -729,13 +752,14 @@ export class AgentRuntime {
     sessionId: string,
     messages: ChatMessage[],
     model: LanguageModel,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    force = false
   ): Promise<SessionMeta | null> {
     const record = this.record(sessionId)
     const target = record.session.model ?? this.models.defaultModel
     const contextWindow =
       resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
-    const plan = planCompaction(messages, contextWindow, compactionKeepTokens(contextWindow))
+    const plan = planCompaction(messages, contextWindow, compactionKeepTokens(contextWindow), force)
     if (!plan) return null
 
     const summary = (
@@ -779,25 +803,51 @@ export class AgentRuntime {
     message.error = undefined
     message.usage = undefined
     message.durationMs = undefined
+    message.snapshotAfter = undefined
+    message.snapshotSteps = []
+    message.changedFiles = undefined
     message.status = 'streaming'
     message.updatedAt = nowIso()
     run.steps = 0
     this.emit({ type: 'message.upsert', message: structuredClone(message) })
   }
 
-  private async createSnapshotId(): Promise<string | undefined> {
+  private async createSnapshotId(sessionId: string): Promise<string | undefined> {
     try {
-      const snapshot = await this.snapshots.create(this.options.workspacePath)
+      const snapshot = await this.snapshots.create(this.options.workspacePath, sessionId)
       return snapshot.id
     } catch {
       return undefined
     }
   }
 
+  private async recordStepSnapshot(run: Run, message: ChatMessage): Promise<void> {
+    const steps = message.snapshotSteps ?? []
+    const before = steps[steps.length - 1]?.after ?? message.snapshotBefore
+    if (!before) return
+    try {
+      const snapshot = await this.snapshots.create(this.options.workspacePath, run.sessionId)
+      const diff = await this.snapshots.diff(before, snapshot.id)
+      const files = [...diff.added, ...diff.modified, ...diff.deleted]
+      message.snapshotSteps = [...steps, { before, after: snapshot.id, files }]
+      message.snapshotAfter = snapshot.id
+      message.changedFiles = [...new Set([...(message.changedFiles ?? []), ...files])]
+      await this.store.persist(run.sessionId)
+    } catch {
+      /* snapshots are best effort */
+    }
+  }
+
   private async recordAfterSnapshot(run: Run, message: ChatMessage): Promise<void> {
     if (!message.snapshotBefore) return
+    if (message.snapshotSteps && message.snapshotSteps.length > 0) {
+      message.snapshotAfter = message.snapshotSteps[message.snapshotSteps.length - 1].after
+      message.changedFiles = [...new Set(message.snapshotSteps.flatMap((step) => step.files))]
+      await this.store.persist(run.sessionId)
+      return
+    }
     try {
-      const snapshot = await this.snapshots.create(this.options.workspacePath)
+      const snapshot = await this.snapshots.create(this.options.workspacePath, run.sessionId)
       const diff = await this.snapshots.diff(message.snapshotBefore, snapshot.id)
       message.snapshotAfter = snapshot.id
       message.changedFiles = [...diff.added, ...diff.modified, ...diff.deleted]
@@ -845,11 +895,20 @@ export class AgentRuntime {
         workspacePath: this.options.workspacePath,
         globalDirectory: this.options.userDataPath
       })
+      const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
       const tools = this.deps.createTools({
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
         askPermission: (action, resource, toolName, toolCallId) =>
-          this.askPermission(run, action, resource, toolName, toolCallId)
+          this.askPermission(run, action, resource, toolName, toolCallId),
+        loadNestedInstructions: async (targetPath) => {
+          const nested = await discoverNestedInstructions(
+            this.options.workspacePath,
+            targetPath,
+            loadedInstructionPaths
+          )
+          return formatInstructions(nested)
+        }
       })
 
       const result = this.deps.createTurn({
@@ -975,6 +1034,7 @@ export class AgentRuntime {
           }
           case 'finish-step':
             run.steps += 1
+            await this.recordStepSnapshot(run, message)
             break
           case 'finish':
             finishReason = part.finishReason
@@ -1069,6 +1129,48 @@ function isContextLengthError(error: unknown): boolean {
     'request too large',
     '413'
   ].some((fragment) => message.includes(fragment))
+}
+
+function modePermissionRules(mode: PermissionMode): PermissionRule[] {
+  const base = (action: PermissionRuleAction, effect: PermissionEffect): PermissionRule => ({
+    id: `mode-${mode}-${action}`,
+    action,
+    resource: '*',
+    effect,
+    sessionId: null,
+    createdAt: ''
+  })
+  const reads = [base('read', 'allow'), base('list', 'allow'), base('grep', 'allow')]
+  const external = base('external_directory', 'allow')
+  switch (mode) {
+    case 'plan':
+      return [
+        ...reads,
+        base('write', 'deny'),
+        base('edit', 'deny'),
+        base('shell', 'deny'),
+        external
+      ]
+    case 'acceptEdits':
+      return [
+        ...reads,
+        base('write', 'allow'),
+        base('edit', 'allow'),
+        base('shell', 'ask'),
+        external
+      ]
+    case 'auto':
+      return [
+        ...reads,
+        base('write', 'allow'),
+        base('edit', 'allow'),
+        base('shell', 'allow'),
+        external
+      ]
+    case 'ask':
+    default:
+      return [...reads, base('write', 'ask'), base('edit', 'ask'), base('shell', 'ask'), external]
+  }
 }
 
 function buildSystemPrompt(workspacePath: string, permissionMode: PermissionMode): string {
