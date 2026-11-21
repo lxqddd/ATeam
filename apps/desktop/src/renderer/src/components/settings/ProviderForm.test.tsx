@@ -42,12 +42,15 @@ describe('ProviderForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith({
-        name: 'Local',
-        type: 'openai-compatible',
-        baseURL: 'https://api.example.com/v1',
-        apiKey: undefined
-      })
+      expect(onSubmit).toHaveBeenCalledWith(
+        {
+          name: 'Local',
+          type: 'openai-compatible',
+          baseURL: 'https://api.example.com/v1',
+          apiKey: undefined
+        },
+        []
+      )
     )
   })
 
@@ -95,14 +98,17 @@ describe('ProviderForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith({
-        id: 'p1',
-        name: 'Acme',
-        type: 'openai',
-        baseURL: 'https://api.example.com/v1',
-        clearApiKey: false,
-        apiKey: undefined
-      })
+      expect(onSubmit).toHaveBeenCalledWith(
+        {
+          id: 'p1',
+          name: 'Acme',
+          type: 'openai',
+          baseURL: 'https://api.example.com/v1',
+          clearApiKey: false,
+          apiKey: undefined
+        },
+        []
+      )
     )
   })
 
@@ -114,5 +120,32 @@ describe('ProviderForm', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(await screen.findByText('This provider requires an API key.')).toBeInTheDocument()
+  })
+
+  it('fetches provider models and submits the selected ones', async () => {
+    const mock = createApiMock()
+    vi.mocked(mock.api.models.previewModels).mockResolvedValue([
+      { id: 'gpt-6', name: 'GPT-6' },
+      { id: 'gpt-5', name: 'GPT-5' }
+    ])
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ProviderForm provider={storedKeyProvider} onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await user.click(screen.getByRole('button', { name: 'Fetch models' }))
+
+    expect(await screen.findByText('gpt-6')).toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: /gpt-6/ }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' }), [
+        { id: 'gpt-6', name: 'GPT-6' }
+      ])
+    )
+    expect(mock.api.models.previewModels).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: 'p1', type: 'openai' })
+    )
   })
 })

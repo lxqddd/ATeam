@@ -29,6 +29,15 @@ export interface AvailableModel {
   name?: string
 }
 
+/** Provider fields used to preview the provider's model list before saving. */
+export interface ProviderModelListInput {
+  /** Saved provider id; its stored key is used when apiKey is omitted. */
+  providerId?: string
+  type: ProviderType
+  baseURL?: string
+  apiKey?: string
+}
+
 export interface ModelsConfigPublic {
   providers: ProviderPublic[]
   models: ModelPublic[]

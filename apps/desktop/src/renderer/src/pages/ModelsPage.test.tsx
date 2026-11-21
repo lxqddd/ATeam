@@ -188,6 +188,33 @@ describe('ModelsPage', () => {
     expect(await screen.findByRole('region', { name: 'Second' })).toBeInTheDocument()
   })
 
+  it('adds provider models selected while creating a provider', async () => {
+    vi.mocked(mock.api.models.addProvider).mockResolvedValueOnce(
+      makeConfig({ providers: [provider, secondProvider] })
+    )
+    vi.mocked(mock.api.models.previewModels).mockResolvedValue([
+      { id: 'provider-model', name: 'Provider Model' }
+    ])
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(screen.getByRole('button', { name: 'Add provider' }))
+    await user.type(await screen.findByLabelText('Name'), 'Second')
+    await user.type(screen.getByLabelText('API key'), 'sk-test')
+    await user.click(screen.getByRole('button', { name: 'Fetch models' }))
+    await user.click(await screen.findByRole('checkbox', { name: /provider-model/ }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.addModel).toHaveBeenCalledWith({
+        providerId: 'p2',
+        modelId: 'provider-model',
+        name: 'Provider Model'
+      })
+    )
+  })
+
   it('preselects the provider when adding a model from its card', async () => {
     mock = createApiMock({
       models: makeConfig({ providers: [provider, secondProvider] })

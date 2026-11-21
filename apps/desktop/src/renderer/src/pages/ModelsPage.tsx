@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Alert, Button, Modal, Popconfirm, Radio, Spin, Tag } from 'antd'
 import type {
   AgentInfo,
+  AvailableModel,
   ModelCreateInput,
   ModelPublic,
   ModelsConfigPublic,
@@ -121,13 +122,35 @@ function ModelsPage(): React.JSX.Element {
     setConfig(next)
   }
 
-  async function saveProvider(input: ProviderCreateInput | ProviderUpdateInput): Promise<void> {
+  async function saveProvider(
+    input: ProviderCreateInput | ProviderUpdateInput,
+    selectedModels: AvailableModel[] = []
+  ): Promise<void> {
+    setMutationError(null)
     const editing = providerForm?.provider
-    await apply(() =>
-      editing
-        ? window.api.models.updateProvider(input as ProviderUpdateInput)
-        : window.api.models.addProvider(input as ProviderCreateInput)
-    )
+    const previousIds = new Set(config?.providers.map((provider) => provider.id) ?? [])
+    let next = await (editing
+      ? window.api.models.updateProvider(input as ProviderUpdateInput)
+      : window.api.models.addProvider(input as ProviderCreateInput))
+    setConfig(next)
+
+    const providerId =
+      editing?.id ?? next.providers.find((provider) => !previousIds.has(provider.id))?.id
+    if (providerId) {
+      const existing = new Set(
+        next.models.filter((model) => model.providerId === providerId).map((model) => model.modelId)
+      )
+      for (const model of selectedModels) {
+        if (existing.has(model.id)) continue
+        next = await window.api.models.addModel({
+          providerId,
+          modelId: model.id,
+          name: model.name
+        })
+        existing.add(model.id)
+        setConfig(next)
+      }
+    }
     setProviderForm(null)
   }
 

@@ -53,6 +53,13 @@ const modelRefSchema = z.object({
 })
 const testSchema = modelRefSchema
 
+const providerPreviewSchema = z.object({
+  providerId: idSchema.optional(),
+  type: providerTypeSchema,
+  baseURL: z.string().max(500).optional(),
+  apiKey: z.string().max(500).optional()
+})
+
 export interface ModelsIpcOptions {
   manager: AgentManager
   modelsStore: ModelsStore
@@ -145,6 +152,23 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     const provider = modelsStore.runtimeConfig().providers.find((candidate) => candidate.id === id)
     if (!provider) throw new Error('PROVIDER_NOT_FOUND')
     return listProviderModels(provider)
+  })
+
+  handle(MODEL_CHANNELS.providerModelsPreview, async (payload): Promise<AvailableModel[]> => {
+    const input = providerPreviewSchema.parse(payload)
+    const apiKey =
+      input.apiKey?.trim() ||
+      (input.providerId ? (modelsStore.revealApiKey(input.providerId) ?? undefined) : undefined)
+    if (input.type !== 'openai-compatible' && !apiKey) {
+      throw new Error('API_KEY_REQUIRED')
+    }
+    return listProviderModels({
+      id: input.providerId ?? 'preview',
+      name: 'Preview',
+      type: input.type,
+      baseURL: input.baseURL?.trim() || undefined,
+      apiKey
+    })
   })
 
   handle(MODEL_CHANNELS.test, async (payload): Promise<ModelTestResult> => {

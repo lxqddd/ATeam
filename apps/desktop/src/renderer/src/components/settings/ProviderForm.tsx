@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Checkbox, Form, Input, Select } from 'antd'
 import { useTranslation } from 'react-i18next'
 import type {
+  AvailableModel,
   ProviderCreateInput,
   ProviderPublic,
   ProviderType,
@@ -14,7 +15,10 @@ const PROVIDER_TYPES: ProviderType[] = ['anthropic', 'openai', 'google', 'openai
 interface ProviderFormProps {
   provider?: ProviderPublic
   inModal?: boolean
-  onSubmit: (input: ProviderCreateInput | ProviderUpdateInput) => Promise<void>
+  onSubmit: (
+    input: ProviderCreateInput | ProviderUpdateInput,
+    selectedModels?: AvailableModel[]
+  ) => Promise<void>
   onCancel: () => void
 }
 
@@ -36,9 +40,14 @@ function ProviderForm({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  const [available, setAvailable] = useState<AvailableModel[] | null>(null)
+  const [selectedModels, setSelectedModels] = useState<string[]>([])
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [form] = Form.useForm<ProviderFormValues>()
   const type = Form.useWatch('type', form) ?? provider?.type ?? 'anthropic'
   const apiKey = Form.useWatch('apiKey', form) ?? ''
+  const baseURL = Form.useWatch('baseURL', form) ?? ''
   const requiresApiKey = type !== 'openai-compatible'
 
   useEffect(() => {
@@ -59,9 +68,29 @@ function ProviderForm({
     }
   }, [provider, form])
 
+  async function fetchModels(): Promise<void> {
+    setFetching(true)
+    setFetchError(null)
+    try {
+      const models = await window.api.models.previewModels({
+        providerId: provider?.id,
+        type,
+        baseURL: baseURL.trim() || undefined,
+        apiKey: apiKey.trim() || undefined
+      })
+      setAvailable(models)
+      setSelectedModels([])
+    } catch (caught) {
+      setFetchError(modelErrorMessage((key) => t(key), caught))
+    } finally {
+      setFetching(false)
+    }
+  }
+
   async function handleFinish(values: ProviderFormValues): Promise<void> {
     setSaving(true)
     setError(null)
+    const models = available?.filter((model) => selectedModels.includes(model.id)) ?? []
     try {
       if (provider) {
         const input: ProviderUpdateInput = {
@@ -72,7 +101,7 @@ function ProviderForm({
           clearApiKey: values.clearApiKey ?? false,
           apiKey: values.apiKey?.trim() || undefined
         }
-        await onSubmit(input)
+        await onSubmit(input, models)
       } else {
         const input: ProviderCreateInput = {
           name: values.name,
@@ -80,7 +109,7 @@ function ProviderForm({
           baseURL: values.baseURL?.trim() || undefined,
           apiKey: values.apiKey?.trim() || undefined
         }
-        await onSubmit(input)
+        await onSubmit(input, models)
       }
     } catch (caught) {
       setError(modelErrorMessage((key) => t(key), caught))
@@ -178,6 +207,62 @@ function ProviderForm({
               )}
               {type === 'openai-compatible' && <span>{t('settings.apiKeyOptional')}</span>}
             </div>
+          </div>
+          <div className="sm:col-span-2 flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => {
+                  void fetchModels()
+                }}
+                loading={fetching}
+                disabled={saving}
+              >
+                {t('settings.fetchModels')}
+              </Button>
+              {fetchError && <span className="text-caption text-danger">{fetchError}</span>}
+            </div>
+            {available && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2 text-caption text-muted">
+                  <span>{t('settings.modelsFound', { count: available.length })}</span>
+                  {available.length > 0 && (
+                    <Checkbox
+                      checked={selectedModels.length === available.length}
+                      indeterminate={
+                        selectedModels.length > 0 && selectedModels.length < available.length
+                      }
+                      onChange={(event) => {
+                        setSelectedModels(
+                          event.target.checked ? available.map((model) => model.id) : []
+                        )
+                      }}
+                    >
+                      {t('settings.selectAllModels')}
+                    </Checkbox>
+                  )}
+                </div>
+                {available.length === 0 ? (
+                  <span className="text-caption text-subtle">{t('settings.noModelsFound')}</span>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto rounded-md border border-border-subtle bg-surface p-2">
+                    <Checkbox.Group
+                      value={selectedModels}
+                      onChange={(values) => setSelectedModels(values as string[])}
+                      className="flex flex-col gap-1"
+                    >
+                      {available.map((model) => (
+                        <Checkbox key={model.id} value={model.id} className="me-0!">
+                          <span className="font-mono text-caption text-foreground">{model.id}</span>
+                          {model.name && (
+                            <span className="ms-2 text-caption text-muted">{model.name}</span>
+                          )}
+                        </Checkbox>
+                      ))}
+                    </Checkbox.Group>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

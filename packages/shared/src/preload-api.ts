@@ -15,6 +15,7 @@ import type {
   ModelsConfigPublic,
   ProviderCreateInput,
   ProviderUpdateInput,
+  ProviderModelListInput,
   AvailableModel
 } from './model-types'
 
@@ -56,6 +57,7 @@ export interface ModelsBridge {
   setDefault: (model: ModelRef | null) => Promise<ModelsConfigPublic>
   test: (providerId: string, modelId: string) => Promise<ModelTestResult>
   listModels: (providerId: string) => Promise<AvailableModel[]>
+  previewModels: (input: ProviderModelListInput) => Promise<AvailableModel[]>
 }
 
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
