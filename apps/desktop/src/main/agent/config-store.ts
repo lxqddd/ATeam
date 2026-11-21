@@ -5,7 +5,9 @@ import { readJsonFile, writeJsonAtomic } from './atomic-json'
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   snapshots: true,
-  instructions: []
+  instructions: [],
+  lsp: true,
+  formatters: true
 }
 
 function configFile(userDataPath: string): string {
@@ -29,7 +31,9 @@ function normalizeConfig(value: unknown): AgentConfig {
   const config = value as Partial<AgentConfig>
   return {
     snapshots: typeof config.snapshots === 'boolean' ? config.snapshots : true,
-    instructions: normalizeInstructions(config.instructions)
+    instructions: normalizeInstructions(config.instructions),
+    lsp: typeof config.lsp === 'boolean' ? config.lsp : true,
+    formatters: typeof config.formatters === 'boolean' ? config.formatters : true
   }
 }
 
@@ -49,7 +53,9 @@ export class AgentConfigStore {
   get(): AgentConfig {
     return {
       snapshots: this.config.snapshots,
-      instructions: [...this.config.instructions]
+      instructions: [...this.config.instructions],
+      lsp: this.config.lsp,
+      formatters: this.config.formatters
     }
   }
 

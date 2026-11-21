@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
+import path from 'node:path'
 import { generateText, stepCountIs, streamText } from 'ai'
 import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import type {
@@ -55,6 +56,8 @@ import { ToolOutputStore } from './tool-output-store'
 import { buildModelMessages } from './message-history'
 import { createLanguageModel as createDefaultLanguageModel, resolveModelRef } from './providers'
 import { createTools as createDefaultTools, type ToolContext } from './tools'
+import { discoverFormatters, formatFile, type FormatterDefinition } from './formatters'
+import { formatDiagnosticReport, LspManager } from './lsp'
 import { normalizeError } from './errors'
 
 const MAX_STEPS = 25
@@ -208,6 +211,8 @@ export class AgentRuntime {
   private readonly toolOutputs: ToolOutputStore
   private readonly runs = new Map<string, Run>()
   private readonly pending = new Map<string, PendingPermission>()
+  private lspManager: LspManager | null = null
+  private formattersCache: Promise<FormatterDefinition[]> | null = null
   private models: RuntimeModelsConfig
   private readonly deps: AgentRuntimeDependencies
   private seq = 0
@@ -610,6 +615,44 @@ export class AgentRuntime {
       this.rejectPendingForRun(run)
     }
     await this.store.flush()
+    if (this.lspManager) {
+      const manager = this.lspManager
+      this.lspManager = null
+      await manager.dispose()
+    }
+  }
+
+  private lsp(): LspManager {
+    this.lspManager ??= new LspManager({ workspace: this.options.workspacePath })
+    return this.lspManager
+  }
+
+  private formatters(): Promise<FormatterDefinition[]> {
+    this.formattersCache ??= discoverFormatters(this.options.workspacePath).catch(() => [])
+    return this.formattersCache
+  }
+
+  private async formatFiles(files: string[]): Promise<string> {
+    const formatters = await this.formatters()
+    const notes: string[] = []
+    for (const file of files) {
+      const result = await formatFile(file, formatters, this.options.workspacePath)
+      const relative = path.relative(this.options.workspacePath, file).split(path.sep).join('/')
+      if (result.formatted) {
+        notes.push(`Formatted ${relative} with ${result.formatter}`)
+      } else if (result.error) {
+        notes.push(`Formatter failed for ${relative}: ${result.error}`)
+      }
+    }
+    return notes.join('\n')
+  }
+
+  private async diagnoseFiles(files: string[]): Promise<string> {
+    try {
+      return formatDiagnosticReport(await this.lsp().diagnostics(files), this.options.workspacePath)
+    } catch {
+      return ''
+    }
   }
 
   private emitSession(sessionId: string): void {
@@ -1031,7 +1074,9 @@ export class AgentRuntime {
             sessionId: run.sessionId,
             messageId: run.messageId,
             ...info
-          })
+          }),
+        formatFiles: run.config.formatters ? (files) => this.formatFiles(files) : undefined,
+        diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined
       })
 
       const result = this.deps.createTurn({

@@ -19,21 +19,32 @@ afterEach(async () => {
 
 describe('AgentConfigStore', () => {
   it('uses defaults when no config file exists', async () => {
-    expect(store.get()).toEqual({ snapshots: true, instructions: [] })
+    expect(store.get()).toEqual({
+      snapshots: true,
+      instructions: [],
+      lsp: true,
+      formatters: true
+    })
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
-      instructions: []
+      instructions: [],
+      lsp: true,
+      formatters: true
     })
   })
 
-  it('persists snapshots and normalized instructions', async () => {
+  it('persists snapshots, lsp and formatter switches with normalized instructions', async () => {
     const updated = await store.update({
       snapshots: false,
+      lsp: false,
+      formatters: false,
       instructions: [' AGENTS.md ', '', 'AGENTS.md', 'https://example.com/rules.md']
     })
 
     expect(updated).toEqual({
       snapshots: false,
+      lsp: false,
+      formatters: false,
       instructions: ['AGENTS.md', 'https://example.com/rules.md']
     })
     const reloaded = new AgentConfigStore(directory)
@@ -44,11 +55,13 @@ describe('AgentConfigStore', () => {
   it('ignores invalid config files', async () => {
     const file = path.join(directory, 'agent', 'config.json')
     await fs.mkdir(path.dirname(file), { recursive: true })
-    await fs.writeFile(file, JSON.stringify({ snapshots: 'no', instructions: 'bad' }))
+    await fs.writeFile(file, JSON.stringify({ snapshots: 'no', instructions: 'bad', lsp: 1 }))
 
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
-      instructions: []
+      instructions: [],
+      lsp: true,
+      formatters: true
     })
   })
 })

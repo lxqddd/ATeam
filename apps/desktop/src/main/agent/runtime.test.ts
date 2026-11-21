@@ -16,6 +16,7 @@ import type { InstructionFile } from './instructions'
 import { PermissionsStore } from './permissions-store'
 import { SessionsStore } from './sessions-store'
 import { makeMessage } from './test/factories'
+import type { ToolContext } from './tools'
 
 const MODELS: RuntimeModelsConfig = {
   providers: [{ id: 'provider-1', name: 'Test', type: 'anthropic', apiKey: 'sk-test' }],
@@ -143,6 +144,7 @@ let instructionFiles: InstructionFile[]
 let instructionInputs: Array<{ workspacePath: string; globalDirectory: string }>
 let toolAction: PermissionAction
 let toolExecutor: ((value: string, toolCallId: string) => Promise<string>) | null
+let toolContext: ToolContext | null
 let resumeTurn: (() => void) | null
 let runtime: AgentRuntime
 let sessionId: string
@@ -156,6 +158,7 @@ function createRuntime(): AgentRuntime {
     dependencies: {
       createLanguageModel: () => ({}) as unknown as LanguageModel,
       createTools: (context) => {
+        toolContext = context
         toolExecutor = async (value, toolCallId) => {
           const allowed = await context.askPermission(toolAction, value, 'task', toolCallId)
           return allowed ? `done:${value}` : 'Permission denied'
@@ -225,6 +228,8 @@ async function restartWithRules(
 async function writeAgentConfig(config: {
   snapshots?: boolean
   instructions?: string[]
+  lsp?: boolean
+  formatters?: boolean
 }): Promise<void> {
   const directoryPath = path.join(directory, 'agent')
   await fs.mkdir(directoryPath, { recursive: true })
@@ -415,6 +420,7 @@ beforeEach(async () => {
   instructionInputs = []
   toolAction = 'write'
   toolExecutor = null
+  toolContext = null
   resumeTurn = null
   runtime = createRuntime()
   await runtime.init()
@@ -1462,5 +1468,32 @@ describe('AgentRuntime', () => {
     expect(turns[2].messages).toHaveLength(1)
     expect(assistantMessages().at(-1)?.status).toBe('complete')
     expect(assistantMessages().at(-1)?.parts).toEqual([{ type: 'text', text: 'recovered' }])
+  })
+})
+
+describe('agent tooling configuration', () => {
+  it('provides formatting and diagnostics hooks by default', async () => {
+    scripts.push(textScript('Hello'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(typeof toolContext?.formatFiles).toBe('function')
+    expect(typeof toolContext?.diagnoseFiles).toBe('function')
+  })
+
+  it('disables the hooks when the config turns them off', async () => {
+    await runtime.shutdown()
+    await writeAgentConfig({ lsp: false, formatters: false })
+    runtime = createRuntime()
+    await runtime.init()
+    const session = await runtime.createSession()
+    scripts.push(textScript('Hello'))
+
+    await runtime.sendChat(session.id, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolContext?.formatFiles).toBeUndefined()
+    expect(toolContext?.diagnoseFiles).toBeUndefined()
   })
 })

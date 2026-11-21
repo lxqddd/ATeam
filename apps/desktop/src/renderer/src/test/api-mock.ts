@@ -27,7 +27,9 @@ const DEFAULT_INFO: AgentInfo = {
   workspacePath: '/tmp/workspace',
   appVersion: '0.1.0',
   encryptionAvailable: true,
-  instructionFiles: []
+  instructionFiles: [],
+  lspServers: [],
+  formatters: []
 }
 
 export interface ApiMock {
@@ -135,10 +137,17 @@ export function createApiMock(
         removeRule: vi.fn(async () => true)
       },
       config: {
-        get: vi.fn(async () => ({ snapshots: true, instructions: [] })),
+        get: vi.fn(async () => ({
+          snapshots: true,
+          instructions: [],
+          lsp: true,
+          formatters: true
+        })),
         update: vi.fn(async (patch: Partial<AgentConfig>) => ({
           snapshots: true,
           instructions: [],
+          lsp: true,
+          formatters: true,
           ...patch
         }))
       }

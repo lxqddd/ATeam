@@ -30,6 +30,19 @@ export interface ToolContext {
     exitCode: number | null
     outputPath: string | null
   }) => void
+  formatFiles?: (files: string[]) => Promise<string>
+  diagnoseFiles?: (files: string[]) => Promise<string>
+}
+
+async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
+  if (files.length === 0) return ''
+  const formatted = (await context.formatFiles?.(files)) ?? ''
+  const diagnostics = (await context.diagnoseFiles?.(files)) ?? ''
+  return [formatted, diagnostics].filter(Boolean).join('\n\n')
+}
+
+function withNotes(result: string, notes: string): string {
+  return notes ? `${result}\n\n${notes}` : result
 }
 
 function truncate(value: string): string {
@@ -312,7 +325,9 @@ export function createTools(context: ToolContext): ToolSet {
             ? `\n[showing lines ${offset}-${start + slice.length} of ${lines.length}]`
             : ''
         const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
-        return truncate(`${numbered}${suffix}${nested ? `\n\n${nested}` : ''}`)
+        const body = truncate(`${numbered}${suffix}${nested ? `\n\n${nested}` : ''}`)
+        const diagnostics = (await context.diagnoseFiles?.([filePath])) ?? ''
+        return withNotes(body, diagnostics)
       } catch (error) {
         return safeError(error)
       }
@@ -444,7 +459,10 @@ export function createTools(context: ToolContext): ToolSet {
         const filePath = await resolvePath(context.workspace, inputPath, true, external)
         await fs.mkdir(path.dirname(filePath), { recursive: true })
         await fs.writeFile(filePath, content, 'utf8')
-        return `Wrote ${Buffer.byteLength(content, 'utf8')} bytes to ${inputPath}`
+        return withNotes(
+          `Wrote ${Buffer.byteLength(content, 'utf8')} bytes to ${inputPath}`,
+          await afterWrite(context, [filePath])
+        )
       } catch (error) {
         return safeError(error)
       }
@@ -481,7 +499,10 @@ export function createTools(context: ToolContext): ToolSet {
         }
         const next = replaceAll ? text.split(oldText).join(newText) : text.replace(oldText, newText)
         await fs.writeFile(filePath, next, 'utf8')
-        return `Replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${inputPath}`
+        return withNotes(
+          `Replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${inputPath}`,
+          await afterWrite(context, [filePath])
+        )
       } catch (error) {
         return safeError(error)
       }
@@ -683,6 +704,7 @@ export function createTools(context: ToolContext): ToolSet {
         }
 
         const summary: string[] = []
+        const changed: string[] = []
         for (const operation of operations) {
           const external = escapesWorkspace(context.workspace, operation.path)
           if (operation.kind === 'add') {
@@ -690,6 +712,7 @@ export function createTools(context: ToolContext): ToolSet {
             await fs.mkdir(path.dirname(filePath), { recursive: true })
             await fs.writeFile(filePath, operation.content ?? '', 'utf8')
             summary.push(`Added ${operation.path}`)
+            changed.push(filePath)
             continue
           }
           if (operation.kind === 'delete') {
@@ -708,8 +731,9 @@ export function createTools(context: ToolContext): ToolSet {
           }
           await fs.writeFile(filePath, text, 'utf8')
           summary.push(`Updated ${operation.path}`)
+          changed.push(filePath)
         }
-        return summary.join('\n')
+        return withNotes(summary.join('\n'), await afterWrite(context, [...new Set(changed)]))
       } catch (error) {
         return safeError(error)
       }

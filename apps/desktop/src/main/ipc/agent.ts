@@ -14,6 +14,8 @@ import {
 import type { AgentManager } from '../agent/agent-manager'
 import { AgentConfigStore } from '../agent/config-store'
 import { discoverInstructionFiles } from '../agent/instructions'
+import { discoverFormatters } from '../agent/formatters'
+import { availableLspServers } from '../agent/lsp'
 import type { ModelsStore } from '../models/store'
 import type { TrustedSender } from './trusted-sender'
 
@@ -108,11 +110,25 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     } catch {
       /* instruction discovery is best effort */
     }
+    let formatters: string[] = []
+    try {
+      formatters = (await discoverFormatters(workspacePath)).map((formatter) => formatter.id)
+    } catch {
+      /* formatter discovery is best effort */
+    }
+    let lspServers: string[] = []
+    try {
+      lspServers = await availableLspServers(workspacePath)
+    } catch {
+      /* language server discovery is best effort */
+    }
     return {
       workspacePath,
       appVersion: app.getVersion(),
       encryptionAvailable: modelsStore.isEncryptionAvailable(),
-      instructionFiles
+      instructionFiles,
+      lspServers,
+      formatters
     }
   })
 
@@ -214,7 +230,9 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     const patch = z
       .object({
         snapshots: z.boolean().optional(),
-        instructions: z.array(z.string().max(2_000)).max(50).optional()
+        instructions: z.array(z.string().max(2_000)).max(50).optional(),
+        lsp: z.boolean().optional(),
+        formatters: z.boolean().optional()
       })
       .parse(payload)
     await configReady

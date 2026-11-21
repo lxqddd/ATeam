@@ -32,6 +32,8 @@ let storeOutput: Mock<NonNullable<ToolContext['storeOutput']>>
 let onToolOutput: Mock<NonNullable<ToolContext['onToolOutput']>>
 let backgroundOutputPath: Mock<NonNullable<ToolContext['backgroundOutputPath']>>
 let onBackgroundFinished: Mock<NonNullable<ToolContext['onBackgroundFinished']>>
+let formatFiles: Mock<NonNullable<ToolContext['formatFiles']>>
+let diagnoseFiles: Mock<NonNullable<ToolContext['diagnoseFiles']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -41,6 +43,8 @@ beforeEach(async () => {
   onToolOutput = vi.fn()
   backgroundOutputPath = vi.fn(async () => path.join(directory, 'bg.log'))
   onBackgroundFinished = vi.fn()
+  formatFiles = vi.fn(async () => '')
+  diagnoseFiles = vi.fn(async () => '')
   tools = createTools({
     workspace: directory,
     signal: new AbortController().signal,
@@ -49,7 +53,9 @@ beforeEach(async () => {
     storeOutput,
     onToolOutput,
     backgroundOutputPath,
-    onBackgroundFinished
+    onBackgroundFinished,
+    formatFiles,
+    diagnoseFiles
   })
 })
 
@@ -598,5 +604,90 @@ describe('tool limits and edge cases', () => {
     const result = await execute(tools.shell, { command })
 
     expect(result).toContain('[output truncated at 200000 characters]')
+  })
+})
+
+describe('formatting and diagnostics', () => {
+  it('appends diagnostics to read results', async () => {
+    await fs.writeFile(path.join(directory, 'a.ts'), 'const x = 1')
+    diagnoseFiles.mockResolvedValue('LSP diagnostics:\na.ts:1:1 error: x')
+
+    await expect(execute(tools.read, { path: 'a.ts' })).resolves.toBe(
+      '    1  const x = 1\n\nLSP diagnostics:\na.ts:1:1 error: x'
+    )
+    expect(diagnoseFiles).toHaveBeenCalledWith([path.join(directory, 'a.ts')])
+  })
+
+  it('leaves read results unchanged without diagnostics', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'one')
+    await expect(execute(tools.read, { path: 'a.txt' })).resolves.toBe('    1  one')
+  })
+
+  it('formats and diagnoses files after write', async () => {
+    formatFiles.mockResolvedValue('Formatted a.ts with prettier')
+    diagnoseFiles.mockResolvedValue('LSP diagnostics:\na.ts:1:1 error: bad')
+
+    const result = await execute(tools.write, { path: 'a.ts', content: 'x' })
+
+    expect(result).toBe(
+      'Wrote 1 bytes to a.ts\n\nFormatted a.ts with prettier\n\nLSP diagnostics:\na.ts:1:1 error: bad'
+    )
+    expect(formatFiles).toHaveBeenCalledWith([path.join(directory, 'a.ts')])
+    expect(diagnoseFiles).toHaveBeenCalledWith([path.join(directory, 'a.ts')])
+    expect(formatFiles.mock.invocationCallOrder[0]).toBeLessThan(
+      diagnoseFiles.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('keeps diagnostics when formatting fails', async () => {
+    formatFiles.mockResolvedValue('Formatter failed for a.ts: parse error')
+    diagnoseFiles.mockResolvedValue('LSP diagnostics:\na.ts:1:1 error: bad')
+
+    const result = await execute(tools.write, { path: 'a.ts', content: 'x' })
+
+    expect(result).toBe(
+      'Wrote 1 bytes to a.ts\n\nFormatter failed for a.ts: parse error\n\nLSP diagnostics:\na.ts:1:1 error: bad'
+    )
+  })
+
+  it('formats and diagnoses files after edit', async () => {
+    await fs.writeFile(path.join(directory, 'a.ts'), 'one two')
+    formatFiles.mockResolvedValue('Formatted a.ts with prettier')
+    diagnoseFiles.mockResolvedValue('LSP diagnostics:\na.ts:1:1 error: bad')
+
+    const result = await execute(tools.edit, { path: 'a.ts', oldText: 'one', newText: 'three' })
+
+    expect(result).toBe(
+      'Replaced 1 occurrence(s) in a.ts\n\nFormatted a.ts with prettier\n\nLSP diagnostics:\na.ts:1:1 error: bad'
+    )
+    expect(diagnoseFiles).toHaveBeenCalledWith([path.join(directory, 'a.ts')])
+  })
+
+  it('formats and diagnoses added and updated patch files only', async () => {
+    await fs.writeFile(path.join(directory, 'old.txt'), 'old')
+    await fs.writeFile(path.join(directory, 'gone.txt'), 'gone')
+    formatFiles.mockResolvedValue('Formatted files')
+    diagnoseFiles.mockResolvedValue('LSP diagnostics: none')
+
+    const result = await execute(tools.patch, {
+      patchText: [
+        '*** Begin Patch',
+        '*** Add File: added.ts',
+        '+const a = 1',
+        '*** Update File: old.txt',
+        '@@',
+        '-old',
+        '+new',
+        '*** Delete File: gone.txt',
+        '*** End Patch'
+      ].join('\n')
+    })
+
+    expect(result).toContain('Formatted files')
+    expect(result).toContain('LSP diagnostics: none')
+    expect(formatFiles).toHaveBeenCalledWith([
+      path.join(directory, 'added.ts'),
+      path.join(directory, 'old.txt')
+    ])
   })
 })

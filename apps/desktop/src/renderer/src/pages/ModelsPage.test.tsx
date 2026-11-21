@@ -505,7 +505,9 @@ describe('ModelsPage', () => {
         workspacePath: '/tmp/workspace',
         appVersion: '0.1.0',
         encryptionAvailable: true,
-        instructionFiles: ['/repo/AGENTS.md', '/repo/packages/web/CLAUDE.md']
+        instructionFiles: ['/repo/AGENTS.md', '/repo/packages/web/CLAUDE.md'],
+        lspServers: [],
+        formatters: []
       }
     })
     Object.defineProperty(window, 'api', { value: mock.api, configurable: true })

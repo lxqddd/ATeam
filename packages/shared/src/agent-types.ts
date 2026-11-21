@@ -135,11 +135,15 @@ export interface AgentInfo {
   appVersion: string
   encryptionAvailable: boolean
   instructionFiles: string[]
+  lspServers: string[]
+  formatters: string[]
 }
 
 export interface AgentConfig {
   snapshots: boolean
   instructions: string[]
+  lsp: boolean
+  formatters: boolean
 }
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'
