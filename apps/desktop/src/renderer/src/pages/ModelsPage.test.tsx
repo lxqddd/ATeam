@@ -14,6 +14,16 @@ const provider: ProviderPublic = {
   updatedAt: '2026-01-01T00:00:00.000Z'
 }
 
+const secondProvider: ProviderPublic = {
+  id: 'p2',
+  name: 'Second',
+  type: 'openai',
+  baseURL: 'https://api.example.com/v1',
+  hasApiKey: true,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z'
+}
+
 const sonnet: ModelPublic = {
   id: 'm1',
   providerId: 'p1',
@@ -122,9 +132,7 @@ describe('ModelsPage', () => {
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
-    expect(
-      within(modelRow('Sonnet')).getByRole('button', { name: 'Set as default' })
-    ).toBeDisabled()
+    expect(within(modelRow('Sonnet')).getByRole('button', { name: 'Clear default' })).toBeEnabled()
     await user.click(within(modelRow('Opus')).getByRole('button', { name: 'Set as default' }))
 
     await waitFor(() =>
@@ -135,22 +143,60 @@ describe('ModelsPage', () => {
     )
   })
 
+  it('clears the default model', async () => {
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Acme' })
+
+    await user.click(within(modelRow('Sonnet')).getByRole('button', { name: 'Clear default' }))
+
+    await waitFor(() => expect(mock.api.models.setDefault).toHaveBeenCalledWith(null))
+  })
+
   it('adds a provider through the modal form', async () => {
+    vi.mocked(mock.api.models.addProvider).mockResolvedValueOnce(
+      makeConfig({ providers: [provider, secondProvider] })
+    )
     const user = userEvent.setup()
     render(<ModelsPage />)
     await screen.findByRole('region', { name: 'Acme' })
 
     await user.click(screen.getByRole('button', { name: 'Add provider' }))
-    await user.type(await screen.findByLabelText('Name'), 'My Provider')
+    await user.type(await screen.findByLabelText('Name'), 'Second')
     await user.type(screen.getByLabelText('API key'), 'sk-test')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
       expect(mock.api.models.addProvider).toHaveBeenCalledWith({
-        name: 'My Provider',
+        name: 'Second',
         type: 'anthropic',
         baseURL: undefined,
         apiKey: 'sk-test'
+      })
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(await screen.findByRole('region', { name: 'Second' })).toBeInTheDocument()
+  })
+
+  it('preselects the provider when adding a model from its card', async () => {
+    mock = createApiMock({
+      models: makeConfig({ providers: [provider, secondProvider] })
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+    await screen.findByRole('region', { name: 'Second' })
+
+    await user.click(within(providerCard('Second')).getByRole('button', { name: /Add model/ }))
+    expect(within(await screen.findByRole('dialog')).getByTitle('Second')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Model ID'), 'second-model')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(mock.api.models.addModel).toHaveBeenCalledWith({
+        providerId: 'p2',
+        modelId: 'second-model',
+        name: undefined
       })
     )
   })

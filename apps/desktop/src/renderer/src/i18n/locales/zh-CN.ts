@@ -99,6 +99,7 @@ const zhCN = {
   },
   modelsPage: {
     setDefault: '设为默认',
+    clearDefault: '清除默认',
     defaultChip: '默认',
     defaultEndpoint: '默认端点'
   },

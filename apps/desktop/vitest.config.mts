@@ -51,7 +51,6 @@ export default defineConfig({
         'src/renderer/src/antd/AntdProvider.tsx',
         'src/renderer/src/pages/SettingsPage.tsx',
         'src/renderer/src/components/settings/SettingsGroup.tsx',
-        'src/renderer/src/components/settings/SettingsRow.tsx',
         'src/renderer/src/components/settings/ThemeSettings.tsx',
         'src/renderer/src/components/settings/LanguageSettings.tsx',
         'src/renderer/src/components/settings/ProviderForm.tsx',

@@ -105,6 +105,7 @@ const enUS = {
   },
   modelsPage: {
     setDefault: 'Set as default',
+    clearDefault: 'Clear default',
     defaultChip: 'Default',
     defaultEndpoint: 'Default endpoint'
   },

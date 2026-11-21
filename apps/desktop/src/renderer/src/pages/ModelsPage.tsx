@@ -177,6 +177,15 @@ function ModelsPage(): React.JSX.Element {
     }
   }
 
+  async function clearDefault(): Promise<void> {
+    setMutationError(null)
+    try {
+      await apply(() => window.api.models.setDefault(null))
+    } catch (error) {
+      setMutationError(modelErrorMessage((key) => t(key), error))
+    }
+  }
+
   async function testModel(model: ModelPublic): Promise<void> {
     setTests((current) => ({ ...current, [model.id]: { running: true } }))
     try {
@@ -391,12 +400,17 @@ function ModelsPage(): React.JSX.Element {
                                 <Button
                                   type="text"
                                   size="small"
-                                  disabled={isDefault}
                                   onClick={() => {
-                                    void setDefaultModel(model.providerId, model.modelId)
+                                    if (isDefault) {
+                                      void clearDefault()
+                                    } else {
+                                      void setDefaultModel(model.providerId, model.modelId)
+                                    }
                                   }}
                                 >
-                                  {t('modelsPage.setDefault')}
+                                  {isDefault
+                                    ? t('modelsPage.clearDefault')
+                                    : t('modelsPage.setDefault')}
                                 </Button>
                                 <Button
                                   type="text"
