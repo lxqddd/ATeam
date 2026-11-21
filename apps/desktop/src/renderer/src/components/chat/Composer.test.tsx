@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Composer from './Composer'
 import type { ChatStoreState } from '../../chat/store'
+import { createApiMock, type ApiMock } from '../../test/api-mock'
 import { makeSession } from '../../test/factories'
 
 const chatMocks = vi.hoisted(() => ({
@@ -17,6 +18,8 @@ const chatMocks = vi.hoisted(() => ({
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
+
+let api: ApiMock
 
 vi.mock('../../chat/store', () => ({
   chatStore: chatMocks,
@@ -97,6 +100,8 @@ function renderComposer(): void {
 
 beforeEach(() => {
   storeState.current = baseState()
+  api = createApiMock()
+  Object.defineProperty(window, 'api', { value: api.api, configurable: true })
   chatMocks.send.mockClear()
   chatMocks.send.mockResolvedValue(undefined)
   chatMocks.stop.mockClear()
@@ -121,7 +126,7 @@ describe('Composer', () => {
 
     await user.click(send)
 
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('hello'))
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('hello', []))
     await waitFor(() => expect(textarea).toHaveValue(''))
   })
 
@@ -131,7 +136,7 @@ describe('Composer', () => {
     const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
 
     await user.type(textarea, 'first{Enter}')
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('first'))
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('first', []))
 
     await user.type(textarea, 'line1{Shift>}{Enter}{/Shift}line2')
     expect(chatMocks.send).toHaveBeenCalledTimes(1)
@@ -432,5 +437,76 @@ describe('Composer', () => {
     await user.click(await screen.findByRole('option', { name: /^Plan/ }))
 
     await waitFor(() => expect(chatMocks.setSessionAgent).toHaveBeenCalledWith('s1', 'plan'))
+  })
+
+  it('attaches files and sends them with the message', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.upload(
+      screen.getByLabelText('Choose files'),
+      new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    )
+    expect(await screen.findByText('notes.txt')).toBeInTheDocument()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), 'see attached')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() =>
+      expect(chatMocks.send).toHaveBeenCalledWith('see attached', [
+        expect.objectContaining({ name: 'notes.txt', kind: 'text' })
+      ])
+    )
+    expect(api.api.agent.attachments.import).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ name: 'notes.txt' })
+    )
+  })
+
+  it('removes staged attachments', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.upload(
+      screen.getByLabelText('Choose files'),
+      new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    )
+    await screen.findByText('notes.txt')
+    await user.click(screen.getByRole('button', { name: 'Remove attachment: notes.txt' }))
+
+    expect(screen.queryByText('notes.txt')).not.toBeInTheDocument()
+    expect(api.api.agent.attachments.remove).toHaveBeenCalled()
+  })
+
+  it('shows attachment import errors', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    vi.mocked(api.api.agent.attachments.import).mockRejectedValue(
+      new Error('Attachment is too large')
+    )
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.upload(
+      screen.getByLabelText('Choose files'),
+      new File(['hello'], 'big.txt', { type: 'text/plain' })
+    )
+
+    expect(await screen.findByText('Attachment is too large')).toBeInTheDocument()
+    expect(screen.queryByText('big.txt')).not.toBeInTheDocument()
+  })
+
+  it('inserts @ file references from search results', async () => {
+    vi.mocked(api.api.agent.files.search).mockResolvedValue(['src/main/index.ts'])
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '@src')
+    await user.click(await screen.findByRole('option', { name: 'src/main/index.ts' }))
+
+    expect(textarea).toHaveValue('@src/main/index.ts ')
+    expect(api.api.agent.files.search).toHaveBeenCalledWith('src')
   })
 })

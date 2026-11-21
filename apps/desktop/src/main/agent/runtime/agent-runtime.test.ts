@@ -13,6 +13,7 @@ import type {
   RuntimeModelsConfig
 } from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './index'
+import { attachmentDirectory, saveAttachment } from '../attachments'
 import type { InstructionFile } from '../config/instructions'
 import type { McpManagerLike } from '../integrations/mcp'
 import { PermissionsStore } from '../config/permissions-store'
@@ -1781,5 +1782,65 @@ describe('web tool wiring', () => {
     await expect(toolContext?.webSearch?.({ query: 'cats', count: 3 })).resolves.toBe(
       'Search results for "cats" (tavily):\n1. Hit\n   https://hit.example\n   tavily:cats'
     )
+  })
+})
+
+describe('attachments', () => {
+  it('includes text attachments in model messages', async () => {
+    const attachment = await saveAttachment(directory, sessionId, {
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      data: Buffer.from('attached text')
+    })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'see attached', undefined, [attachment])
+    await sink.next('run.finished')
+
+    expect(turns[0].messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'see attached' },
+          { type: 'text', text: 'File: notes.txt\n```\nattached text\n```' }
+        ]
+      }
+    ])
+    const userMessage = runtime.messages(sessionId).messages[0]
+    expect(userMessage.parts).toContainEqual({ type: 'attachment', attachment })
+  })
+
+  it('sends images as multimodal parts and allows attachment-only messages', async () => {
+    const attachment = await saveAttachment(directory, sessionId, {
+      name: 'shot.png',
+      mimeType: 'image/png',
+      data: Buffer.from([1, 2, 3])
+    })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, '', undefined, [attachment])
+    await sink.next('run.finished')
+
+    const user = turns[0].messages[0]
+    expect(user).toMatchObject({
+      role: 'user',
+      content: [expect.objectContaining({ type: 'image', mediaType: 'image/png' })]
+    })
+    expect(runtime.messages(sessionId).messages[0].parts).toHaveLength(1)
+  })
+
+  it('removes attachment files when a session is deleted', async () => {
+    const attachment = await saveAttachment(directory, sessionId, {
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      data: Buffer.from('x')
+    })
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi', undefined, [attachment])
+    await sink.next('run.finished')
+
+    await runtime.deleteSession(sessionId)
+
+    await expect(fs.stat(attachmentDirectory(directory, sessionId))).rejects.toThrow()
   })
 })

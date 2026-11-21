@@ -13,6 +13,7 @@ import type {
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
+  MessageAttachment,
   ModelRef,
   PermissionAction,
   PermissionDecision,
@@ -58,7 +59,8 @@ import { PermissionsStore } from '../config/permissions-store'
 import { SessionsStore, type SessionRecord } from '../sessions/sessions-store'
 import { SnapshotStore } from '../sessions/snapshots'
 import { ToolOutputStore } from '../sessions/tool-output-store'
-import { buildModelMessages } from '../message-history'
+import { buildModelMessages, type AttachmentPayload } from '../message-history'
+import { readAttachment, readTextAttachment, removeSessionAttachments } from '../attachments'
 import { resolveModelRef } from '../providers'
 import type { ToolContext } from '../tools'
 import { filterToolsForAgent, loadAgents } from '../config/agents'
@@ -360,10 +362,12 @@ export class AgentRuntime {
       await this.store.delete(child.id)
       await this.permissionRules.removeForSession(child.id)
       await this.snapshots.removeSession(child.id)
+      await removeSessionAttachments(this.options.userDataPath, child.id)
     }
     await this.store.delete(id)
     await this.permissionRules.removeForSession(id)
     await this.snapshots.removeSession(id)
+    await removeSessionAttachments(this.options.userDataPath, id)
     this.emit({ type: 'session.deleted', sessionId: id })
   }
 
@@ -395,9 +399,14 @@ export class AgentRuntime {
     }
   }
 
-  async sendChat(sessionId: string, text: string, requestedModel?: ModelRef | null): Promise<void> {
+  async sendChat(
+    sessionId: string,
+    text: string,
+    requestedModel?: ModelRef | null,
+    attachments: MessageAttachment[] = []
+  ): Promise<void> {
     const content = text.trim()
-    if (!content) throw new Error('EMPTY_MESSAGE')
+    if (!content && attachments.length === 0) throw new Error('EMPTY_MESSAGE')
     if (this.runs.has(sessionId)) throw new Error('SESSION_BUSY')
 
     const record = this.store.get(sessionId)
@@ -410,7 +419,7 @@ export class AgentRuntime {
       record.session.model = requestedModel
     }
 
-    const user = makeUserMessage(sessionId, content)
+    const user = makeUserMessage(sessionId, content, attachments)
     const assistant = makeAssistantMessage(sessionId)
     const config = await readAgentConfig(this.options.userDataPath)
     if (config.snapshots) {
@@ -893,6 +902,39 @@ export class AgentRuntime {
     )
   }
 
+  private async attachmentPayloads(
+    messages: ChatMessage[]
+  ): Promise<Map<string, AttachmentPayload>> {
+    const payloads = new Map<string, AttachmentPayload>()
+    for (const message of messages) {
+      for (const part of message.parts) {
+        if (part.type !== 'attachment') continue
+        const attachment = part.attachment
+        if (payloads.has(attachment.id)) continue
+        try {
+          if (attachment.kind === 'text') {
+            payloads.set(attachment.id, {
+              kind: 'text',
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              text: await readTextAttachment(attachment)
+            })
+          } else {
+            payloads.set(attachment.id, {
+              kind: attachment.kind,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              data: await readAttachment(attachment)
+            })
+          }
+        } catch {
+          /* missing attachment files are skipped */
+        }
+      }
+    }
+    return payloads
+  }
+
   private async compactMessages(
     sessionId: string,
     messages: ChatMessage[],
@@ -1135,10 +1177,11 @@ export class AgentRuntime {
         instructions
       )
 
+      const modelHistory = this.historyMessages(run, message.id)
       const result = this.deps.createTurn({
         model,
         system: agent?.prompt ? `${system}\n\n${agent.prompt}` : system,
-        messages: buildModelMessages(this.historyMessages(run, message.id)),
+        messages: buildModelMessages(modelHistory, await this.attachmentPayloads(modelHistory)),
         tools,
         abortSignal: run.abort.signal,
         reasoning: current.session.reasoningEffort,

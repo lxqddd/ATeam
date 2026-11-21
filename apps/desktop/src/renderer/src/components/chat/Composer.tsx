@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import type {
   AgentDefinition,
+  MessageAttachment,
   ModelRef,
   PermissionMode,
   ReasoningEffort,
@@ -75,6 +76,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function formatFileSize(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
 const AGENT_DESCRIPTION_KEYS: Record<string, string> = {
   build: 'chat.agentBuildDescription',
   plan: 'chat.agentPlanDescription'
@@ -105,7 +112,15 @@ function Composer(): React.JSX.Element {
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const [mention, setMention] = useState<{
+    query: string
+    start: number
+    items: string[]
+  } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const hasModels = (models?.models.length ?? 0) > 0
   const effectiveModel = session?.model ?? models?.defaultModel ?? null
@@ -162,9 +177,67 @@ function Composer(): React.JSX.Element {
     textareaRef.current?.focus()
   }, [revertPrompt])
 
+  async function addFiles(files: File[]): Promise<void> {
+    if (files.length === 0) return
+    setAttaching(true)
+    setError(null)
+    try {
+      const target = await chatStore.ensureSession()
+      const added: MessageAttachment[] = []
+      for (const file of files) {
+        const data = new Uint8Array(await file.arrayBuffer())
+        added.push(
+          await window.api.agent.attachments.import(target.id, {
+            name: file.name,
+            mimeType: file.type,
+            data
+          })
+        )
+      }
+      setAttachments((current) => [...current, ...added])
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setAttaching(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  async function removeAttachment(attachment: MessageAttachment): Promise<void> {
+    setAttachments((current) => current.filter((entry) => entry.id !== attachment.id))
+    const sessionId = session?.id ?? selectedSessionId
+    if (!sessionId) return
+    await window.api.agent.attachments.remove(sessionId, attachment.id).catch(() => undefined)
+  }
+
+  function detectMention(value: string, cursor: number): void {
+    const match = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, cursor))
+    if (!match || match[2].length === 0) {
+      setMention(null)
+      return
+    }
+    const query = match[2]
+    const start = cursor - query.length - 1
+    window.api.agent.files
+      .search(query)
+      .then((items) => {
+        setMention(items.length > 0 ? { query, start, items } : null)
+      })
+      .catch(() => setMention(null))
+  }
+
+  function applyMention(filePath: string): void {
+    if (!mention) return
+    const after = text.slice(mention.start + mention.query.length + 1)
+    const next = `${text.slice(0, mention.start)}@${filePath} ${after.replace(/^\s*/, '')}`
+    setText(next)
+    setMention(null)
+    textareaRef.current?.focus()
+  }
+
   async function submit(): Promise<void> {
     const content = text.trim()
-    if (!content || sending || running) return
+    if ((!content && attachments.length === 0) || sending || running) return
     if (!ready) {
       setError(t('chat.agentStoppedHint'))
       return
@@ -181,8 +254,10 @@ function Composer(): React.JSX.Element {
     setSending(true)
     setError(null)
     try {
-      await chatStore.send(content)
+      await chatStore.send(content, attachments)
       setText('')
+      setAttachments([])
+      setMention(null)
     } catch (caught) {
       const message = errorMessage(caught)
       setError(
@@ -247,7 +322,8 @@ function Composer(): React.JSX.Element {
       : t('chat.agentStoppedHint')
     : t('chat.placeholder')
 
-  const sendDisabled = !text.trim() || sending || running || !ready || !hasModels
+  const sendDisabled =
+    (!text.trim() && attachments.length === 0) || sending || running || !ready || !hasModels
 
   return (
     <div className="mx-auto w-full max-w-[768px] flex-none px-4 pb-4">
@@ -269,15 +345,88 @@ function Composer(): React.JSX.Element {
       <div
         data-testid="composer"
         className="rounded-[20px] border border-border bg-surface-raised p-3 shadow-sm transition-colors focus-within:border-border-strong"
+        onDragOver={(event) => {
+          event.preventDefault()
+        }}
+        onDrop={(event) => {
+          event.preventDefault()
+          void addFiles(Array.from(event.dataTransfer.files))
+        }}
       >
+        {mention && (
+          <div
+            role="listbox"
+            aria-label={t('chat.mentionFiles')}
+            className="mb-2 max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-1"
+          >
+            {mention.items.map((filePath) => (
+              <button
+                key={filePath}
+                type="button"
+                role="option"
+                onClick={() => applyMention(filePath)}
+                className="block w-full truncate rounded px-2 py-1 text-left font-mono text-caption text-foreground transition-colors hover:bg-hover"
+              >
+                {filePath}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {attachments.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {attachments.map((attachment) => (
+              <span
+                key={attachment.id}
+                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border-subtle bg-background-subtle px-2 py-1 text-caption text-muted"
+              >
+                <span className="max-w-[200px] truncate text-foreground">{attachment.name}</span>
+                <span className="flex-none">{formatFileSize(attachment.size)}</span>
+                <button
+                  type="button"
+                  aria-label={`${t('chat.removeAttachment')}: ${attachment.name}`}
+                  onClick={() => {
+                    void removeAttachment(attachment)
+                  }}
+                  className="flex-none rounded px-1 text-subtle transition-colors hover:text-danger"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(event) => setText(event.target.value)}
+          onChange={(event) => {
+            setText(event.target.value)
+            detectMention(event.target.value, event.target.selectionStart ?? 0)
+          }}
           onKeyDown={(event) => {
+            if (mention && mention.items.length > 0) {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                setMention(null)
+                return
+              }
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                applyMention(mention.items[0])
+                return
+              }
+            }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
               void submit()
+            }
+          }}
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.files)
+            if (files.length > 0) {
+              event.preventDefault()
+              void addFiles(files)
             }
           }}
           rows={1}
@@ -289,6 +438,34 @@ function Composer(): React.JSX.Element {
 
         <div className="mt-1 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              aria-label={t('chat.chooseFiles')}
+              className="sr-only"
+              onChange={(event) => {
+                void addFiles(Array.from(event.target.files ?? []))
+              }}
+            />
+            <button
+              type="button"
+              aria-label={t('chat.attachFiles')}
+              title={t('chat.attachFiles')}
+              disabled={!ready || sending || attaching}
+              onClick={() => fileInputRef.current?.click()}
+              className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="m20 11.5-8.2 8.2a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
             <ModelPicker
               models={models}
               value={effectiveModel}

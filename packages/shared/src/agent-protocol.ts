@@ -1,5 +1,6 @@
 import type {
   McpServerInput,
+  MessageAttachment,
   PermissionRuleInput,
   RuntimeWebSearchConfig,
   SessionSettings
@@ -66,7 +67,12 @@ export type WorkerRequest =
   | {
       id: string
       method: 'chat.send'
-      params: { sessionId: string; text: string; model?: ModelRef | null }
+      params: {
+        sessionId: string
+        text: string
+        model?: ModelRef | null
+        attachments?: MessageAttachment[]
+      }
     }
   | { id: string; method: 'chat.stop'; params: { sessionId: string } }
   | { id: string; method: 'chat.retry'; params: { sessionId: string } }

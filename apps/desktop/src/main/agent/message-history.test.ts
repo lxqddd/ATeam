@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { MessageAttachment } from '@ateam/shared'
 import { buildModelMessages } from './message-history'
 import { makeMessage, makeReasoningPart, makeTextPart, makeToolPart } from './test/factories'
 
@@ -162,5 +163,132 @@ describe('buildModelMessages', () => {
     expect(result[1]).toMatchObject({
       content: [{ output: { type: 'text', value: '' } }]
     })
+  })
+})
+
+describe('buildModelMessages with attachments', () => {
+  function attachment(overrides: Partial<MessageAttachment> = {}): MessageAttachment {
+    return {
+      id: 'att-1',
+      name: 'a.txt',
+      mimeType: 'text/plain',
+      size: 5,
+      kind: 'text',
+      path: '/tmp/a.txt',
+      ...overrides
+    }
+  }
+
+  it('inlines text attachments as text parts', () => {
+    const message = makeMessage({
+      role: 'user',
+      parts: [makeTextPart('please read'), { type: 'attachment', attachment: attachment() }]
+    })
+
+    const messages = buildModelMessages(
+      [message],
+      new Map([['att-1', { kind: 'text', name: 'a.txt', mimeType: 'text/plain', text: 'hello' }]])
+    )
+
+    expect(messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'please read' },
+          { type: 'text', text: 'File: a.txt\n```\nhello\n```' }
+        ]
+      }
+    ])
+  })
+
+  it('supports attachment-only messages', () => {
+    const message = makeMessage({
+      role: 'user',
+      parts: [{ type: 'attachment', attachment: attachment({ id: 'att-2' }) }]
+    })
+
+    const messages = buildModelMessages(
+      [message],
+      new Map([['att-2', { kind: 'text', name: 'a.txt', mimeType: 'text/plain', text: 'hi' }]])
+    )
+
+    expect(messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'File: a.txt\n```\nhi\n```' }] }
+    ])
+  })
+
+  it('maps images and PDFs to multimodal parts', () => {
+    const imageBytes = new Uint8Array([1, 2, 3])
+    const pdfBytes = new Uint8Array([4, 5])
+    const message = makeMessage({
+      role: 'user',
+      parts: [
+        {
+          type: 'attachment',
+          attachment: attachment({ id: 'img', kind: 'image', name: 'a.png', mimeType: 'image/png' })
+        },
+        {
+          type: 'attachment',
+          attachment: attachment({
+            id: 'pdf',
+            kind: 'pdf',
+            name: 'doc.pdf',
+            mimeType: 'application/pdf'
+          })
+        }
+      ]
+    })
+
+    const messages = buildModelMessages(
+      [message],
+      new Map([
+        ['img', { kind: 'image' as const, name: 'a.png', mimeType: 'image/png', data: imageBytes }],
+        [
+          'pdf',
+          { kind: 'pdf' as const, name: 'doc.pdf', mimeType: 'application/pdf', data: pdfBytes }
+        ]
+      ])
+    )
+
+    expect(messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'image', image: imageBytes, mediaType: 'image/png' },
+        { type: 'file', data: pdfBytes, mediaType: 'application/pdf', filename: 'doc.pdf' }
+      ]
+    })
+  })
+
+  it('skips attachments whose payload is unavailable', () => {
+    const message = makeMessage({
+      role: 'user',
+      parts: [makeTextPart('hello'), { type: 'attachment', attachment: attachment() }]
+    })
+
+    expect(buildModelMessages([message], new Map())).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'hello' }] }
+    ])
+
+    const empty = makeMessage({
+      role: 'user',
+      parts: [{ type: 'attachment', attachment: attachment({ id: 'missing' }) }]
+    })
+    expect(buildModelMessages([empty], new Map())).toEqual([])
+  })
+
+  it('does not merge attachment messages into the previous user turn', () => {
+    const first = makeMessage({ role: 'user', parts: [makeTextPart('one')] })
+    const second = makeMessage({
+      role: 'user',
+      parts: [{ type: 'attachment', attachment: attachment() }]
+    })
+
+    const messages = buildModelMessages(
+      [first, second],
+      new Map([['att-1', { kind: 'text', name: 'a.txt', mimeType: 'text/plain', text: 'x' }]])
+    )
+
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toEqual({ role: 'user', content: 'one' })
   })
 })

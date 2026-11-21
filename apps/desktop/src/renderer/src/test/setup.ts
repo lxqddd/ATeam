@@ -32,6 +32,18 @@ if (typeof window.matchMedia !== 'function') {
 
 Element.prototype.scrollIntoView = (): void => undefined
 
+// jsdom's File does not implement Blob.arrayBuffer(), which Chromium provides.
+if (typeof File !== 'undefined' && typeof File.prototype.arrayBuffer !== 'function') {
+  File.prototype.arrayBuffer = function arrayBuffer(this: File): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as ArrayBuffer)
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
+      reader.readAsArrayBuffer(this)
+    })
+  }
+}
+
 beforeEach(async () => {
   await i18n.changeLanguage('en-US')
 })

@@ -37,6 +37,9 @@ export const AGENT_CHANNELS = {
   mcpRemove: 'ateam:agent:mcp:remove',
   webSearchGet: 'ateam:agent:websearch:get',
   webSearchUpdate: 'ateam:agent:websearch:update',
+  attachmentsImport: 'ateam:agent:attachments:import',
+  attachmentRemove: 'ateam:agent:attachments:remove',
+  filesSearch: 'ateam:agent:files:search',
   workspaceOpen: 'ateam:workspace:open',
   openExternal: 'ateam:shell:open-external'
 } as const

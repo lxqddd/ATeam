@@ -10,6 +10,7 @@ import type {
   MessagesSnapshot,
   ModelRef,
   ModelsConfigPublic,
+  MessageAttachment,
   PermissionDecision,
   PermissionRequest,
   RunOutcome,
@@ -299,14 +300,18 @@ export class ChatStore {
     })
   }
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments: MessageAttachment[] = []): Promise<void> {
     const content = text.trim()
-    if (!content) return
+    if (!content && attachments.length === 0) return
     if (this.state.status.status !== 'ready') {
       throw new Error('AGENT_NOT_READY')
     }
     const session = await this.ensureSession()
-    await window.api.agent.chat.send({ sessionId: session.id, text: content })
+    await window.api.agent.chat.send({
+      sessionId: session.id,
+      text: content,
+      ...(attachments.length > 0 ? { attachments } : {})
+    })
   }
 
   async stop(): Promise<void> {

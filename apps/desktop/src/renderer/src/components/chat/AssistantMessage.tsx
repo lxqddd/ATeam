@@ -96,6 +96,7 @@ function AssistantMessage({
                 </details>
               )
             }
+            if (part.type === 'attachment') return null
             return <ToolRow key={part.toolCallId} part={part} />
           })}
         </div>

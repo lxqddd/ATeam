@@ -1,5 +1,13 @@
-import type { ModelMessage, TextPart, ToolCallPart, ToolResultPart } from 'ai'
-import type { ChatMessage } from '@ateam/shared'
+import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart, ToolResultPart } from 'ai'
+import type { AttachmentKind, ChatMessage } from '@ateam/shared'
+
+export interface AttachmentPayload {
+  kind: AttachmentKind
+  name: string
+  mimeType: string
+  data?: Uint8Array
+  text?: string
+}
 
 function userText(message: ChatMessage): string {
   return message.parts
@@ -12,12 +20,43 @@ function userText(message: ChatMessage): string {
  * Rebuild the provider conversation from the persisted chat transcript.
  * Error messages are skipped; only settled tool calls are replayed.
  */
-export function buildModelMessages(messages: ChatMessage[]): ModelMessage[] {
+export function buildModelMessages(
+  messages: ChatMessage[],
+  attachments?: Map<string, AttachmentPayload>
+): ModelMessage[] {
   const result: ModelMessage[] = []
 
   for (const message of messages) {
     if (message.role === 'user') {
       const text = userText(message)
+      const attached = message.parts.filter((part) => part.type === 'attachment')
+      if (attached.length > 0) {
+        const content: Array<TextPart | ImagePart | FilePart> = []
+        if (text.trim()) content.push({ type: 'text', text })
+        for (const part of attached) {
+          if (part.type !== 'attachment') continue
+          const payload = attachments?.get(part.attachment.id)
+          if (!payload) continue
+          if (payload.kind === 'text') {
+            content.push({
+              type: 'text',
+              text: `File: ${payload.name}\n\`\`\`\n${payload.text ?? ''}\n\`\`\``
+            })
+          } else if (payload.kind === 'image' && payload.data) {
+            content.push({ type: 'image', image: payload.data, mediaType: payload.mimeType })
+          } else if (payload.kind === 'pdf' && payload.data) {
+            content.push({
+              type: 'file',
+              data: payload.data,
+              mediaType: payload.mimeType,
+              filename: payload.name
+            })
+          }
+        }
+        if (content.length > 0) result.push({ role: 'user', content })
+        continue
+      }
+
       if (!text.trim()) continue
       const previous = result[result.length - 1]
       if (previous?.role === 'user' && typeof previous.content === 'string') {

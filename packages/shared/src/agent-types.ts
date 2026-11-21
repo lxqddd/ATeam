@@ -66,6 +66,7 @@ export type ToolState =
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
+  | { type: 'attachment'; attachment: MessageAttachment }
   | {
       type: 'tool'
       toolCallId: string
@@ -77,6 +78,17 @@ export type MessagePart =
       startedAt?: string
       finishedAt?: string
     }
+
+export type AttachmentKind = 'text' | 'image' | 'pdf'
+
+export interface MessageAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  kind: AttachmentKind
+  path: string
+}
 
 export interface TokenUsage {
   inputTokens?: number

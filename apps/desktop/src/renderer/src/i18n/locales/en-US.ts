@@ -233,6 +233,10 @@ const enUS = {
     agentDefault: 'Agent',
     agentBuildDescription: 'Full coding agent with all tools.',
     agentPlanDescription: 'Read-only planning; cannot modify files.',
+    attachFiles: 'Attach files',
+    chooseFiles: 'Choose files',
+    removeAttachment: 'Remove attachment',
+    mentionFiles: 'Files',
     permissionMode: 'Permission mode',
     permissionPlan: 'Read only',
     permissionPlanHint:

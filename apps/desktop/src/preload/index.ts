@@ -74,6 +74,15 @@ const api: AteamApi = {
     websearch: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.webSearchGet),
       update: (input) => ipcRenderer.invoke(AGENT_CHANNELS.webSearchUpdate, input)
+    },
+    attachments: {
+      import: (sessionId, input) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.attachmentsImport, { sessionId, ...input }),
+      remove: (sessionId, attachmentId) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.attachmentRemove, { sessionId, attachmentId })
+    },
+    files: {
+      search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.filesSearch, { query })
     }
   },
   models: {

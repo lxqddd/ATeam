@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { ChatMessage, TokenUsage } from '@ateam/shared'
+import type { ChatMessage, MessageAttachment, MessagePart, TokenUsage } from '@ateam/shared'
 
 export function nowIso(): string {
   return new Date().toISOString()
@@ -9,13 +9,20 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export function makeUserMessage(sessionId: string, text: string): ChatMessage {
+export function makeUserMessage(
+  sessionId: string,
+  text: string,
+  attachments: MessageAttachment[] = []
+): ChatMessage {
   const timestamp = nowIso()
+  const parts: MessagePart[] = []
+  if (text) parts.push({ type: 'text', text })
+  for (const attachment of attachments) parts.push({ type: 'attachment', attachment })
   return {
     id: randomUUID(),
     sessionId,
     role: 'user',
-    parts: [{ type: 'text', text }],
+    parts,
     createdAt: timestamp,
     updatedAt: timestamp,
     status: 'complete'

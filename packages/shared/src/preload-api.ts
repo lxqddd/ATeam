@@ -12,6 +12,7 @@ import type {
   PermissionRequest,
   PermissionRule,
   PermissionRuleInput,
+  MessageAttachment,
   SessionMeta,
   SessionSettings,
   SessionUndoResult,
@@ -52,7 +53,12 @@ export interface AgentBridge {
     list: (sessionId: string) => Promise<MessagesSnapshot>
   }
   chat: {
-    send: (input: { sessionId: string; text: string; model?: ModelRef | null }) => Promise<void>
+    send: (input: {
+      sessionId: string
+      text: string
+      model?: ModelRef | null
+      attachments?: MessageAttachment[]
+    }) => Promise<void>
     stop: (sessionId: string) => Promise<void>
     retry: (sessionId: string) => Promise<void>
   }
@@ -77,6 +83,16 @@ export interface AgentBridge {
   websearch: {
     get: () => Promise<WebSearchProviderPublic>
     update: (input: WebSearchInput) => Promise<WebSearchProviderPublic>
+  }
+  attachments: {
+    import: (
+      sessionId: string,
+      input: { name: string; mimeType: string; data: Uint8Array }
+    ) => Promise<MessageAttachment>
+    remove: (sessionId: string, attachmentId: string) => Promise<void>
+  }
+  files: {
+    search: (query: string) => Promise<string[]>
   }
 }
 

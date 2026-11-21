@@ -9,6 +9,7 @@ import type {
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
+  MessageAttachment,
   MessagesSnapshot,
   ModelRef,
   ModelsConfigPublic,
@@ -233,6 +234,29 @@ export function createApiMock(
           hasApiKey: true,
           updatedAt: new Date().toISOString()
         }))
+      },
+      attachments: {
+        import: vi.fn(
+          async (
+            sessionId: string,
+            input: { name: string; mimeType: string; data: Uint8Array }
+          ): Promise<MessageAttachment> => ({
+            id: `attachment-${Date.now()}`,
+            name: input.name,
+            mimeType: input.mimeType,
+            size: input.data.byteLength,
+            kind: input.mimeType.startsWith('image/')
+              ? 'image'
+              : input.mimeType === 'application/pdf'
+                ? 'pdf'
+                : 'text',
+            path: `/tmp/attachments/${sessionId}/${input.name}`
+          })
+        ),
+        remove: vi.fn(async () => undefined)
+      },
+      files: {
+        search: vi.fn(async () => [] as string[])
       }
     },
     models: {

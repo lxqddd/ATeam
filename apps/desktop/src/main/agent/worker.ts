@@ -77,7 +77,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       await requireRuntime().sendChat(
         request.params.sessionId,
         request.params.text,
-        request.params.model
+        request.params.model,
+        request.params.attachments
       )
       return null
     case 'chat.stop':

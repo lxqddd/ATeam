@@ -1,4 +1,5 @@
 import { app, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import path from 'node:path'
 import { z } from 'zod'
 import {
   AGENT_CHANNELS,
@@ -8,6 +9,7 @@ import {
   type AgentStatus,
   type McpServerConfig,
   type McpServerStatus,
+  type MessageAttachment,
   type MessagesSnapshot,
   type PermissionRequest,
   type PermissionRule,
@@ -20,6 +22,9 @@ import { AgentConfigStore } from '../agent/config/config-store'
 import { discoverInstructionFiles } from '../agent/config/instructions'
 import { discoverFormatters } from '../agent/integrations/formatters'
 import { availableLspServers } from '../agent/integrations/lsp'
+import { attachmentDirectory, removeAttachment, saveAttachment } from '../agent/attachments'
+import { normalizeImageAttachment } from '../attachments/image'
+import { searchWorkspaceFiles } from '../files/search'
 import type { ModelsStore } from '../stores/models'
 import type { WebSearchStore } from '../stores/websearch'
 import type { TrustedSender } from './trusted-sender'
@@ -61,10 +66,23 @@ const sessionSetSettingsSchema = z.object({
   settings: sessionSettingsSchema
 })
 const sessionIdSchema = z.object({ sessionId: idSchema })
+const attachmentSchema = z.object({
+  id: idSchema,
+  name: z.string().min(1).max(300),
+  mimeType: z.string().max(200),
+  size: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(20 * 1024 * 1024),
+  kind: z.enum(['text', 'image', 'pdf']),
+  path: z.string().min(1).max(2_000)
+})
 const chatSendSchema = z.object({
   sessionId: idSchema,
-  text: z.string().min(1).max(100_000),
-  model: modelRefSchema.nullable().optional()
+  text: z.string().max(100_000),
+  model: modelRefSchema.nullable().optional(),
+  attachments: z.array(attachmentSchema).max(10).optional()
 })
 const permissionReplySchema = z.object({
   requestId: idSchema,
@@ -215,7 +233,42 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
 
   handle(AGENT_CHANNELS.chatSend, async (payload): Promise<void> => {
     const input = chatSendSchema.parse(payload)
+    const directory = attachmentDirectory(app.getPath('userData'), input.sessionId)
+    for (const attachment of input.attachments ?? []) {
+      if (!attachment.path.startsWith(`${directory}${path.sep}`)) {
+        throw new Error('Invalid attachment path')
+      }
+    }
     await manager.request('chat.send', input)
+  })
+
+  handle(AGENT_CHANNELS.attachmentsImport, async (payload): Promise<MessageAttachment> => {
+    const input = z
+      .object({
+        sessionId: idSchema,
+        name: z.string().min(1).max(300),
+        mimeType: z.string().max(200),
+        data: z.instanceof(Uint8Array)
+      })
+      .parse(payload)
+    const normalized = normalizeImageAttachment({
+      name: input.name,
+      mimeType: input.mimeType,
+      data: input.data
+    })
+    return saveAttachment(app.getPath('userData'), input.sessionId, normalized)
+  })
+
+  handle(AGENT_CHANNELS.attachmentRemove, async (payload): Promise<void> => {
+    const { sessionId, attachmentId } = z
+      .object({ sessionId: idSchema, attachmentId: idSchema })
+      .parse(payload)
+    await removeAttachment(app.getPath('userData'), sessionId, attachmentId)
+  })
+
+  handle(AGENT_CHANNELS.filesSearch, async (payload): Promise<string[]> => {
+    const { query } = z.object({ query: z.string().max(200) }).parse(payload)
+    return searchWorkspaceFiles(workspacePath, query)
   })
 
   handle(AGENT_CHANNELS.chatStop, async (payload): Promise<void> => {
