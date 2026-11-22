@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { McpServerConfig, McpServerInput, McpServerStatus, McpServerType } from '@ateam/shared'
+import type {
+  McpAuthStatus,
+  McpServerConfig,
+  McpServerInput,
+  McpServerStatus,
+  McpServerType
+} from '@ateam/shared'
 
 function parseLines(value: string): string[] {
   return value
@@ -27,6 +33,7 @@ const STATUS_CLASS: Record<string, string> = {
   idle: 'bg-background-subtle text-muted',
   connecting: 'bg-warning-soft text-warning',
   connected: 'bg-success-soft text-success',
+  'auth-required': 'bg-warning-soft text-warning',
   failed: 'bg-danger/10 text-danger'
 }
 
@@ -34,6 +41,9 @@ function McpServers(): React.JSX.Element {
   const { t } = useTranslation()
   const [servers, setServers] = useState<McpServerConfig[] | null>(null)
   const [statuses, setStatuses] = useState<McpServerStatus[]>([])
+  const [authStatuses, setAuthStatuses] = useState<McpAuthStatus[]>([])
+  const [authorizingId, setAuthorizingId] = useState<string | null>(null)
+  const [loggingOutId, setLoggingOutId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [probing, setProbing] = useState(false)
@@ -48,21 +58,28 @@ function McpServers(): React.JSX.Element {
   const [headersText, setHeadersText] = useState('')
   const [envText, setEnvText] = useState('')
   const [enabled, setEnabled] = useState(true)
+  const [oauthClientId, setOauthClientId] = useState('')
+  const [oauthScope, setOauthScope] = useState('')
+  const [oauthRedirectUri, setOauthRedirectUri] = useState('')
 
   async function reload(): Promise<void> {
-    const next = await window.api.agent.mcp.list()
+    const [next, auth] = await Promise.all([
+      window.api.agent.mcp.list(),
+      window.api.agent.mcp.authStatuses()
+    ])
     setServers(next.servers)
     setStatuses(next.statuses)
+    setAuthStatuses(auth)
   }
 
   useEffect(() => {
     let active = true
-    window.api.agent.mcp
-      .list()
-      .then((next) => {
+    Promise.all([window.api.agent.mcp.list(), window.api.agent.mcp.authStatuses()])
+      .then(([next, auth]) => {
         if (!active) return
         setServers(next.servers)
         setStatuses(next.statuses)
+        setAuthStatuses(auth)
       })
       .catch((caught: unknown) => {
         if (active) setError(caught instanceof Error ? caught.message : String(caught))
@@ -82,6 +99,9 @@ function McpServers(): React.JSX.Element {
     setHeadersText('')
     setEnvText('')
     setEnabled(true)
+    setOauthClientId('')
+    setOauthScope('')
+    setOauthRedirectUri('')
   }
 
   function startEdit(server: McpServerConfig): void {
@@ -102,6 +122,9 @@ function McpServers(): React.JSX.Element {
         .join('\n')
     )
     setEnabled(server.enabled)
+    setOauthClientId(server.oauthClientId ?? '')
+    setOauthScope(server.oauthScope ?? '')
+    setOauthRedirectUri(server.oauthRedirectUri ?? '')
   }
 
   function buildInput(): McpServerInput {
@@ -113,7 +136,10 @@ function McpServers(): React.JSX.Element {
       url: type === 'remote' ? url.trim() : null,
       headers: type === 'remote' ? parseKeyValue(headersText, ':') : {},
       env: type === 'local' ? parseKeyValue(envText, '=') : {},
-      enabled
+      enabled,
+      oauthClientId: type === 'remote' ? oauthClientId.trim() || null : null,
+      oauthScope: type === 'remote' ? oauthScope.trim() || null : null,
+      oauthRedirectUri: type === 'remote' ? oauthRedirectUri.trim() || null : null
     }
   }
 
@@ -181,9 +207,36 @@ function McpServers(): React.JSX.Element {
     }
   }
 
+  async function authorize(server: McpServerConfig): Promise<void> {
+    setAuthorizingId(server.id)
+    setError(null)
+    try {
+      setAuthStatuses(await window.api.agent.mcp.authorize(server.id))
+      await reload()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setAuthorizingId(null)
+    }
+  }
+
+  async function logout(server: McpServerConfig): Promise<void> {
+    setLoggingOutId(server.id)
+    setError(null)
+    try {
+      setAuthStatuses(await window.api.agent.mcp.logout(server.id))
+      await reload()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setLoggingOutId(null)
+    }
+  }
+
   function statusLabel(status: McpServerStatus | undefined): string {
     if (!status || status.state === 'idle') return t('settings.mcpStatusIdle')
     if (status.state === 'connecting') return t('settings.mcpStatusConnecting')
+    if (status.state === 'auth-required') return t('settings.mcpStatusAuthRequired')
     if (status.state === 'failed') return t('settings.mcpStatusFailed')
     const parts = [
       t('settings.mcpStatusConnected'),
@@ -229,6 +282,7 @@ function McpServers(): React.JSX.Element {
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {servers.map((server) => {
             const status = statuses.find((entry) => entry.id === server.id)
+            const auth = authStatuses.find((entry) => entry.serverId === server.id)
             return (
               <li
                 key={server.id}
@@ -266,6 +320,36 @@ function McpServers(): React.JSX.Element {
                     />
                     {t('settings.mcpEnabled')}
                   </label>
+                  {server.type === 'remote' && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={authorizingId === server.id}
+                        onClick={() => {
+                          void authorize(server)
+                        }}
+                        className="h-7 flex-none rounded-md px-2 text-caption font-medium text-accent-strong transition-colors hover:bg-background-subtle disabled:opacity-50"
+                      >
+                        {authorizingId === server.id
+                          ? t('settings.mcpAuthorizing')
+                          : auth?.authorized
+                            ? t('settings.mcpReauthorize')
+                            : t('settings.mcpAuthorize')}
+                      </button>
+                      {auth?.authorized && (
+                        <button
+                          type="button"
+                          disabled={loggingOutId === server.id}
+                          onClick={() => {
+                            void logout(server)
+                          }}
+                          className="h-7 flex-none rounded-md px-2 text-caption font-medium text-muted transition-colors hover:bg-background-subtle disabled:opacity-50"
+                        >
+                          {t('settings.mcpLogout')}
+                        </button>
+                      )}
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => startEdit(server)}
@@ -372,6 +456,36 @@ function McpServers(): React.JSX.Element {
                 rows={2}
                 placeholder={t('settings.mcpHeadersPlaceholder')}
                 className="w-full resize-y rounded-md border border-border bg-surface px-2 py-1.5 font-mono text-caption text-foreground outline-none placeholder:text-subtle"
+              />
+            </label>
+            <label className="flex min-w-[200px] flex-col gap-1 text-caption text-muted">
+              {t('settings.mcpOauthClientId')}
+              <input
+                aria-label={t('settings.mcpOauthClientId')}
+                value={oauthClientId}
+                onChange={(event) => setOauthClientId(event.target.value)}
+                placeholder={t('settings.mcpOauthClientIdPlaceholder')}
+                className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-label text-foreground outline-none placeholder:text-subtle"
+              />
+            </label>
+            <label className="flex min-w-[180px] flex-col gap-1 text-caption text-muted">
+              {t('settings.mcpOauthScope')}
+              <input
+                aria-label={t('settings.mcpOauthScope')}
+                value={oauthScope}
+                onChange={(event) => setOauthScope(event.target.value)}
+                placeholder="files"
+                className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-label text-foreground outline-none placeholder:text-subtle"
+              />
+            </label>
+            <label className="flex min-w-[240px] flex-col gap-1 text-caption text-muted">
+              {t('settings.mcpOauthRedirectUri')}
+              <input
+                aria-label={t('settings.mcpOauthRedirectUri')}
+                value={oauthRedirectUri}
+                onChange={(event) => setOauthRedirectUri(event.target.value)}
+                placeholder="http://127.0.0.1:19876/mcp/oauth/callback"
+                className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-label text-foreground outline-none placeholder:text-subtle"
               />
             </label>
           </>

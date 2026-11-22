@@ -78,7 +78,10 @@ const api: AteamApi = {
       update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpUpdate, { id, input }),
       remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id }),
       prompt: (server, prompt, args) =>
-        ipcRenderer.invoke(AGENT_CHANNELS.mcpPrompt, { server, prompt, arguments: args })
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpPrompt, { server, prompt, arguments: args }),
+      authStatuses: () => ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthStatuses),
+      authorize: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthorize, { id }),
+      logout: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpLogout, { id })
     },
     websearch: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.webSearchGet),

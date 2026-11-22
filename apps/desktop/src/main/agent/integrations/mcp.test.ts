@@ -381,3 +381,110 @@ describe('McpManager prompts and resources', () => {
     await manager.dispose()
   })
 })
+
+describe('McpManager OAuth', () => {
+  const AUTH = {
+    serverId: 'server-id',
+    serverUrl: 'https://mcp.example.com/mcp',
+    accessToken: 'access-1',
+    refreshToken: 'refresh-1',
+    expiresAt: Date.now() + 10 * 60_000,
+    tokenEndpoint: 'https://auth.example.com/token',
+    clientId: 'client-1',
+    resource: 'https://mcp.example.com/mcp'
+  }
+
+  async function addRemote(manager: McpManager): Promise<string> {
+    const server = await manager.addServer({
+      name: 'remote',
+      type: 'remote',
+      url: AUTH.serverUrl
+    })
+    return server.id
+  }
+
+  it('sends bearer tokens to remote servers', async () => {
+    const { client } = makeClient()
+    const headers: Array<Record<string, string>> = []
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      auth: [{ ...AUTH, serverId: 'placeholder' }],
+      createClient: (_config, nextHeaders) => {
+        headers.push(nextHeaders)
+        return client
+      }
+    })
+    const server = await manager.addServer({ name: 'remote', type: 'remote', url: AUTH.serverUrl })
+    await manager.setMcpAuth([{ ...AUTH, serverId: server.id }])
+
+    await manager.statuses({ probe: true })
+
+    expect(headers[0]).toMatchObject({ Authorization: 'Bearer access-1' })
+    await manager.dispose()
+  })
+
+  it('refreshes an expired token after a 401 and notifies the host', async () => {
+    const failing = makeClient({ connectError: new Error('HTTP 401: unauthorized') })
+    const success = makeClient()
+    const onAuthUpdated = vi.fn()
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ access_token: 'access-2', expires_in: 300 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+    )
+    let attempt = 0
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      auth: [{ ...AUTH, serverId: 'pending' }],
+      fetch: fetchMock,
+      onAuthUpdated,
+      createClient: () => {
+        attempt += 1
+        return attempt === 1 ? failing.client : success.client
+      }
+    })
+    const server = await manager.addServer({ name: 'remote', type: 'remote', url: AUTH.serverUrl })
+    await manager.setMcpAuth([{ ...AUTH, serverId: server.id }])
+
+    const statuses = await manager.statuses({ probe: true })
+
+    expect(statuses[0]).toMatchObject({ state: 'connected' })
+    expect(onAuthUpdated).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'access-2' }))
+    await manager.dispose()
+  })
+
+  it('reports auth-required when no refresh credentials exist', async () => {
+    const failing = makeClient({ connectError: new Error('HTTP 401: unauthorized') })
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      createClient: () => failing.client
+    })
+    await addRemote(manager)
+
+    const statuses = await manager.statuses({ probe: true })
+
+    expect(statuses[0]).toMatchObject({ state: 'auth-required' })
+    await manager.dispose()
+  })
+
+  it('drops connections when credentials change', async () => {
+    const { client } = makeClient()
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      createClient: () => client
+    })
+    await manager.addServer({ name: 'remote', type: 'remote', url: AUTH.serverUrl })
+    await manager.statuses({ probe: true })
+
+    await manager.setMcpAuth([])
+
+    expect(client.close).toHaveBeenCalled()
+    await manager.dispose()
+  })
+})

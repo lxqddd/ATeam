@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { jsonSchema, tool, type JSONSchema7, type ToolSet } from 'ai'
 import type {
+  McpAuthRecord,
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
@@ -14,6 +15,7 @@ import {
   type McpToolDefinition
 } from './mcp-client'
 import { McpStore } from './mcp-store'
+import { refreshMcpAuthRecord } from './mcp-oauth'
 
 const MAX_OUTPUT = 200_000
 const MAX_TOOL_NAME = 64
@@ -39,6 +41,7 @@ export interface McpManagerLike {
   addServer(input: McpServerInput): Promise<McpServerConfig>
   updateServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig>
   removeServer(id: string): Promise<boolean>
+  setMcpAuth(auths: import('@ateam/shared').McpAuthRecord[]): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -59,7 +62,10 @@ export interface McpResourceSummary {
 interface McpManagerOptions {
   userDataPath: string
   workspace: string
-  createClient?: (config: McpServerConfig) => McpClientLike
+  createClient?: (config: McpServerConfig, headers: Record<string, string>) => McpClientLike
+  auth?: McpAuthRecord[]
+  onAuthUpdated?: (auth: McpAuthRecord) => void
+  fetch?: typeof fetch
 }
 
 interface Connection {
@@ -120,10 +126,12 @@ export class McpManager implements McpManagerLike {
   private readonly connections = new Map<string, Connection>()
   private readonly connecting = new Map<string, Promise<Connection | null>>()
   private readonly statusesById = new Map<string, McpServerStatus>()
+  private authByServer = new Map<string, McpAuthRecord>()
   private disposed = false
 
   constructor(private readonly options: McpManagerOptions) {
     this.store = new McpStore(options.userDataPath)
+    this.authByServer = new Map((options.auth ?? []).map((auth) => [auth.serverId, auth]))
     this.ready = this.store.init()
   }
 
@@ -285,6 +293,16 @@ export class McpManager implements McpManagerLike {
     return this.store.remove(id)
   }
 
+  async setMcpAuth(auths: McpAuthRecord[]): Promise<void> {
+    await this.ready
+    this.authByServer = new Map(auths.map((auth) => [auth.serverId, auth]))
+    const affected = new Set([...this.connections.keys(), ...this.connecting.keys()])
+    for (const id of affected) {
+      await this.closeConnection(id)
+      this.statusesById.delete(id)
+    }
+  }
+
   async dispose(): Promise<void> {
     this.disposed = true
     await Promise.all(
@@ -307,41 +325,85 @@ export class McpManager implements McpManagerLike {
 
   private async connect(config: McpServerConfig): Promise<Connection | null> {
     if (this.disposed) return null
+    await this.refreshAuthIfNeeded(config.id)
     this.setStatus(config, { state: 'connecting', error: null })
     const client = this.createClient(config)
     try {
-      await client.connect()
-      const tools = await client.listTools()
-      const prompts = await client.listPrompts().catch(() => [])
-      const resources = await client.listResources().catch(() => [])
-      const entry: Connection = { client, tools }
-      this.connections.set(config.id, entry)
-      client.onToolsChanged(() => {
-        entry.tools = null
-      })
-      this.setStatus(config, {
-        state: 'connected',
-        toolCount: tools.length,
-        promptCount: prompts.length,
-        resourceCount: resources.length,
-        error: null
-      })
-      return entry
+      return await this.establish(config, client)
     } catch (error) {
+      await client.close().catch(() => undefined)
+      const authFailure = config.type === 'remote' && isAuthFailure(error)
+      if (authFailure && (await this.refreshAuth(config.id))) {
+        const retry = this.createClient(config)
+        try {
+          return await this.establish(config, retry)
+        } catch (retryError) {
+          await retry.close().catch(() => undefined)
+          this.setStatus(config, {
+            state: isAuthFailure(retryError) ? 'auth-required' : 'failed',
+            toolCount: 0,
+            promptCount: 0,
+            resourceCount: 0,
+            error: errorMessage(retryError)
+          })
+          return null
+        }
+      }
       this.setStatus(config, {
-        state: 'failed',
+        state: authFailure ? 'auth-required' : 'failed',
         toolCount: 0,
         promptCount: 0,
         resourceCount: 0,
         error: errorMessage(error)
       })
-      await client.close().catch(() => undefined)
       return null
     }
   }
 
+  private async establish(config: McpServerConfig, client: McpClientLike): Promise<Connection> {
+    await client.connect()
+    const tools = await client.listTools()
+    const prompts = await client.listPrompts().catch(() => [])
+    const resources = await client.listResources().catch(() => [])
+    const entry: Connection = { client, tools }
+    this.connections.set(config.id, entry)
+    client.onToolsChanged(() => {
+      entry.tools = null
+    })
+    this.setStatus(config, {
+      state: 'connected',
+      toolCount: tools.length,
+      promptCount: prompts.length,
+      resourceCount: resources.length,
+      error: null
+    })
+    return entry
+  }
+
+  private async refreshAuthIfNeeded(serverId: string): Promise<void> {
+    const auth = this.authByServer.get(serverId)
+    if (!auth?.expiresAt) return
+    if (auth.expiresAt - Date.now() > 60_000) return
+    await this.refreshAuth(serverId)
+  }
+
+  private async refreshAuth(serverId: string): Promise<boolean> {
+    const auth = this.authByServer.get(serverId)
+    if (!auth) return false
+    try {
+      const refreshed = await refreshMcpAuthRecord(auth, this.options.fetch)
+      if (!refreshed) return false
+      this.authByServer.set(serverId, refreshed)
+      this.options.onAuthUpdated?.(refreshed)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   private createClient(config: McpServerConfig): McpClientLike {
-    if (this.options.createClient) return this.options.createClient(config)
+    const headers = this.authHeaders(config)
+    if (this.options.createClient) return this.options.createClient(config, headers)
     const transport =
       config.type === 'local'
         ? createStdioTransport({
@@ -350,8 +412,14 @@ export class McpManager implements McpManagerLike {
             cwd: this.options.workspace,
             env: config.env
           })
-        : createHttpTransport({ url: config.url ?? '', headers: config.headers })
+        : createHttpTransport({ url: config.url ?? '', headers, fetch: this.options.fetch })
     return new McpClient({ name: config.name, transport })
+  }
+
+  private authHeaders(config: McpServerConfig): Record<string, string> {
+    const auth = this.authByServer.get(config.id)
+    if (!auth || auth.serverUrl !== config.url) return config.headers
+    return { ...config.headers, Authorization: `Bearer ${auth.accessToken}` }
   }
 
   private buildTool(
@@ -413,6 +481,10 @@ export class McpManager implements McpManagerLike {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+function isAuthFailure(error: unknown): boolean {
+  return /^HTTP 401\b|unauthorized|invalid_token|authentication required/i.test(errorMessage(error))
 }
 
 export type {

@@ -69,6 +69,44 @@ function normalizeMap(
   return result
 }
 
+function normalizeOAuthField(
+  value: string | null | undefined,
+  existing: string | null | undefined,
+  maxLength: number
+): string | null {
+  const raw = value === undefined ? existing : value
+  if (raw === undefined || raw === null) return null
+  const text = raw.trim()
+  if (!text) return null
+  if (text.length > maxLength) throw new Error('MCP OAuth value is too long')
+  if (text.includes('\u0000') || text.includes('\r') || text.includes('\n')) {
+    throw new Error('MCP OAuth value contains invalid characters')
+  }
+  return text
+}
+
+function normalizeOAuthRedirect(
+  value: string | null | undefined,
+  existing?: string | null
+): string | null {
+  const raw = value === undefined ? existing : value
+  if (raw === undefined || raw === null) return null
+  const text = raw.trim()
+  if (!text) return null
+  let url: URL
+  try {
+    url = new URL(text)
+  } catch {
+    throw new Error('MCP OAuth redirect URI is invalid')
+  }
+  if (url.protocol !== 'http:') throw new Error('MCP OAuth redirect URI must use http')
+  if (!['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname)) {
+    throw new Error('MCP OAuth redirect URI must point to localhost')
+  }
+  if (text.length > MAX_URL_LENGTH) throw new Error('MCP OAuth redirect URI is too long')
+  return text
+}
+
 function isHttpUrl(value: string): boolean {
   if (!value || value.length > MAX_URL_LENGTH) return false
   try {
@@ -119,7 +157,10 @@ function normalizeInput(
         ENV_NAME_PATTERN,
         MAX_ENV_VALUE
       ),
-      enabled
+      enabled,
+      oauthClientId: null,
+      oauthScope: null,
+      oauthRedirectUri: null
     }
   }
 
@@ -138,7 +179,10 @@ function normalizeInput(
       MAX_HEADER_VALUE
     ),
     env: {},
-    enabled
+    enabled,
+    oauthClientId: normalizeOAuthField(input.oauthClientId, existing?.oauthClientId, 300),
+    oauthScope: normalizeOAuthField(input.oauthScope, existing?.oauthScope, 500),
+    oauthRedirectUri: normalizeOAuthRedirect(input.oauthRedirectUri, existing?.oauthRedirectUri)
   }
 }
 

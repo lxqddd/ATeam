@@ -33,6 +33,7 @@ import type {
   SessionSearchResult,
   SessionSettings,
   SkillDefinition,
+  McpAuthRecord,
   SubagentInput,
   TodoInput,
   TokenUsage,
@@ -118,6 +119,7 @@ export class AgentRuntime {
   private lspManager: LspManager | null = null
   private formattersCache: Promise<FormatterDefinition[]> | null = null
   private mcpManager: McpManagerLike | null = null
+  private mcpAuth: McpAuthRecord[] = []
   private webSearchConfig: RuntimeWebSearchConfig | null = null
   private skills: SkillDefinition[] = []
   private models: RuntimeModelsConfig
@@ -127,6 +129,7 @@ export class AgentRuntime {
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
     this.webSearchConfig = options.webSearch ?? null
+    this.mcpAuth = options.mcpAuth ?? []
     this.permissionRules = new PermissionsStore(options.userDataPath)
     this.snapshots = new SnapshotStore(options.userDataPath)
     this.toolOutputs = new ToolOutputStore(options.userDataPath)
@@ -725,9 +728,16 @@ export class AgentRuntime {
   private mcp(): McpManagerLike {
     this.mcpManager ??= this.deps.createMcpManager({
       userDataPath: this.options.userDataPath,
-      workspacePath: this.options.workspacePath
+      workspacePath: this.options.workspacePath,
+      mcpAuth: this.mcpAuth,
+      onMcpAuth: (auth) => this.options.onMcpAuth?.(auth)
     })
     return this.mcpManager
+  }
+
+  async setMcpAuth(auths: McpAuthRecord[]): Promise<void> {
+    this.mcpAuth = auths
+    if (this.mcpManager) await this.mcpManager.setMcpAuth(auths)
   }
 
   listMcpServers(): Promise<McpServerConfig[]> {

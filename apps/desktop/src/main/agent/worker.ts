@@ -36,6 +36,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         workspacePath: request.params.workspacePath,
         models: request.params.models,
         webSearch: request.params.webSearch ?? null,
+        mcpAuth: request.params.mcpAuth ?? [],
+        onMcpAuth: (auth) => send({ kind: 'mcp-auth', auth }),
         send: (envelope) => send({ kind: 'event', envelope })
       })
       await runtime.init()
@@ -130,6 +132,9 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         request.params.prompt,
         request.params.arguments
       )
+    case 'mcp.setAuth':
+      await requireRuntime().setMcpAuth(request.params.auths)
+      return null
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'shutdown':

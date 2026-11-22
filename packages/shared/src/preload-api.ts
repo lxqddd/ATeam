@@ -5,6 +5,7 @@ import type {
   AgentInfo,
   AgentStatus,
   CommandDefinition,
+  McpAuthStatus,
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
@@ -91,6 +92,9 @@ export interface AgentBridge {
     update: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>
     remove: (id: string) => Promise<boolean>
     prompt: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
+    authStatuses: () => Promise<McpAuthStatus[]>
+    authorize: (id: string) => Promise<McpAuthStatus[]>
+    logout: (id: string) => Promise<McpAuthStatus[]>
   }
   websearch: {
     get: () => Promise<WebSearchProviderPublic>

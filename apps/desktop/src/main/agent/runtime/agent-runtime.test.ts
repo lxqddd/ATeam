@@ -174,6 +174,7 @@ let subagentExecutor:
 let baseTools: ToolSet
 let languageModelRefs: Array<ModelRef | null>
 let mcpManager: McpManagerLike
+let mcpManagerInput: { mcpAuth?: import('@ateam/shared').McpAuthRecord[] } | null
 let mcpTools: ReturnType<typeof vi.fn>
 let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
@@ -216,7 +217,10 @@ function createRuntime(): AgentRuntime {
         instructionInputs.push(input)
         return instructionFiles
       },
-      createMcpManager: () => mcpManager,
+      createMcpManager: (input) => {
+        mcpManagerInput = input
+        return mcpManager
+      },
       generateTitle,
       fetchWeb: async (input): Promise<WebFetchResult> => ({
         url: input.url,
@@ -521,6 +525,7 @@ beforeEach(async () => {
   languageModelRefs = []
   mcpTools = vi.fn(async () => ({}))
   mcpDispose = vi.fn(async () => undefined)
+  mcpManagerInput = null
   mcpManager = {
     tools: mcpTools as unknown as McpManagerLike['tools'],
     dispose: mcpDispose as unknown as McpManagerLike['dispose'],
@@ -532,7 +537,8 @@ beforeEach(async () => {
     readResource: vi.fn(async () => ''),
     addServer: vi.fn(),
     updateServer: vi.fn(),
-    removeServer: vi.fn()
+    removeServer: vi.fn(),
+    setMcpAuth: vi.fn(async () => undefined)
   }
   resumeTurn = null
   generateTitle.mockReset()
@@ -1673,6 +1679,21 @@ describe('agent tooling configuration', () => {
 })
 
 describe('MCP tool integration', () => {
+  it('forwards stored OAuth credentials to the MCP manager', async () => {
+    const auth = {
+      serverId: 'server-1',
+      serverUrl: 'https://mcp.example.com/mcp',
+      accessToken: 'access-1'
+    }
+
+    await runtime.setMcpAuth([auth])
+    await runtime.listMcpServers()
+
+    expect(mcpManagerInput?.mcpAuth).toEqual([auth])
+    await runtime.setMcpAuth([])
+    expect(mcpManager.setMcpAuth).toHaveBeenCalledWith([])
+  })
+
   it('surfaces MCP prompt errors to the caller', async () => {
     vi.mocked(mcpManager.getPrompt).mockRejectedValueOnce(new Error('UNKNOWN_MCP_SERVER: missing'))
 

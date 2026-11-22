@@ -8,6 +8,7 @@ import {
   type AgentInfo,
   type AgentStatus,
   type CommandDefinition,
+  type McpAuthStatus,
   type McpServerConfig,
   type McpServerStatus,
   type MessageAttachment,
@@ -33,6 +34,8 @@ import {
 } from '../agent/attachments'
 import { expandCommandTemplate, runWorkspaceShell } from '../agent/commands'
 import { modelRefSchema } from './model-schema'
+import type { McpAuthStore } from '../agent/integrations/mcp-auth-store'
+import { authorizeMcpServer } from '../agent/integrations/mcp-oauth-flow'
 import { agentConfigPatchSchema } from './config-schema'
 import { webSearchUpdateSchema } from './websearch-schema'
 import { normalizeImageAttachment } from '../attachments/image'
@@ -55,7 +58,10 @@ const mcpServerInputSchema = z.object({
   url: z.string().max(2_000).nullable().optional(),
   headers: z.record(z.string(), z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
-  enabled: z.boolean().optional()
+  enabled: z.boolean().optional(),
+  oauthClientId: z.string().max(300).nullable().optional(),
+  oauthScope: z.string().max(500).nullable().optional(),
+  oauthRedirectUri: z.string().max(2_000).nullable().optional()
 })
 const mcpUpdateSchema = z.object({
   id: idSchema,
@@ -140,12 +146,14 @@ export interface AgentIpcOptions {
   manager: AgentManager
   modelsStore: ModelsStore
   webSearchStore: WebSearchStore
+  mcpAuthStore: McpAuthStore
   workspacePath: string
   isTrustedSender: TrustedSender
 }
 
 export function registerAgentIpc(options: AgentIpcOptions): void {
-  const { manager, modelsStore, webSearchStore, workspacePath, isTrustedSender } = options
+  const { manager, modelsStore, webSearchStore, mcpAuthStore, workspacePath, isTrustedSender } =
+    options
   const configStore = new AgentConfigStore(app.getPath('userData'))
   const configReady = configStore.init()
 
@@ -395,9 +403,22 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return manager.request('mcp.add', input)
   })
 
-  handle(AGENT_CHANNELS.mcpUpdate, (payload): Promise<McpServerConfig> => {
+  handle(AGENT_CHANNELS.mcpUpdate, async (payload): Promise<McpServerConfig> => {
     const { id, input } = mcpUpdateSchema.parse(payload)
-    return manager.request('mcp.update', { id, input })
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    const previous = servers.find((server) => server.id === id)
+    const updated = await manager.request<McpServerConfig>('mcp.update', { id, input })
+    const credentialsChanged =
+      !previous ||
+      previous.url !== updated.url ||
+      previous.type !== updated.type ||
+      (previous.oauthClientId ?? null) !== (updated.oauthClientId ?? null) ||
+      (previous.oauthRedirectUri ?? null) !== (updated.oauthRedirectUri ?? null)
+    if (credentialsChanged) {
+      await mcpAuthStore.remove(updated.id)
+      await manager.setMcpAuth(mcpAuthStore.list())
+    }
+    return updated
   })
 
   handle(AGENT_CHANNELS.mcpPrompt, (payload): Promise<string> => {
@@ -415,9 +436,14 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return manager.request('mcp.prompt', { server, prompt, arguments: args })
   })
 
-  handle(AGENT_CHANNELS.mcpRemove, (payload): Promise<boolean> => {
+  handle(AGENT_CHANNELS.mcpRemove, async (payload): Promise<boolean> => {
     const { id } = idPayloadSchema.parse(payload)
-    return manager.request('mcp.remove', { id })
+    const removed = await manager.request<boolean>('mcp.remove', { id })
+    if (removed) {
+      await mcpAuthStore.remove(id)
+      await manager.setMcpAuth(mcpAuthStore.list())
+    }
+    return removed
   })
 
   handle(AGENT_CHANNELS.webSearchGet, (): WebSearchProviderPublic => webSearchStore.get())
@@ -427,6 +453,35 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     const result = await webSearchStore.update(input)
     await manager.setWebSearch(webSearchStore.runtimeConfig())
     return result
+  })
+
+  handle(AGENT_CHANNELS.mcpAuthStatuses, async (): Promise<McpAuthStatus[]> => {
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    return mcpAuthStore.statuses(servers)
+  })
+
+  handle(AGENT_CHANNELS.mcpAuthorize, async (payload): Promise<McpAuthStatus[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    const server = servers.find((candidate) => candidate.id === id)
+    if (!server) throw new Error('MCP server not found')
+    await authorizeMcpServer({
+      server,
+      authStore: mcpAuthStore,
+      openExternal: (url) => shell.openExternal(url)
+    })
+    await manager.setMcpAuth(mcpAuthStore.list())
+    await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
+    return mcpAuthStore.statuses(servers)
+  })
+
+  handle(AGENT_CHANNELS.mcpLogout, async (payload): Promise<McpAuthStatus[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    await mcpAuthStore.remove(id)
+    await manager.setMcpAuth(mcpAuthStore.list())
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
+    return mcpAuthStore.statuses(servers)
   })
 
   handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {

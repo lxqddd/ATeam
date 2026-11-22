@@ -61,7 +61,12 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
   generateTitle,
   loadInstructions,
   createMcpManager: (input) =>
-    new McpManager({ userDataPath: input.userDataPath, workspace: input.workspacePath }),
+    new McpManager({
+      userDataPath: input.userDataPath,
+      workspace: input.workspacePath,
+      auth: input.mcpAuth,
+      onAuthUpdated: input.onMcpAuth
+    }),
   fetchWeb: fetchWebContent,
   searchWeb
 }

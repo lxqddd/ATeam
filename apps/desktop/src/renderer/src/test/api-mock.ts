@@ -7,6 +7,7 @@ import type {
   AgentStatus,
   AteamApi,
   CommandDefinition,
+  McpAuthStatus,
   McpServerConfig,
   McpServerInput,
   McpServerStatus,
@@ -248,7 +249,10 @@ export function createApiMock(
           updatedAt: new Date().toISOString()
         })),
         remove: vi.fn(async () => true),
-        prompt: vi.fn(async () => '')
+        prompt: vi.fn(async () => ''),
+        authStatuses: vi.fn(async () => [] as McpAuthStatus[]),
+        authorize: vi.fn(async () => [] as McpAuthStatus[]),
+        logout: vi.fn(async () => [] as McpAuthStatus[])
       },
       websearch: {
         get: vi.fn(async (): Promise<WebSearchProviderPublic> => ({

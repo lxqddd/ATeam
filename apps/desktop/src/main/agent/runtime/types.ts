@@ -1,6 +1,7 @@
 import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import type {
   AgentConfig,
+  McpAuthRecord,
   AgentDefinition,
   AgentEventEnvelope,
   AgentPermissionRule,
@@ -63,6 +64,8 @@ export interface AgentRuntimeOptions {
   workspacePath: string
   models: RuntimeModelsConfig
   webSearch?: RuntimeWebSearchConfig | null
+  mcpAuth?: McpAuthRecord[]
+  onMcpAuth?: (auth: McpAuthRecord) => void
   send: (envelope: AgentEventEnvelope) => void
   dependencies?: Partial<AgentRuntimeDependencies>
 }
@@ -102,7 +105,12 @@ export interface AgentRuntimeDependencies {
     workspacePath: string
     globalDirectory: string
   }) => Promise<InstructionFile[]>
-  createMcpManager: (input: { userDataPath: string; workspacePath: string }) => McpManagerLike
+  createMcpManager: (input: {
+    userDataPath: string
+    workspacePath: string
+    mcpAuth?: McpAuthRecord[]
+    onMcpAuth?: (auth: McpAuthRecord) => void
+  }) => McpManagerLike
   fetchWeb: (input: {
     url: string
     format: WebFetchFormat

@@ -123,6 +123,35 @@ describe('McpStore', () => {
     expect(reloaded.list()).toEqual([])
   })
 
+  it('stores OAuth settings for remote servers', async () => {
+    const server = await store.add({
+      name: 'oauth',
+      type: 'remote',
+      url: 'https://mcp.example.com/mcp',
+      oauthClientId: 'client-1',
+      oauthScope: 'files',
+      oauthRedirectUri: 'http://127.0.0.1:19876/mcp/oauth/callback'
+    })
+
+    expect(server).toMatchObject({
+      oauthClientId: 'client-1',
+      oauthScope: 'files',
+      oauthRedirectUri: 'http://127.0.0.1:19876/mcp/oauth/callback'
+    })
+    const reloaded = new McpStore(directory)
+    await reloaded.init()
+    expect(reloaded.list()[0]).toMatchObject({ oauthClientId: 'client-1' })
+
+    await expect(
+      store.add({
+        name: 'bad',
+        type: 'remote',
+        url: 'https://evil.example.com/mcp',
+        oauthRedirectUri: 'http://evil.example.com/callback'
+      })
+    ).rejects.toThrow('localhost')
+  })
+
   it('rejects unknown ids and partial updates that break validation', async () => {
     await expect(store.update('missing', { enabled: false })).rejects.toThrow('not found')
 

@@ -33,6 +33,7 @@ export type WorkerRequest =
         appVersion: string
         models: RuntimeModelsConfig
         webSearch?: RuntimeWebSearchConfig | null
+        mcpAuth?: import('./agent-types').McpAuthRecord[]
       }
     }
   | { id: string; method: 'setModels'; params: { models: RuntimeModelsConfig } }
@@ -115,6 +116,11 @@ export type WorkerRequest =
     }
   | {
       id: string
+      method: 'mcp.setAuth'
+      params: { auths: import('./agent-types').McpAuthRecord[] }
+    }
+  | {
+      id: string
       method: 'models.test'
       params: { providerId: string; modelId: string }
     }
@@ -125,3 +131,4 @@ export type WorkerMessage =
   | { kind: 'response'; id: string; ok: true; result: unknown }
   | { kind: 'response'; id: string; ok: false; error: string }
   | { kind: 'event'; envelope: import('./agent-types').AgentEventEnvelope }
+  | { kind: 'mcp-auth'; auth: import('./agent-types').McpAuthRecord }

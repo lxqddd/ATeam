@@ -277,6 +277,9 @@ export interface McpServerConfig {
   headers: Record<string, string>
   env: Record<string, string>
   enabled: boolean
+  oauthClientId?: string | null
+  oauthScope?: string | null
+  oauthRedirectUri?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -290,9 +293,12 @@ export interface McpServerInput {
   headers?: Record<string, string>
   env?: Record<string, string>
   enabled?: boolean
+  oauthClientId?: string | null
+  oauthScope?: string | null
+  oauthRedirectUri?: string | null
 }
 
-export type McpConnectionState = 'idle' | 'connecting' | 'connected' | 'failed'
+export type McpConnectionState = 'idle' | 'connecting' | 'connected' | 'failed' | 'auth-required'
 
 export interface McpServerStatus {
   id: string
@@ -303,6 +309,28 @@ export interface McpServerStatus {
   resourceCount: number
   error: string | null
   updatedAt: string | null
+}
+
+/** OAuth credentials for a remote MCP server. Never exposed to the renderer. */
+export interface McpAuthRecord {
+  serverId: string
+  serverUrl: string
+  accessToken: string
+  refreshToken?: string | null
+  /** Epoch milliseconds. */
+  expiresAt?: number | null
+  tokenEndpoint?: string | null
+  clientId?: string | null
+  clientSecret?: string | null
+  scope?: string | null
+  resource?: string | null
+}
+
+export interface McpAuthStatus {
+  serverId: string
+  serverName: string
+  authorized: boolean
+  expiresAt: string | null
 }
 
 export type WebFetchFormat = 'markdown' | 'text' | 'html'

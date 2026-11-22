@@ -3,6 +3,7 @@ import { utilityProcess } from 'electron'
 import type {
   AgentEventEnvelope,
   AgentStatus,
+  McpAuthRecord,
   RuntimeModelsConfig,
   RuntimeWebSearchConfig,
   WorkerMessage
@@ -25,6 +26,8 @@ export interface AgentManagerOptions {
   workspacePath: string
   appVersion: string
   onEvent: (envelope: AgentEventEnvelope) => void
+  mcpAuth?: () => McpAuthRecord[]
+  onMcpAuth?: (auth: McpAuthRecord) => void
 }
 
 export class AgentManager {
@@ -78,7 +81,8 @@ export class AgentManager {
         workspacePath: this.options.workspacePath,
         appVersion: this.options.appVersion,
         models: this.models,
-        webSearch: this.webSearch
+        webSearch: this.webSearch,
+        mcpAuth: this.options.mcpAuth?.() ?? []
       })
       if (this.worker !== worker) return
       if (this.modelsDirty) {
@@ -158,6 +162,11 @@ export class AgentManager {
     return (await this.call(method, params)) as T
   }
 
+  async setMcpAuth(auths: McpAuthRecord[]): Promise<void> {
+    if (this.status.status !== 'ready' || !this.worker) return
+    await this.call('mcp.setAuth', { auths })
+  }
+
   private attach(worker: UtilityProcess): void {
     worker.on('message', (message: WorkerMessage) => this.onMessage(message))
     worker.on('exit', (code) => this.onExit(worker, code))
@@ -176,6 +185,11 @@ export class AgentManager {
 
     if (message.kind === 'event') {
       this.options.onEvent(message.envelope)
+      return
+    }
+
+    if (message.kind === 'mcp-auth') {
+      this.options.onMcpAuth?.(message.auth)
       return
     }
 

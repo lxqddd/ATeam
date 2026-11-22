@@ -14,6 +14,7 @@ import { AgentManager } from './agent/agent-manager'
 import { ModelsStore } from './stores/models'
 import { ModelCatalogStore } from './models/catalog-store'
 import { WebSearchStore } from './stores/websearch'
+import { McpAuthStore } from './agent/integrations/mcp-auth-store'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
 import { createTrustedSender } from './ipc/trusted-sender'
@@ -145,6 +146,12 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('[websearch] failed to load the web search configuration', error)
     }
+    const mcpAuthStore = new McpAuthStore(userDataPath)
+    try {
+      await mcpAuthStore.init()
+    } catch (error) {
+      console.error('[mcp-auth] failed to load OAuth credentials', error)
+    }
     const catalogStore = new ModelCatalogStore({ userDataPath })
     try {
       await mkdir(workspacePath, { recursive: true })
@@ -157,6 +164,12 @@ if (!hasSingleInstanceLock) {
       userDataPath,
       workspacePath,
       appVersion: app.getVersion(),
+      mcpAuth: () => mcpAuthStore.list(),
+      onMcpAuth: (auth) => {
+        void mcpAuthStore.set(auth).catch((error) => {
+          console.error('[mcp-auth] failed to store refreshed credentials', error)
+        })
+      },
       onEvent: (envelope: AgentEventEnvelope) => {
         const window = mainWindow
         if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
@@ -184,7 +197,14 @@ if (!hasSingleInstanceLock) {
     })
 
     const isTrustedSender = createTrustedSender(() => mainWindow)
-    registerAgentIpc({ manager, modelsStore, webSearchStore, workspacePath, isTrustedSender })
+    registerAgentIpc({
+      manager,
+      modelsStore,
+      webSearchStore,
+      mcpAuthStore,
+      workspacePath,
+      isTrustedSender
+    })
     registerModelsIpc({ manager, modelsStore, catalogStore, isTrustedSender })
 
     // Default development shortcuts (F12 for DevTools, etc.).

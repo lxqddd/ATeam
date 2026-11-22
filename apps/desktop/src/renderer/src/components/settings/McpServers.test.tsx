@@ -95,7 +95,10 @@ describe('McpServers', () => {
         url: null,
         headers: {},
         env: {},
-        enabled: true
+        enabled: true,
+        oauthClientId: null,
+        oauthScope: null,
+        oauthRedirectUri: null
       })
     )
     expect(mock.api.agent.mcp.list).toHaveBeenCalledTimes(2)
@@ -132,6 +135,82 @@ describe('McpServers', () => {
         })
       )
     )
+  })
+
+  it('submits OAuth client settings for remote servers', async () => {
+    const user = userEvent.setup()
+    vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({ servers: [], statuses: [] })
+    vi.mocked(mock.api.agent.mcp.add).mockResolvedValue({
+      ...SERVER,
+      id: 'remote-1',
+      name: 'docs',
+      type: 'remote',
+      command: null,
+      args: [],
+      url: 'https://mcp.example.com'
+    })
+
+    render(<McpServers />)
+    await user.type(await screen.findByLabelText('Name'), 'docs')
+    await user.selectOptions(screen.getByLabelText('Type'), 'remote')
+    await user.type(screen.getByLabelText('URL'), 'https://mcp.example.com')
+    await user.type(screen.getByLabelText('OAuth client ID'), 'client-1')
+    await user.type(screen.getByLabelText('OAuth scope'), 'files')
+    await user.click(screen.getByRole('button', { name: 'Add server' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.mcp.add).toHaveBeenCalledWith(
+        expect.objectContaining({
+          oauthClientId: 'client-1',
+          oauthScope: 'files',
+          oauthRedirectUri: null
+        })
+      )
+    )
+  })
+
+  it('marks servers that need authorization and starts the flow', async () => {
+    const user = userEvent.setup()
+    vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({
+      servers: [
+        { ...SERVER, type: 'remote', command: null, args: [], url: 'https://mcp.example.com' }
+      ],
+      statuses: [{ ...STATUS, state: 'auth-required', toolCount: 0 }]
+    })
+    vi.mocked(mock.api.agent.mcp.authStatuses).mockResolvedValue([
+      { serverId: 'server-1', serverName: 'demo', authorized: false, expiresAt: null }
+    ])
+    vi.mocked(mock.api.agent.mcp.authorize).mockResolvedValue([
+      { serverId: 'server-1', serverName: 'demo', authorized: true, expiresAt: null }
+    ])
+
+    render(<McpServers />)
+    expect(await screen.findByText('Needs authorization')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Authorize' }))
+
+    await waitFor(() => expect(mock.api.agent.mcp.authorize).toHaveBeenCalledWith('server-1'))
+  })
+
+  it('signs out an authorized server', async () => {
+    const user = userEvent.setup()
+    vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({
+      servers: [
+        { ...SERVER, type: 'remote', command: null, args: [], url: 'https://mcp.example.com' }
+      ],
+      statuses: [STATUS]
+    })
+    vi.mocked(mock.api.agent.mcp.authStatuses).mockResolvedValue([
+      { serverId: 'server-1', serverName: 'demo', authorized: true, expiresAt: null }
+    ])
+    vi.mocked(mock.api.agent.mcp.logout).mockResolvedValue([
+      { serverId: 'server-1', serverName: 'demo', authorized: false, expiresAt: null }
+    ])
+
+    render(<McpServers />)
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }))
+
+    await waitFor(() => expect(mock.api.agent.mcp.logout).toHaveBeenCalledWith('server-1'))
   })
 
   it('toggles a server and keeps the returned state', async () => {
