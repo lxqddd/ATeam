@@ -63,7 +63,12 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
       'question',
       'plan_exit'
     ],
-    permissions: [],
+    permissions: [
+      { action: 'write', resource: '*', effect: 'deny' },
+      { action: 'edit', resource: '*', effect: 'deny' },
+      { action: 'shell', resource: '*', effect: 'deny' },
+      { action: 'mcp', resource: '*', effect: 'deny' }
+    ],
     temperature: null,
     maxSteps: 20,
     prompt:

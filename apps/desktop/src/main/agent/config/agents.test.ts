@@ -372,7 +372,10 @@ describe('agent permission rules', () => {
       'project'
     )
     expect(agent?.permissions).toEqual([])
-    expect(BUILTIN_AGENTS.every((entry) => entry.permissions.length === 0)).toBe(true)
+    expect(BUILTIN_AGENTS.find((entry) => entry.id === 'build')?.permissions).toEqual([])
+    expect(BUILTIN_AGENTS.find((entry) => entry.id === 'plan')?.permissions.length).toBeGreaterThan(
+      0
+    )
   })
 })
 

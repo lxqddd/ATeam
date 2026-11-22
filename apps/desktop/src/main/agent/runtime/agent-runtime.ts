@@ -1553,6 +1553,26 @@ export class AgentRuntime {
         createdAt: ''
       })),
       ...sessionRules,
+      ...(run.agent?.id === 'plan'
+        ? [
+            {
+              id: `plan-file-write-${run.sessionId}`,
+              action: 'write' as const,
+              resource: this.planFilePath(run),
+              effect: 'allow' as const,
+              sessionId: null,
+              createdAt: ''
+            },
+            {
+              id: `plan-file-edit-${run.sessionId}`,
+              action: 'edit' as const,
+              resource: this.planFilePath(run),
+              effect: 'allow' as const,
+              sessionId: null,
+              createdAt: ''
+            }
+          ]
+        : []),
       ...(run.policyRules ?? [])
     ]
     const effect = evaluatePermissionRules(rules, {
