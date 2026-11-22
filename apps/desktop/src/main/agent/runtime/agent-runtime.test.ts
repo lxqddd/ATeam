@@ -1635,6 +1635,24 @@ describe('AgentRuntime', () => {
 })
 
 describe('agent tooling configuration', () => {
+  it('enforces organization policy rules above session rules', async () => {
+    await fs.mkdir(path.join(directory, 'agent'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'policy.json'),
+      JSON.stringify({
+        permissionRules: [{ action: 'shell', resource: '*', effect: 'deny' }]
+      })
+    )
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    await expect(
+      toolContext?.askPermission('shell', 'echo hi', 'shell', 'call-policy')
+    ).resolves.toBe(false)
+    expect(sink.count('permission.asked')).toBe(0)
+  })
+
   it('advertises references and allows their external paths', async () => {
     const referenceDirectory = path.join(directory, 'reference-docs')
     await fs.mkdir(referenceDirectory, { recursive: true })

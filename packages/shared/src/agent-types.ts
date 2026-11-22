@@ -247,6 +247,18 @@ export interface AgentStatus {
   pid?: number
 }
 
+export interface PolicyRule {
+  action: PermissionRuleAction
+  resource: string
+  effect: PermissionEffect
+}
+
+export interface OrgPolicyInfo {
+  path: string | null
+  rules: PolicyRule[]
+  error: string | null
+}
+
 export interface AgentInfo {
   workspacePath: string
   appVersion: string
@@ -254,6 +266,7 @@ export interface AgentInfo {
   instructionFiles: string[]
   lspServers: string[]
   formatters: string[]
+  policy?: OrgPolicyInfo
 }
 
 export interface AgentReference {

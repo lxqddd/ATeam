@@ -23,6 +23,7 @@ import {
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
 import { AgentConfigStore } from '../agent/config/config-store'
+import { loadOrgPolicy } from '../agent/config/org-policy'
 import { discoverInstructionFiles } from '../agent/config/instructions'
 import { discoverFormatters } from '../agent/integrations/formatters'
 import { availableLspServers } from '../agent/integrations/lsp'
@@ -212,7 +213,11 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
       encryptionAvailable: modelsStore.isEncryptionAvailable(),
       instructionFiles,
       lspServers,
-      formatters
+      formatters,
+      policy: loadOrgPolicy({
+        userDataPath: app.getPath('userData'),
+        envPolicyFile: process.env.ATEAM_POLICY_FILE
+      })
     }
   })
 

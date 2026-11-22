@@ -60,6 +60,7 @@ import {
   systemWithInstructions
 } from '../config/instructions'
 import { readAgentConfig } from '../config/config-store'
+import { loadOrgPolicy } from '../config/org-policy'
 import {
   alwaysPermissionResource,
   evaluatePermissionRules,
@@ -1195,7 +1196,8 @@ export class AgentRuntime {
         sessionId: null,
         createdAt: ''
       })),
-      ...sessionRules
+      ...sessionRules,
+      ...(run.policyRules ?? [])
     ]
     const effect = evaluatePermissionRules(rules, {
       action,
@@ -1545,6 +1547,18 @@ export class AgentRuntime {
 
     try {
       const record = this.record(run.sessionId)
+      const policy = loadOrgPolicy({
+        userDataPath: this.options.userDataPath,
+        envPolicyFile: process.env.ATEAM_POLICY_FILE
+      })
+      run.policyRules = policy.rules.map((rule, index) => ({
+        id: `policy-${index}`,
+        action: rule.action,
+        resource: rule.resource,
+        effect: rule.effect,
+        sessionId: null,
+        createdAt: ''
+      }))
       const agent =
         run.agent ??
         (record.session.agent

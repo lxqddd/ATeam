@@ -156,6 +156,13 @@ function AgentSettings(): React.JSX.Element {
     }
   }
 
+  const policy = info?.policy
+  const policyEffectLabels: Record<string, string> = {
+    allow: t('settings.permissionEffectAllow'),
+    ask: t('settings.permissionEffectAsk'),
+    deny: t('settings.permissionEffectDeny')
+  }
+
   if (!config) {
     return <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
   }
@@ -203,6 +210,30 @@ function AgentSettings(): React.JSX.Element {
 
       {info && (
         <div className="flex flex-col gap-1 text-caption text-muted">
+          <div className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
+            <p className="m-0 text-label font-medium text-foreground">{t('settings.orgPolicy')}</p>
+            {policy?.path ? (
+              <>
+                <p className="m-0 mt-0.5 break-all font-mono text-caption text-muted">
+                  {policy.path}
+                </p>
+                {policy.error && <p className="m-0 text-caption text-danger">{policy.error}</p>}
+                {policy.rules.length === 0 ? (
+                  <p className="m-0 text-caption text-subtle">{t('settings.noPolicyRules')}</p>
+                ) : (
+                  <ul className="m-0 mt-1 flex list-none flex-col gap-0.5 p-0">
+                    {policy.rules.map((rule, index) => (
+                      <li key={index} className="font-mono text-caption text-muted">
+                        {rule.action} · {rule.resource} · {policyEffectLabels[rule.effect]}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            ) : (
+              <p className="m-0 text-caption text-muted">{t('settings.noOrgPolicy')}</p>
+            )}
+          </div>
           <p className="m-0">
             {t('settings.availableLspServers')}: {list(info.lspServers)}
           </p>

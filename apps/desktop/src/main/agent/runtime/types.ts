@@ -9,6 +9,7 @@ import type {
   PermissionAction,
   PermissionDecision,
   PermissionRequest,
+  PermissionRule,
   QuestionAnswer,
   QuestionRequest,
   ReasoningEffort,
@@ -39,6 +40,7 @@ export interface Run {
   depth: number
   parentSessionId?: string
   references?: ResolvedReference[]
+  policyRules?: PermissionRule[]
   permissionDelegate?: (
     action: PermissionAction,
     resource: string,

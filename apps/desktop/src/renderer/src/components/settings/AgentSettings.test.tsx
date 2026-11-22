@@ -123,6 +123,30 @@ describe('AgentSettings', () => {
     )
   })
 
+  it('shows the organization policy and its rules', async () => {
+    mock = createApiMock({
+      info: {
+        workspacePath: '/tmp/workspace',
+        appVersion: '0.1.0',
+        encryptionAvailable: true,
+        instructionFiles: [],
+        lspServers: [],
+        formatters: [],
+        policy: {
+          path: '/etc/ateam/policy.json',
+          rules: [{ action: 'shell', resource: 'git push *', effect: 'deny' }],
+          error: null
+        }
+      }
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+
+    render(<AgentSettings />)
+
+    expect(await screen.findByText('/etc/ateam/policy.json')).toBeInTheDocument()
+    expect(screen.getByText('shell · git push * · Deny')).toBeInTheDocument()
+  })
+
   it('shows detected formatters and language servers', async () => {
     mock = createApiMock({
       info: {
