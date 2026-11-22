@@ -1,0 +1,110 @@
+name: ATeam Agent
+description: Run the ATeam coding agent in GitHub Actions using the headless CLI.
+author: ATeam
+branding:
+  icon: terminal
+  color: blue
+
+inputs:
+  prompt:
+    description: Prompt or task instructions for the agent.
+    required: true
+  api-key:
+    description: Provider API key. Pass a secret; omit for unauthenticated OpenAI-compatible endpoints.
+    required: false
+  model:
+    description: Model id, for example gpt-5 or claude-sonnet-5.
+    required: true
+  provider:
+    description: anthropic, openai, google or openai-compatible.
+    required: false
+    default: anthropic
+  base-url:
+    description: Base URL for OpenAI-compatible providers.
+    required: false
+    default: ''
+  workspace:
+    description: Workspace directory. Defaults to the checked-out repository.
+    required: false
+    default: ''
+  permission:
+    description: Permission mode (plan, ask, acceptEdits, auto).
+    required: false
+    default: auto
+  reasoning:
+    description: Reasoning effort (minimal, low, medium, high).
+    required: false
+    default: ''
+  context-window:
+    description: Context window override in tokens.
+    required: false
+    default: ''
+  max-output:
+    description: Maximum output tokens.
+    required: false
+    default: ''
+  agent:
+    description: Agent id (build, plan, or a custom agent).
+    required: false
+    default: ''
+  data:
+    description: CLI data directory for sessions.
+    required: false
+    default: ''
+  node-version:
+    description: Node.js version used to run the CLI.
+    required: false
+    default: '22'
+  pnpm-version:
+    description: pnpm version used to install dependencies.
+    required: false
+    default: '11'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install ATeam CLI
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: |
+        pnpm install --frozen-lockfile --ignore-scripts
+        pnpm rebuild esbuild
+
+    - name: Run ATeam
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        INPUT_PROMPT: ${{ inputs.prompt }}
+        INPUT_API_KEY: ${{ inputs.api-key }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_PROVIDER: ${{ inputs.provider }}
+        INPUT_BASE_URL: ${{ inputs.base-url }}
+        INPUT_WORKSPACE: ${{ inputs.workspace }}
+        INPUT_PERMISSION: ${{ inputs.permission }}
+        INPUT_REASONING: ${{ inputs.reasoning }}
+        INPUT_CONTEXT_WINDOW: ${{ inputs.context-window }}
+        INPUT_MAX_OUTPUT: ${{ inputs.max-output }}
+        INPUT_AGENT: ${{ inputs.agent }}
+        INPUT_DATA: ${{ inputs.data }}
+      run: |
+        set -euo pipefail
+        args=(--provider "$INPUT_PROVIDER" --model "$INPUT_MODEL" --permission "$INPUT_PERMISSION")
+        args+=(--workspace "${INPUT_WORKSPACE:-$GITHUB_WORKSPACE}")
+        if [ -n "$INPUT_API_KEY" ]; then args+=(--api-key "$INPUT_API_KEY"); fi
+        if [ -n "$INPUT_BASE_URL" ]; then args+=(--base-url "$INPUT_BASE_URL"); fi
+        if [ -n "$INPUT_REASONING" ]; then args+=(--reasoning "$INPUT_REASONING"); fi
+        if [ -n "$INPUT_CONTEXT_WINDOW" ]; then args+=(--context-window "$INPUT_CONTEXT_WINDOW"); fi
+        if [ -n "$INPUT_MAX_OUTPUT" ]; then args+=(--max-output "$INPUT_MAX_OUTPUT"); fi
+        if [ -n "$INPUT_AGENT" ]; then args+=(--agent "$INPUT_AGENT"); fi
+        if [ -n "$INPUT_DATA" ]; then args+=(--data "$INPUT_DATA"); fi
+        pnpm cli -- "${args[@]}" "$INPUT_PROMPT"

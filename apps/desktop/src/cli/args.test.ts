@@ -46,6 +46,12 @@ describe('parseCliArgs', () => {
     })
   })
 
+  it('ignores a bare -- separator from package managers', () => {
+    const options = parseCliArgs(['--', '--model', 'm', 'hello'], ENV)
+
+    expect(options).toMatchObject({ model: 'm', prompt: 'hello' })
+  })
+
   it('rejects unknown flags and invalid enums', () => {
     expect(() => parseCliArgs(['--nope'], ENV)).toThrow('Unknown flag')
     expect(() => parseCliArgs(['--provider', 'invalid'], ENV)).toThrow('--provider')
