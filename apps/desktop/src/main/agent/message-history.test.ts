@@ -253,7 +253,7 @@ describe('buildModelMessages with attachments', () => {
     expect(messages[0]).toEqual({
       role: 'user',
       content: [
-        { type: 'image', image: imageBytes, mediaType: 'image/png' },
+        { type: 'file', data: imageBytes, mediaType: 'image/png' },
         { type: 'file', data: pdfBytes, mediaType: 'application/pdf', filename: 'doc.pdf' }
       ]
     })

@@ -32,6 +32,8 @@ import {
   saveAttachment
 } from '../agent/attachments'
 import { expandCommandTemplate, runWorkspaceShell } from '../agent/commands'
+import { modelRefSchema } from './model-schema'
+import { agentConfigPatchSchema } from './config-schema'
 import { normalizeImageAttachment } from '../attachments/image'
 import { searchWorkspaceFiles } from '../files/search'
 import type { ModelsStore } from '../stores/models'
@@ -39,10 +41,6 @@ import type { WebSearchStore } from '../stores/websearch'
 import type { TrustedSender } from './trusted-sender'
 
 const idSchema = z.string().min(1).max(200)
-const modelRefSchema = z.object({
-  providerId: idSchema,
-  modelId: z.string().min(1).max(200)
-})
 const renameSchema = z.object({
   id: idSchema,
   title: z.string().trim().min(1).max(200)
@@ -375,14 +373,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   })
 
   handle(AGENT_CHANNELS.agentConfigUpdate, async (payload): Promise<AgentConfig> => {
-    const patch = z
-      .object({
-        snapshots: z.boolean().optional(),
-        instructions: z.array(z.string().max(2_000)).max(50).optional(),
-        lsp: z.boolean().optional(),
-        formatters: z.boolean().optional()
-      })
-      .parse(payload)
+    const patch = agentConfigPatchSchema.parse(payload)
     await configReady
     return configStore.update(patch)
   })

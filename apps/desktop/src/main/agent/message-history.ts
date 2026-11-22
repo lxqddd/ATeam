@@ -43,7 +43,7 @@ export function buildModelMessages(
               text: `File: ${payload.name}\n\`\`\`\n${payload.text ?? ''}\n\`\`\``
             })
           } else if (payload.kind === 'image' && payload.data) {
-            content.push({ type: 'image', image: payload.data, mediaType: payload.mimeType })
+            content.push({ type: 'file', data: payload.data, mediaType: payload.mimeType })
           } else if (payload.kind === 'pdf' && payload.text) {
             content.push({
               type: 'text',

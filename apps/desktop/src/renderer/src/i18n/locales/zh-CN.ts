@@ -82,6 +82,8 @@ const zhCN = {
     mcpStatusConnected: '已连接',
     mcpStatusFailed: '连接失败',
     mcpToolsCount: '{{count}} 个工具',
+    mcpPromptsCount: '{{count}} 个 prompts',
+    mcpResourcesCount: '{{count}} 个 resources',
     web: '网页搜索',
     webDescription: '配置 websearch 工具使用的搜索服务。',
     webProvider: '服务商',

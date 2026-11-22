@@ -50,6 +50,19 @@ describe('McpServers', () => {
     expect(screen.getByText('Connected · 2 tools')).toBeInTheDocument()
   })
 
+  it('shows prompt and resource counts for connected servers', async () => {
+    vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({
+      servers: [SERVER],
+      statuses: [{ ...STATUS, promptCount: 1, resourceCount: 3 }]
+    })
+
+    render(<McpServers />)
+
+    expect(
+      await screen.findByText('Connected · 2 tools · 1 prompts · 3 resources')
+    ).toBeInTheDocument()
+  })
+
   it('shows failed connections with the error message', async () => {
     vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({
       servers: [SERVER],

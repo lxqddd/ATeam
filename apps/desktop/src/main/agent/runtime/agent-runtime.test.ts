@@ -1944,7 +1944,7 @@ describe('attachments', () => {
     const user = turns[0].messages[0]
     expect(user).toMatchObject({
       role: 'user',
-      content: [expect.objectContaining({ type: 'image', mediaType: 'image/png' })]
+      content: [expect.objectContaining({ type: 'file', mediaType: 'image/png' })]
     })
     expect(runtime.messages(sessionId).messages[0].parts).toHaveLength(1)
   })

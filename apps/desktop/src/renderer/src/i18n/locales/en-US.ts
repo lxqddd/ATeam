@@ -85,6 +85,8 @@ const enUS = {
     mcpStatusConnected: 'Connected',
     mcpStatusFailed: 'Failed',
     mcpToolsCount: '{{count}} tools',
+    mcpPromptsCount: '{{count}} prompts',
+    mcpResourcesCount: '{{count}} resources',
     web: 'Web search',
     webDescription: 'Configure the provider used by the web search tool.',
     webProvider: 'Provider',

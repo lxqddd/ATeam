@@ -185,9 +185,17 @@ function McpServers(): React.JSX.Element {
     if (!status || status.state === 'idle') return t('settings.mcpStatusIdle')
     if (status.state === 'connecting') return t('settings.mcpStatusConnecting')
     if (status.state === 'failed') return t('settings.mcpStatusFailed')
-    return `${t('settings.mcpStatusConnected')} · ${t('settings.mcpToolsCount', {
-      count: status.toolCount
-    })}`
+    const parts = [
+      t('settings.mcpStatusConnected'),
+      t('settings.mcpToolsCount', { count: status.toolCount })
+    ]
+    if (status.promptCount > 0) {
+      parts.push(t('settings.mcpPromptsCount', { count: status.promptCount }))
+    }
+    if (status.resourceCount > 0) {
+      parts.push(t('settings.mcpResourcesCount', { count: status.resourceCount }))
+    }
+    return parts.join(' · ')
   }
 
   if (!servers) {

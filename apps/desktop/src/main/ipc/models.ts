@@ -11,6 +11,7 @@ import {
   type ProviderCreateInput,
   type ProviderUpdateInput
 } from '@ateam/shared'
+import { modelCreateSchema, modelRefSchema, modelUpdateSchema } from './model-schema'
 import type { AgentManager } from '../agent/agent-manager'
 import { normalizeError } from '../agent/errors'
 import { listProviderModels } from '../models/available'
@@ -37,38 +38,7 @@ const providerUpdateSchema = z.object({
   clearApiKey: z.boolean().optional()
 })
 
-const contextWindowSchema = z.number().int().min(1_000).max(10_000_000)
-const maxOutputTokensSchema = z.number().int().min(1).max(1_000_000)
-const costSchema = z.number().min(0).max(1_000)
-
-const modelCreateSchema = z.object({
-  providerId: idSchema,
-  modelId: z.string().min(1).max(200),
-  name: z.string().max(100).optional(),
-  contextWindow: contextWindowSchema.optional(),
-  maxOutputTokens: maxOutputTokensSchema.optional(),
-  reasoning: z.boolean().optional(),
-  attachment: z.boolean().optional(),
-  costInput: costSchema.optional(),
-  costOutput: costSchema.optional()
-})
-
-const modelUpdateSchema = z.object({
-  id: idSchema,
-  name: z.string().min(1).max(100),
-  contextWindow: contextWindowSchema.nullable().optional(),
-  maxOutputTokens: maxOutputTokensSchema.nullable().optional(),
-  reasoning: z.boolean().optional(),
-  attachment: z.boolean().optional(),
-  costInput: costSchema.nullable().optional(),
-  costOutput: costSchema.nullable().optional()
-})
-
 const idPayloadSchema = z.object({ id: idSchema })
-const modelRefSchema = z.object({
-  providerId: idSchema,
-  modelId: z.string().min(1).max(200)
-})
 const testSchema = modelRefSchema
 
 const providerPreviewSchema = z.object({
