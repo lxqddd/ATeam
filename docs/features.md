@@ -372,3 +372,16 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 允许的目标：当前工作区内、ATEAM 管理的 worktree 根目录下，或同一仓库的其他 worktree；其他绝对路径会被拒绝。
 - `worktree_remove` 需要 `edit` 权限，且不能删除主检出或非 ATeam 管理工作树。工作区不是 Git 仓库时，工具返回明确提示。
 - 限制：桌面端默认工作区若不包含 Git 仓库则无法使用；MCP server 仍以应用启动时的工作区运行。
+
+## 28. 桌面浏览器自动化
+
+- 桌面应用为每个会话维护一个隐藏的 Chromium 窗口（独立权限、禁用弹窗与站点权限），代理可通过工具操作页面：
+  - `browser_open`：打开 HTTP/HTTPS 页面，按 `webfetch` 权限确认；
+  - `browser_snapshot`：返回标题、URL、可见文本、控制台输出和带编号的可交互元素；
+  - `browser_click` / `browser_type`：按快照 ref 点击或输入，可提交表单；
+  - `browser_screenshot`：返回 PNG 截图并作为图片内容交给模型；
+  - `browser_eval`：在页面执行 JavaScript，按 `shell` 权限确认；
+  - `browser_close`：关闭窗口。
+- 同一会话的浏览器操作串行执行；导航 30 秒超时，执行脚本 15 秒超时；控制台保留最近 50 条并随快照返回。
+- 页面内容、控制台与执行结果均视为不可信数据，不构成指令。
+- 限制：仅桌面应用可用（CLI / Server / ACP 会返回不可用）；一个会话同时只有一个页面；不提供多标签、网络面板或文件上传。

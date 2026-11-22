@@ -72,6 +72,11 @@ export interface AgentRuntimeOptions {
   mcpAuth?: McpAuthRecord[]
   onMcpAuth?: (auth: McpAuthRecord) => void
   send: (envelope: AgentEventEnvelope) => void
+  browserRequest?: (
+    sessionId: string,
+    method: string,
+    params?: Record<string, unknown>
+  ) => Promise<unknown>
   dependencies?: Partial<AgentRuntimeDependencies>
 }
 

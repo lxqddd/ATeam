@@ -132,3 +132,19 @@ export type WorkerMessage =
   | { kind: 'response'; id: string; ok: false; error: string }
   | { kind: 'event'; envelope: import('./agent-types').AgentEventEnvelope }
   | { kind: 'mcp-auth'; auth: import('./agent-types').McpAuthRecord }
+  | {
+      kind: 'browser'
+      requestId: string
+      sessionId: string
+      method: string
+      params?: Record<string, unknown>
+    }
+
+/** Main → agent worker message resolving a browser request. */
+export interface BrowserResultMessage {
+  method: 'browser.result'
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
+}

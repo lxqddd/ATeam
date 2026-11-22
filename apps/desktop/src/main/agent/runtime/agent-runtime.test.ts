@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { LanguageModel, TextStreamPart, ToolSet } from 'ai'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type {
   AgentEvent,
   AgentEventEnvelope,
@@ -22,6 +22,7 @@ import { makeMessage } from '../test/factories'
 import type { ToolContext } from '../tools'
 import type { WebFetchResult } from '../integrations/webfetch'
 import type { WebSearchResult } from '../integrations/websearch'
+import type { AgentRuntimeOptions } from './types'
 
 const MODELS: RuntimeModelsConfig = {
   providers: [{ id: 'provider-1', name: 'Test', type: 'anthropic', apiKey: 'sk-test' }],
@@ -179,6 +180,7 @@ let mcpTools: ReturnType<typeof vi.fn>
 let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
 const generateTitle = vi.fn(async () => '')
+let browserRequest: Mock<NonNullable<AgentRuntimeOptions['browserRequest']>>
 let runtime: AgentRuntime
 let sessionId: string
 
@@ -188,6 +190,7 @@ function createRuntime(): AgentRuntime {
     workspacePath: path.join(directory, 'workspace'),
     models: MODELS,
     send: sink.send,
+    browserRequest,
     dependencies: {
       createLanguageModel: (_models, ref) => {
         languageModelRefs.push(ref)
@@ -546,6 +549,11 @@ beforeEach(async () => {
   summaries = []
   instructionFiles = []
   instructionInputs = []
+  browserRequest = vi.fn(async (_sessionId: string, method: string) =>
+    method === 'screenshot'
+      ? { summary: 'Screenshot: Example', image: { mimeType: 'image/png', data: 'AQID' } }
+      : `${method}:ok`
+  )
   toolAction = 'write'
   toolExecutor = null
   toolContext = null
@@ -1129,6 +1137,26 @@ describe('AgentRuntime', () => {
     expect(runtime.permissions()).toEqual([])
     expect(toolPart('call-1')).toMatchObject({ state: 'completed', output: 'done:a.txt' })
     expect(toolPart('call-2')).toMatchObject({ state: 'completed', output: 'done:b.txt' })
+  })
+
+  it('routes browser tool calls through the injected browser bridge', async () => {
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'browse')
+    await sink.next('run.finished')
+    if (!toolContext) throw new Error('tool context not initialized')
+
+    await expect(toolContext.browserOpen?.('https://example.com/')).resolves.toBe('open:ok')
+    expect(browserRequest).toHaveBeenCalledWith(sessionId, 'open', { url: 'https://example.com/' })
+    await expect(toolContext.browserClick?.('2')).resolves.toBe('click:ok')
+    await expect(toolContext.browserType?.('3', 'hello', true)).resolves.toBe('type:ok')
+    await expect(toolContext.browserEval?.('document.title')).resolves.toBe('eval:ok')
+    await expect(toolContext.browserScreenshot?.()).resolves.toMatchObject({
+      summary: 'Screenshot: Example',
+      image: { mimeType: 'image/png' }
+    })
+
+    browserRequest.mockRejectedValueOnce(new Error('BROWSER_TIMEOUT'))
+    await expect(toolContext.browserSnapshot?.()).resolves.toBe('Error: BROWSER_TIMEOUT')
   })
 
   it('moves a session to another directory at the next run boundary', async () => {

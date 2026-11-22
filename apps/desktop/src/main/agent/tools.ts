@@ -74,6 +74,15 @@ export interface ToolContext {
   worktreeList?: () => Promise<string>
   worktreeRemove?: (path: string, force: boolean) => Promise<string>
   moveSession?: (directory: string) => Promise<string>
+  browserOpen?: (url: string) => Promise<string>
+  browserSnapshot?: () => Promise<string>
+  browserClick?: (ref: string) => Promise<string>
+  browserType?: (ref: string, text: string, submit: boolean) => Promise<string>
+  browserScreenshot?: () => Promise<
+    string | { summary: string; image: { mimeType: string; data: string } }
+  >
+  browserEval?: (code: string) => Promise<string>
+  browserClose?: () => Promise<string>
   codeTimeoutMs?: number
 }
 
@@ -1152,6 +1161,113 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const browserOpen = tool({
+    description:
+      'Open a URL in the desktop app browser and return the page title. Use browser_snapshot afterwards to see the page and its interactive elements.',
+    inputSchema: z.object({
+      url: z.string().min(1).max(2_000).describe('HTTP or HTTPS URL')
+    }),
+    execute: async ({ url }, options) => {
+      if (!context.browserOpen) return 'Error: browser automation is not available.'
+      const allowed = await context.askPermission(
+        'webfetch',
+        url,
+        'browser_open',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the page was not opened.'
+      return context.browserOpen(url)
+    }
+  })
+
+  const browserSnapshot = tool({
+    description:
+      'Return the current browser page title, URL, visible text, console output and numbered interactive elements. Element refs are valid until the next navigation or snapshot.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.browserSnapshot) return 'Error: browser automation is not available.'
+      return context.browserSnapshot()
+    }
+  })
+
+  const browserClick = tool({
+    description: 'Click an interactive element by its snapshot ref.',
+    inputSchema: z.object({
+      ref: z.string().min(1).max(12).describe('Element ref from browser_snapshot')
+    }),
+    execute: async ({ ref }) => {
+      if (!context.browserClick) return 'Error: browser automation is not available.'
+      return context.browserClick(ref)
+    }
+  })
+
+  const browserType = tool({
+    description:
+      'Type text into an input or textarea by snapshot ref. Set submit to submit the surrounding form.',
+    inputSchema: z.object({
+      ref: z.string().min(1).max(12).describe('Element ref from browser_snapshot'),
+      text: z.string().max(20_000).describe('Text to enter'),
+      submit: z.boolean().optional().describe('Submit the form after typing')
+    }),
+    execute: async ({ ref, text, submit = false }) => {
+      if (!context.browserType) return 'Error: browser automation is not available.'
+      return context.browserType(ref, text, submit)
+    }
+  })
+
+  const browserScreenshot = tool({
+    description: 'Capture the visible browser page as a PNG screenshot.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.browserScreenshot) return 'Error: browser automation is not available.'
+      return context.browserScreenshot()
+    },
+    toModelOutput: ({ output }) => {
+      if (output && typeof output === 'object' && 'image' in output) {
+        return {
+          type: 'content',
+          value: [
+            { type: 'text', text: output.summary },
+            {
+              type: 'image-data',
+              data: output.image.data,
+              mediaType: output.image.mimeType
+            }
+          ]
+        }
+      }
+      return { type: 'text', value: typeof output === 'string' ? output : JSON.stringify(output) }
+    }
+  })
+
+  const browserEval = tool({
+    description:
+      'Evaluate JavaScript in the current browser page and return a compact JSON result. Use it for page state that the snapshot does not expose.',
+    inputSchema: z.object({
+      code: z.string().min(1).max(20_000).describe('JavaScript expression or statements')
+    }),
+    execute: async ({ code }, options) => {
+      if (!context.browserEval) return 'Error: browser automation is not available.'
+      const allowed = await context.askPermission(
+        'shell',
+        `browser eval: ${code.replace(/\s+/g, ' ').slice(0, 160)}`,
+        'browser_eval',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the code was not evaluated.'
+      return context.browserEval(code)
+    }
+  })
+
+  const browserClose = tool({
+    description: 'Close the desktop app browser.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.browserClose) return 'Error: browser automation is not available.'
+      return context.browserClose()
+    }
+  })
+
   const worktreeCreate = tool({
     description:
       'Create a Git worktree for the current project and return its directory. The worktree gets its own branch, or reuses an existing branch with the same name. Use session_move to continue working there.',
@@ -1285,6 +1401,13 @@ export function createTools(context: ToolContext): ToolSet {
     worktree_list: worktreeList,
     worktree_remove: worktreeRemove,
     session_move: sessionMove,
+    browser_open: browserOpen,
+    browser_snapshot: browserSnapshot,
+    browser_click: browserClick,
+    browser_type: browserType,
+    browser_screenshot: browserScreenshot,
+    browser_eval: browserEval,
+    browser_close: browserClose,
     mcp_prompt: mcpPrompt,
     mcp_resource: mcpResource
   }

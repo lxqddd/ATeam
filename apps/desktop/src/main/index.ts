@@ -11,6 +11,7 @@ import {
   type AgentEventEnvelope
 } from '@ateam/shared'
 import { AgentManager } from './agent/agent-manager'
+import { BrowserController } from './browser/browser-controller'
 import { ModelsStore } from './stores/models'
 import { ModelCatalogStore } from './models/catalog-store'
 import { WebSearchStore } from './stores/websearch'
@@ -30,6 +31,7 @@ const TITLE_BAR_COLORS = {
 
 let mainWindow: BrowserWindow | null = null
 let agentManager: AgentManager | null = null
+let browserController: BrowserController | null = null
 let quitting = false
 
 function getWindowChrome(): BrowserWindowConstructorOptions {
@@ -167,6 +169,7 @@ if (!hasSingleInstanceLock) {
       console.error('[workspace] failed to create the agent workspace', error)
     }
 
+    browserController = new BrowserController()
     const manager = new AgentManager({
       workerPath: join(__dirname, 'agent.js'),
       userDataPath,
@@ -178,6 +181,9 @@ if (!hasSingleInstanceLock) {
           console.error('[mcp-auth] failed to store refreshed credentials', error)
         })
       },
+      browserRequest: (sessionId, method, params) =>
+        browserController?.handle(sessionId, method, params) ??
+        Promise.reject(new Error('BROWSER_NOT_AVAILABLE')),
       onEvent: (envelope: AgentEventEnvelope) => {
         const window = mainWindow
         if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
@@ -249,8 +255,10 @@ app.on('before-quit', (event) => {
   quitting = true
   event.preventDefault()
   const manager = agentManager
+  const browser = browserController
   agentManager = null
-  void manager.stop().finally(() => {
+  browserController = null
+  void Promise.all([manager.stop(), browser?.dispose().catch(() => undefined)]).finally(() => {
     app.quit()
   })
 })

@@ -1,4 +1,5 @@
-import type { WorkerMessage, WorkerRequest } from '@ateam/shared'
+import { randomUUID } from 'node:crypto'
+import type { BrowserResultMessage, WorkerMessage, WorkerRequest } from '@ateam/shared'
 import { AgentRuntime } from './runtime'
 import { normalizeError } from './errors'
 
@@ -17,9 +18,46 @@ if (!port) {
 const parentPort: ParentPort = port
 
 let runtime: AgentRuntime | null = null
+const pendingBrowser = new Map<
+  string,
+  { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+>()
 
 function send(message: WorkerMessage): void {
   parentPort.postMessage(message)
+}
+
+function requestBrowser(
+  sessionId: string,
+  method: string,
+  params?: Record<string, unknown>
+): Promise<unknown> {
+  const requestId = randomUUID()
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingBrowser.delete(requestId)
+      reject(new Error('BROWSER_TIMEOUT'))
+    }, 60_000)
+    pendingBrowser.set(requestId, { resolve, reject, timer })
+    send({ kind: 'browser', requestId, sessionId, method, params })
+  })
+}
+
+function settleBrowser(message: BrowserResultMessage): void {
+  const pending = pendingBrowser.get(message.requestId)
+  if (!pending) return
+  pendingBrowser.delete(message.requestId)
+  clearTimeout(pending.timer)
+  if (message.ok) pending.resolve(message.result)
+  else pending.reject(new Error(message.error ?? 'BROWSER_FAILED'))
+}
+
+function rejectBrowserRequests(error: string): void {
+  for (const pending of pendingBrowser.values()) {
+    clearTimeout(pending.timer)
+    pending.reject(new Error(error))
+  }
+  pendingBrowser.clear()
 }
 
 function requireRuntime(): AgentRuntime {
@@ -31,6 +69,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
   switch (request.method) {
     case 'init': {
       if (runtime) await runtime.shutdown()
+      rejectBrowserRequests('AGENT_RESTARTED')
       runtime = new AgentRuntime({
         userDataPath: request.params.userDataPath,
         workspacePath: request.params.workspacePath,
@@ -38,6 +77,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         webSearch: request.params.webSearch ?? null,
         mcpAuth: request.params.mcpAuth ?? [],
         onMcpAuth: (auth) => send({ kind: 'mcp-auth', auth }),
+        browserRequest: requestBrowser,
         send: (envelope) => send({ kind: 'event', envelope })
       })
       await runtime.init()
@@ -138,6 +178,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'shutdown':
+      rejectBrowserRequests('AGENT_STOPPED')
       await runtime?.shutdown()
       return null
     default:
@@ -146,7 +187,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
 }
 
 parentPort.on('message', (event) => {
-  const request = event.data as WorkerRequest
+  const incoming = event.data as BrowserResultMessage | WorkerRequest
+  if (incoming && typeof incoming === 'object' && incoming.method === 'browser.result') {
+    settleBrowser(incoming as BrowserResultMessage)
+    return
+  }
+  const request = incoming as WorkerRequest
   if (!request || typeof request !== 'object' || typeof request.id !== 'string') return
 
   void handle(request)

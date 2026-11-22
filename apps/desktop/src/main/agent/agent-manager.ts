@@ -28,6 +28,11 @@ export interface AgentManagerOptions {
   onEvent: (envelope: AgentEventEnvelope) => void
   mcpAuth?: () => McpAuthRecord[]
   onMcpAuth?: (auth: McpAuthRecord) => void
+  browserRequest?: (
+    sessionId: string,
+    method: string,
+    params?: Record<string, unknown>
+  ) => Promise<unknown>
 }
 
 export class AgentManager {
@@ -190,6 +195,36 @@ export class AgentManager {
 
     if (message.kind === 'mcp-auth') {
       this.options.onMcpAuth?.(message.auth)
+      return
+    }
+
+    if (message.kind === 'browser') {
+      const worker = this.worker
+      const handler = this.options.browserRequest
+      const request = handler
+        ? handler(message.sessionId, message.method, message.params)
+        : Promise.reject(new Error('BROWSER_NOT_AVAILABLE'))
+      void request
+        .then((result) => {
+          if (worker && worker === this.worker) {
+            worker.postMessage({
+              method: 'browser.result',
+              requestId: message.requestId,
+              ok: true,
+              result
+            })
+          }
+        })
+        .catch((error: unknown) => {
+          if (worker && worker === this.worker) {
+            worker.postMessage({
+              method: 'browser.result',
+              requestId: message.requestId,
+              ok: false,
+              error: normalizeError(error)
+            })
+          }
+        })
       return
     }
 

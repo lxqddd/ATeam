@@ -1562,6 +1562,35 @@ export class AgentRuntime {
     }
   }
 
+  private async browserAction(
+    run: Run,
+    method: string,
+    params?: Record<string, unknown>
+  ): Promise<string> {
+    if (!this.options.browserRequest) return 'Error: browser automation is not available.'
+    try {
+      const result = await this.options.browserRequest(run.sessionId, method, params)
+      return typeof result === 'string' ? result : JSON.stringify(result)
+    } catch (error) {
+      return `Error: ${errorMessage(error)}`
+    }
+  }
+
+  private async browserCapture(
+    run: Run
+  ): Promise<string | { summary: string; image: { mimeType: string; data: string } }> {
+    if (!this.options.browserRequest) return 'Error: browser automation is not available.'
+    try {
+      const result = await this.options.browserRequest(run.sessionId, 'screenshot')
+      if (result && typeof result === 'object' && 'image' in result) {
+        return result as { summary: string; image: { mimeType: string; data: string } }
+      }
+      return typeof result === 'string' ? result : JSON.stringify(result)
+    } catch (error) {
+      return `Error: ${errorMessage(error)}`
+    }
+  }
+
   private worktreeErrorMessage(error: unknown): string {
     const messages: Record<string, string> = {
       NOT_A_GIT_REPOSITORY: 'The workspace is not a Git repository.',
@@ -1803,7 +1832,14 @@ export class AgentRuntime {
         worktreeCreate: (input) => this.createSessionWorktree(run, input),
         worktreeList: () => this.listSessionWorktrees(run),
         worktreeRemove: (target, force) => this.removeSessionWorktree(run, target, force),
-        moveSession: (directory) => this.moveSession(run, directory)
+        moveSession: (directory) => this.moveSession(run, directory),
+        browserOpen: (url) => this.browserAction(run, 'open', { url }),
+        browserSnapshot: () => this.browserAction(run, 'snapshot'),
+        browserClick: (ref) => this.browserAction(run, 'click', { ref }),
+        browserType: (ref, text, submit) => this.browserAction(run, 'type', { ref, text, submit }),
+        browserScreenshot: () => this.browserCapture(run),
+        browserEval: (code) => this.browserAction(run, 'eval', { code }),
+        browserClose: () => this.browserAction(run, 'close')
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}

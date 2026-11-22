@@ -53,6 +53,13 @@ let worktreeCreate: Mock<NonNullable<ToolContext['worktreeCreate']>>
 let worktreeList: Mock<NonNullable<ToolContext['worktreeList']>>
 let worktreeRemove: Mock<NonNullable<ToolContext['worktreeRemove']>>
 let moveSession: Mock<NonNullable<ToolContext['moveSession']>>
+let browserOpen: Mock<NonNullable<ToolContext['browserOpen']>>
+let browserSnapshot: Mock<NonNullable<ToolContext['browserSnapshot']>>
+let browserClick: Mock<NonNullable<ToolContext['browserClick']>>
+let browserType: Mock<NonNullable<ToolContext['browserType']>>
+let browserScreenshot: Mock<NonNullable<ToolContext['browserScreenshot']>>
+let browserEval: Mock<NonNullable<ToolContext['browserEval']>>
+let browserClose: Mock<NonNullable<ToolContext['browserClose']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -83,6 +90,19 @@ beforeEach(async () => {
   moveSession = vi.fn(
     async (directory: string) => `Session will move to ${directory} next message.`
   )
+  browserOpen = vi.fn(async (url: string) => `Opened Example (${url})`)
+  browserSnapshot = vi.fn(async () => 'Page: Example\n\n[1] button "Go"')
+  browserClick = vi.fn(async (ref: string) => `Clicked [${ref}] -> Example (https://example.com/)`)
+  browserType = vi.fn(
+    async (ref: string, _text: string, submit: boolean) =>
+      `${submit ? 'Typed and submitted' : 'Typed into'} [${ref}] -> Example (https://example.com/)`
+  )
+  browserScreenshot = vi.fn(async () => ({
+    summary: 'Screenshot: Example (https://example.com/)',
+    image: { mimeType: 'image/png', data: 'AQID' }
+  }))
+  browserEval = vi.fn(async (code: string) => `result: ${code}`)
+  browserClose = vi.fn(async () => 'Browser closed.')
   baseContext = {
     workspace: directory,
     grepEngine: 'js',
@@ -111,7 +131,14 @@ beforeEach(async () => {
     worktreeCreate,
     worktreeList,
     worktreeRemove,
-    moveSession
+    moveSession,
+    browserOpen,
+    browserSnapshot,
+    browserClick,
+    browserType,
+    browserScreenshot,
+    browserEval,
+    browserClose
   }
   tools = createTools(baseContext)
 })
@@ -1037,6 +1064,81 @@ describe('execute (code mode)', () => {
     const limited = createTools({ ...baseContext, codeTimeoutMs: 20 })
     const result = await execute(limited.execute, { code: 'while (true) {}' })
     expect(result).toContain('timed out')
+  })
+})
+
+describe('browser tools', () => {
+  it('opens pages with webfetch permission and snapshots them', async () => {
+    await expect(execute(tools.browser_open, { url: 'https://example.com/' })).resolves.toBe(
+      'Opened Example (https://example.com/)'
+    )
+    expect(askPermission).toHaveBeenCalledWith(
+      'webfetch',
+      'https://example.com/',
+      'browser_open',
+      'call-1'
+    )
+    await expect(execute(tools.browser_snapshot, {})).resolves.toContain('[1] button "Go"')
+
+    askPermission.mockResolvedValue(false)
+    await expect(execute(tools.browser_open, { url: 'https://example.com/' })).resolves.toBe(
+      'Permission denied; the page was not opened.'
+    )
+  })
+
+  it('clicks, types, screenshots and closes', async () => {
+    await expect(execute(tools.browser_click, { ref: '2' })).resolves.toContain('Clicked [2]')
+    await expect(
+      execute(tools.browser_type, { ref: '3', text: 'hello', submit: true })
+    ).resolves.toContain('Typed and submitted [3]')
+    await expect(execute(tools.browser_screenshot, {})).resolves.toMatchObject({
+      summary: expect.stringContaining('Screenshot'),
+      image: { mimeType: 'image/png' }
+    })
+    await expect(execute(tools.browser_close, {})).resolves.toBe('Browser closed.')
+  })
+
+  it('requires shell permission for page evaluation', async () => {
+    await expect(execute(tools.browser_eval, { code: 'document.title' })).resolves.toBe(
+      'result: document.title'
+    )
+    expect(askPermission).toHaveBeenCalledWith(
+      'shell',
+      expect.stringContaining('browser eval: document.title'),
+      'browser_eval',
+      'call-1'
+    )
+
+    askPermission.mockResolvedValue(false)
+    await expect(execute(tools.browser_eval, { code: 'document.title' })).resolves.toBe(
+      'Permission denied; the code was not evaluated.'
+    )
+  })
+
+  it('reports when browser automation is unavailable', async () => {
+    const limited = createTools({
+      ...baseContext,
+      browserOpen: undefined,
+      browserSnapshot: undefined,
+      browserClick: undefined,
+      browserType: undefined,
+      browserScreenshot: undefined,
+      browserEval: undefined,
+      browserClose: undefined
+    })
+    for (const [tool, input] of [
+      [limited.browser_open, { url: 'https://example.com/' }],
+      [limited.browser_snapshot, {}],
+      [limited.browser_click, { ref: '1' }],
+      [limited.browser_type, { ref: '1', text: 'x' }],
+      [limited.browser_screenshot, {}],
+      [limited.browser_eval, { code: '1' }],
+      [limited.browser_close, {}]
+    ] as const) {
+      await expect(execute(tool, input)).resolves.toBe(
+        'Error: browser automation is not available.'
+      )
+    }
   })
 })
 
