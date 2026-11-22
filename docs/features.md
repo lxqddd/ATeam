@@ -268,7 +268,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
 - 命令模板中的 shell 片段会在发送时直接执行（与 OpenCode 一致），只应信任来自可信来源的命令文件。
 - MCP prompt 参数按声明的参数顺序以空格分词传入，暂不支持带空格的单个参数。
-- P2 方向：Code Mode、并行工具编排、worktree、浏览器自动化、Headless CLI、Server API / SDK、ACP 集成等尚未开始。
+- P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 
 ## 18. 关键文件索引
 
@@ -276,7 +276,9 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 会话：[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[context.ts](../apps/desktop/src/main/agent/sessions/context.ts)、[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)
 - 配置：[instructions.ts](../apps/desktop/src/main/agent/config/instructions.ts)、[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)、[agents.ts](../apps/desktop/src/main/agent/config/agents.ts)
 - 集成：[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[webfetch.ts](../apps/desktop/src/main/agent/integrations/webfetch.ts)、[websearch.ts](../apps/desktop/src/main/agent/integrations/websearch.ts)
-- 工具与能力：[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[attachments.ts](../apps/desktop/src/main/agent/attachments.ts)、[commands.ts](../apps/desktop/src/main/agent/commands.ts)、[skills.ts](../apps/desktop/src/main/agent/skills.ts)、[todos.ts](../apps/desktop/src/main/agent/todos.ts)、[cost.ts](../apps/desktop/src/main/agent/cost.ts)
+- 工具与能力：[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)、[attachments.ts](../apps/desktop/src/main/agent/attachments.ts)、[commands.ts](../apps/desktop/src/main/agent/commands.ts)、[skills.ts](../apps/desktop/src/main/agent/skills.ts)、[todos.ts](../apps/desktop/src/main/agent/todos.ts)、[cost.ts](../apps/desktop/src/main/agent/cost.ts)
+- 浏览器与控制台：[browser-controller.ts](../apps/desktop/src/main/browser/browser-controller.ts)、[cli/main.ts](../apps/desktop/src/cli/main.ts)、[server/main.ts](../apps/desktop/src/server/main.ts)、[acp/main.ts](../apps/desktop/src/acp/main.ts)、[sdk/client.ts](../apps/desktop/src/sdk/client.ts)
+- 会话存储：[session-storage.ts](../apps/desktop/src/main/agent/sessions/session-storage.ts)
 - 主进程存储：[stores/models.ts](../apps/desktop/src/main/stores/models.ts)、[stores/websearch.ts](../apps/desktop/src/main/stores/websearch.ts)、[models/catalog.ts](../apps/desktop/src/main/models/catalog.ts)
 
 ## 19. Headless CLI
