@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/errors'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { WEB_SEARCH_PROVIDERS } from '@ateam/shared'
@@ -22,7 +23,7 @@ function WebSearchSettings(): React.JSX.Element {
         setProvider(next.provider)
       })
       .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+        if (active) setError(errorMessage(caught))
       })
     return () => {
       active = false
@@ -44,14 +45,20 @@ function WebSearchSettings(): React.JSX.Element {
       setApiKey('')
       setSaved(true)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setSaving(false)
     }
   }
 
   if (!config) {
-    return <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    return error ? (
+      <p role="alert" className="m-0 py-2 text-caption text-danger">
+        {error}
+      </p>
+    ) : (
+      <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    )
   }
 
   return (

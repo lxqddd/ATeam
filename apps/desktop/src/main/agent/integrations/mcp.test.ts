@@ -82,6 +82,29 @@ function createManager(createClient: (config: unknown) => McpClientLike): McpMan
   return new McpManager({ userDataPath: directory, workspace: directory, createClient })
 }
 
+describe('McpManager lifecycle', () => {
+  it('closes connections that finish after disposal', async () => {
+    let release: () => void = () => undefined
+    const { client } = makeClient()
+    client.connect = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        })
+    )
+    const manager = createManager(() => client)
+    await manager.addServer({ name: 'demo', type: 'local', command: 'node' })
+
+    const probe = manager.statuses({ probe: true })
+    await vi.waitFor(() => expect(client.connect).toHaveBeenCalled())
+    await manager.dispose()
+    release()
+    await probe
+
+    expect(client.close).toHaveBeenCalled()
+  })
+})
+
 describe('McpManager tools', () => {
   it('merges and replaces transient client servers', async () => {
     const { client } = makeClient({ tools: [{ name: 'echo' }] })
@@ -484,6 +507,43 @@ describe('McpManager OAuth', () => {
 
     expect(statuses[0]).toMatchObject({ state: 'connected' })
     expect(onAuthUpdated).toHaveBeenCalledWith(expect.objectContaining({ accessToken: 'access-2' }))
+    await manager.dispose()
+  })
+
+  it('does not restore auth removed while refreshing', async () => {
+    const failing = makeClient({ connectError: new Error('HTTP 401: unauthorized') })
+    let release: (response: Response) => void = () => undefined
+    const fetchMock = vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        })
+    )
+    const onAuthUpdated = vi.fn()
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      auth: [{ ...AUTH, serverId: 'placeholder', expiresAt: Date.now() + 1_000 }],
+      fetch: fetchMock,
+      onAuthUpdated,
+      createClient: () => failing.client
+    })
+    const server = await manager.addServer({ name: 'remote', type: 'remote', url: AUTH.serverUrl })
+    await manager.setMcpAuth([{ ...AUTH, serverId: server.id, expiresAt: Date.now() + 1_000 }])
+
+    const probe = manager.statuses({ probe: true })
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    await manager.setMcpAuth([])
+    release(
+      new Response(JSON.stringify({ access_token: 'access-2', expires_in: 300 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    )
+    await probe
+
+    expect(onAuthUpdated).not.toHaveBeenCalled()
+    expect((await manager.statuses())[0]).toMatchObject({ state: 'idle' })
     await manager.dispose()
   })
 

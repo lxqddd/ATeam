@@ -67,6 +67,7 @@ function ProviderForm({
   const supportsOAuth = type === 'openai' || type === 'openai-compatible'
   const apiKey = Form.useWatch('apiKey', form) ?? ''
   const baseURL = Form.useWatch('baseURL', form) ?? ''
+  const oauthClientSecret = Form.useWatch('oauthClientSecret', form) ?? ''
   const requiresApiKey = type !== 'openai-compatible'
 
   useEffect(() => {
@@ -385,7 +386,7 @@ function ProviderForm({
                   valuePropName="checked"
                   className="sm:col-span-2 mb-0"
                 >
-                  <Checkbox disabled={Boolean(form.getFieldValue('oauthClientSecret'))}>
+                  <Checkbox disabled={Boolean(oauthClientSecret)}>
                     {t('settings.clearOAuthClientSecret')}
                   </Checkbox>
                 </Form.Item>

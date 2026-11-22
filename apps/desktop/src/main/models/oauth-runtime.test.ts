@@ -123,6 +123,38 @@ describe('provider runtime helpers', () => {
     expect(saved[0]).toMatchObject({ accessToken: 'access-2' })
   })
 
+  it('does not restore a token removed while refreshing', async () => {
+    const expiring = { ...RECORD, expiresAt: Date.now() + 10_000 }
+    let current: ProviderAuthRecord | null = expiring
+    let release: (response: Response) => void = () => undefined
+    const fetchMock = vi.fn<typeof fetch>(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        })
+    )
+    const set = vi.fn(async () => undefined)
+    const authStore = {
+      list: () => [expiring],
+      get: () => current,
+      set,
+      remove: vi.fn()
+    }
+
+    const pending = refreshExpiringProviderAuth(authStore, fetchMock)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    current = null
+    release(
+      new Response(JSON.stringify({ access_token: 'access-2', expires_in: 300 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    )
+
+    await expect(pending).resolves.toBe(false)
+    expect(set).not.toHaveBeenCalled()
+  })
+
   it('skips tokens that are still fresh', async () => {
     const fetchMock = vi.fn<typeof fetch>()
     const authStore = {

@@ -61,8 +61,8 @@ async function main(): Promise<number> {
   const shutdown = async (): Promise<void> => {
     if (closing) return
     closing = true
-    await api.close().catch(() => undefined)
     await runtime.shutdown().catch(() => undefined)
+    await api.close().catch(() => undefined)
     process.exit(0)
   }
   process.on('SIGINT', () => {

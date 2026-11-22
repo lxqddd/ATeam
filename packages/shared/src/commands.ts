@@ -8,7 +8,7 @@
 export function expandCommand(template: string, args: string): string {
   const trimmed = args.trim()
   const tokens = splitArguments(trimmed)
-  let expanded = template.replace(/\$ARGUMENTS/g, trimmed)
+  let expanded = template.replace(/\$ARGUMENTS/g, () => trimmed)
   expanded = expanded.replace(/\$([1-9])/g, (_match, index: string) => {
     return tokens[Number(index) - 1] ?? ''
   })

@@ -18,6 +18,11 @@ const RULE_ACTIONS = new Set<PermissionRuleAction>([
   'edit',
   'shell',
   'external_directory',
+  'mcp',
+  'webfetch',
+  'websearch',
+  'skill',
+  'subagent',
   '*'
 ])
 const RULE_EFFECTS = new Set<PermissionEffect>(['allow', 'ask', 'deny'])

@@ -151,6 +151,29 @@ describe('SessionsStore', () => {
     expect(await store.setContextUsage('missing', 1, 2)).toBeUndefined()
   })
 
+  it('clears a compaction boundary removed by undo', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'a1', role: 'assistant', parts: [makeTextPart('hi')] })
+    )
+    await store.setCompaction(session.id, {
+      summary: 'old summary',
+      throughMessageId: 'a1',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      tokensBefore: 10,
+      tokensAfter: 2
+    })
+
+    const staged = await store.stageUndo(session.id, 1, null, 'hello', [])
+
+    expect(staged?.session.compaction).toBeNull()
+  })
+
   it('stages an undo and restores it with redo', async () => {
     const session = await store.create()
     await store.appendMessage(
@@ -364,6 +387,19 @@ describe('SessionsStore', () => {
     await reloaded.init()
 
     expect(reloaded.list()).toEqual([])
+  })
+
+  it('recovers sessions missing from a stale index', async () => {
+    const session = await store.create()
+    const indexFile = path.join(sessionsDirectory, 'index.json')
+    const index = JSON.parse(await fs.readFile(indexFile, 'utf8')) as { sessions: unknown[] }
+    index.sessions = []
+    await fs.writeFile(indexFile, JSON.stringify(index))
+
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
+    await reloaded.init()
+
+    expect(reloaded.list().map((entry) => entry.id)).toEqual([session.id])
   })
 
   it('skips non-session files when rebuilding the index', async () => {

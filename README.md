@@ -46,7 +46,7 @@ ATeam/
 
 ## 环境要求
 
-- Node.js >= 22.12
+- Node.js >= 22.13
 - pnpm >= 11
 
 ## 快速开始
@@ -73,13 +73,16 @@ pnpm dev
 | `pnpm build:mac`    | 构建 macOS 安装包            |
 | `pnpm build:win`    | 构建 Windows 安装包          |
 | `pnpm build:linux`  | 构建 Linux 安装包            |
+| `pnpm cli -- ...`   | 运行 Headless CLI            |
+| `pnpm serve -- ...` | 启动本地 HTTP API 服务       |
+| `pnpm acp -- ...`   | 以 ACP 协议供编辑器接入      |
 
 ## 架构约定
 
 - **进程隔离**：模型密钥、safeStorage 和 IPC 在主进程；Agent 运行在 Electron `utilityProcess`；渲染进程只通过 preload 暴露的 `window.api` 通信，不接触 Node、网络或密钥。
 - **模型配置**：支持 Anthropic、OpenAI、Google 和 OpenAI-compatible Provider。API Key 使用 `safeStorage` 加密后写入 `userData/models/secrets.json`，渲染进程只能看到 `hasApiKey`。
-- **会话持久化**：会话和消息以原子 JSON 写入 `userData/agent/sessions/`；启动时会把遗留的 streaming/未结算工具状态修复为 interrupted/failed。
-- **工作区**：V1 固定为 `userData/agent-workspace`。`read`、`list`、`grep` 自动执行；`write`、`edit`、`shell` 需要用户授权；路径解析会阻止 `..` 和 symlink 逃逸。
+- **会话持久化**：默认使用 SQLite（`userData/agent/sessions.db`，事件日志 + 检查点），旧 JSON 会话自动迁移；启动时会把遗留的 streaming/未结算工具状态修复为 interrupted/failed。
+- **工作区**：新会话默认使用 `userData/agent-workspace`，可在会话页标题栏切换为默认工作区、最近目录或任意本地目录；目录随会话持久化。`read`、`list`、`grep` 自动执行；`write`、`edit`、`shell` 需要用户授权；路径解析会阻止 `..` 和 symlink 逃逸。
 - **工具循环**：AI SDK `streamText` + `stepCountIs(25)`；工具结果按 `toolCallId` 归并，文本/推理按 `partIndex` 归并，事件带单调 `seq`。
 - **权限**：`once`、`always`、`reject` 三种决定；`always` 仅当前会话内有效；停止运行会取消流并拒绝未完成的权限请求。
 - **UI**：会话页对齐 nomi-ai 的布局（52px AppRail、260px 会话栏、768px 聊天列、20px 圆角工作区卡片）；主题和语言设置继续使用设置页。
@@ -87,8 +90,8 @@ pnpm dev
 - **共享类型**：`@ateam/shared` 直接导出 TypeScript 源码，由 electron-vite / Vite 在构建时打包，因此作为开发依赖引入。
 - **Electron 二进制**：默认通过 npmmirror 下载（见 `apps/desktop/scripts/install-electron.mjs`），可用 `ELECTRON_MIRROR` 覆盖。`electron-builder.yml` 的 `electronDownload.mirror` 同样使用 npmmirror；`pnpm-workspace.yaml` 通过 override 将 electron-builder 使用的 `@electron/get` 固定到兼容版本。
 
-## V1 范围
+## 功能范围
 
-已实现：会话列表/新建/切换/重命名/删除、流式文本与推理、Markdown、工具卡片、权限审批、停止、重试、模型供应商与默认模型、连接测试、工作区打开、浅色/深色/跟随系统、中英文。
+已实现：多会话与工作目录、流式文本/推理/工具调用、Markdown、附件与 `@` 文件引用、权限审批、停止/重试/撤销/重做、上下文压缩、模型供应商与 OAuth、项目规则与自定义 Agent、子代理、MCP、Skills 与自定义命令、LSP 诊断与自动格式化、Web 抓取与搜索、快照与引用、Git worktree、桌面浏览器自动化、SQLite 事件溯源存储，以及 Headless CLI、Server API / SDK、ACP、GitHub Action。
 
-暂不包含：附件、项目目录选择、多模型自动路由、MCP、子 Agent、上下文压缩、跨会话的 always 权限。
+已知限制与后续方向见 [docs/features.md](docs/features.md) 第 17 节。

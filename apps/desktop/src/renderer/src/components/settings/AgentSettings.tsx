@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/errors'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentConfig, AgentInfo } from '@ateam/shared'
@@ -63,7 +64,7 @@ function AgentSettings(): React.JSX.Element {
         setReferencesText(formatReferenceLines(next.references ?? []))
       })
       .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+        if (active) setError(errorMessage(caught))
       })
     window.api.agent
       .info()
@@ -82,7 +83,7 @@ function AgentSettings(): React.JSX.Element {
     try {
       setConfig(await window.api.agent.config.update(patch))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setSaving(false)
     }
@@ -102,7 +103,7 @@ function AgentSettings(): React.JSX.Element {
       setInstructions(next.instructions.join('\n'))
       setSaved('instructions')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setSaving(false)
     }
@@ -132,7 +133,7 @@ function AgentSettings(): React.JSX.Element {
       )
       setSaved('overrides')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setSaving(false)
     }
@@ -150,7 +151,7 @@ function AgentSettings(): React.JSX.Element {
       setReferencesText(formatReferenceLines(next.references ?? []))
       setSaved('references')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setSaving(false)
     }
@@ -164,7 +165,13 @@ function AgentSettings(): React.JSX.Element {
   }
 
   if (!config) {
-    return <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    return error ? (
+      <p role="alert" className="m-0 py-2 text-caption text-danger">
+        {error}
+      </p>
+    ) : (
+      <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    )
   }
 
   const list = (values: string[]): string =>

@@ -6,6 +6,18 @@ import { buildCliModels, parseCliArgs } from './args'
 const ENV = { ATEAM_API_KEY: 'env-key', ATEAM_MODEL: 'env-model' }
 
 describe('parseCliArgs', () => {
+  it('stops parsing options after a second separator', () => {
+    const options = parseCliArgs(
+      ['--', '--model', 'test-model', '--', '--help'],
+      {},
+      '/tmp/workspace'
+    )
+
+    expect(options.model).toBe('test-model')
+    expect(options.help).toBe(false)
+    expect(options.prompt).toBe('--help')
+  })
+
   it('uses environment defaults and positional prompts', () => {
     const options = parseCliArgs(['--workspace', '/tmp/project', 'hello', 'world'], ENV, '/cwd')
 

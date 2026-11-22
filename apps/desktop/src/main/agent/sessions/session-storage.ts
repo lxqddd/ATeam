@@ -80,7 +80,10 @@ class JsonSessionStorage implements SessionStorage {
   async init(): Promise<SessionRecord[]> {
     await fs.mkdir(this.root, { recursive: true })
     const index = await readJsonFile<SessionIndex>(this.indexFile)
-    const entries = index?.sessions ?? (await this.scanSessions())
+    const byId = new Map<string, SessionMeta>()
+    for (const entry of index?.sessions ?? []) byId.set(entry.id, entry)
+    for (const entry of await this.scanSessions()) byId.set(entry.id, entry)
+    const entries = [...byId.values()]
     const records: SessionRecord[] = []
     for (const entry of entries) {
       const record = await this.loadRecord(entry.id)

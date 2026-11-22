@@ -385,6 +385,60 @@ describe('createHttpTransport', () => {
     expect(received).toEqual([{ jsonrpc: '2.0', id: 1, result: { tools: [] } }])
   })
 
+  it('aborts in-flight requests when closed', async () => {
+    let signal: AbortSignal | undefined
+    const fetchMock = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal = init?.signal ?? undefined
+          signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        })
+    )
+    const transport = createHttpTransport({ url: 'https://example.com/mcp', fetch: fetchMock })
+    const received: McpJsonRpcMessage[] = []
+    transport.onMessage((message) => received.push(message))
+
+    const pending = transport.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    await transport.close()
+    await pending
+
+    expect(signal?.aborted).toBe(true)
+    expect(received).toEqual([
+      expect.objectContaining({ id: 1, error: expect.objectContaining({ code: -32000 }) })
+    ])
+  })
+
+  it('fails instead of buffering an oversized SSE event', async () => {
+    const chunk = new TextEncoder().encode('x'.repeat(1_000))
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let index = 0; index < 3; index += 1) controller.enqueue(chunk)
+        controller.close()
+      }
+    })
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    )
+    const transport = createHttpTransport({
+      url: 'https://example.com/mcp',
+      fetch: fetchMock,
+      maxSseBytes: 1_500
+    })
+    const received: McpJsonRpcMessage[] = []
+    transport.onMessage((message) => received.push(message))
+
+    await transport.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+
+    expect(received).toEqual([
+      expect.objectContaining({
+        id: 1,
+        error: expect.objectContaining({ message: expect.stringContaining('too large') })
+      })
+    ])
+  })
+
   it('turns HTTP failures into JSON-RPC errors', async () => {
     const fetchMock = vi.fn<typeof fetch>(
       async () => new Response('server exploded', { status: 500 })

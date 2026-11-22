@@ -1,11 +1,8 @@
+import { errorMessage } from '../../lib/errors'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionMeta, SessionSearchResult } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 function PlusIcon(): React.JSX.Element {
   return (
@@ -246,8 +243,6 @@ function SessionPanel(): React.JSX.Element {
     if (!trimmed) return undefined
     let active = true
     const timer = setTimeout(() => {
-      setSearching(true)
-      setResults(null)
       window.api.agent.sessions
         .search(trimmed)
         .then((next) => {
@@ -310,7 +305,13 @@ function SessionPanel(): React.JSX.Element {
       <div className="px-1 pb-1">
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            const value = event.target.value
+            setQuery(value)
+            setResults(null)
+            setError(null)
+            setSearching(Boolean(value.trim()))
+          }}
           aria-label={t('chat.searchSessions')}
           placeholder={t('chat.searchPlaceholder')}
           className="h-8 w-full rounded-md border border-border bg-surface px-2 text-label text-foreground outline-none placeholder:text-subtle focus:border-border-strong"

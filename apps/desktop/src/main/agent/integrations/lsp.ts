@@ -48,6 +48,8 @@ interface LspMessage {
   error?: { code?: number; message?: string }
 }
 
+const MAX_LSP_BUFFER_BYTES = 10 * 1024 * 1024
+
 const LANGUAGE_IDS: Record<string, string> = {
   '.ts': 'typescript',
   '.tsx': 'typescriptreact',
@@ -324,7 +326,7 @@ export class LspClient {
 
   private handleData(chunk: Buffer): void {
     const decoded = decodeLspMessages(Buffer.concat([this.buffer, chunk]))
-    this.buffer = decoded.rest
+    this.buffer = decoded.rest.length > MAX_LSP_BUFFER_BYTES ? Buffer.alloc(0) : decoded.rest
     for (const message of decoded.messages as LspMessage[]) {
       if (message.method === 'textDocument/publishDiagnostics') {
         this.handlePublishedDiagnostics(message.params)
@@ -504,7 +506,7 @@ export class LspManager {
     }
 
     const executable = await this.executableFor(server)
-    if (!executable) return null
+    if (!executable || this.disposed) return null
     const client = new LspClient({
       workspace: this.options.workspace,
       server,
@@ -520,6 +522,11 @@ export class LspManager {
       await ready
     } catch {
       this.failed.add(server.id)
+      this.clients.delete(server.id)
+      await client.dispose()
+      return null
+    }
+    if (this.disposed) {
       this.clients.delete(server.id)
       await client.dispose()
       return null

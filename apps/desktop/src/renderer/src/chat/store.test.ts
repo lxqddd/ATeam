@@ -624,6 +624,23 @@ describe('ChatStore snapshot buffering', () => {
     expect(store.getSnapshot().messagesBySession.s1?.map((message) => message.id)).toEqual(['new'])
   })
 
+  it('applies permission prompts during a snapshot load', async () => {
+    await store.init()
+    let resolveSnapshot: (snapshot: MessagesSnapshot) => void = () => undefined
+    const pending = new Promise<MessagesSnapshot>((resolve) => {
+      resolveSnapshot = resolve
+    })
+    vi.mocked(mock.api.agent.messages.list).mockReturnValue(pending)
+
+    store.selectSession('s1')
+    const permission = makePermission({ id: 'p1', sessionId: 's1' })
+    mock.emit({ type: 'permission.asked', permission })
+
+    expect(store.getSnapshot().permissions).toEqual([permission])
+    resolveSnapshot({ sessionId: 's1', seq: 0, messages: [], running: false })
+    await vi.waitFor(() => expect(store.getSnapshot().loadedBySession.s1).toBe(true))
+  })
+
   it('does not reload messages for already loaded sessions', async () => {
     mock.sessions.push(
       makeSession({ id: 's1', updatedAt: '2026-01-01T00:00:00.000Z' }),
@@ -752,7 +769,17 @@ describe('ChatStore edge cases', () => {
 
     await store.loadMessages('s1')
 
-    expect(store.getSnapshot().actionError).toBe('snapshot down')
+    expect(store.getSnapshot().loadErrorsBySession?.s1).toBe('snapshot down')
+    expect(store.getSnapshot().loadedBySession.s1).toBe(true)
+
+    vi.mocked(mock.api.agent.messages.list).mockResolvedValue({
+      sessionId: 's1',
+      seq: 0,
+      messages: [],
+      running: false
+    })
+    await store.loadMessages('s1')
+    expect(store.getSnapshot().loadErrorsBySession?.s1).toBeUndefined()
   })
 
   it('reuses the selected session or creates one', async () => {

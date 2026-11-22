@@ -281,7 +281,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 ## 19. Headless CLI
 
-- 入口：`pnpm cli -- [options] [prompt]`，直接复用 Agent 运行时，无需启动 Electron 窗口。
+- 入口：`pnpm cli -- [options] [prompt]`，直接复用 Agent 运行时，无需启动 Electron 窗口；第二个 `--` 之后的参数按字面 prompt 处理。
 - 模型：`--provider anthropic|openai|google|openai-compatible`、`--model`、`--api-key`（或 `ATEAM_API_KEY`）、`--base-url`、`--context-window`、`--max-output`、`--reasoning`。
 - 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话，`--restore-sessions` 将 `.migrated` 旧会话备份恢复并重新导入数据库后退出。
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
@@ -317,7 +317,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - 根目录 [action.yml](../action.yml) 提供 composite action，安装 ATeam CLI 后在同一 runner 上运行 Headless Agent。
 - 输入：`prompt`、`api-key`、`model`、`provider`、`base-url`、`workspace`（默认 `github.workspace`）、`permission`（默认 `auto`）、`reasoning`、`context-window`、`max-output`、`agent`、`data`、`node-version`、`pnpm-version`。
-- 安装步骤使用 `pnpm install --ignore-scripts` 跳过 Electron 等桌面依赖脚本，仅执行 `pnpm rebuild esbuild` 供 CLI 使用；随后通过安全的 bash 数组传参调用 `pnpm cli`，支持多行 prompt。
+- 安装步骤使用 `pnpm install --ignore-scripts` 跳过 Electron 等桌面依赖脚本，仅执行 `pnpm rebuild esbuild` 供 CLI 使用；prompt 通过 stdin 传入 `pnpm cli`，避免以 `--` 开头的内容被当作参数，并支持多行 prompt。
 - 使用示例：
   ```yaml
   - uses: actions/checkout@v4
@@ -373,7 +373,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - 新增 `worktree_create` / `worktree_list` / `worktree_remove` 工具：为当前 Git 项目创建独立分支的工作树、列出主检出与链接工作树、删除 ATeam 管理的工作树（`force` 可丢弃未提交改动）。
 - 默认目录为应用数据目录下的 `worktrees/<仓库名>-<路径哈希>/<名称>`，不会污染仓库，也不会与同名但不同路径的仓库冲突；名称会规范化为分支名，目录名使用安全 slug；同名分支会直接复用；`base` 不允许以 `-` 开头，避免参数注入。
-- `session_move` 将当前会话迁移到新目录（通常是刚创建的工作树）；迁移在下一轮对话生效，当前运行继续使用原目录，避免中途切换导致工具与快照不一致。
+- `session_move` 将当前会话迁移到新目录（通常是刚创建的工作树）；迁移在下一轮对话生效，当前运行继续使用原目录，避免中途切换导致工具与快照不一致。`worktree_create` 需要 `shell` 权限，`session_move` 需要 `edit` 权限，plan 模式或组织策略拒绝时不会执行。
 - 允许的目标：当前工作区内、ATEAM 管理的 worktree 根目录下，或同一仓库的其他 worktree；其他绝对路径会被拒绝。新会话在创建时固定记录自己的工作目录，避免多个运行时（CLI / Server / ACP）共用数据目录时串用工作区。
 - `worktree_remove` 需要 `edit` 权限，且不能删除主检出、非 ATeam 管理工作树，或仍被运行中/已绑定会话使用的工作树。工作区不是 Git 仓库时，工具返回明确提示。
 - MCP server 按会话实际工作区创建独立连接；会话迁移后会使用新目录启动对应 MCP 进程。

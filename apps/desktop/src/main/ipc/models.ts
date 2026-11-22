@@ -17,6 +17,7 @@ import { modelCreateSchema, modelRefSchema, modelUpdateSchema } from './model-sc
 import type { AgentManager } from '../agent/agent-manager'
 import { normalizeError } from '../agent/errors'
 import { listProviderModels } from '../models/available'
+import { previewApiKey } from '../models/preview'
 import type { ModelCatalogStore } from '../models/catalog-store'
 import type { ModelsStore } from '../stores/models'
 import type { ProviderAuthStore } from '../models/oauth-tokens'
@@ -234,10 +235,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
           (candidate) => candidate.id === input.providerId
         )
       : undefined
-    const apiKey =
-      input.apiKey?.trim() ||
-      injected?.apiKey ||
-      (input.providerId ? (modelsStore.revealApiKey(input.providerId) ?? undefined) : undefined)
+    const apiKey = previewApiKey(input, injected)
     if (input.type !== 'openai-compatible' && !apiKey) {
       throw new Error('API_KEY_REQUIRED')
     }

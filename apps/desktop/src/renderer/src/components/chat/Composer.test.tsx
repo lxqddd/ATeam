@@ -213,7 +213,9 @@ describe('Composer', () => {
   })
 
   it('shows the busy error and keeps the text when sending fails', async () => {
-    chatMocks.send.mockRejectedValueOnce(new Error('SESSION_BUSY'))
+    chatMocks.send.mockRejectedValueOnce(
+      new Error("Error invoking remote method 'ateam:agent:chat:send': Error: SESSION_BUSY")
+    )
     const user = userEvent.setup()
     renderComposer()
     const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
@@ -551,6 +553,32 @@ describe('Composer', () => {
     expect(textarea).toHaveValue('/review ')
   })
 
+  it('navigates command suggestions with arrow keys', async () => {
+    const state = baseState()
+    state.commands = [
+      ...state.commands,
+      {
+        id: 'test',
+        name: 'test',
+        description: 'Run tests',
+        template: 'Run tests',
+        agent: null,
+        model: null,
+        source: 'project'
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/')
+    await screen.findByRole('option', { name: /^review/ })
+    await user.keyboard('{ArrowDown}{Enter}')
+
+    expect(textarea).toHaveValue('/test ')
+  })
+
   it('expands commands with arguments when sending', async () => {
     chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
     const user = userEvent.setup()
@@ -841,5 +869,23 @@ describe('attachment capabilities', () => {
     renderComposer()
 
     expect(screen.getByRole('button', { name: 'Attach files' })).toBeDisabled()
+  })
+
+  it('ignores dropped files for models without attachment support', async () => {
+    const state = baseState()
+    if (state.models) {
+      state.models = {
+        ...state.models,
+        models: state.models.models.map((model) => ({ ...model, attachment: false }))
+      }
+    }
+    storeState.current = state
+    renderComposer()
+
+    fireEvent.drop(screen.getByTestId('composer'), {
+      dataTransfer: { files: [new File(['hello'], 'notes.txt', { type: 'text/plain' })] }
+    })
+
+    await waitFor(() => expect(api.api.agent.attachments.import).not.toHaveBeenCalled())
   })
 })

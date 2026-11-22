@@ -338,6 +338,28 @@ describe('LspManager', () => {
     expect(servers[0].killed).toBe(true)
   })
 
+  it('does not spawn a server when disposed during executable lookup', async () => {
+    const file = path.join(workspace, 'a.ts')
+    await fs.writeFile(file, 'const x = 1')
+    let release: (value: string | null) => void = () => undefined
+    const resolved = new Promise<string | null>((resolve) => {
+      release = resolve
+    })
+    const spawn = vi.fn<LspSpawn>()
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: () => resolved
+    })
+
+    const pending = manager.diagnostics([file])
+    await manager.dispose()
+    release('/bin/typescript-language-server')
+    await pending
+
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
   it('formats hover and definition results', async () => {
     const file = path.join(workspace, 'a.ts')
     await fs.writeFile(file, 'const x = 1')

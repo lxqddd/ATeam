@@ -29,6 +29,8 @@ export async function refreshExpiringProviderAuth(
     try {
       const refreshed = await refreshProviderAuth(record, fetchImpl)
       if (!refreshed) continue
+      const current = authStore.get(record.providerId)
+      if (!current || current.accessToken !== record.accessToken) continue
       await authStore.set(refreshed)
       changed = true
     } catch {

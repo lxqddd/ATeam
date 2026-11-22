@@ -910,6 +910,17 @@ describe('AgentRuntime', () => {
     expect(finished.event).toMatchObject({ status: 'max-steps' })
   })
 
+  it('rejects concurrent sends before the first run starts', async () => {
+    scripts.push(textScript('one'))
+
+    const first = runtime.sendChat(sessionId, 'first')
+    const second = runtime.sendChat(sessionId, 'second')
+
+    await expect(second).rejects.toThrow('SESSION_BUSY')
+    await first
+    await sink.next('run.finished')
+  })
+
   it('rejects a second send while a run is active', async () => {
     scripts.push(stoppableScript())
     await runtime.sendChat(sessionId, 'hi')
@@ -2307,6 +2318,24 @@ describe('attachments', () => {
     ])
     const userMessage = runtime.messages(sessionId).messages[0]
     expect(userMessage.parts).toContainEqual({ type: 'attachment', attachment })
+  })
+
+  it('does not read attachments outside the session directory', async () => {
+    await fs.writeFile(path.join(directory, 'secret.txt'), 'top secret')
+    const attachment = {
+      id: 'escape',
+      name: 'secret.txt',
+      mimeType: 'text/plain',
+      size: 10,
+      kind: 'text' as const,
+      path: path.join(attachmentDirectory(directory, sessionId), '..', '..', '..', 'secret.txt')
+    }
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'see attached', undefined, [attachment])
+    await sink.next('run.finished')
+
+    expect(JSON.stringify(turns[0].messages)).not.toContain('top secret')
   })
 
   it('sends images as multimodal parts and allows attachment-only messages', async () => {

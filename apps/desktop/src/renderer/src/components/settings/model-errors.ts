@@ -1,5 +1,7 @@
+import { errorMessage } from '../../lib/errors'
+
 export function modelErrorMessage(t: (key: string) => string, error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   switch (message) {
     case 'API_KEY_REQUIRED':
       return t('settings.apiKeyRequired')

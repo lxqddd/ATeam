@@ -434,6 +434,18 @@ export class SessionsStore {
       return undefined
     }
     const removed = record.messages.splice(fromIndex)
+    if (
+      record.session.compaction &&
+      removed.some((message) => message.id === record.session.compaction?.throughMessageId)
+    ) {
+      record.session.compaction = null
+    }
+    if (
+      record.preparedCompaction &&
+      removed.some((message) => message.id === record.preparedCompaction?.throughMessageId)
+    ) {
+      delete record.preparedCompaction
+    }
     record.redo = {
       messages: clone(removed),
       snapshotAfter,

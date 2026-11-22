@@ -129,6 +129,11 @@ async function resolvePath(
     return real
   }
 
+  const existing = await fs.lstat(resolved).catch(() => null)
+  if (existing?.isSymbolicLink()) {
+    throw new Error(`Path is a symbolic link: ${input}`)
+  }
+
   const parent = path.dirname(resolved)
   const realRoot = await fs.realpath(root)
   const realParent = await nearestExistingRealPath(parent)
@@ -626,7 +631,9 @@ export function createTools(context: ToolContext): ToolSet {
         if (occurrences > 1 && !replaceAll) {
           return `Error: oldText occurs ${occurrences} times; pass replaceAll or use a unique match`
         }
-        const next = replaceAll ? text.split(oldText).join(newText) : text.replace(oldText, newText)
+        const next = replaceAll
+          ? text.split(oldText).join(newText)
+          : text.replace(oldText, () => newText)
         await fs.writeFile(filePath, next, 'utf8')
         return withNotes(
           `Replaced ${replaceAll ? occurrences : 1} occurrence(s) in ${inputPath}`,
@@ -909,9 +916,26 @@ export function createTools(context: ToolContext): ToolSet {
           if (!allowed) return 'Permission denied; the patch was not applied.'
         }
 
+        const preparedUpdates = new Map<number, string>()
+        const preparedFiles = new Map<string, string>()
+        for (const [index, operation] of operations.entries()) {
+          if (operation.kind !== 'update') continue
+          const external = escapesWorkspace(context.workspace, operation.path)
+          const filePath = await resolvePath(context.workspace, operation.path, false, external)
+          let text = preparedFiles.get(filePath) ?? (await readFileText(filePath))
+          for (const hunk of operation.hunks ?? []) {
+            if (!text.includes(hunk.oldText)) {
+              return `Error: old text not found in ${operation.path}`
+            }
+            text = text.replace(hunk.oldText, () => hunk.newText)
+          }
+          preparedFiles.set(filePath, text)
+          preparedUpdates.set(index, text)
+        }
+
         const summary: string[] = []
         const changed: string[] = []
-        for (const operation of operations) {
+        for (const [index, operation] of operations.entries()) {
           const external = escapesWorkspace(context.workspace, operation.path)
           if (operation.kind === 'add') {
             const filePath = await resolvePath(context.workspace, operation.path, true, external)
@@ -928,13 +952,9 @@ export function createTools(context: ToolContext): ToolSet {
             continue
           }
           const filePath = await resolvePath(context.workspace, operation.path, false, external)
-          let text = await readFileText(filePath)
-          for (const hunk of operation.hunks ?? []) {
-            if (!text.includes(hunk.oldText)) {
-              return `Error: old text not found in ${operation.path}`
-            }
-            text = text.replace(hunk.oldText, hunk.newText)
-          }
+          const text = preparedUpdates.get(index)
+          if (text === undefined)
+            return `Error: patch update could not be prepared for ${operation.path}`
           await fs.writeFile(filePath, text, 'utf8')
           summary.push(`Updated ${operation.path}`)
           changed.push(filePath)
@@ -1275,8 +1295,15 @@ export function createTools(context: ToolContext): ToolSet {
       name: z.string().min(1).max(200).describe('Worktree and branch name, e.g. feature/login'),
       base: z.string().max(200).optional().describe('Revision to branch from (default HEAD)')
     }),
-    execute: async (input) => {
+    execute: async (input, options) => {
       if (!context.worktreeCreate) return 'Error: worktree management is not available.'
+      const allowed = await context.askPermission(
+        'shell',
+        `git worktree add ${input.name}`,
+        'worktree_create',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the worktree was not created.'
       return context.worktreeCreate(input)
     }
   })
@@ -1316,8 +1343,15 @@ export function createTools(context: ToolContext): ToolSet {
     inputSchema: z.object({
       directory: z.string().min(1).max(1_000).describe('Absolute path of the new working directory')
     }),
-    execute: async ({ directory }) => {
+    execute: async ({ directory }, options) => {
       if (!context.moveSession) return 'Error: session moves are not available.'
+      const allowed = await context.askPermission(
+        'edit',
+        directory,
+        'session_move',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the session was not moved.'
       return context.moveSession(directory)
     }
   })

@@ -31,6 +31,7 @@ import { availableLspServers } from '../agent/integrations/lsp'
 import {
   attachmentDataUrl,
   attachmentDirectory,
+  isPathInsideDirectory,
   removeAttachment,
   saveAttachment
 } from '../agent/attachments'
@@ -191,7 +192,8 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.status, (): AgentStatus => manager.getStatus())
 
   handle(AGENT_CHANNELS.restart, async (): Promise<AgentStatus> => {
-    return manager.restart(modelsStore.runtimeConfig())
+    await refreshProviderTokens()
+    return manager.restart(runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore))
   })
 
   handle(AGENT_CHANNELS.info, async (): Promise<AgentInfo> => {
@@ -344,7 +346,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     await refreshProviderTokens()
     const directory = attachmentDirectory(app.getPath('userData'), input.sessionId)
     for (const attachment of input.attachments ?? []) {
-      if (!attachment.path.startsWith(`${directory}${path.sep}`)) {
+      if (!(await isPathInsideDirectory(directory, attachment.path))) {
         throw new Error('Invalid attachment path')
       }
     }

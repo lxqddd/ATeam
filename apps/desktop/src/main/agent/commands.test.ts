@@ -121,6 +121,7 @@ describe('expandCommand', () => {
   })
 
   it('appends arguments when the template has no placeholders', () => {
+    expect(expandCommand('Use $ARGUMENTS', 'a $& b')).toBe('Use a $& b')
     expect(expandCommand('Run the checks.', 'now')).toBe('Run the checks.\n\nnow')
     expect(expandCommand('Run the checks.', '')).toBe('Run the checks.')
   })

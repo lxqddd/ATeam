@@ -188,10 +188,13 @@ export function createHttpTransport(options: {
   url: string
   headers?: Record<string, string>
   fetch?: typeof fetch
+  maxSseBytes?: number
 }): McpTransport {
   const fetchImpl = options.fetch ?? fetch
+  const maxSseBytes = options.maxSseBytes ?? 10 * 1024 * 1024
   let sessionId: string | null = null
   let closed = false
+  const controllers = new Set<AbortController>()
   const messageHandlers: Array<(message: McpJsonRpcMessage) => void> = []
   const closeHandlers: Array<(error: Error) => void> = []
 
@@ -216,53 +219,66 @@ export function createHttpTransport(options: {
         ...(options.headers ?? {})
       }
       if (sessionId) headers['mcp-session-id'] = sessionId
+      const controller = new AbortController()
+      controllers.add(controller)
 
-      let response: Response
       try {
-        response = await fetchImpl(options.url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(message)
-        })
-      } catch (error) {
-        if (message.id !== undefined) {
-          emitError(message.id, error instanceof Error ? error.message : String(error))
+        let response: Response
+        try {
+          response = await fetchImpl(options.url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(message),
+            signal: controller.signal
+          })
+        } catch (error) {
+          if (message.id !== undefined) {
+            emitError(message.id, error instanceof Error ? error.message : String(error))
+          }
+          return
         }
-        return
-      }
 
-      const nextSession = response.headers.get('mcp-session-id')
-      if (nextSession) sessionId = nextSession
+        const nextSession = response.headers.get('mcp-session-id')
+        if (nextSession) sessionId = nextSession
 
-      if (!response.ok) {
+        if (!response.ok) {
+          const text = await response.text().catch(() => '')
+          if (message.id !== undefined) {
+            emitError(
+              message.id,
+              `HTTP ${response.status}${text.trim() ? `: ${text.trim().slice(0, 500)}` : ''}`
+            )
+          }
+          return
+        }
+
+        const contentType = response.headers.get('content-type') ?? ''
+        if (contentType.includes('text/event-stream') && response.body) {
+          try {
+            await consumeSse(response.body, emit, maxSseBytes)
+          } catch (error) {
+            if (message.id !== undefined) {
+              emitError(message.id, error instanceof Error ? error.message : String(error))
+            }
+          }
+          return
+        }
+
         const text = await response.text().catch(() => '')
-        if (message.id !== undefined) {
-          emitError(
-            message.id,
-            `HTTP ${response.status}${text.trim() ? `: ${text.trim().slice(0, 500)}` : ''}`
-          )
+        if (!text.trim()) return
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(text)
+        } catch {
+          return
         }
-        return
-      }
-
-      const contentType = response.headers.get('content-type') ?? ''
-      if (contentType.includes('text/event-stream') && response.body) {
-        await consumeSse(response.body, emit)
-        return
-      }
-
-      const text = await response.text().catch(() => '')
-      if (!text.trim()) return
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(text)
-      } catch {
-        return
-      }
-      if (Array.isArray(parsed)) {
-        for (const entry of parsed) emit(entry as McpJsonRpcMessage)
-      } else {
-        emit(parsed as McpJsonRpcMessage)
+        if (Array.isArray(parsed)) {
+          for (const entry of parsed) emit(entry as McpJsonRpcMessage)
+        } else {
+          emit(parsed as McpJsonRpcMessage)
+        }
+      } finally {
+        controllers.delete(controller)
       }
     },
 
@@ -276,13 +292,16 @@ export function createHttpTransport(options: {
 
     async close(): Promise<void> {
       closed = true
+      for (const controller of controllers) controller.abort()
+      controllers.clear()
     }
   }
 }
 
 async function consumeSse(
   body: ReadableStream<Uint8Array>,
-  emit: (message: McpJsonRpcMessage) => void
+  emit: (message: McpJsonRpcMessage) => void,
+  maxBytes: number
 ): Promise<void> {
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -314,9 +333,13 @@ async function consumeSse(
       if (done) break
       buffer = `${buffer}${decoder.decode(value, { stream: true })}`.replace(/\r\n/g, '\n')
       flushEvents()
+      if (buffer.length > maxBytes) {
+        throw new Error(`MCP SSE event is too large (over ${maxBytes} characters)`)
+      }
     }
     flushEvents()
   } finally {
+    await reader.cancel().catch(() => undefined)
     reader.releaseLock()
   }
 }

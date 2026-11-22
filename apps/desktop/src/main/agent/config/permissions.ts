@@ -70,10 +70,9 @@ export function evaluatePermissionRules(
   request: PermissionRuleRequest
 ): PermissionEffect | null {
   if (request.resources.length === 0) return null
-  const ordered = [
-    ...rules.filter((rule) => rule.sessionId === null),
-    ...rules.filter((rule) => rule.sessionId === request.sessionId)
-  ]
+  const ordered = rules.filter(
+    (rule) => rule.sessionId === null || rule.sessionId === request.sessionId
+  )
   const effects = request.resources.map((resource) =>
     resourceEffect(ordered, request.action, normalizeResource(request.action, resource))
   )

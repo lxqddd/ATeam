@@ -15,6 +15,7 @@ function ChatView(): React.JSX.Element {
     selectedSessionId,
     messagesBySession,
     loadedBySession,
+    loadErrorsBySession,
     permissions,
     questions,
     subagentResults,
@@ -25,6 +26,7 @@ function ChatView(): React.JSX.Element {
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const messages = selectedSessionId ? (messagesBySession[selectedSessionId] ?? []) : []
   const loaded = selectedSessionId ? Boolean(loadedBySession[selectedSessionId]) : true
+  const loadError = selectedSessionId ? loadErrorsBySession?.[selectedSessionId] : undefined
   const sessionPermissions = permissions.filter(
     (permission) => permission.sessionId === selectedSessionId
   )
@@ -66,6 +68,22 @@ function ChatView(): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="chat-view">
       <TodoPanel todos={session?.todos ?? []} />
+      {loadError && selectedSessionId && (
+        <div className="mx-4 mt-2 flex flex-none items-center gap-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-caption text-danger">
+          <span className="min-w-0 flex-1 truncate" title={loadError}>
+            {loadError}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              void chatStore.loadMessages(selectedSessionId)
+            }}
+            className="flex-none rounded bg-danger/10 px-2 py-0.5 font-medium transition-colors hover:bg-danger/15"
+          >
+            {t('chat.retry')}
+          </button>
+        </div>
+      )}
       {!loaded ? (
         <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-caption text-muted">
           <span
@@ -97,7 +115,7 @@ function ChatView(): React.JSX.Element {
         <QuestionCard key={question.id} question={question} />
       ))}
 
-      <Composer />
+      <Composer key={selectedSessionId ?? 'none'} />
     </div>
   )
 }

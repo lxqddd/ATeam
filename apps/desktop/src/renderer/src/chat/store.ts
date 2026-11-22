@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useSyncExternalStore } from 'react'
 import type {
   AgentDefinition,
@@ -32,6 +33,7 @@ export interface ChatStoreState {
   selectedSessionId: string | null
   messagesBySession: Record<string, ChatMessage[] | undefined>
   loadedBySession: Record<string, boolean>
+  loadErrorsBySession?: Record<string, string>
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   runOutcomes: Record<string, RunOutcome>
@@ -43,10 +45,6 @@ export interface ChatStoreState {
 }
 
 const INITIAL_STATUS: AgentStatus = { status: 'stopped' }
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
 
 function sortSessions(sessions: SessionMeta[]): SessionMeta[] {
   return [...sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -87,6 +85,7 @@ export class ChatStore {
     selectedSessionId: null,
     messagesBySession: {},
     loadedBySession: {},
+    loadErrorsBySession: {},
     permissions: [],
     questions: [],
     runOutcomes: {},
@@ -243,12 +242,25 @@ export class ChatStore {
     let snapshot: MessagesSnapshot | null = null
     try {
       snapshot = await window.api.agent.messages.list(sessionId)
+      const loadErrors = { ...(this.state.loadErrorsBySession ?? {}) }
+      delete loadErrors[sessionId]
       this.setState({
         messagesBySession: { ...this.state.messagesBySession, [sessionId]: snapshot.messages },
-        loadedBySession: { ...this.state.loadedBySession, [sessionId]: true }
+        loadedBySession: { ...this.state.loadedBySession, [sessionId]: true },
+        loadErrorsBySession: loadErrors
       })
     } catch (error) {
-      this.setState({ actionError: errorMessage(error) })
+      this.setState({
+        messagesBySession: {
+          ...this.state.messagesBySession,
+          [sessionId]: this.state.messagesBySession[sessionId] ?? []
+        },
+        loadedBySession: { ...this.state.loadedBySession, [sessionId]: true },
+        loadErrorsBySession: {
+          ...(this.state.loadErrorsBySession ?? {}),
+          [sessionId]: errorMessage(error)
+        }
+      })
     } finally {
       const pending = this.buffered.get(sessionId) ?? []
       this.buffered.delete(sessionId)
@@ -487,7 +499,11 @@ export class ChatStore {
     }
 
     const sessionId = eventSessionId(event)
-    if (sessionId && this.snapshotting.has(sessionId)) {
+    const isMessageEvent =
+      event.type === 'message.upsert' ||
+      event.type === 'message.part.upsert' ||
+      event.type === 'message.part.delta'
+    if (sessionId && isMessageEvent && this.snapshotting.has(sessionId)) {
       const pending = this.buffered.get(sessionId) ?? []
       pending.push(envelope)
       this.buffered.set(sessionId, pending)

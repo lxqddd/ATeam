@@ -128,6 +128,7 @@ function createHarness(): {
   bus: EventBus
   runtime: FakeRuntime
   send: (message: unknown) => void
+  sendRaw: (line: string) => void
   next: (predicate?: (message: RpcMessage) => boolean) => Promise<RpcMessage>
 } {
   const bus = new EventBus()
@@ -162,6 +163,7 @@ function createHarness(): {
     bus,
     runtime,
     send: (message) => input.write(`${JSON.stringify(message)}\n`),
+    sendRaw: (line) => input.write(`${line}\n`),
     next: (predicate = () => true) => {
       const index = messages.findIndex(predicate)
       if (index >= 0) return Promise.resolve(messages.splice(index, 1)[0])
@@ -195,6 +197,15 @@ async function openSession(h: ReturnType<typeof createHarness>): Promise<string>
 }
 
 describe('AcpServer', () => {
+  it('returns a parse error for malformed JSON', async () => {
+    harness = createHarness()
+    harness.sendRaw('{not json')
+
+    const response = await harness.next((message) => message.id === null)
+
+    expect(response.error).toMatchObject({ code: -32700 })
+  })
+
   it('initializes with protocol version and capabilities', async () => {
     harness = createHarness()
     harness.send(INITIALIZE)

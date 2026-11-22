@@ -22,7 +22,7 @@ describe('GitHub Action configuration', () => {
   it('installs only what the CLI needs and runs it with safe argument handling', () => {
     expect(action).toContain('pnpm install --frozen-lockfile --ignore-scripts')
     expect(action).toContain('pnpm rebuild esbuild')
-    expect(action).toContain('pnpm cli -- "${args[@]}" "$INPUT_PROMPT"')
+    expect(action).toContain('printf \'%s\' "$INPUT_PROMPT" | pnpm cli -- "${args[@]}"')
     expect(action).toContain('working-directory: ${{ github.action_path }}')
   })
 })

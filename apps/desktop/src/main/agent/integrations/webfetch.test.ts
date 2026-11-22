@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  assertPublicWebUrl,
   fetchWebContent,
   formatWebFetchResult,
   htmlToMarkdown,
   htmlToText,
+  isPrivateAddress,
   normalizeWebUrl
 } from './webfetch'
 
@@ -17,6 +19,39 @@ describe('normalizeWebUrl', () => {
     expect(() => normalizeWebUrl('file:///etc/passwd')).toThrow('http(s)')
     expect(() => normalizeWebUrl('javascript:alert(1)')).toThrow('http(s)')
     expect(() => normalizeWebUrl('not a url')).toThrow('valid URL')
+  })
+})
+
+describe('assertPublicWebUrl', () => {
+  it('rejects private literals and accepts public ones', async () => {
+    await expect(assertPublicWebUrl('http://[::ffff:127.0.0.1]')).rejects.toThrow(/private/i)
+    await expect(assertPublicWebUrl('https://93.184.216.34')).resolves.toBeUndefined()
+  })
+})
+
+describe('isPrivateAddress', () => {
+  it('classifies private and public addresses', () => {
+    for (const address of [
+      '127.0.0.1',
+      '10.0.0.5',
+      '169.254.169.254',
+      '::1',
+      'fc00::1',
+      'fd12:3456::1',
+      'fe80::1',
+      'ff02::1',
+      '::ffff:127.0.0.1',
+      '::ffff:7f00:1',
+      '0:0:0:0:0:ffff:a9fe:a9fe',
+      '::7f00:1',
+      '64:ff9b::7f00:1',
+      '2002:7f00:1::'
+    ]) {
+      expect(isPrivateAddress(address), address).toBe(true)
+    }
+    for (const address of ['8.8.8.8', '1.1.1.1', '2001:4860:4860::8888', '2606:4700::1111']) {
+      expect(isPrivateAddress(address), address).toBe(false)
+    }
   })
 })
 
@@ -168,7 +203,10 @@ describe('fetchWebContent', () => {
       'http://10.0.0.5',
       'http://192.168.1.2',
       'http://169.254.169.254/latest',
-      'http://[::1]:8080'
+      'http://[::1]:8080',
+      'http://[::ffff:127.0.0.1]:8080',
+      'http://[::ffff:a9fe:a9fe]/latest/meta-data/',
+      'http://[0:0:0:0:0:ffff:7f00:1]/'
     ]) {
       await expect(fetchWebContent({ url }, { fetch: fetchMock })).rejects.toThrow(/private/i)
     }
@@ -183,6 +221,32 @@ describe('fetchWebContent', () => {
       fetchWebContent({ url: 'https://internal.example' }, { fetch: fetchMock, lookup })
     ).rejects.toThrow(/private/i)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('stops reading oversized response bodies', async () => {
+    let sent = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 5_000) {
+          controller.close()
+          return
+        }
+        sent += 100
+        controller.enqueue(new TextEncoder().encode('x'.repeat(100)))
+      }
+    })
+    const fetchMock = vi.fn<typeof fetch>(
+      async () => new Response(body, { headers: { 'content-type': 'text/plain' } })
+    )
+
+    const result = await fetchWebContent(
+      { url: 'https://example.com/huge' },
+      { fetch: fetchMock, maxBytes: 1_000 }
+    )
+
+    expect(result.content).toContain('truncated')
+    expect(result.content.length).toBeLessThan(1_200)
+    expect(sent).toBeLessThan(5_000)
   })
 
   it('does not cache very large responses', async () => {

@@ -73,6 +73,7 @@ import { ToolOutputStore } from '../sessions/tool-output-store'
 import { buildModelMessages, type AttachmentPayload } from '../message-history'
 import {
   attachmentDirectory,
+  isPathInsideDirectory,
   extractPdfText,
   readAttachment,
   readTextAttachment,
@@ -131,6 +132,7 @@ export class AgentRuntime {
   private readonly snapshots: SnapshotStore
   private readonly toolOutputs: ToolOutputStore
   private readonly runs = new Map<string, Run>()
+  private readonly starting = new Set<string>()
   private readonly pending = new Map<string, PendingPermission>()
   private readonly pendingQuestions = new Map<string, PendingQuestion>()
   private readonly lspManagers = new Map<string, LspManager>()
@@ -280,9 +282,9 @@ export class AgentRuntime {
 
   async setSessionDirectory(id: string, directory: string | null): Promise<SessionMeta> {
     if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
-    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    if (this.sessionBusy(id)) throw new Error('SESSION_BUSY')
     const target = await this.resolveSessionDirectoryInput(directory)
-    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    if (this.sessionBusy(id)) throw new Error('SESSION_BUSY')
     const previous = this.sessionWorkspace(id)
     const session = await this.store.setDirectory(id, target)
     if (!session) throw new Error('SESSION_NOT_FOUND')
@@ -330,112 +332,131 @@ export class AgentRuntime {
   async compactSession(id: string, options: { force?: boolean } = {}): Promise<SessionMeta> {
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
-    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    this.reserveSession(id)
 
-    const model = this.deps.createLanguageModel(
-      this.models,
-      record.session.model ?? this.models.defaultModel,
-      { sessionId: id }
-    )
-    const compacted = await this.compactMessages(
-      id,
-      record.messages,
-      model,
-      undefined,
-      options.force
-    )
-    if (compacted) return compacted
+    try {
+      const model = this.deps.createLanguageModel(
+        this.models,
+        record.session.model ?? this.models.defaultModel,
+        { sessionId: id }
+      )
+      const compacted = await this.compactMessages(
+        id,
+        record.messages,
+        model,
+        undefined,
+        options.force
+      )
+      if (compacted) return compacted
 
-    const session = this.store.getSession(id)
-    if (!session) throw new Error('SESSION_NOT_FOUND')
-    return session
+      const session = this.store.getSession(id)
+      if (!session) throw new Error('SESSION_NOT_FOUND')
+      return session
+    } finally {
+      this.starting.delete(id)
+    }
   }
 
   async undoSession(
     id: string,
     messageId?: string
   ): Promise<{ session: SessionMeta; prompt: string }> {
-    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
+    this.reserveSession(id)
 
-    let assistantIndex = -1
-    if (messageId) {
-      assistantIndex = record.messages.findIndex(
-        (message) => message.id === messageId && message.role === 'assistant'
-      )
-    } else {
-      for (let index = record.messages.length - 1; index >= 0; index -= 1) {
-        if (record.messages[index].role === 'assistant') {
-          assistantIndex = index
-          break
+    try {
+      let assistantIndex = -1
+      if (messageId) {
+        assistantIndex = record.messages.findIndex(
+          (message) => message.id === messageId && message.role === 'assistant'
+        )
+      } else {
+        for (let index = record.messages.length - 1; index >= 0; index -= 1) {
+          if (record.messages[index].role === 'assistant') {
+            assistantIndex = index
+            break
+          }
         }
       }
-    }
-    if (assistantIndex < 0) throw new Error('NOTHING_TO_UNDO')
+      if (assistantIndex < 0) throw new Error('NOTHING_TO_UNDO')
 
-    let userIndex = assistantIndex - 1
-    while (userIndex >= 0 && record.messages[userIndex].role !== 'user') userIndex -= 1
-    if (userIndex < 0) throw new Error('NOTHING_TO_UNDO')
+      let userIndex = assistantIndex - 1
+      while (userIndex >= 0 && record.messages[userIndex].role !== 'user') userIndex -= 1
+      if (userIndex < 0) throw new Error('NOTHING_TO_UNDO')
 
-    const assistant = record.messages[assistantIndex]
-    const removedMessages = record.messages.slice(userIndex)
-    const removedAssistants = removedMessages.filter((item) => item.role === 'assistant')
-    const finalAssistant = removedAssistants[removedAssistants.length - 1]
-    const files = [...new Set(removedMessages.flatMap((message) => message.changedFiles ?? []))]
-    if (assistant.snapshotBefore && files.length > 0) {
-      try {
-        await this.snapshots.restorePaths(assistant.snapshotBefore, files)
-      } catch {
-        throw new Error('SNAPSHOT_RESTORE_FAILED')
+      const assistant = record.messages[assistantIndex]
+      const removedMessages = record.messages.slice(userIndex)
+      const removedAssistants = removedMessages.filter((item) => item.role === 'assistant')
+      const finalAssistant = removedAssistants[removedAssistants.length - 1]
+      const files = [...new Set(removedMessages.flatMap((message) => message.changedFiles ?? []))]
+      if (assistant.snapshotBefore && files.length > 0) {
+        try {
+          await this.snapshots.restorePaths(assistant.snapshotBefore, files)
+        } catch {
+          throw new Error('SNAPSHOT_RESTORE_FAILED')
+        }
       }
-    }
 
-    const prompt = record.messages[userIndex].parts
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text)
-      .join('')
-    const staged = await this.store.stageUndo(
-      id,
-      userIndex,
-      finalAssistant?.snapshotAfter ?? null,
-      prompt,
-      files
-    )
-    if (!staged) throw new Error('NOTHING_TO_UNDO')
-    this.emit({ type: 'session.upsert', session: staged.session })
-    await this.updateContextUsage(id)
-    return { session: this.store.getSession(id) ?? staged.session, prompt }
+      const prompt = record.messages[userIndex].parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('')
+      const staged = await this.store.stageUndo(
+        id,
+        userIndex,
+        finalAssistant?.snapshotAfter ?? null,
+        prompt,
+        files
+      )
+      if (!staged) throw new Error('NOTHING_TO_UNDO')
+      this.emit({ type: 'session.upsert', session: staged.session })
+      await this.updateContextUsage(id)
+      return { session: this.store.getSession(id) ?? staged.session, prompt }
+    } finally {
+      this.starting.delete(id)
+    }
   }
 
   async redoSession(id: string): Promise<SessionMeta> {
-    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
     if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
-    const redo = this.store.getRedo(id)
-    if (!redo) throw new Error('NOTHING_TO_REDO')
+    this.reserveSession(id)
 
-    if (redo.snapshotAfter && redo.files.length > 0) {
-      try {
-        await this.snapshots.restorePaths(redo.snapshotAfter, redo.files)
-      } catch {
-        throw new Error('SNAPSHOT_RESTORE_FAILED')
+    try {
+      const redo = this.store.getRedo(id)
+      if (!redo) throw new Error('NOTHING_TO_REDO')
+
+      if (redo.snapshotAfter && redo.files.length > 0) {
+        try {
+          await this.snapshots.restorePaths(redo.snapshotAfter, redo.files)
+        } catch {
+          throw new Error('SNAPSHOT_RESTORE_FAILED')
+        }
       }
-    }
 
-    const session = await this.store.redo(id)
-    if (!session) throw new Error('NOTHING_TO_REDO')
-    this.emit({ type: 'session.upsert', session })
-    await this.updateContextUsage(id)
-    return this.store.getSession(id) ?? session
+      const session = await this.store.redo(id)
+      if (!session) throw new Error('NOTHING_TO_REDO')
+      this.emit({ type: 'session.upsert', session })
+      await this.updateContextUsage(id)
+      return this.store.getSession(id) ?? session
+    } finally {
+      this.starting.delete(id)
+    }
   }
 
   async forkSession(id: string, messageId?: string): Promise<SessionMeta> {
-    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
-    const session = await this.store.fork(id, messageId)
-    if (!session) throw new Error('SESSION_NOT_FOUND')
-    await this.copyForkAttachments(id, session.id)
-    this.emit({ type: 'session.upsert', session })
-    return session
+    if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
+    this.reserveSession(id)
+
+    try {
+      const session = await this.store.fork(id, messageId)
+      if (!session) throw new Error('SESSION_NOT_FOUND')
+      await this.copyForkAttachments(id, session.id)
+      this.emit({ type: 'session.upsert', session })
+      return session
+    } finally {
+      this.starting.delete(id)
+    }
   }
 
   private async copyForkAttachments(sourceId: string, targetId: string): Promise<void> {
@@ -446,7 +467,7 @@ export class AgentRuntime {
       for (const part of message.parts) {
         if (part.type !== 'attachment') continue
         const source = part.attachment.path
-        if (!source.startsWith(`${sourceDirectory}${path.sep}`)) continue
+        if (!(await isPathInsideDirectory(sourceDirectory, source))) continue
         const target = path.join(targetDirectory, path.basename(source))
         try {
           await fs.mkdir(targetDirectory, { recursive: true })
@@ -495,7 +516,7 @@ export class AgentRuntime {
 
   async prepareCompaction(id: string): Promise<boolean> {
     const record = this.store.get(id)
-    if (!record || this.runs.has(id)) return false
+    if (!record || this.sessionBusy(id)) return false
     const target = record.session.model ?? this.models.defaultModel
     try {
       const contextWindow =
@@ -608,6 +629,17 @@ export class AgentRuntime {
     }
   }
 
+  private reserveSession(sessionId: string): void {
+    if (this.runs.has(sessionId) || this.starting.has(sessionId)) {
+      throw new Error('SESSION_BUSY')
+    }
+    this.starting.add(sessionId)
+  }
+
+  private sessionBusy(sessionId: string): boolean {
+    return this.runs.has(sessionId) || this.starting.has(sessionId)
+  }
+
   async sendChat(
     sessionId: string,
     text: string,
@@ -616,35 +648,39 @@ export class AgentRuntime {
   ): Promise<void> {
     const content = text.trim()
     if (!content && attachments.length === 0) throw new Error('EMPTY_MESSAGE')
-    if (this.runs.has(sessionId)) throw new Error('SESSION_BUSY')
-
     const record = this.store.get(sessionId)
     if (!record) throw new Error('SESSION_NOT_FOUND')
+    this.reserveSession(sessionId)
 
-    const target = requestedModel ?? record.session.model ?? this.models.defaultModel
-    resolveModelRef(this.models, target)
+    try {
+      const target = requestedModel ?? record.session.model ?? this.models.defaultModel
+      resolveModelRef(this.models, target)
 
-    if (requestedModel) {
-      record.session.model = requestedModel
+      if (requestedModel) {
+        record.session.model = requestedModel
+      }
+
+      const user = makeUserMessage(sessionId, content, attachments)
+      const assistant = makeAssistantMessage(sessionId)
+      const config = await readAgentConfig(this.options.userDataPath)
+      if (config.snapshots) {
+        const workspace = this.sessionWorkspace(sessionId)
+        assistant.snapshotBefore = await this.createSnapshotId(
+          sessionId,
+          workspace,
+          await this.resolveRunReferences(config, workspace)
+        )
+      }
+      if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
+      await this.store.appendMessage(sessionId, user)
+      await this.store.appendMessage(sessionId, assistant)
+      await this.store.setStatus(sessionId, 'running')
+
+      this.emit({ type: 'message.upsert', message: structuredClone(user) })
+      this.beginRun(sessionId, assistant, undefined, config)
+    } finally {
+      this.starting.delete(sessionId)
     }
-
-    const user = makeUserMessage(sessionId, content, attachments)
-    const assistant = makeAssistantMessage(sessionId)
-    const config = await readAgentConfig(this.options.userDataPath)
-    if (config.snapshots) {
-      const workspace = this.sessionWorkspace(sessionId)
-      assistant.snapshotBefore = await this.createSnapshotId(
-        sessionId,
-        workspace,
-        await this.resolveRunReferences(config, workspace)
-      )
-    }
-    await this.store.appendMessage(sessionId, user)
-    await this.store.appendMessage(sessionId, assistant)
-    await this.store.setStatus(sessionId, 'running')
-
-    this.emit({ type: 'message.upsert', message: structuredClone(user) })
-    this.beginRun(sessionId, assistant, undefined, config)
   }
 
   private beginRun(
@@ -675,7 +711,21 @@ export class AgentRuntime {
       depth: 0
     }
     this.runs.set(sessionId, run)
-    void this.runAgent(run)
+    void this.runAgent(run).catch((error) => {
+      this.runs.delete(sessionId)
+      const message = normalizeError(error)
+      void this.store.setStatus(sessionId, 'error').catch(() => undefined)
+      this.emit({
+        type: 'run.finished',
+        sessionId,
+        messageId: assistant.id,
+        status: 'failed',
+        error: message,
+        usage: undefined,
+        durationMs: Date.now() - run.startedAt
+      })
+      this.emitSession(sessionId)
+    })
   }
 
   stopChat(sessionId: string): void {
@@ -688,33 +738,37 @@ export class AgentRuntime {
   async retryChat(sessionId: string): Promise<void> {
     const record = this.store.get(sessionId)
     if (!record) throw new Error('SESSION_NOT_FOUND')
-    if (this.runs.has(sessionId)) throw new Error('SESSION_BUSY')
+    this.reserveSession(sessionId)
 
-    const last = record.messages[record.messages.length - 1]
-    if (
-      !last ||
-      last.role !== 'assistant' ||
-      (last.status !== 'error' && last.status !== 'interrupted')
-    ) {
-      throw new Error('NOTHING_TO_RETRY')
+    try {
+      const last = record.messages[record.messages.length - 1]
+      if (
+        !last ||
+        last.role !== 'assistant' ||
+        (last.status !== 'error' && last.status !== 'interrupted')
+      ) {
+        throw new Error('NOTHING_TO_RETRY')
+      }
+      const lastUser = [...record.messages].reverse().find((message) => message.role === 'user')
+      if (!lastUser) throw new Error('NOTHING_TO_RETRY')
+      resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
+      const assistant = makeAssistantMessage(sessionId)
+      const config = await readAgentConfig(this.options.userDataPath)
+      if (config.snapshots) {
+        const workspace = this.sessionWorkspace(sessionId)
+        assistant.snapshotBefore = await this.createSnapshotId(
+          sessionId,
+          workspace,
+          await this.resolveRunReferences(config, workspace)
+        )
+      }
+      if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
+      await this.store.appendMessage(sessionId, assistant)
+      await this.store.setStatus(sessionId, 'running')
+      this.beginRun(sessionId, assistant, new Set([last.id]), config)
+    } finally {
+      this.starting.delete(sessionId)
     }
-    const lastUser = [...record.messages].reverse().find((message) => message.role === 'user')
-    if (!lastUser) throw new Error('NOTHING_TO_RETRY')
-
-    resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
-    const assistant = makeAssistantMessage(sessionId)
-    const config = await readAgentConfig(this.options.userDataPath)
-    if (config.snapshots) {
-      const workspace = this.sessionWorkspace(sessionId)
-      assistant.snapshotBefore = await this.createSnapshotId(
-        sessionId,
-        workspace,
-        await this.resolveRunReferences(config, workspace)
-      )
-    }
-    await this.store.appendMessage(sessionId, assistant)
-    await this.store.setStatus(sessionId, 'running')
-    this.beginRun(sessionId, assistant, new Set([last.id]), config)
   }
 
   permissions(): PermissionRequest[] {
@@ -1483,14 +1537,17 @@ export class AgentRuntime {
   }
 
   private async attachmentPayloads(
+    sessionId: string,
     messages: ChatMessage[]
   ): Promise<Map<string, AttachmentPayload>> {
     const payloads = new Map<string, AttachmentPayload>()
+    const directory = attachmentDirectory(this.options.userDataPath, sessionId)
     for (const message of messages) {
       for (const part of message.parts) {
         if (part.type !== 'attachment') continue
         const attachment = part.attachment
         if (payloads.has(attachment.id)) continue
+        if (!(await isPathInsideDirectory(directory, attachment.path))) continue
         try {
           if (attachment.kind === 'text') {
             payloads.set(attachment.id, {
@@ -1859,6 +1916,7 @@ export class AgentRuntime {
     let lastStepUsage: TokenUsage | undefined
     let runTarget: ModelRef | null = null
     let finishReason = ''
+    let prepareCompaction = false
 
     try {
       const record = this.record(run.sessionId)
@@ -2032,7 +2090,10 @@ export class AgentRuntime {
       const result = this.deps.createTurn({
         model,
         system,
-        messages: buildModelMessages(modelHistory, await this.attachmentPayloads(modelHistory)),
+        messages: buildModelMessages(
+          modelHistory,
+          await this.attachmentPayloads(run.sessionId, modelHistory)
+        ),
         tools,
         abortSignal: run.abort.signal,
         reasoning: variantSettings.reasoningEffort ?? current.session.reasoningEffort,
@@ -2213,7 +2274,7 @@ export class AgentRuntime {
       await this.store.persist(run.sessionId)
       this.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.updateContextUsage(run.sessionId)
-      this.schedulePreparedCompaction(run.sessionId)
+      prepareCompaction = true
       await this.store.setStatus(run.sessionId, 'idle')
       this.emitSession(run.sessionId)
       await this.maybeGenerateTitle(run, model, message)
@@ -2256,7 +2317,7 @@ export class AgentRuntime {
       await this.store.persist(run.sessionId)
       this.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.updateContextUsage(run.sessionId)
-      this.schedulePreparedCompaction(run.sessionId)
+      prepareCompaction = true
       await this.store.setStatus(run.sessionId, interrupted ? 'idle' : 'error')
       this.emitSession(run.sessionId)
       this.emit({
@@ -2271,6 +2332,7 @@ export class AgentRuntime {
     } finally {
       if (persistTimer) clearTimeout(persistTimer)
       this.runs.delete(run.sessionId)
+      if (prepareCompaction) this.schedulePreparedCompaction(run.sessionId)
       this.emitSession(run.sessionId)
       void this.releaseWorkspace(run.workspace)
     }

@@ -126,6 +126,7 @@ export class McpManager implements McpManagerLike {
   private readonly ready: Promise<void>
   private readonly connections = new Map<string, Connection>()
   private readonly connecting = new Map<string, Promise<Connection | null>>()
+  private readonly generations = new Map<string, number>()
   private readonly statusesById = new Map<string, McpServerStatus>()
   private authByServer = new Map<string, McpAuthRecord>()
   private transient: McpServerConfig[] = []
@@ -146,9 +147,9 @@ export class McpManager implements McpManagerLike {
     await this.ready
     this.transientEpoch += 1
     for (const config of this.transient) {
+      this.invalidate(config.id)
       const entry = this.connections.get(config.id)
       this.connections.delete(config.id)
-      this.connecting.delete(config.id)
       this.statusesById.delete(config.id)
       await entry?.client.close().catch(() => undefined)
     }
@@ -336,10 +337,26 @@ export class McpManager implements McpManagerLike {
 
   async dispose(): Promise<void> {
     this.disposed = true
+    for (const id of new Set([...this.connections.keys(), ...this.connecting.keys()])) {
+      this.invalidate(id)
+    }
     await Promise.all(
       [...this.connections.values()].map((entry) => entry.client.close().catch(() => undefined))
     )
     this.connections.clear()
+  }
+
+  private generation(id: string): number {
+    return this.generations.get(id) ?? 0
+  }
+
+  private invalidate(id: string): void {
+    this.generations.set(id, this.generation(id) + 1)
+    this.connecting.delete(id)
+  }
+
+  private current(id: string, generation: number): boolean {
+    return !this.disposed && generation === this.generation(id)
   }
 
   private connectionFor(config: McpServerConfig): Promise<Connection | null> {
@@ -347,17 +364,25 @@ export class McpManager implements McpManagerLike {
     if (existing) return Promise.resolve(existing)
     const inFlight = this.connecting.get(config.id)
     if (inFlight) return inFlight
-    const promise = this.connect(config).finally(() => {
-      this.connecting.delete(config.id)
-    })
+    const promise = this.connect(config)
     this.connecting.set(config.id, promise)
+    void promise
+      .finally(() => {
+        if (this.connecting.get(config.id) === promise) this.connecting.delete(config.id)
+      })
+      .catch(() => undefined)
     return promise
   }
 
   private async connect(config: McpServerConfig): Promise<Connection | null> {
     if (this.disposed) return null
+    const generation = this.generation(config.id)
     const epoch = config.id.startsWith('transient-') ? this.transientEpoch : null
     const stale = async (entry: Connection | null): Promise<Connection | null> => {
+      if (!this.current(config.id, generation)) {
+        await entry?.client.close().catch(() => undefined)
+        return null
+      }
       if (epoch === null || epoch === this.transientEpoch) return entry
       await entry?.client.close().catch(() => undefined)
       this.connections.delete(config.id)
@@ -365,29 +390,35 @@ export class McpManager implements McpManagerLike {
       return null
     }
     await this.refreshAuthIfNeeded(config.id)
+    if (!this.current(config.id, generation)) return null
     this.setStatus(config, { state: 'connecting', error: null })
     const client = this.createClient(config)
     try {
-      return await stale(await this.establish(config, client))
+      return await stale(await this.establish(config, client, generation))
     } catch (error) {
       await client.close().catch(() => undefined)
+      if (!this.current(config.id, generation)) return null
       const authFailure = config.type === 'remote' && isAuthFailure(error)
       if (authFailure && (await this.refreshAuth(config.id))) {
+        if (!this.current(config.id, generation)) return null
         const retry = this.createClient(config)
         try {
-          return await stale(await this.establish(config, retry))
+          return await stale(await this.establish(config, retry, generation))
         } catch (retryError) {
           await retry.close().catch(() => undefined)
-          this.setStatus(config, {
-            state: isAuthFailure(retryError) ? 'auth-required' : 'failed',
-            toolCount: 0,
-            promptCount: 0,
-            resourceCount: 0,
-            error: errorMessage(retryError)
-          })
+          if (this.current(config.id, generation)) {
+            this.setStatus(config, {
+              state: isAuthFailure(retryError) ? 'auth-required' : 'failed',
+              toolCount: 0,
+              promptCount: 0,
+              resourceCount: 0,
+              error: errorMessage(retryError)
+            })
+          }
           return null
         }
       }
+      if (!this.current(config.id, generation)) return null
       this.setStatus(config, {
         state: authFailure ? 'auth-required' : 'failed',
         toolCount: 0,
@@ -399,11 +430,19 @@ export class McpManager implements McpManagerLike {
     }
   }
 
-  private async establish(config: McpServerConfig, client: McpClientLike): Promise<Connection> {
+  private async establish(
+    config: McpServerConfig,
+    client: McpClientLike,
+    generation: number
+  ): Promise<Connection | null> {
     await client.connect()
     const tools = await client.listTools()
     const prompts = await client.listPrompts().catch(() => [])
     const resources = await client.listResources().catch(() => [])
+    if (!this.current(config.id, generation)) {
+      await client.close().catch(() => undefined)
+      return null
+    }
     const entry: Connection = { client, tools }
     this.connections.set(config.id, entry)
     client.onToolsChanged(() => {
@@ -432,6 +471,8 @@ export class McpManager implements McpManagerLike {
     try {
       const refreshed = await refreshMcpAuthRecord(auth, this.options.fetch)
       if (!refreshed) return false
+      if (this.disposed) return false
+      if (this.authByServer.get(serverId)?.accessToken !== auth.accessToken) return false
       this.authByServer.set(serverId, refreshed)
       this.options.onAuthUpdated?.(refreshed)
       return true
@@ -511,6 +552,7 @@ export class McpManager implements McpManagerLike {
   }
 
   private async closeConnection(id: string): Promise<void> {
+    this.invalidate(id)
     const entry = this.connections.get(id)
     if (!entry) return
     this.connections.delete(id)

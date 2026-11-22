@@ -1,4 +1,5 @@
 import { BrowserWindow, type Session } from 'electron'
+import { assertPublicWebUrl } from '../agent/integrations/webfetch'
 import {
   clickScript,
   evalResult,
@@ -177,6 +178,13 @@ export class BrowserController {
           })
           if (page.network.length > 100) page.network.shift()
         }
+        if (details.resourceType === 'mainFrame' && /^https?:/i.test(details.url)) {
+          void assertPublicWebUrl(details.url).then(
+            () => callback({}),
+            () => callback({ cancel: true })
+          )
+          return
+        }
         callback({})
       })
       browserSession.webRequest.onCompleted((details) => {
@@ -322,6 +330,7 @@ export class BrowserController {
     tabId?: string
   ): Promise<string> {
     const url = validateBrowserUrl(rawUrl)
+    await assertPublicWebUrl(url)
     const generation = this.generation
     const entry = newTab ? this.create(sessionId) : this.page(sessionId, tabId)
     const contents = entry.window.webContents
@@ -523,18 +532,25 @@ export class BrowserController {
         contents.debugger.attach('1.3')
         attached = true
       }
-      const document = (await contents.debugger.sendCommand('DOM.getDocument', {
-        depth: -1
-      })) as { root: { nodeId: number } }
-      const found = (await contents.debugger.sendCommand('DOM.querySelector', {
-        nodeId: document.root.nodeId,
-        selector: `[data-ateam-ref="${ref}"]`
-      })) as { nodeId: number }
+      const document = (await this.withTimeout(
+        contents.debugger.sendCommand('DOM.getDocument', { depth: -1 }),
+        SCRIPT_TIMEOUT_MS
+      )) as { root: { nodeId: number } }
+      const found = (await this.withTimeout(
+        contents.debugger.sendCommand('DOM.querySelector', {
+          nodeId: document.root.nodeId,
+          selector: `[data-ateam-ref="${ref}"]`
+        }),
+        SCRIPT_TIMEOUT_MS
+      )) as { nodeId: number }
       if (!found.nodeId) return `Could not upload [${ref}]: take a new snapshot first.`
-      await contents.debugger.sendCommand('DOM.setFileInputFiles', {
-        files: [filePath],
-        nodeId: found.nodeId
-      })
+      await this.withTimeout(
+        contents.debugger.sendCommand('DOM.setFileInputFiles', {
+          files: [filePath],
+          nodeId: found.nodeId
+        }),
+        SCRIPT_TIMEOUT_MS
+      )
       return `Uploaded ${filePath} into [${ref}].`
     } catch (error) {
       return `Error: ${error instanceof Error ? error.message : String(error)}`

@@ -82,10 +82,19 @@ export function parseCliArgs(
     throw new Error(`ATEAM_PROVIDER must be one of: ${PROVIDER_TYPES.join(', ')}`)
   }
   const positional: string[] = []
+  let optionsEnded = false
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
-    if (argument === '--') continue
+    if (optionsEnded) {
+      positional.push(argument)
+      continue
+    }
+    if (argument === '--') {
+      // pnpm forwards its own separator as the first argument.
+      if (index > 0) optionsEnded = true
+      continue
+    }
     if (!argument.startsWith('--')) {
       positional.push(argument)
       continue

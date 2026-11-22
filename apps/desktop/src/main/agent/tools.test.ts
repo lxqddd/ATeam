@@ -470,6 +470,64 @@ describe('patch tool', () => {
     expect(result).toContain('gone.txt')
   })
 
+  it('preserves replacement patterns in patched content', async () => {
+    await fs.writeFile(path.join(directory, 'existing.txt'), 'old')
+    const patchText = [
+      '*** Begin Patch',
+      '*** Update File: existing.txt',
+      '@@',
+      '-old',
+      '+cost $& $$',
+      '*** End Patch'
+    ].join('\n')
+
+    await execute(tools.patch, { patchText })
+
+    await expect(fs.readFile(path.join(directory, 'existing.txt'), 'utf8')).resolves.toBe(
+      'cost $& $$'
+    )
+  })
+
+  it('validates every hunk before writing any file', async () => {
+    await fs.writeFile(path.join(directory, 'one.txt'), 'one')
+    await fs.writeFile(path.join(directory, 'two.txt'), 'two')
+    const patchText = [
+      '*** Begin Patch',
+      '*** Update File: one.txt',
+      '@@',
+      '-one',
+      '+ONE',
+      '*** Update File: two.txt',
+      '@@',
+      '-missing',
+      '+changed',
+      '*** End Patch'
+    ].join('\n')
+
+    await expect(execute(tools.patch, { patchText })).resolves.toContain('Error:')
+    await expect(fs.readFile(path.join(directory, 'one.txt'), 'utf8')).resolves.toBe('one')
+  })
+
+  it('applies repeated updates to the same file in order', async () => {
+    await fs.writeFile(path.join(directory, 'one.txt'), 'start')
+    const patchText = [
+      '*** Begin Patch',
+      '*** Update File: one.txt',
+      '@@',
+      '-start',
+      '+middle',
+      '*** Update File: one.txt',
+      '@@',
+      '-middle',
+      '+final',
+      '*** End Patch'
+    ].join('\n')
+
+    await execute(tools.patch, { patchText })
+
+    await expect(fs.readFile(path.join(directory, 'one.txt'), 'utf8')).resolves.toBe('final')
+  })
+
   it('asks edit permission for every file before applying anything', async () => {
     askPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
     const patchText = [
@@ -514,6 +572,17 @@ describe('write tool', () => {
     expect(askPermission).toHaveBeenCalledWith('write', 'nested/x.txt', 'write', 'call-1')
   })
 
+  it('refuses to write through a symlink', async () => {
+    const outside = path.join(directory, 'outside.txt')
+    await fs.writeFile(outside, 'safe')
+    await fs.symlink(outside, path.join(directory, 'link.txt'))
+
+    const result = await execute(tools.write, { path: 'link.txt', content: 'overwritten' })
+
+    expect(result).toContain('Error:')
+    await expect(fs.readFile(outside, 'utf8')).resolves.toBe('safe')
+  })
+
   it('does not write when permission is denied', async () => {
     askPermission.mockResolvedValue(false)
 
@@ -533,6 +602,20 @@ describe('edit tool', () => {
     ).resolves.toBe('Replaced 1 occurrence(s) in a.txt')
     await expect(fs.readFile(path.join(directory, 'a.txt'), 'utf8')).resolves.toBe('hello there')
     expect(askPermission).toHaveBeenCalledWith('edit', 'a.txt', 'edit', 'call-1')
+  })
+
+  it('preserves replacement patterns in new text', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'hello world')
+
+    await execute(tools.edit, {
+      path: 'a.txt',
+      oldText: 'world',
+      newText: 'cost $& $$'
+    })
+
+    await expect(fs.readFile(path.join(directory, 'a.txt'), 'utf8')).resolves.toBe(
+      'hello cost $& $$'
+    )
   })
 
   it('requires replaceAll for multiple occurrences', async () => {
@@ -1073,6 +1156,13 @@ describe('execute (code mode)', () => {
     ).resolves.toContain('Unknown tool: execute')
   })
 
+  it('reports syntax errors without crashing the runner', async () => {
+    const result = await execute(tools.execute, { code: 'return (' })
+
+    expect(result).toContain('Error:')
+    expect(result).not.toContain('code runner exited')
+  })
+
   it('times out synchronous snippets', async () => {
     const limited = createTools({ ...baseContext, codeTimeoutMs: 20 })
     const result = await execute(limited.execute, { code: 'while (true) {}' })
@@ -1214,16 +1304,27 @@ describe('browser tools', () => {
 })
 
 describe('worktree and session tools', () => {
-  it('creates and lists worktrees', async () => {
+  it('creates and lists worktrees through the shell permission', async () => {
     await expect(
       execute(tools.worktree_create, { name: 'feature/login', base: 'main' })
     ).resolves.toBe('Worktree ready: /tmp/feature/login')
+    expect(askPermission).toHaveBeenCalledWith(
+      'shell',
+      'git worktree add feature/login',
+      'worktree_create',
+      'call-1'
+    )
     expect(worktreeCreate).toHaveBeenCalledWith({
       name: 'feature/login',
       base: 'main'
     })
 
     await expect(execute(tools.worktree_list, {})).resolves.toContain('/tmp/project')
+
+    askPermission.mockResolvedValue(false)
+    await expect(execute(tools.worktree_create, { name: 'feature/denied' })).resolves.toBe(
+      'Permission denied; the worktree was not created.'
+    )
   })
 
   it('removes worktrees through the edit permission', async () => {
@@ -1239,11 +1340,17 @@ describe('worktree and session tools', () => {
     )
   })
 
-  it('moves the session directory', async () => {
+  it('moves the session directory through the edit permission', async () => {
     await expect(execute(tools.session_move, { directory: '/tmp/wt' })).resolves.toBe(
       'Session will move to /tmp/wt next message.'
     )
+    expect(askPermission).toHaveBeenCalledWith('edit', '/tmp/wt', 'session_move', 'call-1')
     expect(moveSession).toHaveBeenCalledWith('/tmp/wt')
+
+    askPermission.mockResolvedValue(false)
+    await expect(execute(tools.session_move, { directory: '/tmp/other' })).resolves.toBe(
+      'Permission denied; the session was not moved.'
+    )
   })
 
   it('reports when worktree management is unavailable', async () => {

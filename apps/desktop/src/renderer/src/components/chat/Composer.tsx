@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/errors'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
@@ -74,10 +75,6 @@ function ShieldIcon(): React.JSX.Element {
   )
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
@@ -123,6 +120,8 @@ function Composer(): React.JSX.Element {
     items: string[]
   } | null>(null)
   const [commandQuery, setCommandQuery] = useState<string | null>(null)
+  const [activeCommand, setActiveCommand] = useState(0)
+  const [activeMention, setActiveMention] = useState(0)
   const [pendingShell, setPendingShell] = useState<{
     command: CommandDefinition
     args: string
@@ -213,7 +212,7 @@ function Composer(): React.JSX.Element {
   }, [revertPrompt])
 
   async function addFiles(files: File[]): Promise<void> {
-    if (files.length === 0) return
+    if (files.length === 0 || attachmentsDisabled) return
     setAttaching(true)
     setError(null)
     try {
@@ -248,12 +247,12 @@ function Composer(): React.JSX.Element {
   function detectMention(value: string, cursor: number): void {
     const slash = /^\/([^\s]*)$/.exec(value.slice(0, cursor))
     setCommandQuery(slash ? slash[1] : null)
+    setActiveCommand(0)
     const match = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, cursor))
     const sequence = ++mentionSeq.current
-    if (!match) {
-      setMention(null)
-      return
-    }
+    setMention(null)
+    setActiveMention(0)
+    if (!match) return
     const query = match[2]
     const start = cursor - query.length - 1
     window.api.agent.files
@@ -516,13 +515,16 @@ function Composer(): React.JSX.Element {
             aria-label={t('chat.commands')}
             className="mb-2 max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-1"
           >
-            {commandItems.map((command) => (
+            {commandItems.map((command, index) => (
               <button
                 key={command.id}
                 type="button"
                 role="option"
+                aria-selected={index === Math.min(activeCommand, commandItems.length - 1)}
                 onClick={() => applyCommand(command)}
-                className="block w-full rounded px-2 py-1 text-left transition-colors hover:bg-hover"
+                className={`block w-full rounded px-2 py-1 text-left transition-colors hover:bg-hover ${
+                  index === Math.min(activeCommand, commandItems.length - 1) ? 'bg-hover' : ''
+                }`}
               >
                 <span className="block truncate text-label text-foreground">
                   <span aria-hidden className="text-muted">
@@ -583,13 +585,16 @@ function Composer(): React.JSX.Element {
             aria-label={t('chat.mentionFiles')}
             className="mb-2 max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-1"
           >
-            {mention.items.map((filePath) => (
+            {mention.items.map((filePath, index) => (
               <button
                 key={filePath}
                 type="button"
                 role="option"
+                aria-selected={index === Math.min(activeMention, mention.items.length - 1)}
                 onClick={() => applyMention(filePath)}
-                className="block w-full truncate rounded px-2 py-1 text-left font-mono text-caption text-foreground transition-colors hover:bg-hover"
+                className={`block w-full truncate rounded px-2 py-1 text-left font-mono text-caption text-foreground transition-colors hover:bg-hover ${
+                  index === Math.min(activeMention, mention.items.length - 1) ? 'bg-hover' : ''
+                }`}
               >
                 {filePath}
               </button>
@@ -635,9 +640,17 @@ function Composer(): React.JSX.Element {
                 setCommandQuery(null)
                 return
               }
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActiveCommand((index) => {
+                  const step = event.key === 'ArrowDown' ? 1 : -1
+                  return (index + step + commandItems.length) % commandItems.length
+                })
+                return
+              }
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                applyCommand(commandItems[0])
+                applyCommand(commandItems[Math.min(activeCommand, commandItems.length - 1)])
                 return
               }
             }
@@ -647,9 +660,17 @@ function Composer(): React.JSX.Element {
                 setMention(null)
                 return
               }
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault()
+                setActiveMention((index) => {
+                  const step = event.key === 'ArrowDown' ? 1 : -1
+                  return (index + step + mention.items.length) % mention.items.length
+                })
+                return
+              }
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
-                applyMention(mention.items[0])
+                applyMention(mention.items[Math.min(activeMention, mention.items.length - 1)])
                 return
               }
             }

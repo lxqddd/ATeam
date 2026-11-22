@@ -1,3 +1,4 @@
+import { errorMessage } from '../lib/errors'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Alert, Button, Modal, Popconfirm, Select, Spin, Tag } from 'antd'
@@ -30,10 +31,6 @@ interface ProviderFormState {
 interface ModelFormState {
   providerId: string
   model?: ModelPublic
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function providerInitial(name: string): string {

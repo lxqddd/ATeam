@@ -36,6 +36,14 @@ describe('PermissionsStore', () => {
     expect(reloaded.list()).toEqual([created])
   })
 
+  it('stores always rules for every permission action', async () => {
+    for (const action of ['mcp', 'webfetch', 'websearch', 'skill', 'subagent'] as const) {
+      await expect(
+        store.add({ action, resource: 'demo/*', effect: 'allow', sessionId: 's1' })
+      ).resolves.toMatchObject({ action, effect: 'allow' })
+    }
+  })
+
   it('deduplicates identical rules', async () => {
     const first = await store.add({
       action: 'shell',

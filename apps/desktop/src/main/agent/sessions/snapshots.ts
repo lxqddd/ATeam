@@ -133,6 +133,7 @@ async function hashPaths(root: string, paths: string[]): Promise<Record<string, 
 export class SnapshotStore {
   private readonly snapshotsDirectory: string
   private readonly blobsDirectory: string
+  private readonly pendingBlobs = new Map<string, number>()
 
   constructor(userDataPath: string) {
     this.snapshotsDirectory = path.join(userDataPath, 'agent', SNAPSHOT_DIR)
@@ -182,21 +183,31 @@ export class SnapshotStore {
       }
     }
 
-    for (const [relative, blob] of Object.entries(files)) {
-      const source = referenceSources.get(relative) ?? path.join(root, relative)
-      const content = await fs.readFile(source)
-      await fs.writeFile(path.join(this.blobsDirectory, blob), content)
+    const written = new Set(Object.values(files))
+    try {
+      for (const [relative, blob] of Object.entries(files)) {
+        this.pendingBlobs.set(blob, (this.pendingBlobs.get(blob) ?? 0) + 1)
+        const source = referenceSources.get(relative) ?? path.join(root, relative)
+        const content = await fs.readFile(source)
+        await fs.writeFile(path.join(this.blobsDirectory, blob), content)
+      }
+      const snapshot: WorkspaceSnapshot = {
+        id: randomUUID(),
+        createdAt: nowIso(),
+        root,
+        sessionId,
+        files,
+        ...(captured.length > 0 ? { references: captured } : {})
+      }
+      await writeJsonAtomic(this.manifestPath(snapshot.id), snapshot)
+      return snapshot
+    } finally {
+      for (const blob of written) {
+        const count = (this.pendingBlobs.get(blob) ?? 1) - 1
+        if (count > 0) this.pendingBlobs.set(blob, count)
+        else this.pendingBlobs.delete(blob)
+      }
     }
-    const snapshot: WorkspaceSnapshot = {
-      id: randomUUID(),
-      createdAt: nowIso(),
-      root,
-      sessionId,
-      files,
-      ...(captured.length > 0 ? { references: captured } : {})
-    }
-    await writeJsonAtomic(this.manifestPath(snapshot.id), snapshot)
-    return snapshot
   }
 
   async removeSession(sessionId: string): Promise<number> {
@@ -220,7 +231,8 @@ export class SnapshotStore {
 
     const blobs = await fs.readdir(this.blobsDirectory)
     for (const blob of blobs) {
-      if (!remaining.has(blob)) await fs.rm(path.join(this.blobsDirectory, blob), { force: true })
+      if (remaining.has(blob) || this.pendingBlobs.has(blob)) continue
+      await fs.rm(path.join(this.blobsDirectory, blob), { force: true })
     }
     return removed
   }

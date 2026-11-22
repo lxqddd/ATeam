@@ -11,6 +11,9 @@
   "scripts": {
     "dev": "pnpm --filter @ateam/desktop dev",
     "start": "pnpm --filter @ateam/desktop start",
+    "cli": "pnpm --filter @ateam/desktop cli",
+    "serve": "pnpm --filter @ateam/desktop serve",
+    "acp": "pnpm --filter @ateam/desktop acp",
     "build": "pnpm --filter @ateam/desktop build",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm --filter @ateam/desktop test",

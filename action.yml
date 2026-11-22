@@ -107,4 +107,4 @@ runs:
         if [ -n "$INPUT_MAX_OUTPUT" ]; then args+=(--max-output "$INPUT_MAX_OUTPUT"); fi
         if [ -n "$INPUT_AGENT" ]; then args+=(--agent "$INPUT_AGENT"); fi
         if [ -n "$INPUT_DATA" ]; then args+=(--data "$INPUT_DATA"); fi
-        pnpm cli -- "${args[@]}" "$INPUT_PROMPT"
+        printf '%s' "$INPUT_PROMPT" | pnpm cli -- "${args[@]}"

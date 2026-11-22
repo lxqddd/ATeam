@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/errors'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
@@ -52,7 +53,7 @@ function PermissionRules(): React.JSX.Element {
         if (active) setRules(next)
       })
       .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+        if (active) setError(errorMessage(caught))
       })
     return () => {
       active = false
@@ -75,7 +76,7 @@ function PermissionRules(): React.JSX.Element {
       setRules((current) => [...(current ?? []), rule])
       setResource('')
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setAdding(false)
     }
@@ -88,14 +89,20 @@ function PermissionRules(): React.JSX.Element {
       await window.api.agent.permissions.removeRule(rule.id)
       setRules((current) => current?.filter((entry) => entry.id !== rule.id) ?? null)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setRemoving(null)
     }
   }
 
   if (!rules) {
-    return <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    return error ? (
+      <p role="alert" className="m-0 py-2 text-caption text-danger">
+        {error}
+      </p>
+    ) : (
+      <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    )
   }
 
   return (

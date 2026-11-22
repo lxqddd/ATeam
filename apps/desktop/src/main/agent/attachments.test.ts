@@ -10,6 +10,7 @@ import {
   attachmentDirectory,
   classifyAttachment,
   extractPdfText,
+  isPathInsideDirectory,
   maxAttachmentBytes,
   readAttachment,
   readTextAttachment,
@@ -47,6 +48,32 @@ describe('classifyAttachment', () => {
     expect(maxAttachmentBytes('text')).toBe(MAX_TEXT_BYTES)
     expect(maxAttachmentBytes('image')).toBe(MAX_IMAGE_BYTES)
     expect(maxAttachmentBytes('pdf')).toBe(MAX_PDF_BYTES)
+  })
+})
+
+describe('isPathInsideDirectory', () => {
+  const sessionId = 'session-1'
+
+  it('accepts files inside the attachment directory', async () => {
+    const target = path.join(attachmentDirectory(directory, sessionId), 'note.txt')
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, 'hello')
+
+    await expect(isPathInsideDirectory(path.dirname(target), target)).resolves.toBe(true)
+  })
+
+  it('rejects traversal and symlink escapes', async () => {
+    const attachmentDir = attachmentDirectory(directory, sessionId)
+    const outside = path.join(directory, 'secret.txt')
+    await fs.writeFile(outside, 'secret')
+    const traversal = path.join(attachmentDir, '..', '..', '..', 'secret.txt')
+
+    await expect(isPathInsideDirectory(attachmentDir, traversal)).resolves.toBe(false)
+
+    await fs.mkdir(attachmentDir, { recursive: true })
+    const link = path.join(attachmentDir, 'link.txt')
+    await fs.symlink(outside, link)
+    await expect(isPathInsideDirectory(attachmentDir, link)).resolves.toBe(false)
   })
 })
 

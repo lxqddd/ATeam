@@ -119,6 +119,19 @@ export async function saveAttachment(
   }
 }
 
+export async function isPathInsideDirectory(
+  directory: string,
+  candidate: string
+): Promise<boolean> {
+  const resolvedDirectory = path.resolve(directory)
+  const resolved = path.resolve(candidate)
+  const realDirectory = await fs.realpath(resolvedDirectory).catch(() => resolvedDirectory)
+  const real = await fs.realpath(resolved).catch(() => null)
+  if (!real) return false
+  const relative = path.relative(realDirectory, real)
+  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
+}
+
 export async function readAttachment(attachment: MessageAttachment): Promise<Buffer> {
   return fs.readFile(attachment.path)
 }
@@ -178,9 +191,9 @@ export async function attachmentDataUrl(
   attachmentPath: string
 ): Promise<string | null> {
   assertSessionId(sessionId)
-  const directory = path.resolve(attachmentDirectory(userDataPath, sessionId))
+  const directory = attachmentDirectory(userDataPath, sessionId)
   const resolved = path.resolve(attachmentPath)
-  if (!resolved.startsWith(`${directory}${path.sep}`)) return null
+  if (!(await isPathInsideDirectory(directory, resolved))) return null
   const mimeType = IMAGE_MIME[path.extname(resolved).toLowerCase()]
   if (!mimeType) return null
   const stats = await fs.stat(resolved).catch(() => null)

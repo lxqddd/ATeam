@@ -311,6 +311,7 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
                 controller.signal
               )
             : null
+          if (finished) res.once('close', () => controller.abort())
           try {
             await runtime.sendChat(id, text, modelRef(body.model))
           } catch (error) {
@@ -322,7 +323,11 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
             json(res, 202, { sessionId: id, queued: true })
             return
           }
-          const envelope = await finished
+          const envelope = await finished.catch((error) => {
+            if (controller.signal.aborted) return null
+            throw error
+          })
+          if (!envelope) return
           const event = envelope.event
           const status = event.type === 'run.finished' ? event.status : 'completed'
           json(res, 200, {

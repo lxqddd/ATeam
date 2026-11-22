@@ -1,3 +1,4 @@
+import { errorMessage } from '../../lib/errors'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -82,7 +83,7 @@ function McpServers(): React.JSX.Element {
         setAuthStatuses(auth)
       })
       .catch((caught: unknown) => {
-        if (active) setError(caught instanceof Error ? caught.message : String(caught))
+        if (active) setError(errorMessage(caught))
       })
     return () => {
       active = false
@@ -162,7 +163,7 @@ function McpServers(): React.JSX.Element {
       }
       resetForm()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setSaving(false)
     }
@@ -176,7 +177,7 @@ function McpServers(): React.JSX.Element {
         current ? current.map((entry) => (entry.id === updated.id ? updated : entry)) : null
       )
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     }
   }
 
@@ -189,7 +190,7 @@ function McpServers(): React.JSX.Element {
       setStatuses((current) => current.filter((entry) => entry.id !== server.id))
       if (editingId === server.id) resetForm()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setRemoving(null)
     }
@@ -201,7 +202,7 @@ function McpServers(): React.JSX.Element {
     try {
       setStatuses(await window.api.agent.mcp.statuses({ probe: true }))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setProbing(false)
     }
@@ -214,7 +215,7 @@ function McpServers(): React.JSX.Element {
       setAuthStatuses(await window.api.agent.mcp.authorize(server.id))
       await reload()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setAuthorizingId(null)
     }
@@ -227,7 +228,7 @@ function McpServers(): React.JSX.Element {
       setAuthStatuses(await window.api.agent.mcp.logout(server.id))
       await reload()
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught))
+      setError(errorMessage(caught))
     } finally {
       setLoggingOutId(null)
     }
@@ -252,7 +253,13 @@ function McpServers(): React.JSX.Element {
   }
 
   if (!servers) {
-    return <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    return error ? (
+      <p role="alert" className="m-0 py-2 text-caption text-danger">
+        {error}
+      </p>
+    ) : (
+      <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
+    )
   }
 
   return (

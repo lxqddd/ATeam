@@ -230,7 +230,7 @@ export class AcpServer {
     try {
       message = JSON.parse(trimmed) as JsonRpcRequest
     } catch {
-      this.fail(null, -32700, 'Invalid JSON')
+      this.write({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Invalid JSON' } })
       return
     }
 

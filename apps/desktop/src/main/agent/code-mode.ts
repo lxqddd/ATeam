@@ -118,22 +118,23 @@ process.on('message', (message) => {
     return
   }
   if (message.type !== 'run') return
-  const script = new vm.Script(
-    '(async () => { const __value = await (async () => {\\n' +
-      message.code +
-      '\\n})(); return __serialize(__value) })()'
-  )
-  script.runInContext(userContext).then(
-    (value) => send({ type: 'done', result: typeof value === 'string' ? value : String(value) }),
-    (error) =>
-      send({
-        type: 'error',
-        error:
-          error && typeof error === 'object' && 'message' in error
-            ? String(error.message)
-            : String(error)
-      })
-  )
+  const errorText = (error) =>
+    error && typeof error === 'object' && 'message' in error
+      ? String(error.message)
+      : String(error)
+  try {
+    const script = new vm.Script(
+      '(async () => { const __value = await (async () => {\\n' +
+        message.code +
+        '\\n})(); return __serialize(__value) })()'
+    )
+    script.runInContext(userContext).then(
+      (value) => send({ type: 'done', result: typeof value === 'string' ? value : String(value) }),
+      (error) => send({ type: 'error', error: errorText(error) })
+    )
+  } catch (error) {
+    send({ type: 'error', error: errorText(error) })
+  }
 })
 send({ type: 'ready' })
 `

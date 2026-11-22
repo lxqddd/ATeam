@@ -60,9 +60,18 @@ async function main(): Promise<number> {
   }
 
   let terminal: Interface | null = null
+  let askQueue: Promise<unknown> = Promise.resolve()
   const ask = async (question: string): Promise<string> => {
     terminal ??= createInterface({ input: process.stdin, output: process.stderr })
     return terminal.question(question)
+  }
+  const askQueued = (question: string): Promise<string> => {
+    const next = askQueue.then(
+      () => ask(question),
+      () => ask(question)
+    )
+    askQueue = next.catch(() => undefined)
+    return next
   }
 
   let sessionId: string | null = options.sessionId
@@ -83,7 +92,7 @@ async function main(): Promise<number> {
       return
     }
     const answer = (
-      await ask(
+      await askQueued(
         `\nAllow ${request.toolName} (${request.action}) ${request.resource}? [y]es/[a]lways/[N]o: `
       )
     ).trim()
@@ -105,7 +114,7 @@ async function main(): Promise<number> {
     request.options.forEach((option, index) => {
       lines.push(`  ${index + 1}. ${option.label}`)
     })
-    const answer = (await ask(`${lines.join('\n')}\n> `)).trim()
+    const answer = (await askQueued(`${lines.join('\n')}\n> `)).trim()
     const numbers = answer
       .split(/[\s,]+/)
       .map((value) => Number(value))
@@ -142,10 +151,10 @@ async function main(): Promise<number> {
           if (!options.json && event.kind === 'text') process.stdout.write(event.delta)
           break
         case 'permission.asked':
-          void handlePermission(event.permission)
+          void handlePermission(event.permission).catch(() => undefined)
           break
         case 'question.asked':
-          void handleQuestion(event.question)
+          void handleQuestion(event.question).catch(() => undefined)
           break
         case 'run.finished':
           outcome = event.status

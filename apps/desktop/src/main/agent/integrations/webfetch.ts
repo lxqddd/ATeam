@@ -50,28 +50,53 @@ export function normalizeWebUrl(input: string): string {
   return url.toString()
 }
 
-export function isPrivateAddress(address: string): boolean {
-  const value = address.trim().toLowerCase()
-  if (!value) return true
-  if (value.includes(':')) {
-    if (value === '::1' || value === '::') return true
-    if (value.startsWith('::ffff:')) return isPrivateAddress(value.slice(7))
-    return (
-      value.startsWith('fc') ||
-      value.startsWith('fd') ||
-      value.startsWith('fe8') ||
-      value.startsWith('fe9') ||
-      value.startsWith('fea') ||
-      value.startsWith('feb')
-    )
+function parseIpv4(value: string): number[] | null {
+  const parts = value.split('.')
+  if (parts.length !== 4) return null
+  const bytes = parts.map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : Number.NaN))
+  if (bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) return null
+  return bytes
+}
+
+function parseIpv6(value: string): number[] | null {
+  let input = value
+  const zone = input.indexOf('%')
+  if (zone !== -1) input = input.slice(0, zone)
+  if (!input.includes(':')) return null
+
+  const lastColon = input.lastIndexOf(':')
+  const tail = input.slice(lastColon + 1)
+  if (tail.includes('.')) {
+    const ipv4 = parseIpv4(tail)
+    if (!ipv4) return null
+    input = `${input.slice(0, lastColon + 1)}${((ipv4[0] << 8) | ipv4[1]).toString(16)}:${((ipv4[2] << 8) | ipv4[3]).toString(16)}`
   }
-  const parts = value.split('.').map((part) => Number(part))
-  if (
-    parts.length !== 4 ||
-    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  ) {
-    return true
+
+  const halves = input.split('::')
+  if (halves.length > 2) return null
+  const head = halves[0] ? halves[0].split(':') : []
+  const tailGroups = halves.length === 2 && halves[1] ? halves[1].split(':') : []
+  if (halves.length === 2) {
+    if (head.length + tailGroups.length > 7) return null
+  } else if (head.length !== 8) {
+    return null
   }
+  const groups = [
+    ...head,
+    ...Array<string>(8 - head.length - tailGroups.length).fill('0'),
+    ...tailGroups
+  ]
+  if (groups.some((group) => !/^[0-9a-f]{1,4}$/i.test(group))) return null
+
+  const bytes: number[] = []
+  for (const group of groups) {
+    const number = Number.parseInt(group, 16)
+    bytes.push(number >> 8, number & 0xff)
+  }
+  return bytes
+}
+
+function isPrivateIpv4(parts: number[]): boolean {
   const [a, b] = parts
   return (
     a === 0 ||
@@ -83,6 +108,50 @@ export function isPrivateAddress(address: string): boolean {
     (a === 192 && b === 168) ||
     a >= 224
   )
+}
+
+function isPrivateIpv6(bytes: number[]): boolean {
+  const zeros = (start: number, end: number): boolean =>
+    bytes.slice(start, end).every((byte) => byte === 0)
+
+  if (zeros(0, 16)) return true
+  if (zeros(0, 15) && bytes[15] === 1) return true
+  if ((bytes[0] & 0xfe) === 0xfc) return true
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return true
+  if (bytes[0] === 0xff) return true
+  if (bytes[0] === 0x20 && bytes[1] === 0x01 && bytes[2] === 0x0d && bytes[3] === 0xb8) {
+    return true
+  }
+
+  const embedded = (offset: number): boolean => isPrivateIpv4(bytes.slice(offset, offset + 4))
+
+  if (zeros(0, 10) && bytes[10] === 0xff && bytes[11] === 0xff) return embedded(12)
+  if (zeros(0, 12)) return embedded(12)
+  if (
+    bytes[0] === 0x00 &&
+    bytes[1] === 0x64 &&
+    bytes[2] === 0xff &&
+    bytes[3] === 0x9b &&
+    zeros(4, 12)
+  ) {
+    return embedded(12)
+  }
+  if (bytes[0] === 0x20 && bytes[1] === 0x02) return embedded(2)
+  if (bytes[0] === 0x20 && bytes[1] === 0x01 && bytes[2] === 0 && bytes[3] === 0) {
+    return embedded(12)
+  }
+  return false
+}
+
+export function isPrivateAddress(address: string): boolean {
+  const value = address.trim().toLowerCase()
+  if (!value) return true
+  if (value.includes(':')) {
+    const bytes = parseIpv6(value)
+    return bytes ? isPrivateIpv6(bytes) : true
+  }
+  const parts = parseIpv4(value)
+  return parts ? isPrivateIpv4(parts) : true
 }
 
 type Lookup = (hostname: string) => Promise<string[]>
@@ -106,6 +175,13 @@ async function assertPublicUrl(url: URL, lookup: Lookup | null): Promise<void> {
   if (addresses.some((address) => isPrivateAddress(address))) {
     throw new Error(`Private network addresses are not allowed: ${hostname}`)
   }
+}
+
+export async function assertPublicWebUrl(
+  input: string | URL,
+  lookup: Lookup | null = defaultLookup
+): Promise<void> {
+  await assertPublicUrl(typeof input === 'string' ? new URL(input) : input, lookup)
 }
 
 interface CacheEntry {
@@ -181,6 +257,39 @@ export interface WebFetchOptions {
   cache?: boolean
 }
 
+async function readTextLimited(
+  response: Response,
+  maxChars: number
+): Promise<{ text: string; truncated: boolean }> {
+  if (!response.body) {
+    const text = await response.text()
+    return { text: text.slice(0, maxChars), truncated: text.length > maxChars }
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  let truncated = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      text += decoder.decode(value, { stream: true })
+      if (text.length >= maxChars) {
+        truncated = true
+        break
+      }
+    }
+    if (!truncated) text += decoder.decode()
+    if (text.length > maxChars) {
+      text = text.slice(0, maxChars)
+      truncated = true
+    }
+    return { text, truncated }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+}
+
 export async function fetchWebContent(
   input: WebFetchInput,
   options: WebFetchOptions = {}
@@ -215,6 +324,7 @@ export async function fetchWebContent(
       if (![301, 302, 303, 307, 308].includes(response.status)) break
       const location = response.headers.get('location')
       if (!location) break
+      await response.body?.cancel().catch(() => undefined)
       current = new URL(location, current).toString()
     }
   } catch (error) {
@@ -225,7 +335,9 @@ export async function fetchWebContent(
   if (!response) throw new Error('Request failed: no response')
 
   if (!response.ok) {
-    const body = await response.text().catch(() => '')
+    const body = await readTextLimited(response, 300)
+      .then((result) => result.text)
+      .catch(() => '')
     throw new Error(
       `HTTP ${response.status} ${response.statusText}${body.trim() ? `: ${body.trim().slice(0, 300)}` : ''}`
     )
@@ -233,7 +345,8 @@ export async function fetchWebContent(
 
   const finalUrl = response.url || current
   const contentType = response.headers.get('content-type') ?? ''
-  const raw = await response.text()
+  const rawResult = await readTextLimited(response, maxChars)
+  const raw = rawResult.text
   let content = raw
   let effectiveFormat: WebFetchFormat = format
 
@@ -245,6 +358,8 @@ export async function fetchWebContent(
 
   if (content.length > maxChars) {
     content = `${content.slice(0, maxChars)}\n[content truncated at ${maxChars} characters]`
+  } else if (rawResult.truncated) {
+    content = `${content}\n[content truncated at ${maxChars} characters]`
   }
 
   const result: WebFetchResult = {

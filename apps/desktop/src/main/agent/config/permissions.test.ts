@@ -175,6 +175,21 @@ describe('evaluatePermissionRules', () => {
     ).toBe('allow')
   })
 
+  it('lets later unscoped rules override session rules', () => {
+    const rules = [
+      rule({ id: 'session', action: 'shell', resource: '*', effect: 'allow', sessionId: 's1' }),
+      rule({ id: 'policy', action: 'shell', resource: '*', effect: 'deny', sessionId: null })
+    ]
+
+    expect(
+      evaluatePermissionRules(rules, {
+        action: 'shell',
+        resources: ['rm -rf build'],
+        sessionId: 's1'
+      })
+    ).toBe('deny')
+  })
+
   it('denies a multi-resource operation when any resource is denied', () => {
     const rules = [
       rule({ id: 'allow', action: 'shell', resource: 'bun *', effect: 'allow' }),
