@@ -12,7 +12,7 @@ let store: SessionsStore
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
   sessionsDirectory = path.join(directory, 'agent', 'sessions')
-  store = new SessionsStore(directory)
+  store = new SessionsStore(directory, { backend: 'json' })
   await store.init()
 })
 
@@ -108,7 +108,7 @@ describe('SessionsStore', () => {
 
     expect(await store.setSettings(session.id, settings)).toMatchObject(settings)
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)).toMatchObject(settings)
     expect(await store.setSettings('missing', settings)).toBeUndefined()
@@ -128,7 +128,7 @@ describe('SessionsStore', () => {
       compaction
     )
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)?.compaction).toMatchObject(compaction)
 
@@ -142,7 +142,7 @@ describe('SessionsStore', () => {
     const updated = await store.setContextUsage(session.id, 12_345, 128_000)
 
     expect(updated).toMatchObject({ contextTokens: 12_345, contextWindow: 128_000 })
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)).toMatchObject({
       contextTokens: 12_345,
@@ -168,7 +168,7 @@ describe('SessionsStore', () => {
     expect(staged?.removed.map((message) => message.id)).toEqual(['a1'])
     expect(store.getMessages(session.id)).toHaveLength(1)
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getRedo(session.id)).toMatchObject({
       snapshotAfter: 'snapshot-after',
@@ -224,7 +224,7 @@ describe('SessionsStore', () => {
     delete data.session.compaction
     await fs.writeFile(file, JSON.stringify(data))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.getSession(session.id)).toMatchObject({
@@ -254,7 +254,7 @@ describe('SessionsStore', () => {
       makeMessage({ role: 'user', parts: [makeTextPart('persisted')] })
     )
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.getSession(session.id)?.title).toBe('persisted')
@@ -280,7 +280,7 @@ describe('SessionsStore', () => {
     )
     await store.setStatus(session.id, 'running')
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     const record = reloaded.get(session.id)
@@ -300,7 +300,7 @@ describe('SessionsStore', () => {
     const session = await store.create()
     await store.setStatus(session.id, 'waiting-permission')
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.getSession(session.id)?.status).toBe('idle')
@@ -310,7 +310,7 @@ describe('SessionsStore', () => {
     const session = await store.create()
     await fs.rm(path.join(sessionsDirectory, 'index.json'))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.list().map((entry) => entry.id)).toEqual([session.id])
@@ -321,7 +321,7 @@ describe('SessionsStore', () => {
     await fs.writeFile(path.join(sessionsDirectory, 'broken.json'), '{not json')
     await fs.rm(path.join(sessionsDirectory, 'index.json'))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.list().map((entry) => entry.id)).toEqual([good.id])
@@ -360,7 +360,7 @@ describe('SessionsStore', () => {
     const session = await store.create()
     await fs.rm(path.join(sessionsDirectory, `${session.id}.json`))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.list()).toEqual([])
@@ -371,7 +371,7 @@ describe('SessionsStore', () => {
     await fs.writeFile(path.join(sessionsDirectory, 'notes.txt'), 'not a session')
     await fs.rm(path.join(sessionsDirectory, 'index.json'))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.list().map((entry) => entry.id)).toEqual([session.id])
@@ -401,7 +401,7 @@ describe('SessionsStore', () => {
   })
 
   it('flushes an empty store', async () => {
-    const fresh = new SessionsStore(directory)
+    const fresh = new SessionsStore(directory, { backend: 'json' })
     await expect(fresh.flush()).resolves.toBeUndefined()
   })
 })
@@ -421,7 +421,7 @@ describe('agent metadata', () => {
       agent: 'explore',
       permissionMode: 'plan'
     })
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)).toMatchObject({
       hidden: true,
@@ -448,7 +448,7 @@ describe('agent metadata', () => {
     delete data.session.agent
     await fs.writeFile(file, JSON.stringify(data))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.getSession(session.id)).toMatchObject({
@@ -465,7 +465,7 @@ describe('agent metadata', () => {
     await expect(store.setDirectory(session.id, '/tmp/worktree')).resolves.toMatchObject({
       directory: '/tmp/worktree'
     })
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)?.directory).toBe('/tmp/worktree')
 
@@ -482,7 +482,7 @@ describe('agent metadata', () => {
     data.session.directory = 42
     await fs.writeFile(file, JSON.stringify(data))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)?.directory).toBeNull()
   })
@@ -512,7 +512,7 @@ describe('todos', () => {
     ]
 
     await expect(store.setTodos(session.id, todos)).resolves.toMatchObject({ todos })
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
     expect(reloaded.getSession(session.id)?.todos).toEqual(todos)
   })
@@ -526,7 +526,7 @@ describe('todos', () => {
     data.session.todos = 'nope'
     await fs.writeFile(file, JSON.stringify(data))
 
-    const reloaded = new SessionsStore(directory)
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
     await reloaded.init()
 
     expect(reloaded.getSession(session.id)?.todos).toEqual([])

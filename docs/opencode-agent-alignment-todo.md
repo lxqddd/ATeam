@@ -276,7 +276,7 @@
 - [x] Server API / SDK（`pnpm serve`：REST + SSE、Bearer token、会话/消息/权限/提问接口与 `AteamClient` SDK）
 - [x] ACP / 编辑器集成（`pnpm acp`：initialize、session/new、session/prompt、cancel、权限桥接与流式更新）
 - [x] GitHub Action（根目录 composite action：安装后调用 Headless CLI，支持模型/权限/工作区等输入）
-- [ ] SQLite / 事件溯源会话存储
+- [x] SQLite / 事件溯源会话存储（SQLite：`sessions.db` 存会话与消息，旧 JSON 数据自动导入）
 - [x] References（命名外部资料：本地目录 / Git 仓库、描述注入、外部目录自动放行、设置页编辑）
 - [x] 组织级 Policies（`agent/policy.json` 或 `ATEAM_POLICY_FILE`，权限规则最后生效）
 

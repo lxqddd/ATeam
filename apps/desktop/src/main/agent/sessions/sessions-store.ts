@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import fs from 'node:fs/promises'
-import path from 'node:path'
 import type {
   ChatMessage,
   ModelRef,
@@ -16,40 +14,16 @@ import type {
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { normalizeTodos, TODO_PRIORITIES, TODO_STATUSES } from '../todos'
-import { readJsonFile, writeJsonAtomic } from '../atomic-json'
+import {
+  createSessionStorage,
+  type PreparedCompaction,
+  type RedoState,
+  type SessionBackend,
+  type SessionRecord,
+  type SessionStorage
+} from './session-storage'
 
-interface SessionIndex {
-  version: 1
-  sessions: SessionMeta[]
-}
-
-interface SessionFile {
-  version: 1
-  session: SessionMeta
-  messages: ChatMessage[]
-  redo?: RedoState
-  preparedCompaction?: PreparedCompaction
-}
-
-export interface RedoState {
-  messages: ChatMessage[]
-  snapshotAfter: string | null
-  files: string[]
-  prompt: string
-}
-
-export interface PreparedCompaction {
-  summary: string
-  throughMessageId: string
-  createdAt: string
-}
-
-export interface SessionRecord {
-  session: SessionMeta
-  messages: ChatMessage[]
-  redo?: RedoState
-  preparedCompaction?: PreparedCompaction
-}
+export type { PreparedCompaction, RedoState, SessionRecord }
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -188,72 +162,23 @@ function repairRecord(record: SessionRecord): boolean {
 }
 
 export class SessionsStore {
-  private readonly root: string
-  private readonly indexFile: string
+  private readonly storage: SessionStorage
   private records = new Map<string, SessionRecord>()
   private writeQueues = new Map<string, Promise<void>>()
-  private indexQueue: Promise<void> | null = null
 
-  constructor(userDataPath: string) {
-    this.root = path.join(userDataPath, 'agent', 'sessions')
-    this.indexFile = path.join(this.root, 'index.json')
+  constructor(userDataPath: string, options: { backend?: SessionBackend } = {}) {
+    this.storage = createSessionStorage(userDataPath, options.backend)
   }
 
   async init(): Promise<void> {
-    await fs.mkdir(this.root, { recursive: true })
-    const index = await readJsonFile<SessionIndex>(this.indexFile)
-    const entries = index?.sessions ?? (await this.scanSessions())
+    const records = await this.storage.init()
     this.records.clear()
 
-    for (const entry of entries) {
-      const record = await this.loadRecord(entry.id)
-      if (!record) continue
+    for (const record of records) {
       const changed = repairRecord(record)
       this.records.set(record.session.id, record)
       if (changed) await this.persist(record.session.id)
     }
-
-    await this.writeIndex()
-  }
-
-  private async scanSessions(): Promise<SessionMeta[]> {
-    const sessions: SessionMeta[] = []
-    let files: string[] = []
-    try {
-      files = await fs.readdir(this.root)
-    } catch {
-      return sessions
-    }
-
-    for (const file of files) {
-      if (!file.endsWith('.json') || file === 'index.json') continue
-      const record = await this.loadRecord(file.slice(0, -5))
-      if (record) sessions.push(record.session)
-    }
-    return sessions
-  }
-
-  private async loadRecord(id: string): Promise<SessionRecord | null> {
-    const filePath = this.sessionFile(id)
-    const data = await readJsonFile<SessionFile>(filePath)
-    if (!data || !data.session || !Array.isArray(data.messages)) {
-      try {
-        await fs.rename(filePath, `${filePath}.corrupt-${Date.now()}`)
-      } catch {
-        /* ignore */
-      }
-      return null
-    }
-    return {
-      session: data.session,
-      messages: data.messages,
-      redo: data.redo,
-      preparedCompaction: data.preparedCompaction
-    }
-  }
-
-  private sessionFile(id: string): string {
-    return path.join(this.root, `${id}.json`)
   }
 
   list(): SessionMeta[] {
@@ -551,49 +476,26 @@ export class SessionsStore {
       .then(async () => {
         const current = this.records.get(id)
         if (!current) return
-        const data: SessionFile = {
-          version: 1,
-          session: clone(current.session),
-          messages: clone(current.messages),
-          redo: current.redo ? clone(current.redo) : undefined,
-          preparedCompaction: current.preparedCompaction
-            ? clone(current.preparedCompaction)
-            : undefined
-        }
-        await writeJsonAtomic(this.sessionFile(id), data)
-        await this.writeIndex()
+        await this.storage.persist(structuredClone(current))
       })
     this.writeQueues.set(id, next)
     await next
   }
 
-  private async writeIndex(): Promise<void> {
-    const previous = this.indexQueue ?? Promise.resolve()
-    const next = previous
-      .catch(() => undefined)
-      .then(async () => {
-        const data: SessionIndex = {
-          version: 1,
-          sessions: [...this.records.values()].map((record) => clone(record.session))
-        }
-        await writeJsonAtomic(this.indexFile, data)
-      })
-    this.indexQueue = next
-    await next
-  }
-
   async delete(id: string): Promise<boolean> {
     if (!this.records.delete(id)) return false
-    await this.writeIndex()
-    try {
-      await fs.rm(this.sessionFile(id), { force: true })
-    } catch {
-      /* ignore */
-    }
+    await this.writeQueues.get(id)?.catch(() => undefined)
+    await this.storage.remove(id)
     return true
   }
 
   async flush(): Promise<void> {
-    await Promise.all([...this.writeQueues.values(), this.indexQueue ?? Promise.resolve()])
+    await Promise.all([...this.writeQueues.values()])
+    await this.storage.flush()
+  }
+
+  async close(): Promise<void> {
+    await this.flush()
+    await this.storage.close()
   }
 }
