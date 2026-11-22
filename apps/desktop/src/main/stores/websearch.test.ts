@@ -6,7 +6,6 @@ import { WebSearchStore } from './websearch'
 
 const safeStorage = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(),
-  encryptString: vi.fn(),
   decryptString: vi.fn()
 }))
 
@@ -20,7 +19,6 @@ beforeEach(async () => {
   store = new WebSearchStore(directory)
   await store.init()
   safeStorage.isEncryptionAvailable.mockReturnValue(true)
-  safeStorage.encryptString.mockImplementation((value: string) => Buffer.from(`enc:${value}`))
   safeStorage.decryptString.mockImplementation((value: Buffer) => {
     const text = value.toString('utf8')
     if (!text.startsWith('enc:')) throw new Error('bad secret')
@@ -43,7 +41,7 @@ describe('WebSearchStore', () => {
     expect(store.runtimeConfig()).toBeNull()
   })
 
-  it('stores an encrypted API key', async () => {
+  it('stores the API key as plaintext', async () => {
     const result = await store.update({ provider: 'brave', apiKey: ' secret ' })
 
     expect(result).toMatchObject({ provider: 'brave', hasApiKey: true })
@@ -52,8 +50,8 @@ describe('WebSearchStore', () => {
 
     const file = path.join(directory, 'agent', 'websearch.json')
     const raw = JSON.parse(await fs.readFile(file, 'utf8')) as { apiKey: string }
-    expect(JSON.stringify(raw)).not.toContain('secret')
-    expect(Buffer.from(raw.apiKey, 'base64').toString('utf8')).toBe('enc:secret')
+    expect(raw.apiKey).toBe('secret')
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
   })
 
   it('persists across instances', async () => {
@@ -81,12 +79,25 @@ describe('WebSearchStore', () => {
     )
   })
 
-  it('rejects saving when encryption is unavailable', async () => {
-    safeStorage.isEncryptionAvailable.mockReturnValue(false)
-
-    await expect(store.update({ provider: 'tavily', apiKey: 'key' })).rejects.toThrow(
-      'ENCRYPTION_UNAVAILABLE'
+  it('migrates legacy encrypted keys to plaintext', async () => {
+    const file = path.join(directory, 'agent', 'websearch.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        provider: 'exa',
+        apiKey: Buffer.from('enc:legacy-key').toString('base64'),
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      })
     )
+
+    const migrated = new WebSearchStore(directory)
+    await migrated.init()
+
+    expect(migrated.runtimeConfig()).toEqual({ provider: 'exa', apiKey: 'legacy-key' })
+    const raw = JSON.parse(await fs.readFile(file, 'utf8')) as { apiKey: string }
+    expect(raw.apiKey).toBe('legacy-key')
   })
 
   it('recovers from corrupt configuration files', async () => {

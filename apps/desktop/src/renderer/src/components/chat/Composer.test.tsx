@@ -50,8 +50,7 @@ function baseState(): ChatStoreState {
           createdAt: '2026-01-01T00:00:00.000Z'
         }
       ],
-      defaultModel: { providerId: 'p1', modelId: 'claude-x' },
-      encryptionAvailable: true
+      defaultModel: { providerId: 'p1', modelId: 'claude-x' }
     },
     sessions: [makeSession({ id: 's1', title: 'Chat' })],
     agents: [
@@ -189,8 +188,7 @@ describe('Composer', () => {
     state.models = {
       providers: [],
       models: [],
-      defaultModel: null,
-      encryptionAvailable: true
+      defaultModel: null
     }
     storeState.current = state
     renderComposer()
@@ -232,8 +230,7 @@ describe('Composer', () => {
     state.models = {
       providers: state.models?.providers ?? [],
       models: state.models?.models ?? [],
-      defaultModel: null,
-      encryptionAvailable: true
+      defaultModel: null
     }
     storeState.current = state
     const user = userEvent.setup()
@@ -247,7 +244,7 @@ describe('Composer', () => {
 
   it('reports the missing model when sending without any models', () => {
     const state = baseState()
-    state.models = { providers: [], models: [], defaultModel: null, encryptionAvailable: true }
+    state.models = { providers: [], models: [], defaultModel: null }
     storeState.current = state
     renderComposer()
     const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })

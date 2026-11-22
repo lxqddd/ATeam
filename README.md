@@ -27,8 +27,8 @@ ATeam/
 │           │   │   ├── integrations/ # MCP、LSP、格式化、Web 抓取与搜索
 │           │   │   ├── tools.ts      # 内置工具
 │           │   │   └── worker.ts / agent-manager.ts
-│           │   ├── stores/           # 主进程配置存储（模型 / 搜索，safeStorage 密钥）
-│           │   ├── models/           # 供应商模型目录查询
+│           │   ├── stores/           # 主进程配置存储（模型 / 搜索，凭据明文 0600）
+│           │   ├── models/           # 供应商模型目录查询与 auth.json
 │           │   └── ipc/              # 类型化 IPC、入参校验
 │           ├── preload/              # 窄接口 window.api
 │           └── renderer/src/
@@ -42,7 +42,7 @@ ATeam/
 └── pnpm-workspace.yaml
 ```
 
-`main/agent` 运行在 Agent utilityProcess 中；`main/stores` 只在主进程运行（需要 `safeStorage`），解密后的配置通过 worker 请求下发给 Agent。
+`main/agent` 运行在 Agent utilityProcess 中；`main/stores` 与 `main/models` 只在主进程运行，凭据以明文 JSON（文件权限 0600）保存，读取后的配置通过 worker 请求下发给 Agent。
 
 ## 环境要求
 
@@ -81,8 +81,8 @@ pnpm dev
 
 ## 架构约定
 
-- **进程隔离**：模型密钥、safeStorage 和 IPC 在主进程；Agent 运行在 Electron `utilityProcess`；渲染进程只通过 preload 暴露的 `window.api` 通信，不接触 Node、网络或密钥。
-- **模型配置**：支持 Anthropic、OpenAI、Google 和 OpenAI-compatible Provider。API Key 使用 `safeStorage` 加密后写入 `userData/models/secrets.json`，渲染进程只能看到 `hasApiKey`。
+- **进程隔离**：模型凭据、配置存储和 IPC 在主进程；Agent 运行在 Electron `utilityProcess`；渲染进程只通过 preload 暴露的 `window.api` 通信，不接触 Node、网络或密钥。
+- **模型配置**：支持 Anthropic、OpenAI、Google 和 OpenAI-compatible Provider。API Key 与 OAuth 凭据以明文写入 `userData/auth.json`（文件权限 0600），MCP 凭据写入 `userData/agent/mcp-auth.json`（0600），渲染进程只能看到 `hasApiKey` / `hasOAuthClientSecret` 等状态。
 - **会话持久化**：默认使用 SQLite（`userData/agent/sessions.db`，事件日志 + 检查点），旧 JSON 会话自动迁移；启动时会把遗留的 streaming/未结算工具状态修复为 interrupted/failed。
 - **工作区**：新会话默认使用 `userData/agent-workspace`，可在会话页标题栏切换为默认工作区、最近目录或任意本地目录；目录随会话持久化。`read`、`list`、`grep` 自动执行；`write`、`edit`、`shell` 需要用户授权；路径解析会阻止 `..` 和 symlink 逃逸。
 - **工具循环**：AI SDK `streamText` + `stepCountIs(25)`；工具结果按 `toolCallId` 归并，文本/推理按 `partIndex` 归并，事件带单调 `seq`。

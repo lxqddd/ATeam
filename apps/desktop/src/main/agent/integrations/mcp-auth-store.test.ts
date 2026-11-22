@@ -6,8 +6,11 @@ import type { McpServerConfig } from '@ateam/shared'
 
 const safeStorage = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(() => true),
-  encryptString: vi.fn((value: string) => Buffer.from(`enc:${value}`)),
-  decryptString: vi.fn((value: Buffer) => value.toString('utf8').replace(/^enc:/, ''))
+  decryptString: vi.fn((value: Buffer) => {
+    const text = value.toString('utf8')
+    if (!text.startsWith('enc:')) throw new Error('bad secret')
+    return text.slice(4)
+  })
 }))
 
 vi.mock('electron', () => ({ safeStorage }))
@@ -48,7 +51,6 @@ let store: McpAuthStore
 
 beforeEach(async () => {
   safeStorage.isEncryptionAvailable.mockReturnValue(true)
-  safeStorage.encryptString.mockClear()
   safeStorage.decryptString.mockClear()
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-mcp-auth-')))
   store = new McpAuthStore(directory)
@@ -60,10 +62,32 @@ afterEach(async () => {
 })
 
 describe('McpAuthStore', () => {
-  it('encrypts, reloads and lists OAuth records', async () => {
+  it('stores plaintext OAuth tokens and reloads them', async () => {
     await store.set(AUTH)
-    const encrypted = await fs.readFile(path.join(directory, 'agent', 'mcp-auth.json'), 'utf8')
-    expect(encrypted).not.toContain('access-1')
+    const file = path.join(directory, 'agent', 'mcp-auth.json')
+    const raw = await fs.readFile(file, 'utf8')
+    expect(raw).toContain('access-1')
+    expect(JSON.parse(raw)).toMatchObject({
+      version: 2,
+      servers: {
+        'server-1': {
+          serverUrl: AUTH.serverUrl,
+          tokens: {
+            accessToken: 'access-1',
+            refreshToken: 'refresh-1',
+            expiresAt: 1_900_000_000_000,
+            scope: 'files'
+          },
+          clientInfo: {
+            clientId: 'client-1',
+            clientSecret: 'secret-1',
+            tokenEndpoint: 'https://auth.example.com/token',
+            resource: 'https://mcp.example.com/mcp'
+          }
+        }
+      }
+    })
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
 
     const reloaded = new McpAuthStore(directory)
     await reloaded.init()
@@ -101,11 +125,33 @@ describe('McpAuthStore', () => {
     expect(reloaded.list()).toEqual([])
   })
 
-  it('requires safe storage to persist tokens', async () => {
-    safeStorage.isEncryptionAvailable.mockReturnValue(false)
+  it('migrates legacy encrypted entries', async () => {
+    const file = path.join(directory, 'agent', 'mcp-auth.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        servers: {
+          'server-1': {
+            serverUrl: AUTH.serverUrl,
+            payload: Buffer.from(`enc:${JSON.stringify(AUTH)}`).toString('base64'),
+            updatedAt: '2026-01-01T00:00:00.000Z'
+          }
+        }
+      })
+    )
 
-    await expect(store.set(AUTH)).rejects.toThrow('ENCRYPTION_UNAVAILABLE')
-    expect(store.list()).toEqual([])
+    const migrated = new McpAuthStore(directory)
+    await migrated.init()
+
+    expect(migrated.get('server-1', AUTH.serverUrl)).toEqual(AUTH)
+    const raw = await fs.readFile(file, 'utf8')
+    expect(raw).toContain('access-1')
+    expect(JSON.parse(raw)).toMatchObject({
+      version: 2,
+      servers: { 'server-1': { tokens: { accessToken: 'access-1' } } }
+    })
   })
 
   it('skips corrupted entries', async () => {
@@ -114,20 +160,21 @@ describe('McpAuthStore', () => {
     await fs.writeFile(
       file,
       JSON.stringify({
-        version: 1,
+        version: 2,
         servers: {
           good: {
             serverUrl: AUTH.serverUrl,
-            payload: Buffer.from('enc:not json').toString('base64'),
+            tokens: { accessToken: 'access-good' },
             updatedAt: 'x'
           },
-          bad: { serverUrl: AUTH.serverUrl, payload: 1 }
+          bad: { serverUrl: AUTH.serverUrl, tokens: { accessToken: 1 } }
         }
       })
     )
 
     const reloaded = new McpAuthStore(directory)
     await reloaded.init()
-    expect(reloaded.list()).toEqual([])
+    expect(reloaded.list()).toHaveLength(1)
+    expect(reloaded.get('good')).toMatchObject({ accessToken: 'access-good' })
   })
 })

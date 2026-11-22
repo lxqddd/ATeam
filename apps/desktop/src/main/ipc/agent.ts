@@ -40,7 +40,7 @@ import { expandCommandTemplate, runWorkspaceShell } from '../agent/commands'
 import { modelRefSchema } from './model-schema'
 import type { McpAuthStore } from '../agent/integrations/mcp-auth-store'
 import { authorizeMcpServer } from '../agent/integrations/mcp-oauth-flow'
-import type { ProviderAuthStore } from '../models/oauth-tokens'
+import type { ProviderAuthStore } from '../models/provider-auth-store'
 import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../models/runtime'
 import { agentConfigPatchSchema } from './config-schema'
 import { webSearchUpdateSchema } from './websearch-schema'
@@ -220,7 +220,6 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return {
       workspacePath,
       appVersion: app.getVersion(),
-      encryptionAvailable: modelsStore.isEncryptionAvailable(),
       instructionFiles,
       lspServers,
       formatters,

@@ -6,13 +6,12 @@ import type { ProviderAuthRecord } from '@ateam/shared'
 
 const safeStorage = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(() => true),
-  encryptString: vi.fn((value: string) => Buffer.from(`enc:${value}`)),
   decryptString: vi.fn((value: Buffer) => value.toString('utf8').replace(/^enc:/, ''))
 }))
 
 vi.mock('electron', () => ({ safeStorage }))
 
-import { ProviderAuthStore } from './oauth-tokens'
+import { ProviderAuthStore } from './provider-auth-store'
 import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from './runtime'
 
 const RECORD: ProviderAuthRecord = {
@@ -41,10 +40,10 @@ afterEach(async () => {
 })
 
 describe('ProviderAuthStore', () => {
-  it('encrypts and reloads provider tokens', async () => {
+  it('stores plaintext provider tokens and reloads them', async () => {
     await store.set(RECORD)
-    const file = await fs.readFile(path.join(directory, 'models', 'oauth-tokens.json'), 'utf8')
-    expect(file).not.toContain('access-1')
+    const file = await fs.readFile(path.join(directory, 'auth.json'), 'utf8')
+    expect(file).toContain('access-1')
 
     const reloaded = new ProviderAuthStore(directory)
     await reloaded.init()
@@ -68,13 +67,6 @@ describe('ProviderAuthStore', () => {
     ).toMatchObject({ authorized: true, providerName: 'OpenAI' })
 
     await store.remove('provider-1')
-    expect(store.list()).toEqual([])
-  })
-
-  it('requires encryption for tokens', async () => {
-    safeStorage.isEncryptionAvailable.mockReturnValue(false)
-
-    await expect(store.set(RECORD)).rejects.toThrow('ENCRYPTION_UNAVAILABLE')
     expect(store.list()).toEqual([])
   })
 })

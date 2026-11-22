@@ -111,7 +111,7 @@ const enUS = {
     webConfigured: 'Configured',
     webNotConfigured: 'Not configured',
     webSave: 'Save',
-    webHint: 'The key is stored encrypted on this device. Used by the websearch tool.',
+    webHint: 'The key is stored on this device. Used by the websearch tool.',
     references: 'References',
     referencesDescription:
       'One reference per line: alias=path or alias=owner/repo#branch, optionally followed by | description. Paths may be absolute, relative or use ~.',
@@ -184,12 +184,10 @@ const enUS = {
     oauthLogout: 'Sign out',
     oauthAuthorizing: 'Waiting for browser…',
     apiKeyKeepPlaceholder: 'Leave blank to keep the current key',
-    apiKeyStored: 'Stored securely',
+    apiKeyStored: 'Saved',
     clearApiKey: 'Clear API key',
     hasApiKey: 'Key configured',
     noApiKey: 'No key',
-    encryptionUnavailable:
-      'Secure storage is unavailable on this system, so API keys cannot be saved.',
     save: 'Save',
     saving: 'Saving…',
     cancel: 'Cancel',

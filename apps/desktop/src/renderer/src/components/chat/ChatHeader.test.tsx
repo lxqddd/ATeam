@@ -52,8 +52,7 @@ function baseState(): ChatStoreState {
           createdAt: '2026-01-01T00:00:00.000Z'
         }
       ],
-      defaultModel: { providerId: 'p1', modelId: 'claude-sonnet-5' },
-      encryptionAvailable: true
+      defaultModel: { providerId: 'p1', modelId: 'claude-sonnet-5' }
     },
     sessions: [
       makeSession({
@@ -230,7 +229,6 @@ describe('ChatHeader', () => {
     state.info = {
       workspacePath: '/tmp/workspace',
       appVersion: '0.1.0',
-      encryptionAvailable: true,
       instructionFiles: [],
       lspServers: [],
       formatters: []
@@ -255,7 +253,6 @@ describe('ChatHeader', () => {
     state.info = {
       workspacePath: '/tmp/workspace',
       appVersion: '0.1.0',
-      encryptionAvailable: true,
       instructionFiles: [],
       lspServers: [],
       formatters: []
@@ -282,7 +279,6 @@ describe('ChatHeader', () => {
     state.info = {
       workspacePath: '/tmp/workspace',
       appVersion: '0.1.0',
-      encryptionAvailable: true,
       instructionFiles: [],
       lspServers: [],
       formatters: []
@@ -300,7 +296,6 @@ describe('ChatHeader', () => {
     state.info = {
       workspacePath: '/tmp/workspace',
       appVersion: '0.1.0',
-      encryptionAvailable: true,
       instructionFiles: [],
       lspServers: [],
       formatters: []
@@ -331,7 +326,6 @@ describe('ChatHeader', () => {
     state.info = {
       workspacePath: '/tmp/workspace',
       appVersion: '0.1.0',
-      encryptionAvailable: true,
       instructionFiles: [],
       lspServers: [],
       formatters: []

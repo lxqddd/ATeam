@@ -20,7 +20,7 @@ import { listProviderModels } from '../models/available'
 import { previewApiKey } from '../models/preview'
 import type { ModelCatalogStore } from '../models/catalog-store'
 import type { ModelsStore } from '../stores/models'
-import type { ProviderAuthStore } from '../models/oauth-tokens'
+import type { ProviderAuthStore } from '../models/provider-auth-store'
 import { authorizeProvider } from '../models/oauth-flow'
 import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../models/runtime'
 import type { TrustedSender } from './trusted-sender'
@@ -125,7 +125,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
       before?.oauth?.authorizationEndpoint !== after?.oauth?.authorizationEndpoint ||
       before?.oauth?.tokenEndpoint !== after?.oauth?.tokenEndpoint ||
       before?.oauth?.clientId !== after?.oauth?.clientId
-    if (oauthChanged) await providerAuthStore.remove(input.id)
+    if (oauthChanged) await providerAuthStore.clearTokens(input.id)
     await sync()
     return config
   })
@@ -212,7 +212,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
 
   handle(MODEL_CHANNELS.providerOAuthLogout, async (payload): Promise<ProviderOAuthStatus[]> => {
     const { id } = idPayloadSchema.parse(payload)
-    await providerAuthStore.remove(id)
+    await providerAuthStore.clearTokens(id)
     await sync()
     return providerAuthStore.statuses(modelsStore.publicConfig().providers)
   })

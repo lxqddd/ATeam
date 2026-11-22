@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const safeStorage = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(() => true),
-  encryptString: vi.fn((value: string) => Buffer.from(`enc:${value}`)),
   decryptString: vi.fn((value: Buffer) => value.toString('utf8').replace(/^enc:/, ''))
 }))
 
@@ -21,6 +20,13 @@ async function readStoredJson<T>(file: string): Promise<T> {
   return JSON.parse(await fs.readFile(path.join(directory, 'models', file), 'utf8')) as T
 }
 
+async function readAuth(): Promise<Record<string, unknown>> {
+  return JSON.parse(await fs.readFile(path.join(directory, 'auth.json'), 'utf8')) as Record<
+    string,
+    unknown
+  >
+}
+
 async function addAnthropic(): Promise<string> {
   const config = await store.addProvider({
     name: 'Anthropic',
@@ -32,7 +38,6 @@ async function addAnthropic(): Promise<string> {
 
 beforeEach(async () => {
   safeStorage.isEncryptionAvailable.mockReturnValue(true)
-  safeStorage.encryptString.mockClear()
   safeStorage.decryptString.mockClear()
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
   store = new ModelsStore(directory)
@@ -48,8 +53,7 @@ describe('ModelsStore', () => {
     expect(store.publicConfig()).toMatchObject({
       providers: [],
       models: [],
-      defaultModel: null,
-      encryptionAvailable: true
+      defaultModel: null
     })
   })
 
@@ -97,7 +101,7 @@ describe('ModelsStore', () => {
     ).rejects.toThrow('INVALID_BASE_URL')
   })
 
-  it('stores API keys encrypted and exposes only hasApiKey', async () => {
+  it('stores API keys as plaintext and exposes only hasApiKey', async () => {
     const providerId = await addAnthropic()
 
     expect(store.publicConfig().providers[0]).toMatchObject({ id: providerId, hasApiKey: true })
@@ -107,17 +111,10 @@ describe('ModelsStore', () => {
     const config = await readStoredJson<unknown>('config.json')
     expect(JSON.stringify(config)).not.toContain('sk-test-secret')
 
-    const secrets = await readStoredJson<{ keys: Record<string, string> }>('secrets.json')
-    expect(secrets.keys[providerId]).toBe(Buffer.from('enc:sk-test-secret').toString('base64'))
-  })
-
-  it('rejects saving keys when encryption is unavailable', async () => {
-    safeStorage.isEncryptionAvailable.mockReturnValue(false)
-
-    await expect(
-      store.addProvider({ name: 'Anthropic', type: 'anthropic', apiKey: 'sk-test' })
-    ).rejects.toThrow('ENCRYPTION_UNAVAILABLE')
-    expect(store.publicConfig()).toMatchObject({ providers: [], encryptionAvailable: false })
+    expect(await readAuth()).toEqual({
+      [providerId]: { type: 'api', key: 'sk-test-secret' }
+    })
+    expect((await fs.stat(path.join(directory, 'auth.json'))).mode & 0o777).toBe(0o600)
   })
 
   it('updates provider fields', async () => {
@@ -175,8 +172,7 @@ describe('ModelsStore', () => {
     const config = await store.deleteProvider(providerId)
 
     expect(config).toMatchObject({ providers: [], models: [], defaultModel: null })
-    const secrets = await readStoredJson<{ keys: Record<string, string> }>('secrets.json')
-    expect(secrets.keys).toEqual({})
+    expect(await readAuth()).toEqual({})
   })
 
   it('makes the first model the default', async () => {
@@ -336,7 +332,7 @@ describe('ModelsStore', () => {
     ).rejects.toThrow('INVALID_VARIANT')
   })
 
-  it('supports OAuth providers with encrypted client secrets', async () => {
+  it('supports OAuth providers with plaintext client secrets', async () => {
     const config = await store.addProvider({
       name: 'OAuth OpenAI',
       type: 'openai',
@@ -357,9 +353,9 @@ describe('ModelsStore', () => {
       hasOAuthClientSecret: true,
       hasApiKey: false
     })
-    const stored = await readStoredJson<{ keys: Record<string, string> }>('secrets.json')
-    expect(stored.keys[provider.id]).toBeUndefined()
-    expect(stored.keys[`oauth:${provider.id}`]).toBeDefined()
+    expect(await readAuth()).toEqual({
+      [provider.id]: { type: 'oauth', clientSecret: 'secret-1' }
+    })
     expect(store.oauthConfig(provider.id)).toMatchObject({
       clientId: 'client-1',
       clientSecret: 'secret-1'
@@ -373,6 +369,9 @@ describe('ModelsStore', () => {
     })
     expect(reverted.providers[0]).toMatchObject({ authMode: 'apiKey', oauth: null })
     expect(store.oauthConfig(provider.id)).toBeNull()
+    expect(await readAuth()).toEqual({
+      [provider.id]: { type: 'api', key: 'sk-test' }
+    })
   })
 
   it('rejects OAuth for unsupported provider types and invalid endpoints', async () => {
@@ -403,17 +402,18 @@ describe('ModelsStore', () => {
     ).rejects.toThrow('INVALID_OAUTH_CONFIG')
   })
 
-  it('keeps the previous key when re-encryption is unavailable', async () => {
+  it('replaces stored API keys', async () => {
     const providerId = await addAnthropic()
-    safeStorage.isEncryptionAvailable.mockReturnValue(false)
 
-    await expect(store.updateProvider({ id: providerId, apiKey: 'sk-new' })).rejects.toThrow(
-      'ENCRYPTION_UNAVAILABLE'
-    )
-    expect(store.runtimeConfig().providers[0].apiKey).toBe('sk-test-secret')
+    await store.updateProvider({ id: providerId, apiKey: 'sk-new' })
+
+    expect(store.runtimeConfig().providers[0].apiKey).toBe('sk-new')
+    expect(await readAuth()).toEqual({
+      [providerId]: { type: 'api', key: 'sk-new' }
+    })
   })
 
-  it('reloads providers and decrypts keys from disk', async () => {
+  it('reloads providers and keys from disk', async () => {
     const providerId = await addAnthropic()
 
     const reloaded = new ModelsStore(directory)
@@ -503,32 +503,21 @@ describe('ModelsStore', () => {
     expect(runtime.models).toHaveLength(1)
   })
 
-  it('reports encryption as unavailable when safeStorage throws', () => {
-    safeStorage.isEncryptionAvailable.mockImplementationOnce(() => {
-      throw new Error('no keychain')
-    })
-
-    expect(store.publicConfig().encryptionAvailable).toBe(false)
-  })
-
-  it('returns undefined for keys that cannot be decrypted', async () => {
+  it('ignores corrupt auth entries', async () => {
     const providerId = await addAnthropic()
     await fs.writeFile(
-      path.join(directory, 'models', 'secrets.json'),
-      JSON.stringify({ version: 1, keys: { [providerId]: 'not-base64' } })
+      path.join(directory, 'auth.json'),
+      JSON.stringify({ [providerId]: { type: 'api' } })
     )
 
     const reloaded = new ModelsStore(directory)
     await reloaded.init()
-    safeStorage.decryptString.mockImplementationOnce(() => {
-      throw new Error('bad cipher')
-    })
 
     expect(reloaded.runtimeConfig().providers[0].apiKey).toBeUndefined()
-    expect(reloaded.publicConfig().providers[0].hasApiKey).toBe(true)
+    expect(reloaded.publicConfig().providers[0].hasApiKey).toBe(false)
   })
 
-  it('reveals the decrypted API key on demand', async () => {
+  it('reveals the API key on demand', async () => {
     const providerId = await addAnthropic()
 
     expect(store.revealApiKey(providerId)).toBe('sk-test-secret')
@@ -536,22 +525,6 @@ describe('ModelsStore', () => {
 
   it('returns null when revealing a key for an unknown provider', () => {
     expect(store.revealApiKey('missing')).toBeNull()
-  })
-
-  it('returns null when a stored key cannot be decrypted for reveal', async () => {
-    const providerId = await addAnthropic()
-    await fs.writeFile(
-      path.join(directory, 'models', 'secrets.json'),
-      JSON.stringify({ version: 1, keys: { [providerId]: 'not-base64' } })
-    )
-
-    const reloaded = new ModelsStore(directory)
-    await reloaded.init()
-    safeStorage.decryptString.mockImplementationOnce(() => {
-      throw new Error('bad cipher')
-    })
-
-    expect(reloaded.revealApiKey(providerId)).toBeNull()
   })
 
   it('keeps the default when deleting another provider', async () => {

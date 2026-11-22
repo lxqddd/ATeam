@@ -25,8 +25,6 @@ export function modelErrorMessage(t: (key: string) => string, error: unknown): s
       return t('settings.invalidVariant')
     case 'NAME_REQUIRED':
       return t('settings.nameRequired')
-    case 'ENCRYPTION_UNAVAILABLE':
-      return t('settings.encryptionUnavailable')
     default:
       return message
   }

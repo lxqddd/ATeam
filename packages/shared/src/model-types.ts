@@ -123,7 +123,6 @@ export interface ModelsConfigPublic {
   providers: ProviderPublic[]
   models: ModelPublic[]
   defaultModel: ModelRef | null
-  encryptionAvailable: boolean
 }
 
 export interface ProviderCreateInput {

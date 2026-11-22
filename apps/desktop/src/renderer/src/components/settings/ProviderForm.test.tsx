@@ -106,7 +106,7 @@ describe('ProviderForm', () => {
     const user = userEvent.setup()
     render(<ProviderForm provider={compatibleKeyProvider} onSubmit={vi.fn()} onCancel={vi.fn()} />)
 
-    expect(screen.getByText('Stored securely')).toBeInTheDocument()
+    expect(screen.getByText('Saved')).toBeInTheDocument()
     const checkbox = screen.getByRole('checkbox', { name: 'Clear API key' })
     expect(checkbox).toBeEnabled()
 

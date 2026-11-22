@@ -1,6 +1,6 @@
 import type { ProviderAuthRecord, RuntimeModelsConfig } from '@ateam/shared'
 import { refreshProviderAuth } from './oauth-flow'
-import type { ProviderAuthStoreLike } from './oauth-tokens'
+import type { ProviderAuthStoreLike } from './provider-auth-store'
 
 /** Replace OAuth provider keys with stored access tokens before the worker config update. */
 export function runtimeModelsWithOAuth(

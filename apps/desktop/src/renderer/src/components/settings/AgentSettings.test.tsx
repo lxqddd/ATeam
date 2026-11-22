@@ -128,7 +128,6 @@ describe('AgentSettings', () => {
       info: {
         workspacePath: '/tmp/workspace',
         appVersion: '0.1.0',
-        encryptionAvailable: true,
         instructionFiles: [],
         lspServers: [],
         formatters: [],
@@ -152,7 +151,6 @@ describe('AgentSettings', () => {
       info: {
         workspacePath: '/tmp/workspace',
         appVersion: '0.1.0',
-        encryptionAvailable: true,
         instructionFiles: [],
         lspServers: ['typescript'],
         formatters: ['prettier']

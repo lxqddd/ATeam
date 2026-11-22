@@ -32,14 +32,12 @@ import { makeSession } from './factories'
 const EMPTY_MODELS: ModelsConfigPublic = {
   providers: [],
   models: [],
-  defaultModel: null,
-  encryptionAvailable: true
+  defaultModel: null
 }
 
 const DEFAULT_INFO: AgentInfo = {
   workspacePath: '/tmp/workspace',
   appVersion: '0.1.0',
-  encryptionAvailable: true,
   instructionFiles: [],
   lspServers: [],
   formatters: []

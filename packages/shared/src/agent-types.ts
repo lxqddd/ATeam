@@ -305,7 +305,6 @@ export interface WorktreeInfo {
 export interface AgentInfo {
   workspacePath: string
   appVersion: string
-  encryptionAvailable: boolean
   instructionFiles: string[]
   lspServers: string[]
   formatters: string[]

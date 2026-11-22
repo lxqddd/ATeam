@@ -12,7 +12,7 @@
 - [x] 推理强度与会话级权限模式（只读 / 逐项确认 / 自动改文件 / 自动）
 - [x] 基础工具：read / list / grep / write / edit / shell
 - [x] 工具审批卡、停止、重试、token 用量展示
-- [x] Agent 独立 utility process、工作区路径限制、API Key 安全存储
+- [x] Agent 独立 utility process、工作区路径限制、API Key 凭据存储
 - [x] 上下文窗口管理、自动 / 手动压缩与超长重试（基础版）
 - [x] 项目规则加载：全局 → Git 项目根 → 工作区，`AGENTS.md` / `CLAUDE.md`（基础版）
 - [x] 持久化权限规则：通配符匹配、allow / ask / deny、shell 扫描与规则管理
@@ -24,6 +24,15 @@
 > 第一轮的 P0/P1/P2 记录保留在下方。第一轮中的“剩余：无”表示当时的对齐范围内已完成，不代表与当前 OpenCode `master` 完全一致。第二轮条目是新增待办，第一轮的基础版实现仍然有效。
 >
 > **配置方向（2026-11-22）**：参考 OpenCode 的分层发现、深合并与字段组织，但使用 ATeam 自有配置文件和 schema；不读取 `opencode.json(c)`，不承诺 OpenCode 配置格式兼容。现有 `.opencode/agent|command|skill` 资源目录可保留为便利入口，但不作为新配置基线。
+
+### 第二轮已对齐（2026-11-22）
+
+- [x] 供应商凭据改为明文 `auth.json`（OpenCode 风格 api/oauth 条目，文件权限 0600）
+- [x] MCP OAuth 改为明文 `mcp-auth.json`（tokens / clientInfo 结构，文件权限 0600）
+- [x] Web 搜索 Key 改为明文 `websearch.json`（文件权限 0600）
+- [x] 移除写入路径的 `safeStorage` 加密依赖、加密可用性 UI 与 `ENCRYPTION_UNAVAILABLE` 错误（仅保留旧数据一次性迁移读取）
+- [x] 启动时一次性把旧 `secrets.json` / `oauth-tokens.json` / 旧版 `mcp-auth.json` / 加密搜索 Key 迁移为明文
+- [x] 测试明文落盘、0600 权限、刷新 / 登出、损坏条目与旧数据迁移
 
 ### 第二轮 P0：核心运行时与配置
 
@@ -38,7 +47,7 @@
 - 全局层：沿用现有 `userData/agent/config.json`，或后续迁移为 `config.jsonc`。
 - 项目层：项目根 `ateam.json` / `ateam.jsonc` 与 `.ateam/` 资源目录（agents、commands、skills 等）。
 - 设置页默认编辑全局配置；项目层配置由仓库文件提供，设置页展示来源与覆盖结果。
-- API Key、OAuth token、MCP 凭据继续放在全局加密存储，不写入项目配置。
+- 凭据使用明文 JSON（`auth.json` / `mcp-auth.json`，文件权限 0600），与 OpenCode 的存储方式一致；不写入项目配置。
 - 现有 `.opencode` 资源发现保留为便利入口，但不实现 `opencode.json` 字段兼容。
 
 **待办**：
@@ -458,7 +467,7 @@
 
 ### P1-1 MCP（Model Context Protocol）
 
-**进度（2026-11-21）**：已实现 MCP 服务器配置存储与设置页（新增 / 编辑 / 启停 / 删除 / 状态探测）、本地 stdio 与远程 Streamable HTTP 传输、自定义 headers、工具自动注册为 `mcp_<server>_<tool>` 并纳入 `mcp` 权限动作、工具列表变更刷新、失败隔离与下次运行重连、连接状态与工具 / prompts / resources 数量展示。剩余：无。OAuth 已实现授权发现（RFC 9728 / RFC 8414）、动态客户端注册、PKCE S256、浏览器回调、加密 token 存储与自动刷新；MCP prompts 作为斜杠命令展开，resources 通过 `mcp_resource` 工具读取。
+**进度（2026-11-21）**：已实现 MCP 服务器配置存储与设置页（新增 / 编辑 / 启停 / 删除 / 状态探测）、本地 stdio 与远程 Streamable HTTP 传输、自定义 headers、工具自动注册为 `mcp_<server>_<tool>` 并纳入 `mcp` 权限动作、工具列表变更刷新、失败隔离与下次运行重连、连接状态与工具 / prompts / resources 数量展示。剩余：无。OAuth 已实现授权发现（RFC 9728 / RFC 8414）、动态客户端注册、PKCE S256、浏览器回调、明文 token 存储（0600）与自动刷新；MCP prompts 作为斜杠命令展开，resources 通过 `mcp_resource` 工具读取。
 
 **验收**：在设置页添加一个本地或远程 MCP server 后，对话中可以使用它提供的工具，并按权限规则审批。
 
@@ -491,7 +500,7 @@
 
 ### P1-3 Web 工具
 
-**进度（2026-11-21）**：已实现 `webfetch`（http(s) 校验、30s 超时、5 MB 截断、HTML→Markdown / 纯文本 / 原始 HTML、错误与重定向 URL 回显）与 `websearch`（Tavily / Exa / Brave，密钥加密存储，设置页配置与状态）；两者都有独立权限 action，默认允许、可通过规则改为询问或拒绝。剩余：无。另增加 Serper 搜索 provider、webfetch 私网地址拦截（含 DNS 解析与重定向校验）与 5 分钟页面缓存。
+**进度（2026-11-21）**：已实现 `webfetch`（http(s) 校验、30s 超时、5 MB 截断、HTML→Markdown / 纯文本 / 原始 HTML、错误与重定向 URL 回显）与 `websearch`（Tavily / Exa / Brave，明文密钥存储、0600 权限，设置页配置与状态）；两者都有独立权限 action，默认允许、可通过规则改为询问或拒绝。剩余：无。另增加 Serper 搜索 provider、webfetch 私网地址拦截（含 DNS 解析与重定向校验）与 5 分钟页面缓存。
 
 **验收**：Agent 能抓取网页并读取正文，能用配置的搜索服务返回结果；两者都可以被权限规则限制。
 
@@ -542,7 +551,7 @@
 
 ### P1-7 模型目录与能力元数据
 
-**进度（2026-11-21）**：接入 models.dev 目录（24 小时磁盘缓存、离线回退到缓存）；模型表单与供应商表单支持“从目录填充”；模型新增最大输出、推理、附件能力与输入/输出价格元数据，运行时使用最大输出并计算每条消息成本，推理与附件控件按模型能力显隐。剩余：无。供应商支持 API Key 与通用 OAuth 2.0 两种认证方式（授权码 + PKCE、加密 token、自动刷新、设置页授权 / 退出）；ChatGPT / Copilot 等供应商专属 OAuth 流程未内置。模型变体可在模型表单中定义并在输入框选择，变体参与推理强度、温度与最大输出；创建供应商时可勾选并导入其模型。
+**进度（2026-11-21）**：接入 models.dev 目录（24 小时磁盘缓存、离线回退到缓存）；模型表单与供应商表单支持“从目录填充”；模型新增最大输出、推理、附件能力与输入/输出价格元数据，运行时使用最大输出并计算每条消息成本，推理与附件控件按模型能力显隐。剩余：无。供应商支持 API Key 与通用 OAuth 2.0 两种认证方式（授权码 + PKCE、明文 token 存储 0600、自动刷新、设置页授权 / 退出）；ChatGPT / Copilot 等供应商专属 OAuth 流程未内置。模型变体可在模型表单中定义并在输入框选择，变体参与推理强度、温度与最大输出；创建供应商时可勾选并导入其模型。
 
 **验收**：添加模型时可以从目录带出上下文、能力与价格；不具备推理或附件能力的模型会隐藏对应控件。
 
@@ -619,6 +628,6 @@
 
 - OpenCode 源码（第二轮基准）：`packages/opencode/src/config/config.ts`、`plugin/index.ts`、`session/retry.ts`、`session/system.ts`、`session/reminders.ts`、`session/revert.ts`、`background/job.ts`、`tool/shell.ts`、`tool/task.ts`、`tool/truncate.ts`、`tool/lsp.ts`、`lsp/server.ts`、`mcp/index.ts`、`session/message-v2.ts`、`project/vcs.ts`。
 - ATeam：[runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)、[defaults.ts](../apps/desktop/src/main/agent/runtime/defaults.ts)、[policy.ts](../apps/desktop/src/main/agent/runtime/policy.ts)、[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)、[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)、[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
-- ATeam 集成：[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)、[tool-output-store.ts](../apps/desktop/src/main/agent/sessions/tool-output-store.ts)、[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)、[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)
+- ATeam 集成：[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[mcp-auth-store.ts](../apps/desktop/src/main/agent/integrations/mcp-auth-store.ts)、[provider-auth-store.ts](../apps/desktop/src/main/models/provider-auth-store.ts)、[websearch.ts](../apps/desktop/src/main/stores/websearch.ts)、[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)、[tool-output-store.ts](../apps/desktop/src/main/agent/sessions/tool-output-store.ts)、[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)、[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)
 - ATeam 接口：[server/api.ts](../apps/desktop/src/server/api.ts)、[sdk/client.ts](../apps/desktop/src/sdk/client.ts)、[cli/main.ts](../apps/desktop/src/cli/main.ts)、[acp/server.ts](../apps/desktop/src/acp/server.ts)
 - OpenCode 文档：Tools、Agents、Permissions、Instructions、Compaction、Snapshots、MCP Servers、Skills、Commands、Attachments、Formatters、LSP、Plugins、Server、TUI。

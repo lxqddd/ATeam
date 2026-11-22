@@ -2,7 +2,7 @@
 
 > 更新日期：2026-11-22。覆盖当前 `master` 上已实现并对齐 OpenCode 语义的 Agent 功能；文末列出已知遗留项。
 >
-> 运行架构：Electron 主进程负责窗口、IPC、模型 / 搜索配置的加密存储；Agent 运行在独立 utilityProcess（`apps/desktop/src/main/agent`）；渲染进程只通过 `window.api` 的窄接口与主进程通信。
+> 运行架构：Electron 主进程负责窗口、IPC、模型 / 搜索配置与凭据存储；Agent 运行在独立 utilityProcess（`apps/desktop/src/main/agent`）；渲染进程只通过 `window.api` 的窄接口与主进程通信。
 
 ## 1. 会话与消息
 
@@ -44,7 +44,7 @@
 
 - 支持 Anthropic、OpenAI、Google 与 OpenAI-compatible 四类供应商；可配置名称、Base URL 与 API Key。
 - OpenAI 与 OpenAI-compatible 供应商可选择 OAuth 2.0 认证：填写授权地址、Token 地址、Client ID / Secret、Scope 与回调地址，在供应商卡片完成授权 / 重新授权 / 退出登录；access token 作为 Bearer 凭据使用，过期前自动刷新。
-- API Key 与 OAuth 客户端密钥、access / refresh token 使用 Electron `safeStorage` 加密后保存在主进程；渲染层只能看到配置状态。
+- API Key 与 OAuth 客户端密钥、access / refresh token 以明文 JSON 保存在 `userData/auth.json`（文件权限 0600），与 OpenCode 的存储方式一致；渲染层只能看到配置状态。旧版 `safeStorage` 加密数据会在启动时一次性迁移为明文。
 - 支持从供应商接口拉取模型列表并批量添加。
 
 ### 2.2 模型元数据
@@ -166,7 +166,7 @@
 - 传输：本地 stdio（按行 JSON-RPC）与远程 Streamable HTTP（JSON / SSE、`Mcp-Session-Id` 复用、错误转 JSON-RPC 错误）。
 - 连接后读取 tools / prompts / resources；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
 - 工具列表变更自动刷新；单个服务器失败不影响其他服务器，下次运行或状态探测时重连。
-- OAuth：远程服务器支持授权发现（`WWW-Authenticate` / well-known）、动态客户端注册、PKCE S256、本地浏览器回调与 token 自动刷新；token 使用 Electron `safeStorage` 加密保存，设置页可授权 / 重新授权 / 退出登录，并可为需要预注册的服务器填写 OAuth Client ID、Scope 与回调地址。
+- OAuth：远程服务器支持授权发现（`WWW-Authenticate` / well-known）、动态客户端注册、PKCE S256、本地浏览器回调与 token 自动刷新；token 以明文保存在 `agent/mcp-auth.json`（文件权限 0600），设置页可授权 / 重新授权 / 退出登录，并可为需要预注册的服务器填写 OAuth Client ID、Scope 与回调地址。
 - prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），在会话工作目录对应的 MCP 连接上展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
 - 状态为“需要授权”时，设置页提供 OAuth 授权入口；token 过期会在下次连接时自动刷新并持久化。
 
@@ -183,7 +183,7 @@
 
 - `webfetch`：仅 http(s)；默认 30 秒超时；HTML 转 Markdown（turndown）或纯文本 / 原始 HTML；非 HTML 原样返回；5 MB 截断；回显最终 URL、状态码与 Content-Type。
 - 安全与缓存：拒绝回环、私网、链路本地与云元数据地址，DNS 解析与每次重定向都校验；成功页面缓存 5 分钟（最多 20 条）。
-- `websearch`：Tavily / Exa / Brave / Serper；API Key 经 `safeStorage` 加密后由主进程下发给 worker；结果格式化为标题、URL、摘要；未配置时给出明确提示。
+- `websearch`：Tavily / Exa / Brave / Serper；API Key 以明文保存在 `agent/websearch.json`（文件权限 0600）并由主进程下发给 worker；结果格式化为标题、URL、摘要；未配置时给出明确提示。
 - 权限：独立 `webfetch` / `websearch` 动作，默认允许，可配置为询问或拒绝。
 
 ## 12. 附件与 @ 文件引用
@@ -230,7 +230,7 @@
 | 语言     | 跟随系统 / 中文 / English                                               |
 | 权限     | 查看与删除已保存的权限规则                                              |
 | MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                     |
-| 网页搜索 | 服务商选择、加密 API Key、配置状态                                      |
+| 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                              |
 | Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用         |
 
 模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据。
@@ -249,16 +249,17 @@ agent/
 ├── policy.json          # 组织级权限策略（可选）
 ├── config.json          # 快照 / LSP / 格式化开关与额外指令
 ├── mcp.json             # MCP 服务器配置
-├── mcp-auth.json        # 加密的 MCP OAuth token 与客户端注册信息
+├── mcp-auth.json        # MCP OAuth token 与客户端注册信息（明文，0600）
 ├── references/          # Git 引用的本地缓存
-├── websearch.json       # 搜索服务商与加密 Key
+├── websearch.json       # 搜索服务商与 API Key（明文，0600）
 ├── model-catalog.json   # models.dev 目录缓存
 ├── commands.json        # JSON 自定义命令
 ├── commands/            # Markdown 自定义命令
 ├── agents/              # 用户级 Markdown Agent
 ├── agents.json          # JSON 自定义 Agent
 └── skills/              # 用户级 Skills
-models/                  # 供应商 / 模型配置、加密密钥与 OAuth token
+auth.json                # 供应商 API Key / OAuth token / client secret（明文，0600）
+models/                  # 供应商 / 模型配置
 ```
 
 ## 17. 已知限制与后续方向
@@ -287,7 +288,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话，`--restore-sessions` 将 `.migrated` 旧会话备份恢复并重新导入数据库后退出。
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
 - 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
-- 限制：凭据通过命令行或环境变量以明文传入，不能解密桌面端 `safeStorage` 配置；尚未提供独立打包的二进制。
+- 限制：凭据通过命令行或环境变量以明文传入；CLI 不读取桌面端 `auth.json`；尚未提供独立打包的二进制。
 
 ## 20. Server API 与 SDK
 

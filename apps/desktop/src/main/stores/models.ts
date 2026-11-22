@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { safeStorage } from 'electron'
 import type {
   ModelCreateInput,
   ModelPublic,
@@ -21,6 +20,7 @@ import type {
   RuntimeProvider
 } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../agent/atomic-json'
+import { ProviderAuthStore } from '../models/provider-auth-store'
 
 interface StoredProvider {
   id: string
@@ -38,11 +38,6 @@ interface StoredConfig {
   providers: StoredProvider[]
   models: ModelPublic[]
   defaultModel: ModelRef | null
-}
-
-interface StoredSecrets {
-  version: 1
-  keys: Record<string, string>
 }
 
 const PROVIDER_TYPES: ProviderType[] = ['anthropic', 'openai', 'google', 'openai-compatible']
@@ -159,10 +154,6 @@ function normalizeBaseUrl(value: string | undefined): string | undefined {
   return trimmed.replace(/\/+$/, '')
 }
 
-function oauthSecretKey(providerId: string): string {
-  return `oauth:${providerId}`
-}
-
 function normalizeOAuthEndpoint(value: unknown): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error('INVALID_OAUTH_CONFIG')
   let url: URL
@@ -238,18 +229,19 @@ function normalizeProviderType(value: ProviderType): ProviderType {
 export class ModelsStore {
   private readonly directory: string
   private readonly configFile: string
-  private readonly secretsFile: string
   private config: StoredConfig = { version: 1, providers: [], models: [], defaultModel: null }
-  private secrets: StoredSecrets = { version: 1, keys: {} }
   private chain: Promise<void> = Promise.resolve()
 
-  constructor(userDataPath: string) {
+  constructor(
+    userDataPath: string,
+    private readonly authStore: ProviderAuthStore = new ProviderAuthStore(userDataPath)
+  ) {
     this.directory = path.join(userDataPath, 'models')
     this.configFile = path.join(this.directory, 'config.json')
-    this.secretsFile = path.join(this.directory, 'secrets.json')
   }
 
   async init(): Promise<void> {
+    await this.authStore.init()
     const config = await readJsonFile<StoredConfig>(this.configFile)
     if (
       config &&
@@ -274,33 +266,20 @@ export class ModelsStore {
         this.config.defaultModel = this.firstModelRef()
       }
     }
-    const secrets = await readJsonFile<StoredSecrets>(this.secretsFile)
-    if (secrets && secrets.version === 1 && secrets.keys && typeof secrets.keys === 'object') {
-      this.secrets = { version: 1, keys: secrets.keys }
-    }
-  }
-
-  isEncryptionAvailable(): boolean {
-    try {
-      return safeStorage.isEncryptionAvailable()
-    } catch {
-      return false
-    }
   }
 
   publicConfig(): ModelsConfigPublic {
     return {
       providers: this.config.providers.map((provider) => this.toPublicProvider(provider)),
       models: this.config.models.map((model) => ({ ...model })),
-      defaultModel: this.config.defaultModel ? { ...this.config.defaultModel } : null,
-      encryptionAvailable: this.isEncryptionAvailable()
+      defaultModel: this.config.defaultModel ? { ...this.config.defaultModel } : null
     }
   }
 
   revealApiKey(providerId: string): string | null {
     const provider = this.config.providers.find((candidate) => candidate.id === providerId)
     if (!provider) return null
-    return this.decryptKey(providerId) ?? null
+    return this.authStore.getApiKey(providerId)
   }
 
   runtimeConfig(): RuntimeModelsConfig {
@@ -309,7 +288,7 @@ export class ModelsStore {
       name: provider.name,
       type: provider.type,
       baseURL: provider.baseURL,
-      apiKey: this.decryptKey(provider.id)
+      apiKey: this.authStore.getApiKey(provider.id) ?? undefined
     }))
     return {
       providers,
@@ -337,11 +316,9 @@ export class ModelsStore {
       }
 
       const id = randomUUID()
-      if (apiKey) {
-        this.secrets.keys[id] = this.encryptOrThrow(apiKey)
-      }
+      if (apiKey) await this.authStore.setApiKey(id, apiKey)
       if (authMode === 'oauth' && input.oauthClientSecret?.trim()) {
-        this.secrets.keys[oauthSecretKey(id)] = this.encryptOrThrow(input.oauthClientSecret.trim())
+        await this.authStore.setClientSecret(id, input.oauthClientSecret.trim())
       }
       const timestamp = nowIso()
       const provider: StoredProvider = {
@@ -380,22 +357,20 @@ export class ModelsStore {
       const nextApiKey = input.apiKey?.trim()
       const willHaveKey = input.clearApiKey
         ? false
-        : Boolean(nextApiKey) || Boolean(this.secrets.keys[provider.id])
+        : Boolean(nextApiKey) || this.authStore.hasApiKey(provider.id)
       if (nextAuthMode === 'apiKey' && nextType !== 'openai-compatible' && !willHaveKey) {
         throw new Error('API_KEY_REQUIRED')
       }
 
       if (input.clearApiKey) {
-        delete this.secrets.keys[provider.id]
+        await this.authStore.removeApiKey(provider.id)
       } else if (nextApiKey) {
-        this.secrets.keys[provider.id] = this.encryptOrThrow(nextApiKey)
+        await this.authStore.setApiKey(provider.id, nextApiKey)
       }
       if (nextAuthMode !== 'oauth' || input.clearOAuthClientSecret) {
-        delete this.secrets.keys[oauthSecretKey(provider.id)]
+        await this.authStore.removeClientSecret(provider.id)
       } else if (input.oauthClientSecret?.trim()) {
-        this.secrets.keys[oauthSecretKey(provider.id)] = this.encryptOrThrow(
-          input.oauthClientSecret.trim()
-        )
+        await this.authStore.setClientSecret(provider.id, input.oauthClientSecret.trim())
       }
 
       if (input.name !== undefined) provider.name = normalizeName(input.name)
@@ -419,8 +394,7 @@ export class ModelsStore {
       if (index < 0) throw new Error('PROVIDER_NOT_FOUND')
       this.config.providers.splice(index, 1)
       this.config.models = this.config.models.filter((model) => model.providerId !== id)
-      delete this.secrets.keys[id]
-      delete this.secrets.keys[oauthSecretKey(id)]
+      await this.authStore.remove(id)
       if (this.config.defaultModel?.providerId === id) {
         this.config.defaultModel = this.firstModelRef()
       }
@@ -558,49 +532,22 @@ export class ModelsStore {
       name: provider.name,
       type: provider.type,
       baseURL: provider.baseURL,
-      hasApiKey: Boolean(this.secrets.keys[provider.id]),
+      hasApiKey: this.authStore.hasApiKey(provider.id),
       authMode: provider.authMode ?? 'apiKey',
       oauth: provider.oauth ? { ...provider.oauth } : null,
-      hasOAuthClientSecret: Boolean(this.secrets.keys[oauthSecretKey(provider.id)]),
+      hasOAuthClientSecret: Boolean(this.authStore.getClientSecret(provider.id)),
       createdAt: provider.createdAt,
       updatedAt: provider.updatedAt
     }
   }
 
-  private encryptOrThrow(apiKey: string): string {
-    if (!this.isEncryptionAvailable()) throw new Error('ENCRYPTION_UNAVAILABLE')
-    return safeStorage.encryptString(apiKey).toString('base64')
-  }
-
   oauthConfig(providerId: string): (ProviderOAuthConfig & { clientSecret: string | null }) | null {
     const provider = this.config.providers.find((candidate) => candidate.id === providerId)
     if (!provider?.oauth) return null
-    let clientSecret: string | null = null
-    const encrypted = this.secrets.keys[oauthSecretKey(providerId)]
-    if (encrypted) {
-      try {
-        clientSecret = safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
-      } catch {
-        clientSecret = null
-      }
-    }
-    return { ...provider.oauth, clientSecret }
-  }
-
-  private decryptKey(providerId: string): string | undefined {
-    const encrypted = this.secrets.keys[providerId]
-    if (!encrypted) return undefined
-    try {
-      return safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
-    } catch {
-      return undefined
-    }
+    return { ...provider.oauth, clientSecret: this.authStore.getClientSecret(providerId) }
   }
 
   private async persist(): Promise<void> {
-    await Promise.all([
-      writeJsonAtomic(this.configFile, this.config),
-      writeJsonAtomic(this.secretsFile, this.secrets)
-    ])
+    await writeJsonAtomic(this.configFile, this.config)
   }
 }

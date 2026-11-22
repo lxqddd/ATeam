@@ -338,9 +338,6 @@ function ModelsPage(): React.JSX.Element {
         </header>
 
         <div className="flex flex-col gap-4">
-          {!config.encryptionAvailable && (
-            <Alert type="warning" showIcon title={t('settings.encryptionUnavailable')} />
-          )}
           {mutationError && <Alert type="error" showIcon title={mutationError} />}
 
           {config.providers.length === 0 ? (

@@ -17,7 +17,7 @@ import { ModelsStore } from './stores/models'
 import { ModelCatalogStore } from './models/catalog-store'
 import { WebSearchStore } from './stores/websearch'
 import { McpAuthStore } from './agent/integrations/mcp-auth-store'
-import { ProviderAuthStore } from './models/oauth-tokens'
+import { ProviderAuthStore } from './models/provider-auth-store'
 import { runtimeModelsWithOAuth } from './models/runtime'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
@@ -142,7 +142,8 @@ if (!hasSingleInstanceLock) {
     const userDataPath = app.getPath('userData')
     const workspacePath = join(userDataPath, 'agent-workspace')
 
-    const modelsStore = new ModelsStore(userDataPath)
+    const providerAuthStore = new ProviderAuthStore(userDataPath)
+    const modelsStore = new ModelsStore(userDataPath, providerAuthStore)
     try {
       await modelsStore.init()
     } catch (error) {
@@ -159,12 +160,6 @@ if (!hasSingleInstanceLock) {
       await mcpAuthStore.init()
     } catch (error) {
       console.error('[mcp-auth] failed to load OAuth credentials', error)
-    }
-    const providerAuthStore = new ProviderAuthStore(userDataPath)
-    try {
-      await providerAuthStore.init()
-    } catch (error) {
-      console.error('[provider-auth] failed to load OAuth tokens', error)
     }
     const catalogStore = new ModelCatalogStore({ userDataPath })
     try {

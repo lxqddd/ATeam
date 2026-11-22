@@ -7,7 +7,7 @@ import {
   refreshOAuthToken,
   type OAuthTokenResponse
 } from '../agent/integrations/mcp-oauth'
-import type { ProviderAuthStoreLike } from './oauth-tokens'
+import type { ProviderAuthStoreLike } from './provider-auth-store'
 
 export const DEFAULT_PROVIDER_CALLBACK_PORT = 19_877
 export const PROVIDER_CALLBACK_PATH = '/provider/oauth/callback'

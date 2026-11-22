@@ -55,7 +55,6 @@ function makeConfig(overrides: Partial<ModelsConfigPublic> = {}): ModelsConfigPu
     providers: [provider],
     models: [sonnet, opus],
     defaultModel: { providerId: 'p1', modelId: 'claude-sonnet-5' },
-    encryptionAvailable: true,
     ...overrides
   }
 }
@@ -107,18 +106,6 @@ describe('ModelsPage', () => {
 
     expect(await screen.findByText('https://api.example.com')).toBeInTheDocument()
     expect(screen.getByText('No key')).toBeInTheDocument()
-  })
-
-  it('warns when secure storage is unavailable', async () => {
-    mock = createApiMock({ models: makeConfig({ encryptionAvailable: false }) })
-    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
-    render(<ModelsPage />)
-
-    expect(
-      await screen.findByText(
-        'Secure storage is unavailable on this system, so API keys cannot be saved.'
-      )
-    ).toBeInTheDocument()
   })
 
   it('shows an empty state without providers', async () => {
@@ -562,7 +549,6 @@ describe('ModelsPage', () => {
       info: {
         workspacePath: '/tmp/workspace',
         appVersion: '0.1.0',
-        encryptionAvailable: true,
         instructionFiles: ['/repo/AGENTS.md', '/repo/packages/web/CLAUDE.md'],
         lspServers: [],
         formatters: []
