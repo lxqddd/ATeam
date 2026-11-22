@@ -163,8 +163,9 @@
 - 传输：本地 stdio（按行 JSON-RPC）与远程 Streamable HTTP（JSON / SSE、`Mcp-Session-Id` 复用、错误转 JSON-RPC 错误）。
 - 连接后读取 tools / prompts / resources；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
 - 工具列表变更自动刷新；单个服务器失败不影响其他服务器，下次运行或状态探测时重连。
+- OAuth：远程服务器支持授权发现（`WWW-Authenticate` / well-known）、动态客户端注册、PKCE S256、本地浏览器回调与 token 自动刷新；token 使用 Electron `safeStorage` 加密保存，设置页可授权 / 重新授权 / 退出登录，并可为需要预注册的服务器填写 OAuth Client ID、Scope 与回调地址。
 - prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），按声明的参数顺序展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
-- 遗留：OAuth 授权流程（按先前决定暂缓）。
+- 状态为“需要授权”时，设置页提供 OAuth 授权入口；token 过期会在下次连接时自动刷新并持久化。
 
 ## 10. LSP 诊断与自动格式化
 
@@ -225,7 +226,7 @@
 | 外观     | 内置主题（跟随系统 / 浅色 / 深色 / 日落橙 / 暖墨 / 石墨 / 奶油 / 冷雾） |
 | 语言     | 跟随系统 / 中文 / English                                               |
 | 权限     | 查看与删除已保存的权限规则                                              |
-| MCP      | 服务器增删改、启停、状态刷新                                            |
+| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                      |
 | 网页搜索 | 服务商选择、加密 API Key、配置状态                                      |
 | Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件                   |
 
@@ -244,6 +245,7 @@ agent/
 ├── permissions.json     # 权限规则
 ├── config.json          # 快照 / LSP / 格式化开关与额外指令
 ├── mcp.json             # MCP 服务器配置
+├── mcp-auth.json        # 加密的 MCP OAuth token 与客户端注册信息
 ├── websearch.json       # 搜索服务商与加密 Key
 ├── model-catalog.json   # models.dev 目录缓存
 ├── commands.json        # JSON 自定义命令
@@ -256,7 +258,7 @@ models/                  # 供应商 / 模型配置与加密密钥
 
 ## 17. 已知限制与后续方向
 
-- MCP / 供应商 OAuth 授权（按先前决定暂缓）；模型一键导入与 MCP prompts 命令已完成。
+- 供应商 OAuth 认证尚未实现（MCP OAuth 已完成）；模型一键导入与 MCP prompts 命令已完成。
 - 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
 - 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
 - ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
