@@ -66,9 +66,9 @@
 | Agent     | 模式     | 工具范围                                                           |
 | --------- | -------- | ------------------------------------------------------------------ |
 | `build`   | primary  | 全部工具                                                           |
-| `plan`    | primary  | 只读工具 + todo + question（不能改文件、不能执行命令、不能用 MCP） |
+| `plan`    | primary  | 只读工具（含 LSP 查询）+ todo + question（不能改文件、不能执行命令、不能用 MCP） |
 | `general` | subagent | 全部工具（不能再创建子代理）                                       |
-| `explore` | subagent | 只读工具                                                           |
+| `explore` | subagent | 只读工具（含 LSP 查询）                                            |
 
 ### 3.2 自定义 Agent
 
@@ -142,7 +142,8 @@
 
 ## 7. 上下文压缩
 
-- 发送前估算上下文：优先使用上一条 assistant 消息的供应商 usage（input + output）作为锚点，只估算其后的新消息；无 usage 时回退中英文启发式估算。超过“窗口 − 15%（最少 16k）”时自动压缩。
+- 发送前估算上下文：优先使用最近一条完成 assistant 消息在**最后一步**的供应商 usage（避免多步工具循环的累计值高估），只估算其后的新消息；无 usage 时回退中英文启发式估算，图片附件与工具图片按固定 token 估算。超过“窗口 − 15%（最少 16k）”时自动压缩。
+- 压缩后忽略压缩边界之前的旧 usage，避免刚压缩完又因历史用量触发重复压缩。
 - 模型开启 `compaction` 且供应商为 Anthropic 时不进行本地预压缩，改为请求 Anthropic 的 `compact_20260112` 服务端压缩；供应商报告 context overflow 时仍强制本地压缩并重试一次。
 - 保留最近约 15k token，其余替换为一条摘要消息（原始消息仍保留，仅影响发给模型的历史）；可在消息列表展开查看摘要。
 - 支持手动压缩（头部按钮）与“强制压缩短历史”；达到 60% 占用时后台预生成摘要，压缩时复用。
@@ -162,7 +163,7 @@
 - 传输：本地 stdio（按行 JSON-RPC）与远程 Streamable HTTP（JSON / SSE、`Mcp-Session-Id` 复用、错误转 JSON-RPC 错误）。
 - 连接后读取 tools / prompts / resources；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
 - 工具列表变更自动刷新；单个服务器失败不影响其他服务器，下次运行或状态探测时重连。
-- prompts 会作为斜杠命令出现在输入框菜单，按声明的参数顺序展开并返回渲染后的提示词；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
+- prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），按声明的参数顺序展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
 - 遗留：OAuth 授权流程（按先前决定暂缓）。
 
 ## 10. LSP 诊断与自动格式化
@@ -259,6 +260,8 @@ models/                  # 供应商 / 模型配置与加密密钥
 - 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
 - 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
 - ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
+- 命令模板中的 shell 片段会在发送时直接执行（与 OpenCode 一致），只应信任来自可信来源的命令文件。
+- MCP prompt 参数按声明的参数顺序以空格分词传入，暂不支持带空格的单个参数。
 - P2 方向：Code Mode、并行工具编排、worktree、浏览器自动化、Headless CLI、Server API / SDK、ACP 集成等尚未开始。
 
 ## 18. 关键文件索引
