@@ -1709,6 +1709,79 @@ describe('AgentRuntime', () => {
     expect(assistant?.changedFiles).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
   })
 
+  it('reports file changes for the latest turn and reverts selected files', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after', 'new.txt': 'created' }))
+    await runtime.sendChat(sessionId, 'change files')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+
+    const changes = await runtime.messageChanges(sessionId, assistant.id)
+    expect(changes).toMatchObject({ latest: true, canRevert: true })
+    expect(changes.files.map((file) => [file.path, file.status])).toEqual(
+      expect.arrayContaining([
+        ['notes.txt', 'modified'],
+        ['new.txt', 'added']
+      ])
+    )
+
+    const reverted = await runtime.revertChangedFiles(sessionId, assistant.id, ['notes.txt'])
+    await expect(fs.readFile(path.join(directory, 'workspace', 'notes.txt'), 'utf8')).resolves.toBe(
+      'before'
+    )
+    await expect(fs.readFile(path.join(directory, 'workspace', 'new.txt'), 'utf8')).resolves.toBe(
+      'created'
+    )
+    expect(reverted.files.map((file) => file.path)).not.toContain('notes.txt')
+    expect(
+      runtime.messages(sessionId).messages.find((message) => message.id === assistant.id)
+        ?.changedFiles
+    ).toEqual(['new.txt'])
+  })
+
+  it('marks historical turns as read-only', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'start')
+    scripts.push(mutatingScript({ 'notes.txt': 'first' }))
+    await runtime.sendChat(sessionId, 'first')
+    await sink.next('run.finished')
+    const first = assistantMessages().at(-1)
+    if (!first) throw new Error('first message missing')
+
+    scripts.push(mutatingScript({ 'notes.txt': 'second' }))
+    await runtime.sendChat(sessionId, 'second')
+    await sink.next('run.finished')
+
+    const changes = await runtime.messageChanges(sessionId, first.id)
+    expect(changes.latest).toBe(false)
+    expect(changes.canRevert).toBe(false)
+    await expect(runtime.revertChangedFiles(sessionId, first.id, ['notes.txt'])).rejects.toThrow(
+      'TURN_NOT_LATEST'
+    )
+  })
+
+  it('rejects reverting a turn while a run is active', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after' }))
+    await runtime.sendChat(sessionId, 'change')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'running')
+    await sink.next('run.started')
+
+    const changes = await runtime.messageChanges(sessionId, assistant.id)
+    expect(changes.canRevert).toBe(false)
+    await expect(
+      runtime.revertChangedFiles(sessionId, assistant.id, ['notes.txt'])
+    ).rejects.toThrow('SESSION_BUSY')
+
+    runtime.stopChat(sessionId)
+    await sink.next('run.finished')
+  })
+
   it('captures project references from the session workspace', async () => {
     const project = path.join(directory, 'project-refs')
     const docs = path.join(directory, 'project-docs')

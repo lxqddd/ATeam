@@ -2,7 +2,10 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import AssistantMessage from './AssistantMessage'
 
-const chatMocks = vi.hoisted(() => ({ forkSession: vi.fn(async () => undefined) }))
+const chatMocks = vi.hoisted(() => ({
+  forkSession: vi.fn(async () => undefined),
+  openChanges: vi.fn()
+}))
 
 vi.mock('../../chat/store', () => ({ chatStore: chatMocks }))
 import { makeMessage, makeTextPart } from '../../test/factories'
@@ -39,5 +42,36 @@ describe('forking', () => {
     await user.click(screen.getByRole('button', { name: 'Fork from here' }))
 
     expect(chatMocks.forkSession).toHaveBeenCalledWith('m1')
+  })
+})
+
+describe('changed files', () => {
+  it('opens the review panel for a message with changes', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    const message = makeMessage({
+      id: 'm1',
+      sessionId: 's1',
+      parts: [makeTextPart('answer')],
+      changedFiles: ['src/a.ts']
+    })
+    render(
+      <AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning={false} />
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Files changed (1)' }))
+
+    expect(chatMocks.openChanges).toHaveBeenCalledWith('s1', 'm1')
+  })
+
+  it('hides the review entry while the message is streaming', () => {
+    const message = makeMessage({
+      parts: [makeTextPart('answer')],
+      status: 'streaming',
+      changedFiles: ['src/a.ts']
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning />)
+
+    expect(screen.queryByRole('button', { name: 'Files changed (1)' })).not.toBeInTheDocument()
   })
 })

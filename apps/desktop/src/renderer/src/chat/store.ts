@@ -42,6 +42,7 @@ export interface ChatStoreState {
   actionError: string | null
   restarting: boolean
   revertPrompt: string | null
+  changesPanel: { sessionId: string; messageId: string } | null
 }
 
 const INITIAL_STATUS: AgentStatus = { status: 'stopped' }
@@ -93,7 +94,8 @@ export class ChatStore {
     subagentResults: [],
     actionError: null,
     restarting: false,
-    revertPrompt: null
+    revertPrompt: null,
+    changesPanel: null
   }
 
   private listeners = new Set<() => void>()
@@ -274,7 +276,7 @@ export class ChatStore {
   }
 
   selectSession(sessionId: string): void {
-    this.setState({ selectedSessionId: sessionId })
+    this.setState({ selectedSessionId: sessionId, changesPanel: null })
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
     void this.refreshAgents(session?.directory ?? undefined)
     void this.refreshCommands(session?.directory ?? undefined)
@@ -290,7 +292,8 @@ export class ChatStore {
       selectedSessionId: session.id,
       messagesBySession: { ...this.state.messagesBySession, [session.id]: [] },
       loadedBySession: { ...this.state.loadedBySession, [session.id]: true },
-      actionError: null
+      actionError: null,
+      changesPanel: null
     })
     void this.refreshAgents(session.directory ?? undefined)
     void this.refreshCommands(session.directory ?? undefined)
@@ -374,6 +377,14 @@ export class ChatStore {
 
   clearRevertPrompt(): void {
     this.setState({ revertPrompt: null })
+  }
+
+  openChanges(sessionId: string, messageId: string): void {
+    this.setState({ changesPanel: { sessionId, messageId } })
+  }
+
+  closeChanges(): void {
+    this.setState({ changesPanel: null })
   }
 
   dismissSubagentResult(toolCallId: string): void {
@@ -709,7 +720,13 @@ export class ChatStore {
     const loadedBySession = { ...this.state.loadedBySession }
     delete messagesBySession[sessionId]
     delete loadedBySession[sessionId]
-    this.setState({ sessions, selectedSessionId: selected, messagesBySession, loadedBySession })
+    this.setState({
+      sessions,
+      selectedSessionId: selected,
+      messagesBySession,
+      loadedBySession,
+      changesPanel: null
+    })
     if (selected && selected !== previousSelected) {
       const fallback = sessions.find((session) => session.id === selected)
       void this.refreshAgents(fallback?.directory ?? undefined)

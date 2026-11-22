@@ -121,6 +121,14 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().forkSession(request.params.id, request.params.messageId)
     case 'sessions.search':
       return requireRuntime().searchSessions(request.params.query)
+    case 'sessions.changes':
+      return requireRuntime().messageChanges(request.params.sessionId, request.params.messageId)
+    case 'sessions.revertFiles':
+      return requireRuntime().revertChangedFiles(
+        request.params.sessionId,
+        request.params.messageId,
+        request.params.paths
+      )
     case 'messages.list':
       return requireRuntime().messages(request.params.sessionId)
     case 'chat.send':

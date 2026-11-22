@@ -3,6 +3,8 @@ import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import type { FileChange, FileChangeStatus } from '@ateam/shared'
+import { structuredPatch } from 'diff'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 const execFileAsync = promisify(execFile)
@@ -38,6 +40,9 @@ const IGNORED_NAMES = new Set(['.git'])
 const MAX_UNTRACKED_BYTES = 2 * 1024 * 1024
 const MAX_REFERENCE_FILES = 5_000
 const REFERENCE_KEY_PREFIX = '\u0000refs/'
+const MAX_DIFF_BYTES = 512 * 1024
+const MAX_DIFF_LINES = 5_000
+const MAX_DIFF_FILES = 200
 
 export function referenceSnapshotKey(alias: string, relative: string): string {
   return `${REFERENCE_KEY_PREFIX}${alias}/${relative}`
@@ -338,6 +343,128 @@ export class SnapshotStore {
     const target = path.join(workspaceRoot, relative)
     if (target !== workspaceRoot && !target.startsWith(`${workspaceRoot}${path.sep}`)) return null
     return { target, root: workspaceRoot }
+  }
+
+  async changes(
+    fromId: string | null,
+    toId: string | null,
+    options: { current?: boolean; paths?: string[] } = {}
+  ): Promise<{ files: FileChange[]; truncated: boolean }> {
+    const from = fromId ? await this.get(fromId) : null
+    const to = toId ? await this.get(toId) : null
+    if ((fromId && !from) || (toId && !to)) throw new Error('SNAPSHOT_NOT_FOUND')
+    const referenceSnapshot = to ?? from
+    if (!referenceSnapshot) throw new Error('SNAPSHOT_NOT_FOUND')
+
+    const fromFiles = from?.files ?? {}
+    const toFiles = to?.files ?? {}
+    const providedPaths = options.paths ?? []
+    if (!to && providedPaths.length === 0) return { files: [], truncated: false }
+    const keys = (
+      to
+        ? [...new Set([...Object.keys(fromFiles), ...Object.keys(toFiles), ...providedPaths])]
+        : [...new Set(providedPaths)]
+    ).sort()
+    const files: FileChange[] = []
+    for (const key of keys.slice(0, MAX_DIFF_FILES)) {
+      const beforeExists = key in fromFiles
+      const afterBlob = options.current
+        ? null
+        : Object.prototype.hasOwnProperty.call(toFiles, key)
+          ? toFiles[key]
+          : null
+      let before: Buffer | null = null
+      let after: Buffer | null = null
+      let error: string | null = null
+      if (beforeExists) {
+        try {
+          before = await fs.readFile(path.join(this.blobsDirectory, fromFiles[key]))
+        } catch {
+          error = 'SNAPSHOT_BLOB_MISSING'
+        }
+      }
+      if (options.current) {
+        after = await this.readCurrentFile(referenceSnapshot, key)
+      } else if (afterBlob) {
+        try {
+          after = await fs.readFile(path.join(this.blobsDirectory, afterBlob))
+        } catch {
+          error = 'SNAPSHOT_BLOB_MISSING'
+        }
+      }
+      if (!before && !after) continue
+      if (before && after && before.equals(after)) continue
+      const status: FileChangeStatus = !before ? 'added' : !after ? 'deleted' : 'modified'
+      files.push(this.buildFileChange(key, status, before, after, error))
+    }
+    return { files, truncated: keys.length > MAX_DIFF_FILES }
+  }
+
+  private async readCurrentFile(snapshot: WorkspaceSnapshot, key: string): Promise<Buffer | null> {
+    const target = this.targetFor(snapshot, path.resolve(snapshot.root), key)
+    if (!target) return null
+    return fs.readFile(target.target).catch(() => null)
+  }
+
+  private buildFileChange(
+    key: string,
+    status: FileChangeStatus,
+    before: Buffer | null,
+    after: Buffer | null,
+    error: string | null
+  ): FileChange {
+    const displayPath = key.startsWith(REFERENCE_KEY_PREFIX)
+      ? `@${key.slice(REFERENCE_KEY_PREFIX.length)}`
+      : key
+    const base = {
+      path: displayPath,
+      snapshotPath: key,
+      status,
+      binary: false,
+      truncated: false,
+      additions: 0,
+      deletions: 0,
+      hunks: [] as FileChange['hunks'],
+      error
+    }
+    if (error) return base
+    const binary = [before, after].some((content) => content !== null && content.includes(0))
+    if (binary) return { ...base, binary: true }
+    const beforeLength = before?.length ?? 0
+    const afterLength = after?.length ?? 0
+    const beforeText = before?.toString('utf8') ?? ''
+    const afterText = after?.toString('utf8') ?? ''
+    if (
+      beforeLength > MAX_DIFF_BYTES ||
+      afterLength > MAX_DIFF_BYTES ||
+      beforeText.split('\n').length > MAX_DIFF_LINES ||
+      afterText.split('\n').length > MAX_DIFF_LINES
+    ) {
+      return { ...base, truncated: true }
+    }
+    try {
+      const patch = structuredPatch(displayPath, displayPath, beforeText, afterText, '', '', {
+        context: 3
+      })
+      const hunks = patch.hunks.map((hunk) => ({
+        oldStart: hunk.oldStart,
+        oldLines: hunk.oldLines,
+        newStart: hunk.newStart,
+        newLines: hunk.newLines,
+        lines: [...hunk.lines]
+      }))
+      let additions = 0
+      let deletions = 0
+      for (const hunk of hunks) {
+        for (const line of hunk.lines) {
+          if (line.startsWith('+')) additions += 1
+          else if (line.startsWith('-')) deletions += 1
+        }
+      }
+      return { ...base, additions, deletions, hunks }
+    } catch {
+      return { ...base, error: 'DIFF_FAILED' }
+    }
   }
 
   async restorePaths(id: string, paths: string[]): Promise<RestoreResult> {

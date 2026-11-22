@@ -176,6 +176,22 @@ export function createApiMock(
           return fork
         }),
         search: vi.fn(async () => [] as SessionSearchResult[]),
+        changes: vi.fn(async (sessionId: string, messageId?: string) => ({
+          sessionId,
+          messageId: messageId ?? '',
+          latest: true,
+          canRevert: true,
+          truncated: false,
+          files: []
+        })),
+        revertFiles: vi.fn(async (sessionId: string, messageId: string) => ({
+          sessionId,
+          messageId,
+          latest: true,
+          canRevert: true,
+          truncated: false,
+          files: []
+        })),
         setAgent: vi.fn(async (id: string, agent: string | null) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           session.agent = agent

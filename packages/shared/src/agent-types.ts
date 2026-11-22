@@ -126,6 +126,39 @@ export interface TokenUsage {
   totalTokens?: number
 }
 
+export type FileChangeStatus = 'added' | 'modified' | 'deleted'
+
+export interface FileDiffHunk {
+  oldStart: number
+  oldLines: number
+  newStart: number
+  newLines: number
+  lines: string[]
+}
+
+export interface FileChange {
+  /** Display path; reference files use `@alias/path`. */
+  path: string
+  /** Raw snapshot key used for revert operations. */
+  snapshotPath: string
+  status: FileChangeStatus
+  binary: boolean
+  truncated: boolean
+  additions: number
+  deletions: number
+  hunks: FileDiffHunk[]
+  error?: string | null
+}
+
+export interface TurnChanges {
+  sessionId: string
+  messageId: string
+  latest: boolean
+  canRevert: boolean
+  truncated: boolean
+  files: FileChange[]
+}
+
 export interface MessageSnapshotStep {
   before: string
   after: string

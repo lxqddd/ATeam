@@ -21,6 +21,7 @@ import type {
   SessionSearchResult,
   SessionSettings,
   SessionUndoResult,
+  TurnChanges,
   WebSearchInput,
   WebSearchProviderPublic
 } from './agent-types'
@@ -59,6 +60,8 @@ export interface AgentBridge {
     redo: (id: string) => Promise<SessionMeta>
     fork: (id: string, messageId?: string) => Promise<SessionMeta>
     search: (query: string) => Promise<SessionSearchResult[]>
+    changes: (sessionId: string, messageId?: string) => Promise<TurnChanges>
+    revertFiles: (sessionId: string, messageId: string, paths: string[]) => Promise<TurnChanges>
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>

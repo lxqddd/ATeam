@@ -64,7 +64,11 @@ const api: AteamApi = {
       undo: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId }),
       redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id }),
       fork: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionFork, { id, messageId }),
-      search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSearch, { query })
+      search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSearch, { query }),
+      changes: (sessionId, messageId) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionChanges, { sessionId, messageId }),
+      revertFiles: (sessionId, messageId, paths) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionRevertFiles, { sessionId, messageId, paths })
     },
     messages: {
       list: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.messagesList, { sessionId })

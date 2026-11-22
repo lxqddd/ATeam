@@ -1014,3 +1014,24 @@ describe('ChatStore edge cases', () => {
     expect(store.getSnapshot().selectedSessionId).toBeNull()
   })
 })
+
+describe('ChatStore changes panel', () => {
+  it('opens and closes the review target', () => {
+    store.openChanges('s1', 'm1')
+
+    expect(store.getSnapshot().changesPanel).toEqual({ sessionId: 's1', messageId: 'm1' })
+
+    store.closeChanges()
+
+    expect(store.getSnapshot().changesPanel).toBeNull()
+  })
+
+  it('closes the panel when switching sessions', () => {
+    mock.sessions.push(makeSession({ id: 'a' }), makeSession({ id: 'b' }))
+    store.openChanges('a', 'm1')
+
+    store.selectSession('b')
+
+    expect(store.getSnapshot().changesPanel).toBeNull()
+  })
+})

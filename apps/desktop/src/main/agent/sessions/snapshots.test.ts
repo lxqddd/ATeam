@@ -258,3 +258,86 @@ describe('SnapshotStore', () => {
     ).toBe('two')
   })
 })
+
+describe('SnapshotStore changes', () => {
+  it('returns added, modified and deleted files with line hunks', async () => {
+    await write('keep.txt', 'same')
+    await write('modify.txt', 'one\ntwo\n')
+    await write('delete.txt', 'gone')
+    const before = await store.create(workspace, 'session-1')
+
+    await write('modify.txt', 'one\nTWO\nthree\n')
+    await write('added.txt', 'new\n')
+    await fs.rm(path.join(workspace, 'delete.txt'))
+    const after = await store.create(workspace, 'session-1')
+
+    const result = await store.changes(before.id, after.id)
+    const files = new Map(result.files.map((file) => [file.path, file]))
+
+    expect([...files.keys()].sort()).toEqual(['added.txt', 'delete.txt', 'modify.txt'])
+    expect(files.get('added.txt')).toMatchObject({ status: 'added', additions: 1, deletions: 0 })
+    expect(files.get('delete.txt')).toMatchObject({ status: 'deleted', additions: 0, deletions: 1 })
+    expect(files.get('modify.txt')).toMatchObject({ status: 'modified' })
+    expect(files.get('modify.txt')?.hunks.flatMap((hunk) => hunk.lines)).toEqual(
+      expect.arrayContaining(['-two', '+TWO', '+three'])
+    )
+    expect(result.truncated).toBe(false)
+  })
+
+  it('compares the latest snapshot against the current workspace when requested', async () => {
+    await write('a.txt', 'before')
+    const before = await store.create(workspace, 'session-1')
+    await write('a.txt', 'agent')
+    const after = await store.create(workspace, 'session-1')
+
+    await write('a.txt', 'manual')
+    const live = await store.changes(before.id, after.id, { current: true })
+    expect(live.files[0]).toMatchObject({ path: 'a.txt', status: 'modified' })
+    expect(live.files[0].hunks.flatMap((hunk) => hunk.lines)).toContain('+manual')
+
+    await write('a.txt', 'before')
+    const reverted = await store.changes(before.id, after.id, { current: true })
+    expect(reverted.files).toEqual([])
+  })
+
+  it('marks binary files without generating a text diff', async () => {
+    await write('image.bin', Buffer.from([0, 1, 2]))
+    const before = await store.create(workspace)
+    await write('image.bin', Buffer.from([0, 3, 4]))
+    const after = await store.create(workspace)
+
+    const [file] = (await store.changes(before.id, after.id)).files
+
+    expect(file).toMatchObject({ path: 'image.bin', status: 'modified', binary: true })
+    expect(file.hunks).toEqual([])
+  })
+
+  it('truncates diffs for very large files', async () => {
+    await write('large.txt', 'a'.repeat(600_000))
+    const before = await store.create(workspace)
+    await write('large.txt', 'b'.repeat(600_000))
+    const after = await store.create(workspace)
+
+    const [file] = (await store.changes(before.id, after.id)).files
+
+    expect(file).toMatchObject({ path: 'large.txt', status: 'modified', truncated: true })
+    expect(file.hunks).toEqual([])
+  })
+
+  it('labels reference files with their alias', async () => {
+    const reference = path.join(directory, 'reference')
+    await fs.mkdir(reference, { recursive: true })
+    await fs.writeFile(path.join(reference, 'guide.md'), 'first')
+    const before = await store.create(workspace, 'session-1', [{ alias: 'docs', root: reference }])
+    await fs.writeFile(path.join(reference, 'guide.md'), 'second')
+    const after = await store.create(workspace, 'session-1', [{ alias: 'docs', root: reference }])
+
+    const [file] = (await store.changes(before.id, after.id)).files
+
+    expect(file).toMatchObject({
+      path: '@docs/guide.md',
+      snapshotPath: referenceSnapshotKey('docs', 'guide.md'),
+      status: 'modified'
+    })
+  })
+})

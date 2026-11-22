@@ -20,6 +20,7 @@ import {
   type SessionMeta,
   type SessionSearchResult,
   type SessionUndoResult,
+  type TurnChanges,
   type WebSearchProviderPublic
 } from '@ateam/shared'
 import type { AgentManager } from '../agent/agent-manager'
@@ -334,6 +335,24 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.sessionSearch, (payload): Promise<SessionSearchResult[]> => {
     const { query } = z.object({ query: z.string().max(200) }).parse(payload)
     return manager.request('sessions.search', { query })
+  })
+
+  handle(AGENT_CHANNELS.sessionChanges, (payload): Promise<TurnChanges> => {
+    const { sessionId, messageId } = z
+      .object({ sessionId: idSchema, messageId: idSchema.optional() })
+      .parse(payload)
+    return manager.request('sessions.changes', { sessionId, messageId })
+  })
+
+  handle(AGENT_CHANNELS.sessionRevertFiles, (payload): Promise<TurnChanges> => {
+    const { sessionId, messageId, paths } = z
+      .object({
+        sessionId: idSchema,
+        messageId: idSchema,
+        paths: z.array(z.string().min(1).max(2_000)).min(1).max(200)
+      })
+      .parse(payload)
+    return manager.request('sessions.revertFiles', { sessionId, messageId, paths })
   })
 
   handle(AGENT_CHANNELS.messagesList, (payload): Promise<MessagesSnapshot> => {

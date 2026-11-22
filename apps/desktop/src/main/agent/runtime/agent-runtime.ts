@@ -37,6 +37,7 @@ import type {
   SubagentInput,
   TodoInput,
   TokenUsage,
+  TurnChanges,
   WebFetchFormat
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
@@ -457,6 +458,107 @@ export class AgentRuntime {
     } finally {
       this.starting.delete(id)
     }
+  }
+
+  async messageChanges(sessionId: string, messageId?: string): Promise<TurnChanges> {
+    const record = this.store.get(sessionId)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    const message = messageId
+      ? record.messages.find((entry) => entry.id === messageId && entry.role === 'assistant')
+      : this.latestChangeMessage(record.messages)
+    if (!message) throw new Error(messageId ? 'MESSAGE_NOT_FOUND' : 'NO_CHANGES')
+    return this.buildTurnChanges(record, message)
+  }
+
+  async revertChangedFiles(
+    sessionId: string,
+    messageId: string,
+    paths: string[]
+  ): Promise<TurnChanges> {
+    const record = this.store.get(sessionId)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    if (this.sessionBusy(sessionId)) throw new Error('SESSION_BUSY')
+    const message = record.messages.find(
+      (entry) => entry.id === messageId && entry.role === 'assistant'
+    )
+    if (!message) throw new Error('MESSAGE_NOT_FOUND')
+    const latest = this.latestChangeMessage(record.messages)
+    if (latest?.id !== message.id) throw new Error('TURN_NOT_LATEST')
+    if (message.status === 'streaming') throw new Error('SESSION_BUSY')
+    if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
+
+    const targets = [...new Set(paths)]
+    if (targets.length > 0) {
+      const allowed = await this.allowedChangePaths(message)
+      for (const target of targets) {
+        if (!allowed.has(target)) throw new Error('INVALID_CHANGE_PATH')
+      }
+      this.reserveSession(sessionId)
+      try {
+        await this.snapshots.restorePaths(message.snapshotBefore, targets)
+      } finally {
+        this.starting.delete(sessionId)
+      }
+    }
+
+    const changes = await this.buildTurnChanges(record, message)
+    message.changedFiles = changes.files.map((file) => file.snapshotPath)
+    await this.store.persist(sessionId)
+    this.emit({ type: 'message.upsert', message: structuredClone(message) })
+    return changes
+  }
+
+  private latestChangeMessage(messages: ChatMessage[]): ChatMessage | undefined {
+    return [...messages]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === 'assistant' &&
+          Boolean(message.snapshotBefore) &&
+          (Boolean(message.snapshotAfter) ||
+            (message.snapshotSteps?.length ?? 0) > 0 ||
+            (message.changedFiles?.length ?? 0) > 0)
+      )
+  }
+
+  private async buildTurnChanges(
+    record: SessionRecord,
+    message: ChatMessage
+  ): Promise<TurnChanges> {
+    if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
+    const latest = this.latestChangeMessage(record.messages)?.id === message.id
+    const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
+    const fallbackPaths = [
+      ...(message.changedFiles ?? []),
+      ...(message.snapshotSteps ?? []).flatMap((step) => step.files)
+    ]
+    const result = await this.snapshots.changes(message.snapshotBefore, afterId, {
+      current: latest,
+      paths: afterId ? undefined : fallbackPaths
+    })
+    return {
+      sessionId: record.session.id,
+      messageId: message.id,
+      latest,
+      canRevert: latest && !this.sessionBusy(record.session.id) && message.status !== 'streaming',
+      truncated: result.truncated,
+      files: result.files
+    }
+  }
+
+  private async allowedChangePaths(message: ChatMessage): Promise<Set<string>> {
+    const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
+    const paths = new Set<string>([
+      ...(message.changedFiles ?? []),
+      ...(message.snapshotSteps ?? []).flatMap((step) => step.files)
+    ])
+    if (message.snapshotBefore && afterId) {
+      const diff = await this.snapshots.diff(message.snapshotBefore, afterId)
+      for (const path of diff.added) paths.add(path)
+      for (const path of diff.modified) paths.add(path)
+      for (const path of diff.deleted) paths.add(path)
+    }
+    return paths
   }
 
   private async copyForkAttachments(sourceId: string, targetId: string): Promise<void> {

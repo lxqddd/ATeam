@@ -22,6 +22,8 @@ export const AGENT_CHANNELS = {
   sessionRedo: 'ateam:agent:sessions:redo',
   sessionFork: 'ateam:agent:sessions:fork',
   sessionSearch: 'ateam:agent:sessions:search',
+  sessionChanges: 'ateam:agent:sessions:changes',
+  sessionRevertFiles: 'ateam:agent:sessions:revert-files',
   messagesList: 'ateam:agent:messages:list',
   chatSend: 'ateam:agent:chat:send',
   chatStop: 'ateam:agent:chat:stop',

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { chatStore, useChatStore } from '../../chat/store'
 import BackgroundNotices from './BackgroundNotices'
+import ChangesPanel from './ChangesPanel'
 import Composer from './Composer'
 import MessageList from './MessageList'
 import QuestionCard from './QuestionCard'
@@ -20,7 +21,8 @@ function ChatView(): React.JSX.Element {
     questions,
     subagentResults,
     runOutcomes,
-    backgroundResults
+    backgroundResults,
+    changesPanel
   } = useChatStore()
 
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
@@ -116,6 +118,14 @@ function ChatView(): React.JSX.Element {
       ))}
 
       <Composer key={`composer-${selectedSessionId ?? 'none'}`} />
+      {changesPanel && (
+        <ChangesPanel
+          key={`${changesPanel.sessionId}:${changesPanel.messageId}`}
+          sessionId={changesPanel.sessionId}
+          messageId={changesPanel.messageId}
+          onClose={() => chatStore.closeChanges()}
+        />
+      )}
     </div>
   )
 }

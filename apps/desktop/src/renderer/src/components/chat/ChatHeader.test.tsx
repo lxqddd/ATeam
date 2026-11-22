@@ -74,7 +74,8 @@ function baseState(): ChatStoreState {
     subagentResults: [],
     actionError: null,
     restarting: false,
-    revertPrompt: null
+    revertPrompt: null,
+    changesPanel: null
   }
 }
 

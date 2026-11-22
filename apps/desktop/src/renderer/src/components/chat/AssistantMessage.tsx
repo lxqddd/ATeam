@@ -196,6 +196,15 @@ function AssistantMessage({
               {copied ? t('chat.copied') : t('chat.copy')}
             </button>
           )}
+          {(message.changedFiles?.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => chatStore.openChanges(message.sessionId, message.id)}
+              className="rounded px-1 text-caption font-medium text-accent-strong transition-colors hover:bg-hover"
+            >
+              {t('chat.changesButton', { count: message.changedFiles?.length ?? 0 })}
+            </button>
+          )}
           {canRevert && (
             <button
               type="button"

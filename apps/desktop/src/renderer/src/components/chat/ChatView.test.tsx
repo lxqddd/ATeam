@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatView from './ChatView'
 import type { ChatStoreState } from '../../chat/store'
@@ -7,7 +7,11 @@ import { makeMessage, makeSession, makeTextPart } from '../../test/factories'
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
 
 vi.mock('../../chat/store', () => ({
-  chatStore: { dismissSubagentResult: vi.fn(), loadMessages: vi.fn() },
+  chatStore: {
+    dismissSubagentResult: vi.fn(),
+    loadMessages: vi.fn(),
+    closeChanges: vi.fn()
+  },
   useChatStore: () => storeState.current
 }))
 vi.mock('./MessageList', () => ({ default: () => <div>message-list</div> }))
@@ -16,6 +20,11 @@ vi.mock('./TodoPanel', () => ({ default: () => <div>todos</div> }))
 vi.mock('./BackgroundNotices', () => ({ default: () => null }))
 vi.mock('./SubagentNotices', () => ({ default: () => null }))
 vi.mock('./QuestionCard', () => ({ default: () => null }))
+vi.mock('./ChangesPanel', () => ({
+  default: ({ sessionId, messageId }: { sessionId: string; messageId: string }) => (
+    <div>{`changes-panel ${sessionId}:${messageId}`}</div>
+  )
+}))
 
 function state(): ChatStoreState {
   return {
@@ -37,7 +46,8 @@ function state(): ChatStoreState {
     subagentResults: [],
     actionError: null,
     restarting: false,
-    revertPrompt: null
+    revertPrompt: null,
+    changesPanel: null
   }
 }
 
@@ -54,5 +64,16 @@ describe('ChatView', () => {
     const duplicate = error.mock.calls.some((args) => String(args[0] ?? '').includes('same key'))
     expect(duplicate).toBe(false)
     error.mockRestore()
+  })
+
+  it('renders the changes panel for the stored target', () => {
+    storeState.current = {
+      ...state(),
+      changesPanel: { sessionId: 's1', messageId: 'm1' }
+    }
+
+    render(<ChatView />)
+
+    expect(screen.getByText('changes-panel s1:m1')).toBeInTheDocument()
   })
 })
