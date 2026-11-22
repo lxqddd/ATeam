@@ -91,10 +91,10 @@
 
 | 工具        | 作用                                                               | 权限 action        |
 | ----------- | ------------------------------------------------------------------ | ------------------ |
-| `read`      | 读取文本文件（行号、offset / limit、二进制拒绝、按需加载嵌套规则） | `read`             |
+| `read`      | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本 | `read`             |
 | `list`      | 列目录（深度限制）                                                 | `list`             |
-| `grep`      | 正则 / 字面量搜索，include、大小写、结果上限                       | `grep`             |
-| `glob`      | 按 glob 模式找文件，hidden、数量上限                               | `list`             |
+| `grep`      | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep    | `grep`             |
+| `glob`      | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`             |
 | `write`     | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`            |
 | `edit`      | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`             |
 | `patch`     | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`             |
@@ -105,6 +105,8 @@
 | `subagent`  | 委派子任务到子代理（可后台运行）                                   | `subagent`         |
 | `mcp_prompt` | 列出 / 获取 MCP prompts 并展开为提示词                            | `mcp`              |
 | `mcp_resource` | 列出 / 读取 MCP resources                                      | `mcp`              |
+| `lsp_hover` | 查询符号的类型与文档                                               | `read`             |
+| `lsp_definition` | 查询符号定义位置                                              | `read`             |
 | `todowrite` | 替换会话任务列表                                                   | 不需要审批         |
 | `todoread`  | 读取任务列表                                                       | 不需要审批         |
 | `question`  | 向用户提出结构化问题                                               | 不需要审批         |
@@ -167,7 +169,9 @@
 
 - 内置语言服务器：TypeScript、Go、Python、Rust、C/C++；按工作区复用客户端，不可用时静默跳过。
 - read / write / edit / patch 后附带诊断（最多 20 条，含行号、级别、来源与代码），便于 Agent 自我修正。
+- `lsp_hover` / `lsp_definition` 工具可在指定行列查询类型、文档与定义位置。
 - 格式化器发现：prettier、biome、gofmt、rustfmt、ruff（配置文件、package.json 依赖、pyproject `[tool.ruff]`）；写入后自动执行，失败只提示、不影响工具结果。
+- 设置页可按扩展名覆盖格式化器（例如 `.ts=biome`），或设为 `none` 关闭该类型的自动格式化。
 - 设置页提供开关与检测状态（可用语言服务器 / 检测到的格式化器）。
 
 ## 11. Web 工具
@@ -254,6 +258,7 @@ models/                  # 供应商 / 模型配置与加密密钥
 - MCP / 供应商 OAuth 授权（按先前决定暂缓）；模型一键导入与 MCP prompts 命令已完成。
 - 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
 - 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
+- ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
 - P2 方向：Code Mode、并行工具编排、worktree、浏览器自动化、Headless CLI、Server API / SDK、ACP 集成等尚未开始。
 
 ## 18. 关键文件索引

@@ -109,7 +109,7 @@
 
 ### P0-5 工具集补齐
 
-**进度（2026-11-21）**：已增加 glob、patch 多文件编辑、后台 shell 与完成通知、shell 输出流式回传、大输出落盘、grep literal / caseSensitive / limit，以及工作区外路径的 `external_directory` 审批。剩余：glob 超时、ripgrep 加速、read 图片/PDF。模型能力 `applyPatch` 已控制 patch 与 edit / write 的暴露。
+**进度（2026-11-21）**：已增加 glob、patch 多文件编辑、后台 shell 与完成通知、shell 输出流式回传、大输出落盘、grep literal / caseSensitive / limit，以及工作区外路径的 `external_directory` 审批。剩余：无。glob 增加 10 秒遍历超时；grep 在安装 ripgrep 时自动使用 rg（缺失或失败回退 JS 遍历）；read 支持图片（作为图像内容返回）与 PDF（抽取文本）。
 
 - [x] 增加 `glob` 工具：`**/*.ts` 模式、hidden、limit（超时待补）
 - [x] 增加 `patch` / `apply_patch` 多文件工具：新增、更新、删除文件
@@ -129,7 +129,7 @@
 
 **OpenCode 参考**：内置多语言 LSP，编辑后注入诊断；识别项目格式化器并在写入后自动执行。
 
-**进度（2026-11-21）**：已实现内置语言服务器表（TypeScript / Go / Python / Rust / C/C++）、按工作区复用与关闭的 LSP 客户端、read / write / edit / patch 后注入诊断、基于项目配置发现的 prettier / biome / gofmt / rustfmt / ruff 自动格式化，以及设置页开关与检测状态。格式化失败只作为提示，不影响工具结果；语言服务器不可用时静默跳过。剩余：hover / definition 等查询、按文件类型的格式化器覆盖。
+**进度（2026-11-21）**：已实现内置语言服务器表（TypeScript / Go / Python / Rust / C/C++）、按工作区复用与关闭的 LSP 客户端、read / write / edit / patch 后注入诊断、基于项目配置发现的 prettier / biome / gofmt / rustfmt / ruff 自动格式化，以及设置页开关与检测状态。格式化失败只作为提示，不影响工具结果；语言服务器不可用时静默跳过。剩余：无。新增 `lsp_hover` / `lsp_definition` 查询工具；设置页可为扩展名指定格式化器或关闭格式化。
 
 - [x] 增加 LSP 客户端管理：按项目与语言启动、复用、关闭
 - [x] 读取 / 写入 / 编辑后请求 diagnostics，并注入工具结果
