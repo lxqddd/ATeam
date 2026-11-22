@@ -19,6 +19,7 @@ export default defineConfig({
             'src/main/**/*.test.ts',
             'src/cli/**/*.test.ts',
             'src/server/**/*.test.ts',
+            'src/acp/**/*.test.ts',
             'src/sdk/**/*.test.ts'
           ],
           testTimeout: 20000

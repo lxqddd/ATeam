@@ -328,3 +328,25 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
       permission: auto
   ```
 - 注意：`permission: auto` 允许自动改文件与执行命令；在 CI 中应仅用于受信任仓库，API Key 通过 Secrets 传入。Action 每次运行都会安装源码依赖，暂无独立二进制分发；运行器上的 CLI 会话默认不跨 job 保留。
+
+## 24. ACP / 编辑器集成
+
+- 入口：`pnpm acp -- [model options]`，通过 stdio 提供 Agent Client Protocol v1，供 Zed 等编辑器作为外部 Agent 启动。
+- 支持的方法：`initialize`、`session/new`（按编辑器给出的 `cwd` 创建独立运行时）、`session/prompt`、`session/cancel`；文本以 `agent_message_chunk` 流式回传，工具调用以 `tool_call` / `tool_call_update` 通知更新。
+- 权限：运行时权限请求会转发为 `session/request_permission`，客户端选择 allow once / always / reject；提问工具暂无可对应协议，自动取消并继续。
+- 会话：每个工作目录复用独立的 Agent 运行时；模型、数据目录、权限模式等沿用 CLI 参数。
+- Zed 配置示例（路径按实际安装位置替换）：
+  ```json
+  {
+    "agent_servers": {
+      "ATeam": {
+        "command": "bash",
+        "args": [
+          "-lc",
+          "cd /path/to/ATeam/apps/desktop && pnpm acp -- --provider openai --api-key \"$OPENAI_API_KEY\" --model gpt-5 --permission ask"
+        ]
+      }
+    }
+  }
+  ```
+- 限制：仅实现核心 ACP 子集，不支持 `session/load`、客户端提供的 MCP server 配置、图片 / 音频 prompt；`question` 工具会自动取消。
