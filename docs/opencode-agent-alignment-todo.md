@@ -275,7 +275,7 @@
 - [x] Headless CLI（`pnpm cli -- ...`：prompt、工作区、模型、权限模式、会话续跑与 JSON 事件）
 - [x] Server API / SDK（`pnpm serve`：REST + SSE、Bearer token、会话/消息/权限/提问接口与 `AteamClient` SDK）
 - [ ] ACP / 编辑器集成
-- [ ] GitHub Action
+- [x] GitHub Action（根目录 composite action：安装后调用 Headless CLI，支持模型/权限/工作区等输入）
 - [ ] SQLite / 事件溯源会话存储
 - [x] References（命名外部资料：本地目录 / Git 仓库、描述注入、外部目录自动放行、设置页编辑）
 - [x] 组织级 Policies（`agent/policy.json` 或 `ATEAM_POLICY_FILE`，权限规则最后生效）

@@ -310,3 +310,21 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 格式：`{ "permissionRules": [{ "action": "shell", "resource": "git push *", "effect": "deny" }] }`；也接受 `rules` 字段，最多 200 条，非法规则会被跳过并在设置页提示。
 - 生效顺序：在模式、全局、Agent 与会话规则之后追加，因此组织策略可覆盖用户配置；仍遵循“后匹配优先”。
 - 设置页 Agent 分区展示策略文件路径、错误信息与规则列表，只读；文件本身的写保护需由部署方通过操作系统权限保证。
+
+## 23. GitHub Action
+
+- 根目录 [action.yml](../action.yml) 提供 composite action，安装 ATeam CLI 后在同一 runner 上运行 Headless Agent。
+- 输入：`prompt`、`api-key`、`model`、`provider`、`base-url`、`workspace`（默认 `github.workspace`）、`permission`（默认 `auto`）、`reasoning`、`context-window`、`max-output`、`agent`、`data`、`node-version`、`pnpm-version`。
+- 安装步骤使用 `pnpm install --ignore-scripts` 跳过 Electron 等桌面依赖脚本，仅执行 `pnpm rebuild esbuild` 供 CLI 使用；随后通过安全的 bash 数组传参调用 `pnpm cli`，支持多行 prompt。
+- 使用示例：
+  ```yaml
+  - uses: actions/checkout@v4
+  - uses: lxqddd/ATeam@master
+    with:
+      prompt: Review the changes and fix failing tests.
+      provider: openai
+      model: gpt-5
+      api-key: ${{ secrets.OPENAI_API_KEY }}
+      permission: auto
+  ```
+- 注意：`permission: auto` 允许自动改文件与执行命令；在 CI 中应仅用于受信任仓库，API Key 通过 Secrets 传入。Action 每次运行都会安装源码依赖，暂无独立二进制分发；运行器上的 CLI 会话默认不跨 job 保留。
