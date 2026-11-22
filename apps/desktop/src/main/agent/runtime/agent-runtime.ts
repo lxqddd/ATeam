@@ -478,7 +478,7 @@ export class AgentRuntime {
         contextWindow,
         compactionKeepTokens(contextWindow),
         false,
-        this.tokenEncoder(target)
+        await this.tokenEncoder(target)
       )
       if (!plan) return false
       const existing = this.store.getPreparedCompaction(id)
@@ -806,16 +806,30 @@ export class AgentRuntime {
     return this.mcp().statuses(options)
   }
 
-  addMcpServer(input: McpServerInput): Promise<McpServerConfig> {
-    return this.mcp().addServer(input)
+  async addMcpServer(input: McpServerInput): Promise<McpServerConfig> {
+    const server = await this.mcp().addServer(input)
+    await this.resetWorkspaceMcpManagers()
+    return server
   }
 
-  updateMcpServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig> {
-    return this.mcp().updateServer(id, input)
+  async updateMcpServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig> {
+    const server = await this.mcp().updateServer(id, input)
+    await this.resetWorkspaceMcpManagers()
+    return server
   }
 
-  removeMcpServer(id: string): Promise<boolean> {
-    return this.mcp().removeServer(id)
+  async removeMcpServer(id: string): Promise<boolean> {
+    const removed = await this.mcp().removeServer(id)
+    await this.resetWorkspaceMcpManagers()
+    return removed
+  }
+
+  private async resetWorkspaceMcpManagers(): Promise<void> {
+    for (const [workspace, manager] of this.mcpManagers) {
+      if (path.resolve(workspace) === path.resolve(this.options.workspacePath)) continue
+      this.mcpManagers.delete(workspace)
+      await manager.dispose().catch(() => undefined)
+    }
   }
 
   setWebSearch(config: RuntimeWebSearchConfig | null): void {
@@ -858,6 +872,9 @@ export class AgentRuntime {
     this.formatterCaches.delete(workspace)
     this.skillCaches.delete(workspace)
     await manager?.dispose().catch(() => undefined)
+    const mcp = this.mcpManagers.get(workspace)
+    this.mcpManagers.delete(workspace)
+    await mcp?.dispose().catch(() => undefined)
   }
 
   private async formatFiles(
@@ -1166,6 +1183,7 @@ export class AgentRuntime {
         agents: (workspace) => this.agents(workspace),
         createSnapshotId: (sessionId, references) =>
           this.createSnapshotId(sessionId, this.sessionWorkspace(sessionId), references),
+        referencesFor: (workspace, config) => this.resolveRunReferences(config, workspace),
         record: (sessionId) => this.record(sessionId),
         hasRun: (sessionId) => this.runs.has(sessionId),
         registerRun: (sessionId, run) => {
@@ -1482,13 +1500,14 @@ export class AgentRuntime {
     messages: ChatMessage[],
     model: LanguageModel,
     abortSignal?: AbortSignal,
-    force = false
+    force = false,
+    requestedTarget?: ModelRef | null
   ): Promise<SessionMeta | null> {
     const record = this.record(sessionId)
-    const target = record.session.model ?? this.models.defaultModel
+    const target = requestedTarget ?? record.session.model ?? this.models.defaultModel
     const contextWindow =
       resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
-    const encode = this.tokenEncoder(target)
+    const encode = await this.tokenEncoder(target)
     const plan = planCompaction(
       messages,
       contextWindow,
@@ -1529,7 +1548,7 @@ export class AgentRuntime {
 
   private async compactForOverflow(run: Run): Promise<boolean> {
     const record = this.record(run.sessionId)
-    const target = record.session.model ?? this.models.defaultModel
+    const target = this.resolveAgentTarget(run.agent, record.session.model)
     const model = this.deps.createLanguageModel(this.models, target, {
       sessionId: run.sessionId
     })
@@ -1538,7 +1557,8 @@ export class AgentRuntime {
       this.historyMessages(run, run.messageId),
       model,
       run.abort.signal,
-      true
+      true,
+      target
     )
     return session !== null
   }
@@ -1575,7 +1595,7 @@ export class AgentRuntime {
       const history = messagesAfterCompaction(record.messages, record.session.compaction).filter(
         (message) => message.status !== 'streaming'
       )
-      const encode = this.tokenEncoder(target)
+      const encode = await this.tokenEncoder(target)
       const tokens =
         estimateContextTokens(history, {
           usageCreatedAfter: record.session.compaction?.createdAt,
@@ -1592,10 +1612,10 @@ export class AgentRuntime {
     return this.store.getSession(sessionId)?.directory ?? this.options.workspacePath
   }
 
-  private tokenEncoder(target: ModelRef | null): TokenCounter | undefined {
+  private async tokenEncoder(target: ModelRef | null): Promise<TokenCounter | undefined> {
     try {
       const resolved = resolveModelRef(this.models, target)
-      return tokenCounterFor(resolved.provider.type, resolved.model.modelId)
+      return await tokenCounterFor(resolved.provider.type, resolved.model.modelId)
     } catch {
       return undefined
     }
@@ -1848,17 +1868,16 @@ export class AgentRuntime {
       const variantSettings = variant?.settings ?? {}
       const contextWindow = targetInfo.contextWindow ?? DEFAULT_CONTEXT_WINDOW
       const nativeCompaction =
-        targetInfo.compaction === true &&
-        (resolvedTarget.provider.type === 'anthropic' || resolvedTarget.provider.type === 'openai')
+        targetInfo.compaction === true && resolvedTarget.provider.type === 'anthropic'
       const history = this.historyMessages(run, message.id)
       if (
         !nativeCompaction &&
         shouldCompact(history, contextWindow, {
           usageCreatedAfter: record.session.compaction?.createdAt,
-          encode: this.tokenEncoder(target)
+          encode: await this.tokenEncoder(target)
         })
       ) {
-        await this.compactMessages(run.sessionId, history, model, run.abort.signal)
+        await this.compactMessages(run.sessionId, history, model, run.abort.signal, false, target)
       }
 
       const current = this.record(run.sessionId)

@@ -70,6 +70,7 @@ describe('searchFilesWithReferences', () => {
       await fs.writeFile(path.join(reference, 'guide.md'), '# guide')
       await fs.writeFile(path.join(reference, 'api', 'ref.md'), '# ref')
       await write('src/app.ts')
+      await write('docs/readme.md')
       const references = [{ alias: 'docs', root: reference }]
 
       await expect(searchFilesWithReferences(workspace, 'doc', references)).resolves.toContain(
@@ -81,6 +82,7 @@ describe('searchFilesWithReferences', () => {
       const listed = await searchFilesWithReferences(workspace, 'docs/', references)
       expect(listed).toContain('docs/guide.md')
       expect(listed).toContain('docs/api/ref.md')
+      expect(listed).toContain('docs/readme.md')
       await expect(searchFilesWithReferences(workspace, 'app', references)).resolves.toEqual([
         'src/app.ts'
       ])

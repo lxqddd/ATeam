@@ -97,7 +97,10 @@ export async function searchFilesWithReferences(
       const files = rest
         ? await searchWorkspaceFiles(reference.root, rest, limit)
         : await listFiles(reference.root, limit)
-      return files.map((file) => `${reference.alias}/${file}`)
+      const workspaceFiles = await searchWorkspaceFiles(workspacePath, needle, limit)
+      return [
+        ...new Set([...files.map((file) => `${reference.alias}/${file}`), ...workspaceFiles])
+      ].slice(0, limit)
     }
   }
 

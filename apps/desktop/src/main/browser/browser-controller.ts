@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, type Session } from 'electron'
 import {
   clickScript,
   evalResult,
@@ -26,6 +26,7 @@ interface NetworkEntry {
 
 interface PageEntry {
   tabId: string
+  contentsId: number
   window: BrowserWindow
   consoleLines: string[]
   network: NetworkEntry[]
@@ -43,7 +44,7 @@ export class BrowserController {
   private readonly active = new Map<string, string>()
   private readonly byContents = new Map<number, PageEntry>()
   private readonly queues = new Map<string, Promise<unknown>>()
-  private readonly securedPartitions = new Set<string>()
+  private readonly securedSessions = new WeakSet<Session>()
   private generation = 0
   private nextTab = 1
 
@@ -122,7 +123,6 @@ export class BrowserController {
     this.pages.clear()
     this.active.clear()
     this.byContents.clear()
-    this.securedPartitions.clear()
   }
 
   private create(sessionId: string): PageEntry {
@@ -143,17 +143,18 @@ export class BrowserController {
         partition
       }
     })
+    const contents = window.webContents
     const entry: PageEntry = {
       tabId: `tab-${this.nextTab++}`,
+      contentsId: contents.id,
       window,
       consoleLines: [],
       network: []
     }
-    const contents = window.webContents
     this.byContents.set(contents.id, entry)
     const browserSession = contents.session
-    if (!this.securedPartitions.has(partition)) {
-      this.securedPartitions.add(partition)
+    if (!this.securedSessions.has(browserSession)) {
+      this.securedSessions.add(browserSession)
       browserSession.setPermissionRequestHandler((_contents, _permission, callback) =>
         callback(false)
       )
@@ -244,12 +245,16 @@ export class BrowserController {
     return this.create(sessionId)
   }
 
+  private findPage(sessionId: string, tabId?: string): PageEntry | null {
+    const tabs = this.pages.get(sessionId)
+    if (!tabs || tabs.size === 0) return null
+    const wanted = tabId ?? this.active.get(sessionId)
+    const entry = wanted ? tabs.get(wanted) : undefined
+    return entry && !entry.window.isDestroyed() ? entry : null
+  }
+
   private forget(sessionId: string, entry: PageEntry): void {
-    try {
-      if (!entry.window.isDestroyed()) this.byContents.delete(entry.window.webContents.id)
-    } catch {
-      /* the window is already gone */
-    }
+    this.byContents.delete(entry.contentsId)
     const tabs = this.pages.get(sessionId)
     if (!tabs) return
     tabs.delete(entry.tabId)
@@ -317,6 +322,7 @@ export class BrowserController {
     tabId?: string
   ): Promise<string> {
     const url = validateBrowserUrl(rawUrl)
+    const generation = this.generation
     const entry = newTab ? this.create(sessionId) : this.page(sessionId, tabId)
     const contents = entry.window.webContents
     const loaded = new Promise<void>((resolve, reject) => {
@@ -350,6 +356,10 @@ export class BrowserController {
     try {
       await entry.window.loadURL(url)
       await loaded
+      if (generation !== this.generation) {
+        this.destroyPage(sessionId, entry)
+        throw new Error('BROWSER_CLOSED')
+      }
     } catch (error) {
       await loaded.catch(() => undefined)
       if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
@@ -366,10 +376,12 @@ export class BrowserController {
     const active = this.active.get(sessionId)
     return [
       'Browser tabs:',
-      ...[...tabs.values()].map(
-        (entry) =>
-          `- [${entry.tabId}]${entry.tabId === active ? ' (active)' : ''} ${entry.window.webContents.getTitle() || '(untitled)'} (${entry.window.webContents.getURL()})`
-      )
+      ...[...tabs.values()]
+        .filter((entry) => !entry.window.isDestroyed())
+        .map(
+          (entry) =>
+            `- [${entry.tabId}]${entry.tabId === active ? ' (active)' : ''} ${entry.window.webContents.getTitle() || '(untitled)'} (${entry.window.webContents.getURL()})`
+        )
     ].join('\n')
   }
 
@@ -483,12 +495,8 @@ export class BrowserController {
   }
 
   private network(sessionId: string, tabId?: string): string {
-    let entry: PageEntry
-    try {
-      entry = this.page(sessionId, tabId)
-    } catch (error) {
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
-    }
+    const entry = this.findPage(sessionId, tabId)
+    if (!entry) return 'Browser is not open.'
     if (entry.network.length === 0) return 'No network requests recorded.'
     return [
       'Network requests:',
@@ -506,15 +514,15 @@ export class BrowserController {
     tabId?: string
   ): Promise<string> {
     if (!/^\d{1,6}$/.test(ref) || !filePath.trim()) return 'Error: invalid upload request'
-    let entry: PageEntry
-    try {
-      entry = this.page(sessionId, tabId)
-    } catch (error) {
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
-    }
+    const entry = this.findPage(sessionId, tabId)
+    if (!entry) return 'Browser is not open.'
     const contents = entry.window.webContents
+    let attached = false
     try {
-      if (!contents.debugger.isAttached()) contents.debugger.attach('1.3')
+      if (!contents.debugger.isAttached()) {
+        contents.debugger.attach('1.3')
+        attached = true
+      }
       const document = (await contents.debugger.sendCommand('DOM.getDocument', {
         depth: -1
       })) as { root: { nodeId: number } }
@@ -531,7 +539,7 @@ export class BrowserController {
     } catch (error) {
       return `Error: ${error instanceof Error ? error.message : String(error)}`
     } finally {
-      if (contents.debugger.isAttached()) {
+      if (attached && contents.debugger.isAttached()) {
         try {
           contents.debugger.detach()
         } catch {

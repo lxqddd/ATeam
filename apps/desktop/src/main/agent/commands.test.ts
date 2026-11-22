@@ -135,6 +135,7 @@ it('splits quoted command arguments', () => {
   ])
   expect(expandCommand('Run $1', '"two words"')).toBe('Run two words')
   expect(expandCommand('Run $1', 'one "two words"')).toBe('Run one')
+  expect(splitArguments('C:\\tmp\\a ""')).toEqual(['C:\\tmp\\a', ''])
 })
 
 describe('expandCommandTemplate', () => {

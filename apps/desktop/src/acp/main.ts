@@ -1,5 +1,5 @@
 import { AgentRuntime } from '../main/agent/runtime'
-import { saveAttachment } from '../main/agent/attachments'
+import { removeAttachment, saveAttachment } from '../main/agent/attachments'
 import { buildCliModels, CLI_HELP, parseCliArgs } from '../cli/args'
 import { EventBus } from '../server/event-bus'
 import { AcpServer } from './server'
@@ -38,8 +38,9 @@ async function main(): Promise<number> {
 
   const bus = new EventBus()
   const runtimes = new Map<string, Promise<AgentRuntime>>()
-  const runtimeFor = (cwd: string): Promise<AgentRuntime> => {
-    let runtime = runtimes.get(cwd)
+  const runtimeFor = (cwd: string, runtimeKey = 'default'): Promise<AgentRuntime> => {
+    const cacheKey = `${cwd}\u0000${runtimeKey}`
+    let runtime = runtimes.get(cacheKey)
     if (!runtime) {
       runtime = (async () => {
         const instance = new AgentRuntime({
@@ -57,13 +58,15 @@ async function main(): Promise<number> {
               mimeType,
               data
             })
-          }
+          },
+          removeAttachment: (sessionId: string, attachmentId: string) =>
+            removeAttachment(options.dataDir, sessionId, attachmentId)
         })
       })().catch((error) => {
-        runtimes.delete(cwd)
+        runtimes.delete(cacheKey)
         throw error
       })
-      runtimes.set(cwd, runtime)
+      runtimes.set(cacheKey, runtime)
     }
     return runtime
   }

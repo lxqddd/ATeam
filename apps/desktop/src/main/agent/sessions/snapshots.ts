@@ -36,6 +36,12 @@ const SNAPSHOT_DIR = 'snapshots'
 const BLOB_DIR = 'blobs'
 const IGNORED_NAMES = new Set(['.git'])
 const MAX_UNTRACKED_BYTES = 2 * 1024 * 1024
+const MAX_REFERENCE_FILES = 5_000
+const REFERENCE_KEY_PREFIX = '\u0000refs/'
+
+export function referenceSnapshotKey(alias: string, relative: string): string {
+  return `${REFERENCE_KEY_PREFIX}${alias}/${relative}`
+}
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -48,16 +54,19 @@ function hash(content: Buffer): string {
 async function walkFiles(
   root: string,
   directory = '',
-  files: Record<string, string> = {}
+  files: Record<string, string> = {},
+  limit = Number.POSITIVE_INFINITY
 ): Promise<Record<string, string>> {
+  if (Object.keys(files).length >= limit) return files
   const absolute = path.join(root, directory)
   const entries = await fs.readdir(absolute, { withFileTypes: true })
   for (const entry of entries) {
+    if (Object.keys(files).length >= limit) break
     if (IGNORED_NAMES.has(entry.name)) continue
     const relative = directory ? `${directory}/${entry.name}` : entry.name
     const entryPath = path.join(root, relative)
     if (entry.isDirectory()) {
-      await walkFiles(root, relative, files)
+      await walkFiles(root, relative, files, limit)
     } else if (entry.isFile()) {
       files[relative] = hash(await fs.readFile(entryPath))
     }
@@ -157,14 +166,17 @@ export class SnapshotStore {
       let referenceFiles: Record<string, string>
       try {
         referenceFiles = (await isGitRepository(referenceRoot))
-          ? await hashPaths(referenceRoot, await listGitFiles(referenceRoot))
-          : await walkFiles(referenceRoot)
+          ? await hashPaths(
+              referenceRoot,
+              (await listGitFiles(referenceRoot)).slice(0, MAX_REFERENCE_FILES)
+            )
+          : await walkFiles(referenceRoot, '', {}, MAX_REFERENCE_FILES)
       } catch {
         referenceFiles = {}
       }
       captured.push({ alias: reference.alias, root: referenceRoot })
       for (const [relative, blob] of Object.entries(referenceFiles)) {
-        const key = `refs/${reference.alias}/${relative}`
+        const key = referenceSnapshotKey(reference.alias, relative)
         files[key] = blob
         referenceSources.set(key, path.join(referenceRoot, relative))
       }
@@ -217,28 +229,78 @@ export class SnapshotStore {
     return readJsonFile<WorkspaceSnapshot>(this.manifestPath(id))
   }
 
+  private async collectCurrent(snapshot: WorkspaceSnapshot): Promise<Record<string, string>> {
+    const root = path.resolve(snapshot.root)
+    let files: Record<string, string>
+    try {
+      files = (await isGitRepository(root))
+        ? await hashPaths(root, await listGitFiles(root))
+        : await walkFiles(root)
+    } catch {
+      files = await walkFiles(root)
+    }
+    for (const reference of snapshot.references ?? []) {
+      const referenceRoot = path.resolve(reference.root)
+      try {
+        const referenceFiles = (await isGitRepository(referenceRoot))
+          ? await hashPaths(
+              referenceRoot,
+              (await listGitFiles(referenceRoot)).slice(0, MAX_REFERENCE_FILES)
+            )
+          : await walkFiles(referenceRoot, '', {}, MAX_REFERENCE_FILES)
+        for (const [relative, blob] of Object.entries(referenceFiles)) {
+          files[referenceSnapshotKey(reference.alias, relative)] = blob
+        }
+      } catch {
+        /* a missing reference is treated as empty */
+      }
+    }
+    return files
+  }
+
+  private async safeWrite(target: string, root: string, content: Buffer): Promise<void> {
+    const existing = await fs.lstat(target).catch(() => null)
+    if (existing?.isSymbolicLink()) throw new Error('SNAPSHOT_TARGET_IS_SYMLINK')
+    const parent = path.dirname(target)
+    await fs.mkdir(parent, { recursive: true })
+    const realRoot = await fs.realpath(root)
+    const realParent = await fs.realpath(parent)
+    if (realParent !== realRoot && !realParent.startsWith(`${realRoot}${path.sep}`)) {
+      throw new Error('SNAPSHOT_TARGET_ESCAPES_ROOT')
+    }
+    await fs.writeFile(target, content)
+  }
+
   async restore(id: string): Promise<RestoreResult> {
     const snapshot = await this.get(id)
     if (!snapshot) throw new Error('SNAPSHOT_NOT_FOUND')
     const root = path.resolve(snapshot.root)
-    const current = await walkFiles(root)
+    const current = await this.collectCurrent(snapshot)
     const removed: string[] = []
     const written: string[] = []
 
     for (const relative of Object.keys(current)) {
       if (snapshot.files[relative]) continue
-      await fs.rm(path.join(root, relative), { force: true })
+      const resolved = this.targetFor(snapshot, root, relative)
+      if (!resolved) continue
+      await fs.rm(resolved.target, { force: true })
       removed.push(relative)
     }
-    if (removed.length > 0) await removeEmptyDirectories(root)
 
     for (const [relative, blob] of Object.entries(snapshot.files)) {
       if (current[relative] === blob) continue
+      const resolved = this.targetFor(snapshot, root, relative)
+      if (!resolved) continue
       const content = await fs.readFile(path.join(this.blobsDirectory, blob))
-      const target = path.join(root, relative)
-      await fs.mkdir(path.dirname(target), { recursive: true })
-      await fs.writeFile(target, content)
+      await this.safeWrite(resolved.target, resolved.root, content)
       written.push(relative)
+    }
+
+    if (removed.length > 0) {
+      await removeEmptyDirectories(root)
+      for (const reference of snapshot.references ?? []) {
+        await removeEmptyDirectories(path.resolve(reference.root)).catch(() => undefined)
+      }
     }
 
     return { written: written.sort(), removed: removed.sort() }
@@ -249,10 +311,11 @@ export class SnapshotStore {
     workspaceRoot: string,
     relative: string
   ): { target: string; root: string } | null {
-    const parts = relative.split('/')
-    if (parts[0] === 'refs') {
-      const alias = parts[1]
-      const subPath = parts.slice(2).join('/')
+    if (relative.startsWith(REFERENCE_KEY_PREFIX)) {
+      const rest = relative.slice(REFERENCE_KEY_PREFIX.length)
+      const slash = rest.indexOf('/')
+      const alias = slash === -1 ? rest : rest.slice(0, slash)
+      const subPath = slash === -1 ? '' : rest.slice(slash + 1)
       const reference = snapshot.references?.find((entry) => entry.alias === alias)
       if (!reference || !subPath || subPath.split('/').includes('..')) return null
       const root = path.resolve(reference.root)
@@ -280,8 +343,7 @@ export class SnapshotStore {
       const blob = snapshot.files[relative]
       if (blob) {
         const content = await fs.readFile(path.join(this.blobsDirectory, blob))
-        await fs.mkdir(path.dirname(resolved.target), { recursive: true })
-        await fs.writeFile(resolved.target, content)
+        await this.safeWrite(resolved.target, resolved.root, content)
         written.push(relative)
       } else {
         await fs.rm(resolved.target, { force: true })

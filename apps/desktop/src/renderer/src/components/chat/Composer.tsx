@@ -290,10 +290,14 @@ function Composer(): React.JSX.Element {
       const argumentNames = command.mcp.arguments ?? []
       const promptArgs: Record<string, string> = {}
       if (argumentNames.length > 0) {
-        tokens.forEach((token, index) => {
-          const name = argumentNames[index]
-          if (name) promptArgs[name] = token
+        argumentNames.forEach((name, index) => {
+          const token = tokens[index]
+          if (token !== undefined) promptArgs[name] = token
         })
+        if (tokens.length > argumentNames.length) {
+          const last = argumentNames[argumentNames.length - 1]
+          promptArgs[last] = tokens.slice(argumentNames.length - 1).join(' ')
+        }
       } else if (tokens.length > 0) {
         promptArgs.input = tokens.join(' ')
       }

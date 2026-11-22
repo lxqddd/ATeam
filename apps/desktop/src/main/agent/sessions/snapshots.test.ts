@@ -4,7 +4,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { SnapshotStore } from './snapshots'
+import { SnapshotStore, referenceSnapshotKey } from './snapshots'
 
 const run = promisify(execFile)
 
@@ -174,6 +174,37 @@ describe('SnapshotStore', () => {
     })
   })
 
+  it('fully restores workspace and reference files together', async () => {
+    const reference = path.join(directory, 'reference')
+    await fs.mkdir(reference, { recursive: true })
+    await fs.writeFile(path.join(reference, 'guide.md'), 'first')
+    await write('a.txt', 'one')
+    const snapshot = await store.create(workspace, 'session-1', [
+      { alias: 'docs', root: reference }
+    ])
+
+    await write('a.txt', 'two')
+    await fs.writeFile(path.join(reference, 'guide.md'), 'second')
+    await store.restore(snapshot.id)
+
+    await expect(read('a.txt')).resolves.toBe('one')
+    await expect(fs.readFile(path.join(reference, 'guide.md'), 'utf8')).resolves.toBe('first')
+  })
+
+  it('refuses to write through a symlink during restore', async () => {
+    await write('a.txt', 'one')
+    const snapshot = await store.create(workspace)
+    const outside = path.join(directory, 'outside.txt')
+    await fs.writeFile(outside, 'outside')
+    await fs.rm(path.join(workspace, 'a.txt'))
+    await fs.symlink(outside, path.join(workspace, 'a.txt'))
+
+    await expect(store.restorePaths(snapshot.id, ['a.txt'])).rejects.toThrow(
+      'SNAPSHOT_TARGET_IS_SYMLINK'
+    )
+    await expect(fs.readFile(outside, 'utf8')).resolves.toBe('outside')
+  })
+
   it('captures and restores files inside references', async () => {
     const reference = path.join(directory, 'reference')
     await fs.mkdir(reference, { recursive: true })
@@ -183,14 +214,14 @@ describe('SnapshotStore', () => {
     const snapshot = await store.create(workspace, 'session-1', [
       { alias: 'docs', root: reference }
     ])
-    expect(snapshot.files['refs/docs/guide.md']).toBeTruthy()
+    expect(snapshot.files[referenceSnapshotKey('docs', 'guide.md')]).toBeTruthy()
 
     await fs.writeFile(path.join(reference, 'guide.md'), 'second')
     const after = await store.create(workspace, 'session-1', [{ alias: 'docs', root: reference }])
     const diff = await store.diff(snapshot.id, after.id)
-    expect(diff.modified).toContain('refs/docs/guide.md')
+    expect(diff.modified).toContain(referenceSnapshotKey('docs', 'guide.md'))
 
-    await store.restorePaths(snapshot.id, ['refs/docs/guide.md'])
+    await store.restorePaths(snapshot.id, [referenceSnapshotKey('docs', 'guide.md')])
     await expect(fs.readFile(path.join(reference, 'guide.md'), 'utf8')).resolves.toBe('first')
   })
 

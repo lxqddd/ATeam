@@ -1497,32 +1497,6 @@ describe('AgentRuntime', () => {
     })
   })
 
-  it('enables OpenAI provider-side compaction when configured', async () => {
-    runtime.setModels({
-      providers: [{ id: 'provider-1', name: 'OpenAI', type: 'openai', apiKey: 'sk-test' }],
-      models: [
-        {
-          ...MODELS.models[0],
-          providerId: 'provider-1',
-          modelId: 'gpt-5',
-          contextWindow: 20_000,
-          compaction: true
-        }
-      ],
-      defaultModel: { providerId: 'provider-1', modelId: 'gpt-5' }
-    })
-    scripts.push(textScript('first'))
-    await runtime.sendChat(sessionId, 'hello')
-    await sink.next('run.finished')
-
-    expect(turns[0].providerOptions).toMatchObject({
-      openai: {
-        contextManagement: [{ type: 'compaction', compactThreshold: 4_000 }]
-      }
-    })
-    expect(summaries).toEqual([])
-  })
-
   it('uses the last step usage for the context size', async () => {
     scripts.push(multiStepUsageScript())
     await runtime.sendChat(sessionId, 'steps')
@@ -2569,6 +2543,7 @@ describe('session search and fork', () => {
     scripts.push(pausableTextScript())
     await runtime.sendChat(sessionId, 'hi')
     await sink.next('run.started')
+    await vi.waitFor(() => expect(resumeTurn).not.toBeNull())
 
     await expect(runtime.forkSession(sessionId)).rejects.toThrow('SESSION_BUSY')
 

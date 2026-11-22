@@ -100,6 +100,19 @@ describe('McpManager tools', () => {
     await manager.dispose()
   })
 
+  it('resolves prompts and resources from transient servers', async () => {
+    const { client } = makeClient({
+      prompts: [{ name: 'greet' }],
+      resources: [{ uri: 'demo://readme', name: 'readme' }]
+    })
+    const manager = createManager(() => client)
+    await manager.setTransientServers([{ name: 'client', type: 'local', command: 'node' }])
+
+    await expect(manager.getPrompt('client', 'greet')).resolves.toBe('')
+    await expect(manager.readResource('client', 'demo://readme')).resolves.toBe('(empty resource)')
+    await manager.dispose()
+  })
+
   it('exposes prefixed, sanitized tool names', async () => {
     const { client } = makeClient({ tools: [{ name: 'read_file' }, { name: 'do:thing' }] })
     const manager = createManager(() => client)

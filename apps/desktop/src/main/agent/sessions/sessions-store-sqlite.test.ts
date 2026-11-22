@@ -179,6 +179,81 @@ describe('SQLite session storage', () => {
     await reloaded.close()
   })
 
+  it('keeps valid messages when one row is corrupt and no events exist', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'm1', role: 'user', parts: [makeTextPart('first')] })
+    )
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'm2', role: 'assistant', parts: [makeTextPart('second')] })
+    )
+    await store.close()
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    database.prepare('DELETE FROM session_events').run()
+    database
+      .prepare('UPDATE messages SET data = ? WHERE session_id = ? AND position = 0')
+      .run('{bad', session.id)
+    database.close()
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getMessages(session.id)).toHaveLength(1)
+    expect(reloaded.getMessages(session.id)?.[0]?.parts).toEqual([{ type: 'text', text: 'second' }])
+    await reloaded.close()
+
+    const check = new DatabaseSync(databaseFile)
+    const corrupt = check.prepare('SELECT COUNT(*) AS count FROM corrupt_messages').get() as {
+      count: number
+    }
+    expect(corrupt.count).toBe(1)
+    check.close()
+  })
+
+  it('rebuilds from a session checkpoint event', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'm1', role: 'user', parts: [makeTextPart('checkpointed')] })
+    )
+    await store.close()
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    const sessionRow = database
+      .prepare('SELECT data FROM sessions WHERE id = ?')
+      .get(session.id) as { data: string }
+    const messageRows = database
+      .prepare('SELECT data FROM messages WHERE session_id = ? ORDER BY position')
+      .all(session.id) as { data: string }[]
+    database
+      .prepare('DELETE FROM session_events WHERE session_id = ?')
+      .run(session.id)
+    database
+      .prepare(
+        'INSERT INTO session_events (session_id, type, payload, created_at) VALUES (?, ?, ?, ?)'
+      )
+      .run(
+        session.id,
+        'session.checkpoint',
+        JSON.stringify({
+          session: JSON.parse(sessionRow.data),
+          messages: messageRows.map((row) => row.data)
+        }),
+        new Date().toISOString()
+      )
+    database.prepare('UPDATE sessions SET data = ? WHERE id = ?').run('{bad', session.id)
+    database.close()
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getMessages(session.id)?.[0]?.parts).toEqual([
+      { type: 'text', text: 'checkpointed' }
+    ])
+    await reloaded.close()
+  })
+
   it('quarantines corrupt database rows', async () => {
     const session = await store.create()
     await store.close()

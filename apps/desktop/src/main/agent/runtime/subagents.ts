@@ -15,6 +15,10 @@ export interface SubagentHost {
     sessionId: string,
     references: Array<{ alias: string; root: string }>
   ): Promise<string | undefined>
+  referencesFor(
+    workspace: string,
+    config: Run['config']
+  ): Promise<Array<{ alias: string; root: string }>>
   record(sessionId: string): SessionRecord
   hasRun(sessionId: string): boolean
   registerRun(sessionId: string, run: Run): void

@@ -1,4 +1,5 @@
 import { app, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import fsSync from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
 import {
@@ -174,6 +175,11 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   }
   const configStore = new AgentConfigStore(app.getPath('userData'))
   const configReady = configStore.init()
+  let referenceSearchCache: {
+    key: string
+    expiresAt: number
+    promise: Promise<Array<{ alias: string; root: string }>>
+  } | null = null
 
   const handle = (channel: string, handler: (payload: unknown) => unknown): void => {
     ipcMain.handle(channel, (event: IpcMainInvokeEvent, payload: unknown) => {
@@ -356,14 +362,35 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     const config = configStore.get()
     let references: Array<{ alias: string; root: string }> = []
     if ((config.references?.length ?? 0) > 0 || hasProjectReferences(workspacePath)) {
-      references = await resolveReferences({
-        references: config.references ?? [],
-        workspacePath,
-        globalDirectory: path.join(app.getPath('userData'), 'agent'),
-        cacheDirectory: path.join(app.getPath('userData'), 'agent', 'references')
-      })
-        .then((items) => items.map((item) => ({ alias: item.alias, root: item.root })))
-        .catch(() => [])
+      const projectFile = path.join(workspacePath, '.opencode', 'references.json')
+      const projectStamp = (() => {
+        try {
+          return String(fsSync.statSync(projectFile).mtimeMs)
+        } catch {
+          return '0'
+        }
+      })()
+      const key = `${JSON.stringify(config.references ?? [])}:${projectStamp}`
+      if (
+        !referenceSearchCache ||
+        referenceSearchCache.key !== key ||
+        referenceSearchCache.expiresAt < Date.now()
+      ) {
+        referenceSearchCache = {
+          key,
+          expiresAt: Date.now() + 60_000,
+          promise: resolveReferences({
+            references: config.references ?? [],
+            workspacePath,
+            globalDirectory: path.join(app.getPath('userData'), 'agent'),
+            cacheDirectory: path.join(app.getPath('userData'), 'agent', 'references'),
+            allowClone: false
+          })
+            .then((items) => items.map((item) => ({ alias: item.alias, root: item.root })))
+            .catch(() => [])
+        }
+      }
+      references = await referenceSearchCache.promise
     }
     return searchFilesWithReferences(workspacePath, query, references)
   })

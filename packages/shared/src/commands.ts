@@ -22,38 +22,58 @@ export function expandCommand(template: string, args: string): string {
 export function splitArguments(input: string): string[] {
   const args: string[] = []
   let current = ''
+  let started = false
   let quote: '"' | "'" | null = null
-  let escaped = false
-  for (const character of input) {
-    if (escaped) {
-      current += character
-      escaped = false
-      continue
-    }
-    if (character === '\\' && quote !== "'") {
-      escaped = true
-      continue
-    }
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index]
     if (quote) {
-      if (character === quote) quote = null
-      else current += character
+      if (character === quote) {
+        quote = null
+        started = true
+        continue
+      }
+      if (character === '\\' && quote === '"' && index + 1 < input.length) {
+        const next = input[index + 1]
+        if (next === '"' || next === '\\') {
+          current += next
+          started = true
+          index += 1
+          continue
+        }
+      }
+      current += character
+      started = true
       continue
     }
     if (character === '"' || character === "'") {
       quote = character
+      started = true
+      continue
+    }
+    if (character === '\\' && index + 1 < input.length) {
+      const next = input[index + 1]
+      if (/\s/.test(next) || next === '\\' || next === '"' || next === "'") {
+        current += next
+        started = true
+        index += 1
+        continue
+      }
+      current += '\\'
+      started = true
       continue
     }
     if (/\s/.test(character)) {
-      if (current) {
+      if (started) {
         args.push(current)
         current = ''
+        started = false
       }
       continue
     }
     current += character
+    started = true
   }
-  if (escaped) current += '\\'
-  if (current) args.push(current)
+  if (started) args.push(current)
   return args
 }
 

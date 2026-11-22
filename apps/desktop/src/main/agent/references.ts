@@ -28,6 +28,7 @@ export interface ResolveReferencesOptions {
   globalDirectory: string
   cacheDirectory: string
   exec?: ReferenceExec
+  allowClone?: boolean
 }
 
 function expandPath(value: string): string {
@@ -95,6 +96,7 @@ async function resolveRepositoryReference(
   )
   const gitDirectory = path.join(directory, '.git')
   if (!(await isDirectory(gitDirectory))) {
+    if (options.allowClone === false) return null
     await fs.mkdir(path.dirname(directory), { recursive: true })
     const exec = options.exec ?? ((file, args) => execFileAsync(file, args, { timeout: 120_000 }))
     try {
@@ -168,7 +170,8 @@ export function referencesPrompt(references: ResolvedReference[]): string {
     ...references.map(
       (reference) =>
         `- ${reference.alias}: ${reference.root}${reference.description ? ` — ${reference.description}` : ''}`
-    )
+    ),
+    'The @alias/<relative path> notation maps to <root>/<relative path> for the matching reference.'
   ].join('\n')
 }
 

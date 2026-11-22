@@ -129,6 +129,7 @@ export class McpManager implements McpManagerLike {
   private readonly statusesById = new Map<string, McpServerStatus>()
   private authByServer = new Map<string, McpAuthRecord>()
   private transient: McpServerConfig[] = []
+  private transientEpoch = 0
   private disposed = false
 
   constructor(private readonly options: McpManagerOptions) {
@@ -143,6 +144,7 @@ export class McpManager implements McpManagerLike {
 
   async setTransientServers(inputs: McpServerInput[]): Promise<void> {
     await this.ready
+    this.transientEpoch += 1
     for (const config of this.transient) {
       const entry = this.connections.get(config.id)
       this.connections.delete(config.id)
@@ -151,8 +153,8 @@ export class McpManager implements McpManagerLike {
       await entry?.client.close().catch(() => undefined)
     }
     const now = new Date().toISOString()
-    this.transient = inputs.map((input, index) => ({
-      id: `transient-${index}-${createHash('sha1').update(input.name).digest('hex').slice(0, 8)}`,
+    this.transient = inputs.map((input) => ({
+      id: `transient-${createHash('sha1').update(input.name).digest('hex').slice(0, 8)}`,
       name: input.name,
       type: input.type,
       command: input.command ?? null,
@@ -296,13 +298,11 @@ export class McpManager implements McpManagerLike {
     server: string
   ): Promise<{ config: McpServerConfig; entry: Connection }> {
     await this.ready
-    const config = this.store
-      .list()
-      .find(
-        (candidate) =>
-          candidate.enabled &&
-          (candidate.name.toLowerCase() === server.toLowerCase() || candidate.id === server)
-      )
+    const config = this.configs().find(
+      (candidate) =>
+        candidate.enabled &&
+        (candidate.name.toLowerCase() === server.toLowerCase() || candidate.id === server)
+    )
     if (!config) throw new Error(`UNKNOWN_MCP_SERVER: ${server}`)
     const entry = await this.connectionFor(config)
     if (!entry) throw new Error(`MCP_SERVER_UNAVAILABLE: ${config.name}`)
@@ -356,18 +356,26 @@ export class McpManager implements McpManagerLike {
 
   private async connect(config: McpServerConfig): Promise<Connection | null> {
     if (this.disposed) return null
+    const epoch = config.id.startsWith('transient-') ? this.transientEpoch : null
+    const stale = async (entry: Connection | null): Promise<Connection | null> => {
+      if (epoch === null || epoch === this.transientEpoch) return entry
+      await entry?.client.close().catch(() => undefined)
+      this.connections.delete(config.id)
+      this.statusesById.delete(config.id)
+      return null
+    }
     await this.refreshAuthIfNeeded(config.id)
     this.setStatus(config, { state: 'connecting', error: null })
     const client = this.createClient(config)
     try {
-      return await this.establish(config, client)
+      return await stale(await this.establish(config, client))
     } catch (error) {
       await client.close().catch(() => undefined)
       const authFailure = config.type === 'remote' && isAuthFailure(error)
       if (authFailure && (await this.refreshAuth(config.id))) {
         const retry = this.createClient(config)
         try {
-          return await this.establish(config, retry)
+          return await stale(await this.establish(config, retry))
         } catch (retryError) {
           await retry.close().catch(() => undefined)
           this.setStatus(config, {

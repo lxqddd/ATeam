@@ -302,6 +302,28 @@ describe('AcpServer', () => {
     ])
   })
 
+  it('rejects loading a session from a different directory', async () => {
+    harness = createHarness()
+    const h = harness
+    h.runtime.sessions = [
+      makeSession({ id: 'moved-session', title: 'Moved', directory: '/tmp/project' })
+    ]
+    h.send(INITIALIZE)
+    await h.next((message) => message.id === 1)
+    h.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/load',
+      params: { sessionId: 'moved-session', cwd: '/tmp/other', mcpServers: [] }
+    })
+
+    const response = await h.next((message) => message.id === 2)
+    expect(response.error).toMatchObject({
+      code: -32602,
+      message: 'Session belongs to a different directory'
+    })
+  })
+
   it('accepts image prompt blocks as attachments', async () => {
     harness = createHarness()
     const h = harness

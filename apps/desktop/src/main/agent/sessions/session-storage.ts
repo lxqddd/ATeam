@@ -4,6 +4,8 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { ChatMessage, SessionMeta } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
+const CHECKPOINT_EVENTS = 2_000
+
 export interface RedoState {
   messages: ChatMessage[]
   snapshotAfter: string | null
@@ -182,6 +184,7 @@ class SqliteSessionStorage implements SessionStorage {
   private database: DatabaseSync | null = null
   private readonly messageCache = new Map<string, string[]>()
   private readonly recordCache = new Map<string, string>()
+  private readonly eventCounts = new Map<string, number>()
 
   constructor(userDataPath: string) {
     this.file = path.join(userDataPath, 'agent', 'sessions.db')
@@ -258,6 +261,7 @@ class SqliteSessionStorage implements SessionStorage {
     const database = this.requireDatabase()
     this.messageCache.delete(id)
     this.recordCache.delete(id)
+    this.eventCounts.delete(id)
     database.exec('BEGIN')
     try {
       database.prepare('DELETE FROM sessions WHERE id = ?').run(id)
@@ -277,6 +281,7 @@ class SqliteSessionStorage implements SessionStorage {
   async close(): Promise<void> {
     this.messageCache.clear()
     this.recordCache.clear()
+    this.eventCounts.clear()
     this.database?.close()
     this.database = null
   }
@@ -304,12 +309,38 @@ class SqliteSessionStorage implements SessionStorage {
     }
   }
 
-  private logEvent(database: DatabaseSync, sessionId: string, type: string, payload: string): void {
-    database
+  private logEvent(
+    database: DatabaseSync,
+    sessionId: string,
+    type: string,
+    payload: string
+  ): number {
+    const result = database
       .prepare(
         'INSERT INTO session_events (session_id, type, payload, created_at) VALUES (?, ?, ?, ?)'
       )
       .run(sessionId, type, payload, new Date().toISOString())
+    return Number(result.lastInsertRowid)
+  }
+
+  private checkpointIfNeeded(
+    database: DatabaseSync,
+    sessionId: string,
+    sessionData: string,
+    messages: string[]
+  ): void {
+    const count = this.eventCounts.get(sessionId) ?? 0
+    if (count < CHECKPOINT_EVENTS) return
+    const seq = this.logEvent(
+      database,
+      sessionId,
+      'session.checkpoint',
+      JSON.stringify({ session: JSON.parse(sessionData), messages })
+    )
+    database
+      .prepare('DELETE FROM session_events WHERE session_id = ? AND seq < ?')
+      .run(sessionId, seq)
+    this.eventCounts.set(sessionId, 1)
   }
 
   private insertRows(record: SessionRecord, logEvents = true): void {
@@ -322,11 +353,14 @@ class SqliteSessionStorage implements SessionStorage {
     }
     const sessionData = JSON.stringify(data)
     const previousSession = this.recordCache.get(record.session.id)
+    let logged = 0
     if (logEvents) {
       if (previousSession === undefined) {
         this.logEvent(database, record.session.id, 'session.created', sessionData)
+        logged += 1
       } else if (previousSession !== sessionData) {
         this.logEvent(database, record.session.id, 'session.updated', sessionData)
+        logged += 1
       }
     }
     database
@@ -370,6 +404,7 @@ class SqliteSessionStorage implements SessionStorage {
           'message.upsert',
           JSON.stringify({ position: index, data: serialized[index] })
         )
+        logged += 1
       }
       if (cached && cached.length > serialized.length) {
         this.logEvent(
@@ -378,7 +413,15 @@ class SqliteSessionStorage implements SessionStorage {
           'message.deleted',
           JSON.stringify({ from: serialized.length })
         )
+        logged += 1
       }
+    }
+    if (logEvents) {
+      this.eventCounts.set(
+        record.session.id,
+        (this.eventCounts.get(record.session.id) ?? 0) + logged
+      )
+      this.checkpointIfNeeded(database, record.session.id, sessionData, serialized)
     }
     this.messageCache.set(record.session.id, serialized)
   }
@@ -393,6 +436,20 @@ class SqliteSessionStorage implements SessionStorage {
       try {
         if (row.type === 'session.created' || row.type === 'session.updated') {
           stored = JSON.parse(row.payload) as StoredSession
+        } else if (row.type === 'session.checkpoint') {
+          const value = JSON.parse(row.payload) as {
+            session?: StoredSession
+            messages?: unknown
+          }
+          if (value.session) {
+            stored = value.session
+            messages.clear()
+            if (Array.isArray(value.messages)) {
+              value.messages.forEach((data, index) => {
+                if (typeof data === 'string') messages.set(index, data)
+              })
+            }
+          }
         } else if (row.type === 'message.upsert') {
           const value = JSON.parse(row.payload) as { position: number; data: string }
           messages.set(value.position, value.data)
@@ -407,6 +464,10 @@ class SqliteSessionStorage implements SessionStorage {
       }
     }
     if (!stored?.session || typeof stored.session !== 'object') return null
+    if (stored.session.id !== sessionId) return null
+    if (typeof stored.session.updatedAt !== 'string') {
+      stored.session.updatedAt = new Date().toISOString()
+    }
 
     const parsed: ChatMessage[] = []
     const cached: string[] = []
@@ -420,19 +481,28 @@ class SqliteSessionStorage implements SessionStorage {
       }
     }
 
-    database
-      .prepare(
-        'INSERT INTO sessions (id, data, updated_at) VALUES (?, ?, ?) ' +
-          'ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+    const data = JSON.stringify(stored)
+    database.exec('BEGIN')
+    try {
+      database
+        .prepare(
+          'INSERT INTO sessions (id, data, updated_at) VALUES (?, ?, ?) ' +
+            'ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
+        )
+        .run(sessionId, data, stored.session.updatedAt)
+      database.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
+      const insert = database.prepare(
+        'INSERT INTO messages (session_id, position, data) VALUES (?, ?, ?)'
       )
-      .run(sessionId, JSON.stringify(stored), stored.session.updatedAt)
-    database.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId)
-    const insert = database.prepare(
-      'INSERT INTO messages (session_id, position, data) VALUES (?, ?, ?)'
-    )
-    cached.forEach((data, index) => insert.run(sessionId, index, data))
-    this.recordCache.set(sessionId, JSON.stringify(stored))
+      cached.forEach((entry, index) => insert.run(sessionId, index, entry))
+      database.exec('COMMIT')
+    } catch {
+      database.exec('ROLLBACK')
+      return null
+    }
+    this.recordCache.set(sessionId, data)
     this.messageCache.set(sessionId, cached)
+    this.eventCounts.set(sessionId, rows.length)
     return {
       session: stored.session,
       messages: parsed,
@@ -472,6 +542,7 @@ class SqliteSessionStorage implements SessionStorage {
             JSON.stringify({ position, data: JSON.stringify(message) })
           )
         })
+        this.eventCounts.set(record.session.id, 1 + messages.length)
       }
       database.exec('COMMIT')
     } catch (error) {
@@ -578,9 +649,23 @@ class SqliteSessionStorage implements SessionStorage {
           records.push(rebuilt)
           continue
         }
-        database.prepare('DELETE FROM messages WHERE session_id = ?').run(row.id)
         messages.length = 0
         cachedMessages.length = 0
+        for (const messageRow of messageRows) {
+          try {
+            messages.push(JSON.parse(messageRow.data) as ChatMessage)
+            cachedMessages.push(messageRow.data)
+          } catch {
+            database
+              .prepare(
+                'INSERT OR REPLACE INTO corrupt_messages (session_id, position, data, captured_at) VALUES (?, ?, ?, ?)'
+              )
+              .run(row.id, messageRow.position, messageRow.data, new Date().toISOString())
+            database
+              .prepare('DELETE FROM messages WHERE session_id = ? AND position = ?')
+              .run(row.id, messageRow.position)
+          }
+        }
       }
       this.recordCache.set(row.id, row.data)
       this.messageCache.set(row.id, cachedMessages)
@@ -601,6 +686,12 @@ class SqliteSessionStorage implements SessionStorage {
     for (const entry of missing) {
       const rebuilt = this.rebuildFromEvents(database, entry.session_id)
       if (rebuilt) records.push(rebuilt)
+    }
+    for (const record of records) {
+      const count = database
+        .prepare('SELECT COUNT(*) AS count FROM session_events WHERE session_id = ?')
+        .get(record.session.id) as { count: number }
+      this.eventCounts.set(record.session.id, count.count)
     }
     return records
   }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { createInterface, type Interface } from 'node:readline'
 import type {
@@ -17,6 +18,7 @@ export interface AcpRuntime {
   listSessions(): SessionMeta[]
   messages(id: string): MessagesSnapshot
   attachImage(sessionId: string, mimeType: string, data: Uint8Array): Promise<MessageAttachment>
+  removeAttachment?(sessionId: string, attachmentId: string): Promise<void>
   setTransientMcpServers?(servers: McpServerInput[]): Promise<void>
   sendChat(id: string, text: string, model?: null, attachments?: MessageAttachment[]): Promise<void>
   stopChat(id: string): void
@@ -26,7 +28,7 @@ export interface AcpRuntime {
 }
 
 export interface AcpServerOptions {
-  createRuntime: (cwd: string) => Promise<AcpRuntime>
+  createRuntime: (cwd: string, runtimeKey?: string) => Promise<AcpRuntime>
   bus: EventBus
   input: NodeJS.ReadableStream
   output: NodeJS.WritableStream
@@ -36,10 +38,13 @@ export interface AcpServerOptions {
 
 interface PendingPermission {
   resolve: (decision: PermissionDecision) => void
+  sessionId: string
+  permissionId: string
 }
 
 interface PendingElicitation {
   runtime: AcpRuntime
+  sessionId: string
   questionId: string
   question: QuestionInput
 }
@@ -277,7 +282,7 @@ export class AcpServer {
       this.fail(message.id, -32602, 'cwd must be an absolute path')
       return
     }
-    const runtime = await this.options.createRuntime(cwd)
+    const runtime = await this.options.createRuntime(cwd, randomUUID())
     const session = await runtime.createSession()
     if (this.options.configureSession) {
       await this.options.configureSession(runtime, session.id)
@@ -298,9 +303,16 @@ export class AcpServer {
       this.fail(message.id, -32602, 'sessionId is required')
       return
     }
-    const runtime = await this.options.createRuntime(cwd)
-    if (!runtime.listSessions().some((session) => session.id === sessionId)) {
+    const runtime = await this.options.createRuntime(cwd, sessionId)
+    const session = runtime.listSessions().find((candidate) => candidate.id === sessionId)
+    if (!session) {
+      await runtime.shutdown().catch(() => undefined)
       this.fail(message.id, -32602, 'Unknown session')
+      return
+    }
+    if (session.directory && path.resolve(session.directory) !== path.resolve(cwd)) {
+      await runtime.shutdown().catch(() => undefined)
+      this.fail(message.id, -32602, 'Session belongs to a different directory')
       return
     }
     this.sessions.set(sessionId, { runtime, cwd })
@@ -336,6 +348,15 @@ export class AcpServer {
               content: { type: 'text', text: part.text }
             }
           })
+        } else if (part.type === 'attachment') {
+          this.notify('session/update', {
+            sessionId,
+            update: {
+              sessionUpdate: 'user_message_chunk',
+              messageId: message.id,
+              content: { type: 'text', text: `[attachment: ${part.attachment.name}]` }
+            }
+          })
         } else if (part.type === 'tool' && message.role === 'assistant') {
           this.notify('session/update', {
             sessionId,
@@ -353,6 +374,28 @@ export class AcpServer {
               rawInput: part.input
             }
           })
+          this.notify('session/update', {
+            sessionId,
+            update: {
+              sessionUpdate: 'tool_call_update',
+              toolCallId: part.toolCallId,
+              status:
+                part.state === 'completed'
+                  ? 'completed'
+                  : part.state === 'failed' || part.state === 'denied'
+                    ? 'failed'
+                    : 'pending',
+              content:
+                part.output || part.error
+                  ? [
+                      {
+                        type: 'content',
+                        content: { type: 'text', text: part.output ?? part.error }
+                      }
+                    ]
+                  : []
+            }
+          })
         }
       }
     }
@@ -366,24 +409,33 @@ export class AcpServer {
       return
     }
     const text = textFromPrompt(message.params?.prompt)
-    const images: MessageAttachment[] = []
+    const imageBlocks: Array<{ mimeType: string; data: Uint8Array }> = []
     for (const block of Array.isArray(message.params?.prompt) ? message.params.prompt : []) {
       if (!block || typeof block !== 'object') continue
       const raw = block as Record<string, unknown>
       if (raw.type !== 'image' || typeof raw.data !== 'string') continue
       const mimeType = typeof raw.mimeType === 'string' ? raw.mimeType : 'image/png'
+      if (!mimeType.startsWith('image/')) {
+        this.fail(message.id, -32602, `Unsupported image type: ${mimeType}`)
+        return
+      }
+      imageBlocks.push({ mimeType, data: Buffer.from(raw.data, 'base64') })
+    }
+    if (!text && imageBlocks.length === 0) {
+      this.fail(message.id, -32602, 'Prompt contains no text or image content')
+      return
+    }
+    const images: MessageAttachment[] = []
+    for (const block of imageBlocks) {
       try {
-        images.push(
-          await entry.runtime.attachImage(sessionId, mimeType, Buffer.from(raw.data, 'base64'))
-        )
+        images.push(await entry.runtime.attachImage(sessionId, block.mimeType, block.data))
       } catch (error) {
+        for (const saved of images) {
+          await entry.runtime.removeAttachment?.(sessionId, saved.id).catch(() => undefined)
+        }
         this.fail(message.id, -32602, error instanceof Error ? error.message : String(error))
         return
       }
-    }
-    if (!text && images.length === 0) {
-      this.fail(message.id, -32602, 'Prompt contains no text or image content')
-      return
     }
 
     const abort = new AbortController()
@@ -399,6 +451,9 @@ export class AcpServer {
     } catch (error) {
       abort.abort()
       await finished.catch(() => undefined)
+      for (const saved of images) {
+        await entry.runtime.removeAttachment?.(sessionId, saved.id).catch(() => undefined)
+      }
       this.fail(message.id, -32603, error instanceof Error ? error.message : String(error))
       return
     }
@@ -432,13 +487,21 @@ export class AcpServer {
           }
         | undefined
       if (message.error || !result?.outcome || result.outcome.outcome === 'cancelled') {
-        pending.resolve('reject')
+        try {
+          pending.resolve('reject')
+        } catch {
+          /* the permission may already have timed out */
+        }
         return
       }
       const optionId = result.outcome.optionId
-      pending.resolve(
-        optionId === 'allow-always' ? 'always' : optionId === 'allow-once' ? 'once' : 'reject'
-      )
+      try {
+        pending.resolve(
+          optionId === 'allow-always' ? 'always' : optionId === 'allow-once' ? 'once' : 'reject'
+        )
+      } catch {
+        /* the permission may already have timed out */
+      }
       return
     }
     const elicitation = this.pendingElicitations.get(message.id)
@@ -446,11 +509,15 @@ export class AcpServer {
     this.pendingElicitations.delete(message.id)
     const result = message.result as { action?: string; content?: { answer?: unknown } } | undefined
     if (message.error || result?.action !== 'accept') {
-      elicitation.runtime.replyQuestion(elicitation.questionId, {
-        selected: [],
-        custom: null,
-        cancelled: true
-      })
+      try {
+        elicitation.runtime.replyQuestion(elicitation.questionId, {
+          selected: [],
+          custom: null,
+          cancelled: true
+        })
+      } catch {
+        /* the question may already have timed out */
+      }
       return
     }
     const answer = typeof result.content?.answer === 'string' ? result.content.answer.trim() : ''
@@ -464,14 +531,18 @@ export class AcpServer {
           .includes(label.toLowerCase())
       )
     }
-    elicitation.runtime.replyQuestion(elicitation.questionId, {
-      selected,
-      custom:
-        answer && !labels.some((label) => label.toLowerCase() === answer.toLowerCase())
-          ? answer
-          : null,
-      cancelled: false
-    })
+    try {
+      elicitation.runtime.replyQuestion(elicitation.questionId, {
+        selected,
+        custom:
+          answer && !labels.some((label) => label.toLowerCase() === answer.toLowerCase())
+            ? answer
+            : null,
+        cancelled: false
+      })
+    } catch {
+      /* the question may already have timed out */
+    }
   }
 
   private handleEvent(envelope: AgentEventEnvelope): void {
@@ -549,7 +620,9 @@ export class AcpServer {
       if (!session) return
       const id = this.nextRequestId++
       this.pendingPermissions.set(id, {
-        resolve: (decision) => session.runtime.replyPermission(event.permission.id, decision)
+        resolve: (decision) => session.runtime.replyPermission(event.permission.id, decision),
+        sessionId: event.permission.sessionId,
+        permissionId: event.permission.id
       })
       this.write({
         jsonrpc: '2.0',
@@ -568,6 +641,30 @@ export class AcpServer {
       return
     }
 
+    if (event.type === 'permission.replied') {
+      for (const [id, entry] of this.pendingPermissions) {
+        if (entry.permissionId === event.requestId) this.pendingPermissions.delete(id)
+      }
+      return
+    }
+
+    if (event.type === 'question.replied') {
+      for (const [id, entry] of this.pendingElicitations) {
+        if (entry.questionId === event.questionId) this.pendingElicitations.delete(id)
+      }
+      return
+    }
+
+    if (event.type === 'run.finished') {
+      for (const [id, entry] of this.pendingPermissions) {
+        if (entry.sessionId === event.sessionId) this.pendingPermissions.delete(id)
+      }
+      for (const [id, entry] of this.pendingElicitations) {
+        if (entry.sessionId === event.sessionId) this.pendingElicitations.delete(id)
+      }
+      return
+    }
+
     if (event.type === 'question.asked') {
       const session = this.sessions.get(event.question.sessionId)
       if (!session) return
@@ -583,6 +680,7 @@ export class AcpServer {
       const question = questionInputFrom(event.question)
       this.pendingElicitations.set(id, {
         runtime: session.runtime,
+        sessionId: event.question.sessionId,
         questionId: event.question.id,
         question
       })
