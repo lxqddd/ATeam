@@ -130,7 +130,7 @@
 ### 5.2 规则
 
 - 规则 = `action + resource + effect(allow/ask/deny) + sessionId`；全局规则与会话规则按顺序合并，**后匹配优先**。
-- 求值顺序：模式基础规则 → 全局规则 → 当前 Agent 的规则 → 会话规则；子代理的 Agent 规则随权限请求上抛，由父会话统一裁决。
+- 求值顺序：模式基础规则 → 全局规则 → 当前 Agent 的规则 → 会话规则 → 组织策略；组织策略最后生效，可强制执行 allow / ask / deny。子代理的 Agent 规则随权限请求上抛，由父会话统一裁决。
 - 支持通配符（`*`）、shell 命令的 ` *` 后缀匹配、Windows 下大小写不敏感。
 - “始终允许”持久化到 `agent/permissions.json`，重启后仍生效；设置页可查看与删除。
 - 多资源操作（如 shell 命令中的多个路径）任一命中 `deny` 即拒绝。
@@ -244,6 +244,7 @@ agent/
 ├── tool-outputs/        # 大工具输出完整内容
 ├── attachments/<session>/
 ├── permissions.json     # 权限规则
+├── policy.json          # 组织级权限策略（可选）
 ├── config.json          # 快照 / LSP / 格式化开关与额外指令
 ├── mcp.json             # MCP 服务器配置
 ├── mcp-auth.json        # 加密的 MCP OAuth token 与客户端注册信息
@@ -261,7 +262,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 ## 17. 已知限制与后续方向
 
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible），未内置 ChatGPT、GitHub Copilot 等供应商专属 OAuth 流程；模型一键导入与 MCP prompts 命令已完成。
-- 外部引用尚未接入 `@别名` 自动补全；对引用目录的写入不在会话快照 / undo 范围内；组织级 Policies 尚未实现。
+- 外部引用尚未接入 `@别名` 自动补全；对引用目录的写入不在会话快照 / undo 范围内。
 - 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
 - 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
 - ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
@@ -302,3 +303,10 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 支持本地目录（`path`，绝对 / 相对 / `~`）与 Git 仓库（`repository` + 可选 `branch`，GitHub `owner/repo` 简写自动展开）；Git 仓库按分支缓存到 `agent/references/`。
 - `description` 与引用路径会注入 system prompt，Agent 可直接用绝对路径和常规工具读取；引用目录自动通过 `external_directory` 边界，但读 / 写 / shell 等工具权限仍然生效。
 - 设置页“外部引用”按行编辑：`alias=path`、`alias=owner/repo#branch`，可在 `|` 后填写描述；`hidden` 仅支持配置文件。
+
+## 22. 组织级策略（Organization Policy）
+
+- 来源：默认读取 `agent/policy.json`，或通过 `ATEAM_POLICY_FILE` 指定受管文件；由桌面端、CLI 与 API Server 共同使用。
+- 格式：`{ "permissionRules": [{ "action": "shell", "resource": "git push *", "effect": "deny" }] }`；也接受 `rules` 字段，最多 200 条，非法规则会被跳过并在设置页提示。
+- 生效顺序：在模式、全局、Agent 与会话规则之后追加，因此组织策略可覆盖用户配置；仍遵循“后匹配优先”。
+- 设置页 Agent 分区展示策略文件路径、错误信息与规则列表，只读；文件本身的写保护需由部署方通过操作系统权限保证。

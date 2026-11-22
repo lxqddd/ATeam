@@ -278,7 +278,7 @@
 - [ ] GitHub Action
 - [ ] SQLite / 事件溯源会话存储
 - [x] References（命名外部资料：本地目录 / Git 仓库、描述注入、外部目录自动放行、设置页编辑）
-- [ ] 组织级 Policies
+- [x] 组织级 Policies（`agent/policy.json` 或 `ATEAM_POLICY_FILE`，权限规则最后生效）
 
 ## 建议实施顺序
 
