@@ -17,6 +17,32 @@ import { makeMessage, makeSession, makeTextPart } from '../main/agent/test/facto
 import { EventBus } from '../server/event-bus'
 import { AcpServer, type AcpRuntime } from './server'
 
+interface RpcUpdate {
+  sessionUpdate?: string
+  [key: string]: unknown
+}
+
+interface RpcParams {
+  update?: RpcUpdate
+  options?: unknown[]
+  [key: string]: unknown
+}
+
+interface RpcResult {
+  sessionId?: string
+  stopReason?: string
+  [key: string]: unknown
+}
+
+interface RpcMessage {
+  jsonrpc?: string
+  id?: number | string | null
+  method?: string
+  params?: RpcParams
+  result?: RpcResult
+  error?: { code?: number; message?: string; [key: string]: unknown }
+}
+
 class FakeRuntime implements AcpRuntime {
   session: SessionMeta = makeSession({ id: 'sess-1' })
   sessions: SessionMeta[] = [this.session]
@@ -88,7 +114,9 @@ class FakeRuntime implements AcpRuntime {
     this.questionAnswers.push({ id, answer })
   }
 
-  async shutdown(): Promise<void> {}
+  shutdown(): Promise<void> {
+    return Promise.resolve()
+  }
 }
 
 function envelope(event: AgentEvent, seq: number): AgentEventEnvelope {
@@ -100,16 +128,18 @@ function createHarness(): {
   bus: EventBus
   runtime: FakeRuntime
   send: (message: unknown) => void
-  next: (predicate?: (message: any) => boolean) => Promise<any>
+  next: (predicate?: (message: RpcMessage) => boolean) => Promise<RpcMessage>
 } {
   const bus = new EventBus()
   const runtime = new FakeRuntime(bus)
   const input = new PassThrough()
   const output = new PassThrough()
   const reader = createInterface({ input: output })
-  const messages: any[] = []
-  const waiters: Array<{ predicate: (message: any) => boolean; resolve: (message: any) => void }> =
-    []
+  const messages: RpcMessage[] = []
+  const waiters: Array<{
+    predicate: (message: RpcMessage) => boolean
+    resolve: (message: RpcMessage) => void
+  }> = []
   reader.on('line', (line) => {
     const message = JSON.parse(line)
     const waiterIndex = waiters.findIndex((entry) => entry.predicate(message))
@@ -159,7 +189,9 @@ async function openSession(h: ReturnType<typeof createHarness>): Promise<string>
     params: { cwd: '/tmp/project', mcpServers: [] }
   })
   const response = await h.next((message) => message.id === 2)
-  return response.result.sessionId
+  const sessionId = response.result?.sessionId
+  if (typeof sessionId !== 'string') throw new Error('missing sessionId')
+  return sessionId
 }
 
 describe('AcpServer', () => {
@@ -198,7 +230,7 @@ describe('AcpServer', () => {
     const userChunk = await h.next(
       (message) =>
         message.method === 'session/update' &&
-        message.params.update.sessionUpdate === 'user_message_chunk'
+        message.params?.update?.sessionUpdate === 'user_message_chunk'
     )
     expect(userChunk.params).toMatchObject({
       sessionId: 'old-session',
@@ -207,7 +239,7 @@ describe('AcpServer', () => {
     const agentChunk = await h.next(
       (message) =>
         message.method === 'session/update' &&
-        message.params.update.sessionUpdate === 'agent_message_chunk'
+        message.params?.update?.sessionUpdate === 'agent_message_chunk'
     )
     expect(agentChunk.params.update).toMatchObject({
       messageId: 'm2',
@@ -235,7 +267,7 @@ describe('AcpServer', () => {
       method: 'session/new',
       params: { cwd: '/tmp/project', mcpServers: [] }
     })
-    const sessionId = (await h.next((message) => message.id === 2)).result.sessionId
+    const sessionId = (await h.next((message) => message.id === 2)).result?.sessionId ?? ''
     let release: (() => void) | null = null
     h.runtime.onChat = async (id) => {
       const question: QuestionInput = {
@@ -467,7 +499,7 @@ describe('AcpServer', () => {
       params: { sessionId, prompt: [{ type: 'text', text: 'run it' }] }
     })
     const request = await h.next((message) => message.method === 'session/request_permission')
-    expect(request.params.options).toHaveLength(3)
+    expect(request.params?.options).toHaveLength(3)
 
     h.runtime.replyPermission = (id: string, decision: PermissionDecision) => {
       h.runtime.decisions.push({ id, decision })

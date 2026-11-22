@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ProviderAuthRecord, ProviderOAuthConfig } from '@ateam/shared'
-import { authorizeProvider, refreshProviderAuth } from './oauth-flow'
+import { authorizeProvider, refreshProviderAuth, type AuthorizeProviderInput } from './oauth-flow'
 
 const OAUTH: ProviderOAuthConfig = {
   authorizationEndpoint: 'https://auth.example.com/authorize',
@@ -16,7 +16,9 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-function fakeCallback(code = 'code-1') {
+type CallbackServer = NonNullable<AuthorizeProviderInput['callbackServer']>
+
+function fakeCallback(code = 'code-1'): CallbackServer {
   return {
     get redirectUri() {
       return 'http://127.0.0.1:19877/provider/oauth/callback'
@@ -30,7 +32,7 @@ function fakeCallback(code = 'code-1') {
 describe('authorizeProvider', () => {
   it('runs PKCE authorization and returns tokens', async () => {
     const callback = fakeCallback()
-    const openExternal = vi.fn(async (_url: string) => undefined)
+    const openExternal = vi.fn<(url: string) => Promise<void>>(async () => undefined)
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       const params = new URLSearchParams(String(init?.body))
       expect(params.get('code')).toBe('code-1')

@@ -227,9 +227,7 @@ describe('SQLite session storage', () => {
     const messageRows = database
       .prepare('SELECT data FROM messages WHERE session_id = ? ORDER BY position')
       .all(session.id) as { data: string }[]
-    database
-      .prepare('DELETE FROM session_events WHERE session_id = ?')
-      .run(session.id)
+    database.prepare('DELETE FROM session_events WHERE session_id = ?').run(session.id)
     database
       .prepare(
         'INSERT INTO session_events (session_id, type, payload, created_at) VALUES (?, ?, ?, ?)'

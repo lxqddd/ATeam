@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, type Mock } from 'vitest'
 import type { McpAuthRecord, McpServerConfig } from '@ateam/shared'
-import { authorizeMcpServer } from './mcp-oauth-flow'
+import { authorizeMcpServer, type AuthorizeMcpServerInput } from './mcp-oauth-flow'
 import { refreshMcpAuthRecord } from './mcp-oauth'
 
 const SERVER: McpServerConfig = {
@@ -24,7 +24,7 @@ function json(body: unknown, status = 200): Response {
   })
 }
 
-function responsiveFetch() {
+function responsiveFetch(): Mock<typeof fetch> {
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input)
     if (url === SERVER.url) {
@@ -63,7 +63,9 @@ function responsiveFetch() {
   })
 }
 
-function fakeCallback(code = 'code-1') {
+type CallbackServer = NonNullable<AuthorizeMcpServerInput['callbackServer']>
+
+function fakeCallback(code = 'code-1'): { calls: string[]; server: CallbackServer } {
   const calls: string[] = []
   return {
     calls,
@@ -86,7 +88,9 @@ function fakeCallback(code = 'code-1') {
   }
 }
 
-function fakeStore(existing: McpAuthRecord | null = null) {
+function fakeStore(
+  existing: McpAuthRecord | null = null
+): AuthorizeMcpServerInput['authStore'] & { records: McpAuthRecord[] } {
   const records: McpAuthRecord[] = existing ? [existing] : []
   return {
     records,
@@ -104,7 +108,7 @@ describe('authorizeMcpServer', () => {
     const callback = fakeCallback()
     const store = fakeStore()
     const fetchMock = responsiveFetch()
-    const openExternal = vi.fn(async (_url: string) => undefined)
+    const openExternal = vi.fn<(url: string) => Promise<void>>(async () => undefined)
 
     const auth = await authorizeMcpServer({
       server: SERVER,
