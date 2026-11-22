@@ -580,7 +580,8 @@ beforeEach(async () => {
     addServer: vi.fn(),
     updateServer: vi.fn(),
     removeServer: vi.fn(),
-    setMcpAuth: vi.fn(async () => undefined)
+    setMcpAuth: vi.fn(async () => undefined),
+    setTransientServers: vi.fn(async () => undefined)
   }
   resumeTurn = null
   generateTitle.mockReset()

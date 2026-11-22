@@ -54,12 +54,15 @@ let worktreeList: Mock<NonNullable<ToolContext['worktreeList']>>
 let worktreeRemove: Mock<NonNullable<ToolContext['worktreeRemove']>>
 let moveSession: Mock<NonNullable<ToolContext['moveSession']>>
 let browserOpen: Mock<NonNullable<ToolContext['browserOpen']>>
+let browserTabs: Mock<NonNullable<ToolContext['browserTabs']>>
 let browserSnapshot: Mock<NonNullable<ToolContext['browserSnapshot']>>
 let browserClick: Mock<NonNullable<ToolContext['browserClick']>>
 let browserType: Mock<NonNullable<ToolContext['browserType']>>
 let browserScreenshot: Mock<NonNullable<ToolContext['browserScreenshot']>>
 let browserEval: Mock<NonNullable<ToolContext['browserEval']>>
 let browserClose: Mock<NonNullable<ToolContext['browserClose']>>
+let browserNetwork: Mock<NonNullable<ToolContext['browserNetwork']>>
+let browserUpload: Mock<NonNullable<ToolContext['browserUpload']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -91,6 +94,9 @@ beforeEach(async () => {
     async (directory: string) => `Session will move to ${directory} next message.`
   )
   browserOpen = vi.fn(async (url: string) => `Opened Example (${url})`)
+  browserTabs = vi.fn(
+    async () => 'Browser tabs:\n- [tab-1] (active) Example (https://example.com/)'
+  )
   browserSnapshot = vi.fn(async () => 'Page: Example\n\n[1] button "Go"')
   browserClick = vi.fn(async (ref: string) => `Clicked [${ref}] -> Example (https://example.com/)`)
   browserType = vi.fn(
@@ -103,6 +109,10 @@ beforeEach(async () => {
   }))
   browserEval = vi.fn(async (code: string) => `result: ${code}`)
   browserClose = vi.fn(async () => 'Browser closed.')
+  browserNetwork = vi.fn(async () => 'Network requests:\n200 GET https://example.com/ (document)')
+  browserUpload = vi.fn(
+    async (ref: string, filePath: string) => `Uploaded ${filePath} into [${ref}].`
+  )
   baseContext = {
     workspace: directory,
     grepEngine: 'js',
@@ -133,11 +143,14 @@ beforeEach(async () => {
     worktreeRemove,
     moveSession,
     browserOpen,
+    browserTabs,
     browserSnapshot,
     browserClick,
     browserType,
     browserScreenshot,
     browserEval,
+    browserNetwork,
+    browserUpload,
     browserClose
   }
   tools = createTools(baseContext)
@@ -1146,6 +1159,13 @@ describe('browser tools', () => {
       summary: expect.stringContaining('Screenshot'),
       image: { mimeType: 'image/png' }
     })
+    await expect(execute(tools.browser_tabs, {})).resolves.toContain('[tab-1]')
+    await expect(execute(tools.browser_network, {})).resolves.toContain('200 GET')
+    await fs.writeFile(path.join(directory, 'upload.txt'), 'file')
+    await expect(
+      execute(tools.browser_upload, { ref: '4', path: 'upload.txt' })
+    ).resolves.toContain('Uploaded')
+    expect(askPermission).toHaveBeenCalledWith('read', 'upload.txt', 'browser_upload', 'call-1')
     await expect(execute(tools.browser_close, {})).resolves.toBe('Browser closed.')
   })
 
@@ -1170,19 +1190,25 @@ describe('browser tools', () => {
     const limited = createTools({
       ...baseContext,
       browserOpen: undefined,
+      browserTabs: undefined,
       browserSnapshot: undefined,
       browserClick: undefined,
       browserType: undefined,
       browserScreenshot: undefined,
       browserEval: undefined,
+      browserNetwork: undefined,
+      browserUpload: undefined,
       browserClose: undefined
     })
     expect(limited.browser_open).toBeUndefined()
+    expect(limited.browser_tabs).toBeUndefined()
     expect(limited.browser_snapshot).toBeUndefined()
     expect(limited.browser_click).toBeUndefined()
     expect(limited.browser_type).toBeUndefined()
     expect(limited.browser_screenshot).toBeUndefined()
     expect(limited.browser_eval).toBeUndefined()
+    expect(limited.browser_network).toBeUndefined()
+    expect(limited.browser_upload).toBeUndefined()
     expect(limited.browser_close).toBeUndefined()
   })
 })

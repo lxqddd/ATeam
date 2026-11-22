@@ -136,7 +136,7 @@ export class AgentRuntime {
   private readonly lspManagers = new Map<string, LspManager>()
   private readonly formatterCaches = new Map<string, Promise<FormatterDefinition[]>>()
   private readonly skillCaches = new Map<string, Promise<SkillDefinition[]>>()
-  private mcpManager: McpManagerLike | null = null
+  private readonly mcpManagers = new Map<string, McpManagerLike>()
   private mcpAuth: McpAuthRecord[] = []
   private webSearchConfig: RuntimeWebSearchConfig | null = null
   private models: RuntimeModelsConfig
@@ -358,11 +358,7 @@ export class AgentRuntime {
     const files = [...new Set(removedMessages.flatMap((message) => message.changedFiles ?? []))]
     if (assistant.snapshotBefore && files.length > 0) {
       try {
-        await this.snapshots.restorePaths(
-          this.sessionWorkspace(id),
-          assistant.snapshotBefore,
-          files
-        )
+        await this.snapshots.restorePaths(assistant.snapshotBefore, files)
       } catch {
         throw new Error('SNAPSHOT_RESTORE_FAILED')
       }
@@ -393,7 +389,7 @@ export class AgentRuntime {
 
     if (redo.snapshotAfter && redo.files.length > 0) {
       try {
-        await this.snapshots.restorePaths(this.sessionWorkspace(id), redo.snapshotAfter, redo.files)
+        await this.snapshots.restorePaths(redo.snapshotAfter, redo.files)
       } catch {
         throw new Error('SNAPSHOT_RESTORE_FAILED')
       }
@@ -767,26 +763,39 @@ export class AgentRuntime {
     for (const manager of lspManagers) {
       await manager.dispose()
     }
-    if (this.mcpManager) {
-      const manager = this.mcpManager
-      this.mcpManager = null
+    const mcpManagers = [...new Set(this.mcpManagers.values())]
+    this.mcpManagers.clear()
+    for (const manager of mcpManagers) {
       await manager.dispose()
     }
   }
 
-  private mcp(): McpManagerLike {
-    this.mcpManager ??= this.deps.createMcpManager({
-      userDataPath: this.options.userDataPath,
-      workspacePath: this.options.workspacePath,
-      mcpAuth: this.mcpAuth,
-      onMcpAuth: (auth) => this.options.onMcpAuth?.(auth)
-    })
-    return this.mcpManager
+  private mcp(workspace = this.options.workspacePath): McpManagerLike {
+    let manager = this.mcpManagers.get(workspace)
+    if (!manager) {
+      manager = this.deps.createMcpManager({
+        userDataPath: this.options.userDataPath,
+        workspacePath: workspace,
+        mcpAuth: this.mcpAuth,
+        onMcpAuth: (auth) => this.options.onMcpAuth?.(auth)
+      })
+      this.mcpManagers.set(workspace, manager)
+    }
+    return manager
+  }
+
+  async setTransientMcpServers(
+    servers: import('@ateam/shared').McpServerInput[],
+    workspace = this.options.workspacePath
+  ): Promise<void> {
+    await this.mcp(workspace).setTransientServers(servers)
   }
 
   async setMcpAuth(auths: McpAuthRecord[]): Promise<void> {
     this.mcpAuth = auths
-    if (this.mcpManager) await this.mcpManager.setMcpAuth(auths)
+    await Promise.all(
+      [...new Set(this.mcpManagers.values())].map((manager) => manager.setMcpAuth(auths))
+    )
   }
 
   listMcpServers(): Promise<McpServerConfig[]> {
@@ -931,9 +940,12 @@ export class AgentRuntime {
     return formatTodoList(this.store.getSession(run.sessionId)?.todos ?? [])
   }
 
-  private async listMcpPrompts(server?: string): Promise<string> {
+  private async listMcpPrompts(
+    server?: string,
+    workspace = this.options.workspacePath
+  ): Promise<string> {
     try {
-      const prompts = await this.mcp().prompts()
+      const prompts = await this.mcp(workspace).prompts()
       const filtered = server
         ? prompts.filter((prompt) => prompt.server.toLowerCase() === server.toLowerCase())
         : prompts
@@ -953,18 +965,22 @@ export class AgentRuntime {
   private async getMcpPrompt(
     server: string,
     prompt: string,
-    args?: Record<string, string>
+    args?: Record<string, string>,
+    workspace = this.options.workspacePath
   ): Promise<string> {
     try {
-      return await this.mcp().getPrompt(server, prompt, args)
+      return await this.mcp(workspace).getPrompt(server, prompt, args)
     } catch (error) {
       return this.mcpError(error, server)
     }
   }
 
-  private async listMcpResources(server?: string): Promise<string> {
+  private async listMcpResources(
+    server?: string,
+    workspace = this.options.workspacePath
+  ): Promise<string> {
     try {
-      const resources = await this.mcp().resources()
+      const resources = await this.mcp(workspace).resources()
       const filtered = server
         ? resources.filter((resource) => resource.server.toLowerCase() === server.toLowerCase())
         : resources
@@ -981,9 +997,13 @@ export class AgentRuntime {
     }
   }
 
-  private async readMcpResource(server: string, uri: string): Promise<string> {
+  private async readMcpResource(
+    server: string,
+    uri: string,
+    workspace = this.options.workspacePath
+  ): Promise<string> {
     try {
-      return await this.mcp().readResource(server, uri)
+      return await this.mcp(workspace).readResource(server, uri)
     } catch (error) {
       return this.mcpError(error, server)
     }
@@ -1658,11 +1678,12 @@ export class AgentRuntime {
   }
 
   private async browserCapture(
-    run: Run
+    run: Run,
+    tabId?: string
   ): Promise<string | { summary: string; image: { mimeType: string; data: string } }> {
     if (!this.options.browserRequest) return 'Error: browser automation is not available.'
     try {
-      const result = await this.options.browserRequest(run.sessionId, 'screenshot')
+      const result = await this.options.browserRequest(run.sessionId, 'screenshot', { tabId })
       if (result && typeof result === 'object' && 'image' in result) {
         return result as { summary: string; image: { mimeType: string; data: string } }
       }
@@ -1910,10 +1931,11 @@ export class AgentRuntime {
         writeTodos: (todos) => this.writeTodos(run, todos),
         readTodos: async () => this.readTodos(run),
         askQuestion: (input, toolCallId) => this.askQuestion(run, input, toolCallId),
-        listMcpPrompts: (server) => this.listMcpPrompts(server),
-        getMcpPrompt: (server, prompt, args) => this.getMcpPrompt(server, prompt, args),
-        listMcpResources: (server) => this.listMcpResources(server),
-        readMcpResource: (server, uri) => this.readMcpResource(server, uri),
+        listMcpPrompts: (server) => this.listMcpPrompts(server, run.workspace),
+        getMcpPrompt: (server, prompt, args) =>
+          this.getMcpPrompt(server, prompt, args, run.workspace),
+        listMcpResources: (server) => this.listMcpResources(server, run.workspace),
+        readMcpResource: (server, uri) => this.readMcpResource(server, uri, run.workspace),
         worktreeCreate: (input) => this.createSessionWorktree(run, input),
         worktreeList: () => this.listSessionWorktrees(run),
         worktreeRemove: (target, force) => this.removeSessionWorktree(run, target, force),
@@ -1924,12 +1946,15 @@ export class AgentRuntime {
         browserType: (ref, text, submit) => this.browserAction(run, 'type', { ref, text, submit }),
         browserScreenshot: () => this.browserCapture(run),
         browserEval: (code) => this.browserAction(run, 'eval', { code }),
+        browserNetwork: () => this.browserAction(run, 'network'),
+        browserUpload: (ref, filePath) =>
+          this.browserAction(run, 'upload', { ref, path: filePath }),
         browserClose: () => this.browserAction(run, 'close')
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
       try {
-        mcpTools = await this.mcp().tools(toolContext)
+        mcpTools = await this.mcp(run.workspace).tools(toolContext)
       } catch {
         /* MCP servers are best effort */
       }

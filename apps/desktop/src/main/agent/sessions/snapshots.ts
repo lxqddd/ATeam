@@ -150,6 +150,7 @@ export class SnapshotStore {
     }
 
     const captured: SnapshotReference[] = []
+    const referenceSources = new Map<string, string>()
     for (const reference of references) {
       const referenceRoot = path.resolve(reference.root)
       if (captured.some((entry) => entry.alias === reference.alias)) continue
@@ -163,17 +164,14 @@ export class SnapshotStore {
       }
       captured.push({ alias: reference.alias, root: referenceRoot })
       for (const [relative, blob] of Object.entries(referenceFiles)) {
-        files[`refs/${reference.alias}/${relative}`] = blob
+        const key = `refs/${reference.alias}/${relative}`
+        files[key] = blob
+        referenceSources.set(key, path.join(referenceRoot, relative))
       }
     }
 
     for (const [relative, blob] of Object.entries(files)) {
-      const source = relative.startsWith('refs/')
-        ? path.join(
-            captured.find((entry) => relative.startsWith(`refs/${entry.alias}/`))?.root ?? root,
-            relative.split('/').slice(2).join('/')
-          )
-        : path.join(root, relative)
+      const source = referenceSources.get(relative) ?? path.join(root, relative)
       const content = await fs.readFile(source)
       await fs.writeFile(path.join(this.blobsDirectory, blob), content)
     }
@@ -219,13 +217,10 @@ export class SnapshotStore {
     return readJsonFile<WorkspaceSnapshot>(this.manifestPath(id))
   }
 
-  async restore(workspacePath: string, id: string): Promise<RestoreResult> {
+  async restore(id: string): Promise<RestoreResult> {
     const snapshot = await this.get(id)
     if (!snapshot) throw new Error('SNAPSHOT_NOT_FOUND')
-    if (path.resolve(snapshot.root) !== path.resolve(workspacePath)) {
-      throw new Error('SNAPSHOT_WORKSPACE_MISMATCH')
-    }
-    const root = path.resolve(workspacePath)
+    const root = path.resolve(snapshot.root)
     const current = await walkFiles(root)
     const removed: string[] = []
     const written: string[] = []
@@ -270,13 +265,10 @@ export class SnapshotStore {
     return { target, root: workspaceRoot }
   }
 
-  async restorePaths(workspacePath: string, id: string, paths: string[]): Promise<RestoreResult> {
+  async restorePaths(id: string, paths: string[]): Promise<RestoreResult> {
     const snapshot = await this.get(id)
     if (!snapshot) throw new Error('SNAPSHOT_NOT_FOUND')
-    if (path.resolve(snapshot.root) !== path.resolve(workspacePath)) {
-      throw new Error('SNAPSHOT_WORKSPACE_MISMATCH')
-    }
-    const root = path.resolve(workspacePath)
+    const root = path.resolve(snapshot.root)
     const removed: string[] = []
     const written: string[] = []
 

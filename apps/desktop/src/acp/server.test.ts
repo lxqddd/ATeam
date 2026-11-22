@@ -4,9 +4,12 @@ import type {
   AgentEvent,
   AgentEventEnvelope,
   ChatMessage,
+  McpServerInput,
   MessageAttachment,
   MessagesSnapshot,
   PermissionDecision,
+  QuestionAnswer,
+  QuestionInput,
   SessionMeta
 } from '@ateam/shared'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -21,8 +24,10 @@ class FakeRuntime implements AcpRuntime {
   sent: string[] = []
   sentAttachments: Array<MessageAttachment[] | undefined> = []
   attachments: MessageAttachment[] = []
+  transientMcp: McpServerInput[][] = []
   stopped: string[] = []
   decisions: Array<{ id: string; decision: PermissionDecision }> = []
+  questionAnswers: Array<{ id: string; answer: QuestionAnswer }> = []
   onChat: ((id: string) => Promise<void>) | null = null
 
   constructor(private readonly bus: EventBus) {}
@@ -56,6 +61,10 @@ class FakeRuntime implements AcpRuntime {
     return attachment
   }
 
+  async setTransientMcpServers(servers: McpServerInput[]): Promise<void> {
+    this.transientMcp.push(servers)
+  }
+
   async sendChat(
     id: string,
     text: string,
@@ -75,7 +84,9 @@ class FakeRuntime implements AcpRuntime {
     this.decisions.push({ id, decision })
   }
 
-  replyQuestion(): void {}
+  replyQuestion(id: string, answer: QuestionAnswer): void {
+    this.questionAnswers.push({ id, answer })
+  }
 
   async shutdown(): Promise<void> {}
 }
@@ -205,6 +216,92 @@ describe('AcpServer', () => {
     expect(await h.next((message) => message.id === 2)).toMatchObject({ result: {} })
   })
 
+  it('maps question requests to ACP elicitation when supported', async () => {
+    harness = createHarness()
+    const h = harness
+    h.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { elicitation: { form: {} } }
+      }
+    })
+    await h.next((message) => message.id === 1)
+    h.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/new',
+      params: { cwd: '/tmp/project', mcpServers: [] }
+    })
+    const sessionId = (await h.next((message) => message.id === 2)).result.sessionId
+    let release: (() => void) | null = null
+    h.runtime.onChat = async (id) => {
+      const question: QuestionInput = {
+        header: 'Pick',
+        question: 'Continue?',
+        options: [{ label: 'Yes' }, { label: 'No' }]
+      }
+      h.bus.publish(
+        envelope(
+          {
+            type: 'question.asked',
+            question: {
+              id: 'q1',
+              sessionId: id,
+              messageId: 'm1',
+              toolCallId: 'call-q',
+              header: question.header,
+              question: question.question,
+              options: question.options,
+              multiple: false,
+              allowCustom: true,
+              createdAt: '2026-01-01T00:00:00.000Z'
+            }
+          },
+          1
+        )
+      )
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      h.bus.publish(
+        envelope({ type: 'run.finished', sessionId: id, messageId: 'm1', status: 'completed' }, 2)
+      )
+    }
+    h.runtime.replyQuestion = (id: string, answer: QuestionAnswer) => {
+      h.runtime.questionAnswers.push({ id, answer })
+      release?.()
+    }
+    h.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'ask' }] }
+    })
+
+    const request = await h.next((message) => message.method === 'elicitation/create')
+    expect(request.params).toMatchObject({
+      sessionId,
+      mode: 'form',
+      message: 'Pick: Continue?',
+      requestedSchema: { required: ['answer'] }
+    })
+    h.send({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: { action: 'accept', content: { answer: 'Yes' } }
+    })
+
+    expect(await h.next((message) => message.id === 3)).toMatchObject({
+      result: { stopReason: 'end_turn' }
+    })
+    expect(h.runtime.questionAnswers).toEqual([
+      { id: 'q1', answer: { selected: ['Yes'], custom: null, cancelled: false } }
+    ])
+  })
+
   it('accepts image prompt blocks as attachments', async () => {
     harness = createHarness()
     const h = harness
@@ -233,6 +330,40 @@ describe('AcpServer', () => {
     })
     expect(h.runtime.attachments).toHaveLength(1)
     expect(h.runtime.sentAttachments[0]).toEqual(h.runtime.attachments)
+  })
+
+  it('registers client-provided MCP servers for the session', async () => {
+    harness = createHarness()
+    const h = harness
+    h.send(INITIALIZE)
+    await h.next((message) => message.id === 1)
+    h.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/new',
+      params: {
+        cwd: '/tmp/project',
+        mcpServers: [
+          {
+            name: 'filesystem',
+            command: '/tmp/mcp-filesystem',
+            args: ['--root', '/tmp'],
+            env: [{ name: 'TOKEN', value: 'secret' }]
+          }
+        ]
+      }
+    })
+    await h.next((message) => message.id === 2)
+
+    expect(h.runtime.transientMcp.at(-1)).toEqual([
+      {
+        name: 'filesystem',
+        type: 'local',
+        command: '/tmp/mcp-filesystem',
+        args: ['--root', '/tmp'],
+        env: { TOKEN: 'secret' }
+      }
+    ])
   })
 
   it('creates sessions and streams prompt output', async () => {

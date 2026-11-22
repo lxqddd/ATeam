@@ -70,15 +70,18 @@ export interface ToolContext {
   worktreeList?: () => Promise<string>
   worktreeRemove?: (path: string, force: boolean) => Promise<string>
   moveSession?: (directory: string) => Promise<string>
-  browserOpen?: (url: string) => Promise<string>
-  browserSnapshot?: () => Promise<string>
-  browserClick?: (ref: string) => Promise<string>
-  browserType?: (ref: string, text: string, submit: boolean) => Promise<string>
-  browserScreenshot?: () => Promise<
-    string | { summary: string; image: { mimeType: string; data: string } }
-  >
-  browserEval?: (code: string) => Promise<string>
-  browserClose?: () => Promise<string>
+  browserOpen?: (url: string, newTab?: boolean) => Promise<string>
+  browserTabs?: () => Promise<string>
+  browserSnapshot?: (tabId?: string) => Promise<string>
+  browserClick?: (ref: string, tabId?: string) => Promise<string>
+  browserType?: (ref: string, text: string, submit: boolean, tabId?: string) => Promise<string>
+  browserScreenshot?: (
+    tabId?: string
+  ) => Promise<string | { summary: string; image: { mimeType: string; data: string } }>
+  browserEval?: (code: string, tabId?: string) => Promise<string>
+  browserNetwork?: (tabId?: string) => Promise<string>
+  browserUpload?: (ref: string, path: string, tabId?: string) => Promise<string>
+  browserClose?: (tabId?: string) => Promise<string>
   codeModeTools?: () => ToolSet
   codeTimeoutMs?: number
 }
@@ -1087,9 +1090,10 @@ export function createTools(context: ToolContext): ToolSet {
     description:
       'Open a URL in the desktop app browser and return the page title. Use browser_snapshot afterwards to see the page and its interactive elements.',
     inputSchema: z.object({
-      url: z.string().min(1).max(2_000).describe('HTTP or HTTPS URL')
+      url: z.string().min(1).max(2_000).describe('HTTP or HTTPS URL'),
+      newTab: z.boolean().optional().describe('Open in a new tab instead of navigating')
     }),
-    execute: async ({ url }, options) => {
+    execute: async ({ url, newTab = false }: { url: string; newTab?: boolean }, options) => {
       if (!context.browserOpen) return 'Error: browser automation is not available.'
       const allowed = await context.askPermission(
         'webfetch',
@@ -1098,28 +1102,40 @@ export function createTools(context: ToolContext): ToolSet {
         options.toolCallId
       )
       if (!allowed) return 'Permission denied; the page was not opened.'
-      return context.browserOpen(url)
+      return context.browserOpen(url, newTab)
+    }
+  })
+
+  const browserTabs = tool({
+    description: 'List the browser tabs of this session and their ids.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.browserTabs) return 'Error: browser automation is not available.'
+      return context.browserTabs()
     }
   })
 
   const browserSnapshot = tool({
     description:
-      'Return the current browser page title, URL, visible text, console output and numbered interactive elements. Element refs are valid until the next navigation or snapshot.',
-    inputSchema: z.object({}),
-    execute: async () => {
+      'Return the browser page title, URL, visible text, console output and numbered interactive elements. Element refs are valid until the next navigation or snapshot.',
+    inputSchema: z.object({
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
+    }),
+    execute: async ({ tabId }: { tabId?: string }) => {
       if (!context.browserSnapshot) return 'Error: browser automation is not available.'
-      return context.browserSnapshot()
+      return context.browserSnapshot(tabId)
     }
   })
 
   const browserClick = tool({
     description: 'Click an interactive element by its snapshot ref.',
     inputSchema: z.object({
-      ref: z.string().min(1).max(12).describe('Element ref from browser_snapshot')
+      ref: z.string().min(1).max(12).describe('Element ref from browser_snapshot'),
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
     }),
-    execute: async ({ ref }) => {
+    execute: async ({ ref, tabId }: { ref: string; tabId?: string }) => {
       if (!context.browserClick) return 'Error: browser automation is not available.'
-      return context.browserClick(ref)
+      return context.browserClick(ref, tabId)
     }
   })
 
@@ -1129,20 +1145,33 @@ export function createTools(context: ToolContext): ToolSet {
     inputSchema: z.object({
       ref: z.string().min(1).max(12).describe('Element ref from browser_snapshot'),
       text: z.string().max(20_000).describe('Text to enter'),
-      submit: z.boolean().optional().describe('Submit the form after typing')
+      submit: z.boolean().optional().describe('Submit the form after typing'),
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
     }),
-    execute: async ({ ref, text, submit = false }) => {
+    execute: async ({
+      ref,
+      text,
+      submit = false,
+      tabId
+    }: {
+      ref: string
+      text: string
+      submit?: boolean
+      tabId?: string
+    }) => {
       if (!context.browserType) return 'Error: browser automation is not available.'
-      return context.browserType(ref, text, submit)
+      return context.browserType(ref, text, submit, tabId)
     }
   })
 
   const browserScreenshot = tool({
     description: 'Capture the visible browser page as a PNG screenshot.',
-    inputSchema: z.object({}),
-    execute: async () => {
+    inputSchema: z.object({
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
+    }),
+    execute: async ({ tabId }: { tabId?: string }) => {
       if (!context.browserScreenshot) return 'Error: browser automation is not available.'
-      return context.browserScreenshot()
+      return context.browserScreenshot(tabId)
     },
     toModelOutput: ({ output }) => {
       if (output && typeof output === 'object' && 'image' in output) {
@@ -1166,9 +1195,10 @@ export function createTools(context: ToolContext): ToolSet {
     description:
       'Evaluate JavaScript in the current browser page and return a compact JSON result. Use it for page state that the snapshot does not expose.',
     inputSchema: z.object({
-      code: z.string().min(1).max(20_000).describe('JavaScript expression or statements')
+      code: z.string().min(1).max(20_000).describe('JavaScript expression or statements'),
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
     }),
-    execute: async ({ code }, options) => {
+    execute: async ({ code, tabId }: { code: string; tabId?: string }, options) => {
       if (!context.browserEval) return 'Error: browser automation is not available.'
       const allowed = await context.askPermission(
         'shell',
@@ -1177,16 +1207,64 @@ export function createTools(context: ToolContext): ToolSet {
         options.toolCallId
       )
       if (!allowed) return 'Permission denied; the code was not evaluated.'
-      return context.browserEval(code)
+      return context.browserEval(code, tabId)
+    }
+  })
+
+  const browserNetwork = tool({
+    description: 'List recent network requests made by the current browser page.',
+    inputSchema: z.object({
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
+    }),
+    execute: async ({ tabId }: { tabId?: string }) => {
+      if (!context.browserNetwork) return 'Error: browser automation is not available.'
+      return context.browserNetwork(tabId)
+    }
+  })
+
+  const browserUpload = tool({
+    description: 'Attach a workspace file to a file input identified by its snapshot ref.',
+    inputSchema: z.object({
+      ref: z.string().min(1).max(12).describe('File input ref from browser_snapshot'),
+      path: z.string().min(1).max(1_000).describe('Workspace-relative file path'),
+      tabId: z.string().max(40).optional().describe('Tab id; defaults to the active tab')
+    }),
+    execute: async (
+      { ref, path: inputPath, tabId }: { ref: string; path: string; tabId?: string },
+      options
+    ) => {
+      if (!context.browserUpload) return 'Error: browser automation is not available.'
+      try {
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'read', options.toolCallId))
+        ) {
+          return 'Permission denied; the file was not uploaded.'
+        }
+        const allowed = await context.askPermission(
+          'read',
+          inputPath,
+          'browser_upload',
+          options.toolCallId
+        )
+        if (!allowed) return 'Permission denied; the file was not uploaded.'
+        const filePath = await resolvePath(context.workspace, inputPath, false, external)
+        return context.browserUpload(ref, filePath, tabId)
+      } catch (error) {
+        return safeError(error)
+      }
     }
   })
 
   const browserClose = tool({
-    description: 'Close the desktop app browser.',
-    inputSchema: z.object({}),
-    execute: async () => {
+    description: 'Close one browser tab, or the whole browser when no tabId is given.',
+    inputSchema: z.object({
+      tabId: z.string().max(40).optional().describe('Tab id to close; omit to close all tabs')
+    }),
+    execute: async ({ tabId }: { tabId?: string }) => {
       if (!context.browserClose) return 'Error: browser automation is not available.'
-      return context.browserClose()
+      return context.browserClose(tabId)
     }
   })
 
@@ -1321,11 +1399,14 @@ export function createTools(context: ToolContext): ToolSet {
     ...(context.browserOpen
       ? {
           browser_open: browserOpen,
+          browser_tabs: browserTabs,
           browser_snapshot: browserSnapshot,
           browser_click: browserClick,
           browser_type: browserType,
           browser_screenshot: browserScreenshot,
           browser_eval: browserEval,
+          browser_network: browserNetwork,
+          browser_upload: browserUpload,
           browser_close: browserClose
         }
       : {}),

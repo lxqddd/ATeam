@@ -83,6 +83,23 @@ function createManager(createClient: (config: unknown) => McpClientLike): McpMan
 }
 
 describe('McpManager tools', () => {
+  it('merges and replaces transient client servers', async () => {
+    const { client } = makeClient({ tools: [{ name: 'echo' }] })
+    const manager = createManager(() => client)
+    await manager.setTransientServers([
+      { name: 'client', type: 'local', command: 'node', args: ['server.js'] }
+    ])
+
+    expect((await manager.servers()).map((server) => server.name)).toEqual(['client'])
+    const tools = await manager.tools(context)
+    expect(Object.keys(tools)).toEqual(['mcp_client_echo'])
+
+    await manager.setTransientServers([])
+    expect(await manager.servers()).toEqual([])
+    expect(client.close).toHaveBeenCalled()
+    await manager.dispose()
+  })
+
   it('exposes prefixed, sanitized tool names', async () => {
     const { client } = makeClient({ tools: [{ name: 'read_file' }, { name: 'do:thing' }] })
     const manager = createManager(() => client)

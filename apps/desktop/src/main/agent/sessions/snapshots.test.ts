@@ -79,7 +79,7 @@ describe('SnapshotStore', () => {
     await write('c.txt', 'new')
     await write('.git/config', 'changed git')
 
-    const result = await store.restore(workspace, snapshot.id)
+    const result = await store.restore(snapshot.id)
 
     expect(await read('a.txt')).toBe('one')
     expect(await read('dir/b.txt')).toBe('two')
@@ -99,7 +99,7 @@ describe('SnapshotStore', () => {
     await write('outside.txt', 'outside')
     await write('keep.txt', 'keep changed')
 
-    const result = await store.restorePaths(workspace, snapshot.id, ['a.txt', 'b.txt'])
+    const result = await store.restorePaths(snapshot.id, ['a.txt', 'b.txt'])
 
     expect(await read('a.txt')).toBe('one')
     expect(await exists('b.txt')).toBe(false)
@@ -131,7 +131,7 @@ describe('SnapshotStore', () => {
     const snapshot = await store.create(workspace)
     await fs.rm(path.join(workspace, 'data.bin'))
 
-    await store.restore(workspace, snapshot.id)
+    await store.restore(snapshot.id)
 
     expect(await fs.readFile(path.join(workspace, 'data.bin'))).toEqual(content)
   })
@@ -190,21 +190,20 @@ describe('SnapshotStore', () => {
     const diff = await store.diff(snapshot.id, after.id)
     expect(diff.modified).toContain('refs/docs/guide.md')
 
-    await store.restorePaths(workspace, snapshot.id, ['refs/docs/guide.md'])
+    await store.restorePaths(snapshot.id, ['refs/docs/guide.md'])
     await expect(fs.readFile(path.join(reference, 'guide.md'), 'utf8')).resolves.toBe('first')
   })
 
-  it('refuses to restore a snapshot into a different workspace', async () => {
+  it('restores into the snapshot root even when the caller workspace changed', async () => {
     await write('a.txt', 'one')
     const snapshot = await store.create(workspace)
+    await write('a.txt', 'two')
     const other = path.join(directory, 'other')
     await fs.mkdir(other, { recursive: true })
     await fs.writeFile(path.join(other, 'a.txt'), 'other')
 
-    await expect(store.restorePaths(other, snapshot.id, ['a.txt'])).rejects.toThrow(
-      'SNAPSHOT_WORKSPACE_MISMATCH'
-    )
-    await expect(store.restore(other, snapshot.id)).rejects.toThrow('SNAPSHOT_WORKSPACE_MISMATCH')
+    await store.restorePaths(snapshot.id, ['a.txt'])
+    await expect(read('a.txt')).resolves.toBe('one')
     await expect(fs.readFile(path.join(other, 'a.txt'), 'utf8')).resolves.toBe('other')
   })
 

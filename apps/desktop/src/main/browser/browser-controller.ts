@@ -13,10 +13,22 @@ const LOAD_TIMEOUT_MS = 30_000
 const SCRIPT_TIMEOUT_MS = 20_000
 const EVAL_TIMEOUT_MS = 15_000
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
+const MAX_TABS = 8
+
+interface NetworkEntry {
+  id: number
+  method: string
+  url: string
+  resourceType: string
+  status: number | null
+  error: string | null
+}
 
 interface PageEntry {
+  tabId: string
   window: BrowserWindow
   consoleLines: string[]
+  network: NetworkEntry[]
 }
 
 interface InteractionResult {
@@ -27,10 +39,13 @@ interface InteractionResult {
 }
 
 export class BrowserController {
-  private readonly pages = new Map<string, PageEntry>()
+  private readonly pages = new Map<string, Map<string, PageEntry>>()
+  private readonly active = new Map<string, string>()
+  private readonly byContents = new Map<number, PageEntry>()
   private readonly queues = new Map<string, Promise<unknown>>()
   private readonly securedPartitions = new Set<string>()
   private generation = 0
+  private nextTab = 1
 
   handle(
     sessionId: string,
@@ -55,31 +70,43 @@ export class BrowserController {
     })
   }
 
+  private tabId(params: Record<string, unknown>): string | undefined {
+    return typeof params.tabId === 'string' && params.tabId ? params.tabId : undefined
+  }
+
   private async dispatch(
     sessionId: string,
     method: string,
     params: Record<string, unknown>
   ): Promise<unknown> {
+    const tabId = this.tabId(params)
     switch (method) {
       case 'open':
-        return this.open(sessionId, String(params.url ?? ''))
+        return this.open(sessionId, String(params.url ?? ''), params.newTab === true, tabId)
+      case 'tabs':
+        return this.tabs(sessionId)
       case 'snapshot':
-        return this.snapshot(sessionId)
+        return this.snapshot(sessionId, tabId)
       case 'click':
-        return this.click(sessionId, String(params.ref ?? ''))
+        return this.click(sessionId, String(params.ref ?? ''), tabId)
       case 'type':
         return this.type(
           sessionId,
           String(params.ref ?? ''),
           String(params.text ?? ''),
-          params.submit === true
+          params.submit === true,
+          tabId
         )
       case 'screenshot':
-        return this.screenshot(sessionId)
+        return this.screenshot(sessionId, tabId)
       case 'eval':
-        return this.evaluate(sessionId, String(params.code ?? ''))
+        return this.evaluate(sessionId, String(params.code ?? ''), tabId)
+      case 'network':
+        return this.network(sessionId, tabId)
+      case 'upload':
+        return this.upload(sessionId, String(params.ref ?? ''), String(params.path ?? ''), tabId)
       case 'close':
-        return this.close(sessionId)
+        return this.close(sessionId, tabId)
       default:
         throw new Error(`UNKNOWN_BROWSER_METHOD: ${method}`)
     }
@@ -87,14 +114,22 @@ export class BrowserController {
 
   async dispose(): Promise<void> {
     this.generation += 1
-    for (const entry of this.pages.values()) {
-      if (!entry.window.isDestroyed()) entry.window.destroy()
+    for (const tabs of this.pages.values()) {
+      for (const entry of tabs.values()) {
+        if (!entry.window.isDestroyed()) entry.window.destroy()
+      }
     }
     this.pages.clear()
+    this.active.clear()
+    this.byContents.clear()
     this.securedPartitions.clear()
   }
 
   private create(sessionId: string): PageEntry {
+    const tabs = this.pages.get(sessionId)
+    if (tabs && tabs.size >= MAX_TABS) {
+      throw new Error(`BROWSER_TAB_LIMIT: at most ${MAX_TABS} tabs`)
+    }
     const partition = `ateam-browser-${sessionId.replace(/[^A-Za-z0-9_-]/g, '')}`
     const window = new BrowserWindow({
       show: false,
@@ -108,8 +143,14 @@ export class BrowserController {
         partition
       }
     })
-    const entry: PageEntry = { window, consoleLines: [] }
+    const entry: PageEntry = {
+      tabId: `tab-${this.nextTab++}`,
+      window,
+      consoleLines: [],
+      network: []
+    }
     const contents = window.webContents
+    this.byContents.set(contents.id, entry)
     const browserSession = contents.session
     if (!this.securedPartitions.has(partition)) {
       this.securedPartitions.add(partition)
@@ -119,11 +160,47 @@ export class BrowserController {
       browserSession.on('will-download', (event) => {
         event.preventDefault()
       })
+      browserSession.webRequest.onBeforeRequest((details, callback) => {
+        const page =
+          details.webContentsId === undefined
+            ? undefined
+            : this.byContents.get(details.webContentsId)
+        if (page && /^https?:/i.test(details.url)) {
+          page.network.push({
+            id: details.id,
+            method: details.method,
+            url: details.url,
+            resourceType: details.resourceType,
+            status: null,
+            error: null
+          })
+          if (page.network.length > 100) page.network.shift()
+        }
+        callback({})
+      })
+      browserSession.webRequest.onCompleted((details) => {
+        const entry =
+          details.webContentsId === undefined
+            ? undefined
+            : this.byContents
+                .get(details.webContentsId)
+                ?.network.find((item) => item.id === details.id)
+        if (entry) entry.status = details.statusCode
+      })
+      browserSession.webRequest.onErrorOccurred((details) => {
+        const entry =
+          details.webContentsId === undefined
+            ? undefined
+            : this.byContents
+                .get(details.webContentsId)
+                ?.network.find((item) => item.id === details.id)
+        if (entry) entry.error = details.error
+      })
     }
     contents.setWindowOpenHandler(({ url }) => {
       try {
         const target = validateBrowserUrl(url)
-        void this.handle(sessionId, 'open', { url: target }).catch(() => undefined)
+        void this.handle(sessionId, 'open', { url: target, newTab: true }).catch(() => undefined)
       } catch {
         /* ignore non-web popups */
       }
@@ -143,20 +220,49 @@ export class BrowserController {
       if (entry.consoleLines.length > 50) entry.consoleLines.shift()
     })
     window.on('closed', () => {
-      if (this.pages.get(sessionId)?.window === window) this.pages.delete(sessionId)
+      this.forget(sessionId, entry)
     })
-    this.pages.set(sessionId, entry)
+
+    const all = this.pages.get(sessionId) ?? new Map<string, PageEntry>()
+    all.set(entry.tabId, entry)
+    this.pages.set(sessionId, all)
+    this.active.set(sessionId, entry.tabId)
     return entry
   }
 
-  private page(sessionId: string): PageEntry {
-    const existing = this.pages.get(sessionId)
+  private page(sessionId: string, tabId?: string): PageEntry {
+    const tabs = this.pages.get(sessionId)
+    if (tabId) {
+      const found = tabs?.get(tabId)
+      if (!found || found.window.isDestroyed()) throw new Error('BROWSER_TAB_NOT_FOUND')
+      this.active.set(sessionId, tabId)
+      return found
+    }
+    const current = tabs && this.active.get(sessionId)
+    const existing = current ? tabs?.get(current) : undefined
     if (existing && !existing.window.isDestroyed()) return existing
     return this.create(sessionId)
   }
 
+  private forget(sessionId: string, entry: PageEntry): void {
+    try {
+      if (!entry.window.isDestroyed()) this.byContents.delete(entry.window.webContents.id)
+    } catch {
+      /* the window is already gone */
+    }
+    const tabs = this.pages.get(sessionId)
+    if (!tabs) return
+    tabs.delete(entry.tabId)
+    if (tabs.size === 0) {
+      this.pages.delete(sessionId)
+      this.active.delete(sessionId)
+    } else if (this.active.get(sessionId) === entry.tabId) {
+      this.active.set(sessionId, [...tabs.keys()][0])
+    }
+  }
+
   private destroyPage(sessionId: string, entry: PageEntry): void {
-    if (this.pages.get(sessionId) === entry) this.pages.delete(sessionId)
+    this.forget(sessionId, entry)
     if (!entry.window.isDestroyed()) entry.window.destroy()
   }
 
@@ -204,9 +310,14 @@ export class BrowserController {
     })
   }
 
-  private async open(sessionId: string, rawUrl: string): Promise<string> {
+  private async open(
+    sessionId: string,
+    rawUrl: string,
+    newTab: boolean,
+    tabId?: string
+  ): Promise<string> {
     const url = validateBrowserUrl(rawUrl)
-    const entry = this.page(sessionId)
+    const entry = newTab ? this.create(sessionId) : this.page(sessionId, tabId)
     const contents = entry.window.webContents
     const loaded = new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -246,21 +357,43 @@ export class BrowserController {
       }
       throw error
     }
-    return `Opened ${contents.getTitle() || '(untitled)'} (${contents.getURL()})`
+    return `Opened ${contents.getTitle() || '(untitled)'} (${contents.getURL()}) [${entry.tabId}]`
   }
 
-  private async snapshot(sessionId: string): Promise<string> {
-    const entry = this.page(sessionId)
+  private tabs(sessionId: string): string {
+    const tabs = this.pages.get(sessionId)
+    if (!tabs || tabs.size === 0) return 'No browser tabs are open.'
+    const active = this.active.get(sessionId)
+    return [
+      'Browser tabs:',
+      ...[...tabs.values()].map(
+        (entry) =>
+          `- [${entry.tabId}]${entry.tabId === active ? ' (active)' : ''} ${entry.window.webContents.getTitle() || '(untitled)'} (${entry.window.webContents.getURL()})`
+      )
+    ].join('\n')
+  }
+
+  private async snapshot(sessionId: string, tabId?: string): Promise<string> {
+    let entry: PageEntry
+    try {
+      entry = this.page(sessionId, tabId)
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
     try {
       const snapshot = (await this.script(entry, snapshotScript())) as BrowserSnapshot
       return formatSnapshot(snapshot, entry.consoleLines)
     } catch (error) {
-      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
-        this.destroyPage(sessionId, entry)
-        return 'Error: the page is not responding; the browser was reset.'
-      }
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
+      return this.pageError(sessionId, entry, error)
     }
+  }
+
+  private pageError(sessionId: string, entry: PageEntry, error: unknown): string {
+    if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
+      this.destroyPage(sessionId, entry)
+      return 'Error: the page is not responding; the tab was reset.'
+    }
+    return `Error: ${error instanceof Error ? error.message : String(error)}`
   }
 
   private formatInteraction(action: string, ref: string, result: InteractionResult): string {
@@ -272,75 +405,152 @@ export class BrowserController {
     sessionId: string,
     action: string,
     ref: string,
-    source: string
+    source: string,
+    tabId?: string
   ): Promise<string> {
-    const entry = this.page(sessionId)
+    let entry: PageEntry
+    try {
+      entry = this.page(sessionId, tabId)
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
     try {
       const result = (await this.script(entry, source)) as InteractionResult
       return this.formatInteraction(action, ref, result)
     } catch (error) {
-      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
-        this.destroyPage(sessionId, entry)
-        return 'Error: the page is not responding; the browser was reset.'
-      }
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
+      return this.pageError(sessionId, entry, error)
     }
   }
 
-  private click(sessionId: string, ref: string): Promise<string> {
-    return this.interaction(sessionId, 'Clicked', ref, clickScript(ref))
+  private click(sessionId: string, ref: string, tabId?: string): Promise<string> {
+    return this.interaction(sessionId, 'Clicked', ref, clickScript(ref), tabId)
   }
 
-  private type(sessionId: string, ref: string, text: string, submit: boolean): Promise<string> {
+  private type(
+    sessionId: string,
+    ref: string,
+    text: string,
+    submit: boolean,
+    tabId?: string
+  ): Promise<string> {
     return this.interaction(
       sessionId,
       submit ? 'Typed and submitted' : 'Typed into',
       ref,
-      typeScript(ref, text, submit)
+      typeScript(ref, text, submit),
+      tabId
     )
   }
 
   private async screenshot(
-    sessionId: string
+    sessionId: string,
+    tabId?: string
   ): Promise<{ summary: string; image: { mimeType: string; data: string } } | string> {
-    const entry = this.page(sessionId)
+    let entry: PageEntry
+    try {
+      entry = this.page(sessionId, tabId)
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
     const contents = entry.window.webContents
     try {
       const image = await this.withTimeout(contents.capturePage(), SCRIPT_TIMEOUT_MS)
       const png = image.toPNG()
       if (png.byteLength > MAX_SCREENSHOT_BYTES) return 'Error: screenshot exceeds 5 MB'
       return {
-        summary: `Screenshot: ${contents.getTitle() || '(untitled)'} (${contents.getURL()})`,
+        summary: `Screenshot: ${contents.getTitle() || '(untitled)'} (${contents.getURL()}) [${entry.tabId}]`,
         image: { mimeType: 'image/png', data: png.toString('base64') }
       }
     } catch (error) {
-      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
-        this.destroyPage(sessionId, entry)
-        return 'Error: the page is not responding; the browser was reset.'
-      }
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
+      return this.pageError(sessionId, entry, error)
     }
   }
 
-  private async evaluate(sessionId: string, code: string): Promise<string> {
+  private async evaluate(sessionId: string, code: string, tabId?: string): Promise<string> {
     if (!code.trim()) return 'Error: code is required'
-    const entry = this.page(sessionId)
+    let entry: PageEntry
+    try {
+      entry = this.page(sessionId, tabId)
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
     try {
       const value = await this.script(entry, code, EVAL_TIMEOUT_MS)
       return evalResult(value)
     } catch (error) {
-      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
-        this.destroyPage(sessionId, entry)
-        return 'Error: the page did not respond in time; the browser was reset.'
-      }
-      return `Error: ${error instanceof Error ? error.message : String(error)}`
+      return this.pageError(sessionId, entry, error)
     }
   }
 
-  private close(sessionId: string): string {
-    const entry = this.pages.get(sessionId)
-    if (!entry) return 'Browser is not open.'
-    this.destroyPage(sessionId, entry)
+  private network(sessionId: string, tabId?: string): string {
+    let entry: PageEntry
+    try {
+      entry = this.page(sessionId, tabId)
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
+    if (entry.network.length === 0) return 'No network requests recorded.'
+    return [
+      'Network requests:',
+      ...entry.network.map(
+        (item) =>
+          `${item.status ?? (item.error ? 'ERR' : '...')} ${item.method} ${item.url} (${item.resourceType})${item.error ? ` — ${item.error}` : ''}`
+      )
+    ].join('\n')
+  }
+
+  private async upload(
+    sessionId: string,
+    ref: string,
+    filePath: string,
+    tabId?: string
+  ): Promise<string> {
+    if (!/^\d{1,6}$/.test(ref) || !filePath.trim()) return 'Error: invalid upload request'
+    let entry: PageEntry
+    try {
+      entry = this.page(sessionId, tabId)
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
+    const contents = entry.window.webContents
+    try {
+      if (!contents.debugger.isAttached()) contents.debugger.attach('1.3')
+      const document = (await contents.debugger.sendCommand('DOM.getDocument', {
+        depth: -1
+      })) as { root: { nodeId: number } }
+      const found = (await contents.debugger.sendCommand('DOM.querySelector', {
+        nodeId: document.root.nodeId,
+        selector: `[data-ateam-ref="${ref}"]`
+      })) as { nodeId: number }
+      if (!found.nodeId) return `Could not upload [${ref}]: take a new snapshot first.`
+      await contents.debugger.sendCommand('DOM.setFileInputFiles', {
+        files: [filePath],
+        nodeId: found.nodeId
+      })
+      return `Uploaded ${filePath} into [${ref}].`
+    } catch (error) {
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    } finally {
+      if (contents.debugger.isAttached()) {
+        try {
+          contents.debugger.detach()
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }
+
+  private close(sessionId: string, tabId?: string): string {
+    if (tabId) {
+      const entry = this.pages.get(sessionId)?.get(tabId)
+      if (!entry) return `Browser tab ${tabId} is not open.`
+      this.destroyPage(sessionId, entry)
+      return `Browser tab ${tabId} closed.`
+    }
+    const tabs = this.pages.get(sessionId)
+    if (!tabs || tabs.size === 0) return 'Browser is not open.'
+    for (const entry of [...tabs.values()]) this.destroyPage(sessionId, entry)
     return 'Browser closed.'
   }
 }

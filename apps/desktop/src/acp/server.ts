@@ -2,10 +2,12 @@ import path from 'node:path'
 import { createInterface, type Interface } from 'node:readline'
 import type {
   AgentEventEnvelope,
+  McpServerInput,
   ChatMessage,
   MessageAttachment,
   MessagesSnapshot,
   PermissionDecision,
+  QuestionInput,
   SessionMeta
 } from '@ateam/shared'
 import type { EventBus } from '../server/event-bus'
@@ -15,6 +17,7 @@ export interface AcpRuntime {
   listSessions(): SessionMeta[]
   messages(id: string): MessagesSnapshot
   attachImage(sessionId: string, mimeType: string, data: Uint8Array): Promise<MessageAttachment>
+  setTransientMcpServers?(servers: McpServerInput[]): Promise<void>
   sendChat(id: string, text: string, model?: null, attachments?: MessageAttachment[]): Promise<void>
   stopChat(id: string): void
   replyPermission(id: string, decision: PermissionDecision): void
@@ -35,6 +38,12 @@ interface PendingPermission {
   resolve: (decision: PermissionDecision) => void
 }
 
+interface PendingElicitation {
+  runtime: AcpRuntime
+  questionId: string
+  question: QuestionInput
+}
+
 interface JsonRpcRequest {
   jsonrpc?: string
   id?: number | string | null
@@ -45,6 +54,81 @@ interface JsonRpcRequest {
 }
 
 const PROTOCOL_VERSION = 1
+
+function questionInputFrom(question: {
+  header: string
+  question: string
+  options: Array<{ label: string; description?: string }>
+  multiple?: boolean
+  allowCustom?: boolean
+}): QuestionInput {
+  return {
+    header: question.header,
+    question: question.question,
+    options: question.options,
+    multiple: question.multiple,
+    allowCustom: question.allowCustom
+  }
+}
+
+function questionDescription(question: QuestionInput): string {
+  const options = question.options
+    .map((option) => option.label + (option.description ? ` — ${option.description}` : ''))
+    .join('; ')
+  return [options, question.multiple ? 'Separate multiple choices with commas.' : '']
+    .filter(Boolean)
+    .join(' ')
+}
+
+function questionMessage(question: QuestionInput): string {
+  return `${question.header}: ${question.question}`
+}
+
+function mcpServersFrom(value: unknown): McpServerInput[] {
+  if (!Array.isArray(value)) return []
+  const servers: McpServerInput[] = []
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const raw = entry as Record<string, unknown>
+    if (typeof raw.name !== 'string' || !raw.name.trim()) continue
+    const args = Array.isArray(raw.args)
+      ? raw.args.filter((item): item is string => typeof item === 'string')
+      : []
+    const env: Record<string, string> = {}
+    if (Array.isArray(raw.env)) {
+      for (const item of raw.env) {
+        if (item && typeof item === 'object') {
+          const pair = item as { name?: unknown; value?: unknown }
+          if (typeof pair.name === 'string' && typeof pair.value === 'string') {
+            env[pair.name] = pair.value
+          }
+        }
+      }
+    } else if (raw.env && typeof raw.env === 'object') {
+      for (const [key, item] of Object.entries(raw.env)) {
+        if (typeof item === 'string') env[key] = item
+      }
+    }
+    const headers: Record<string, string> = {}
+    if (raw.headers && typeof raw.headers === 'object') {
+      for (const [key, item] of Object.entries(raw.headers)) {
+        if (typeof item === 'string') headers[key] = item
+      }
+    }
+    if (typeof raw.command === 'string' && raw.command.trim()) {
+      servers.push({
+        name: raw.name.trim(),
+        type: 'local',
+        command: raw.command,
+        args,
+        env
+      })
+    } else if (typeof raw.url === 'string' && raw.url.trim()) {
+      servers.push({ name: raw.name.trim(), type: 'remote', url: raw.url, headers })
+    }
+  }
+  return servers
+}
 
 function textFromPrompt(prompt: unknown): string {
   if (!Array.isArray(prompt)) return ''
@@ -79,9 +163,12 @@ function toolKind(name: string): string {
 
 export class AcpServer {
   private readonly pendingPermissions = new Map<number | string, PendingPermission>()
+  private readonly pendingElicitations = new Map<number | string, PendingElicitation>()
+  private elicitationForm = false
   private readonly promptAborts = new Set<AbortController>()
   private readonly sessions = new Map<string, { runtime: AcpRuntime; cwd: string }>()
   private readonly seenTools = new Set<string>()
+  private readonly sessionMcp = new Map<string, McpServerInput[]>()
   private readonly lineReader: Interface
   private unsubscribe: (() => void) | null = null
   private nextRequestId = 1_000_000
@@ -108,7 +195,9 @@ export class AcpServer {
     for (const abort of this.promptAborts) abort.abort()
     this.promptAborts.clear()
     this.sessions.clear()
+    this.sessionMcp.clear()
     this.pendingPermissions.clear()
+    this.pendingElicitations.clear()
   }
 
   private write(message: unknown): void {
@@ -147,6 +236,9 @@ export class AcpServer {
 
     try {
       if (message.method === 'initialize') {
+        const capabilities = message.params?.clientCapabilities as
+          { elicitation?: { form?: unknown } } | undefined
+        this.elicitationForm = Boolean(capabilities?.elicitation?.form)
         this.respond(message.id as number, {
           protocolVersion: PROTOCOL_VERSION,
           agentCapabilities: {
@@ -191,6 +283,7 @@ export class AcpServer {
       await this.options.configureSession(runtime, session.id)
     }
     this.sessions.set(session.id, { runtime, cwd })
+    await this.applyMcpServers(runtime, session.id, message.params?.mcpServers)
     this.respond(message.id as number, { sessionId: session.id })
   }
 
@@ -211,8 +304,24 @@ export class AcpServer {
       return
     }
     this.sessions.set(sessionId, { runtime, cwd })
+    await this.applyMcpServers(runtime, sessionId, message.params?.mcpServers)
     this.replay(runtime.messages(sessionId).messages, sessionId)
     this.respond(message.id as number, {})
+  }
+
+  private async applyMcpServers(
+    runtime: AcpRuntime,
+    sessionId: string,
+    raw: unknown
+  ): Promise<void> {
+    this.sessionMcp.set(sessionId, mcpServersFrom(raw))
+    if (!runtime.setTransientMcpServers) return
+    const byName = new Map<string, McpServerInput>()
+    for (const [id, entry] of this.sessions) {
+      if (entry.runtime !== runtime) continue
+      for (const server of this.sessionMcp.get(id) ?? []) byName.set(server.name, server)
+    }
+    await runtime.setTransientMcpServers([...byName.values()])
   }
 
   private replay(messages: ChatMessage[], sessionId: string): void {
@@ -313,22 +422,56 @@ export class AcpServer {
   }
 
   private resolveClientRequest(message: JsonRpcRequest): void {
-    const pending = message.id !== undefined ? this.pendingPermissions.get(message.id) : undefined
-    if (!pending) return
-    this.pendingPermissions.delete(message.id as number)
-    const result = message.result as
-      | {
-          outcome?: { outcome?: string; optionId?: string }
-        }
-      | undefined
-    if (message.error || !result?.outcome || result.outcome.outcome === 'cancelled') {
-      pending.resolve('reject')
+    if (message.id === undefined) return
+    const pending = this.pendingPermissions.get(message.id)
+    if (pending) {
+      this.pendingPermissions.delete(message.id)
+      const result = message.result as
+        | {
+            outcome?: { outcome?: string; optionId?: string }
+          }
+        | undefined
+      if (message.error || !result?.outcome || result.outcome.outcome === 'cancelled') {
+        pending.resolve('reject')
+        return
+      }
+      const optionId = result.outcome.optionId
+      pending.resolve(
+        optionId === 'allow-always' ? 'always' : optionId === 'allow-once' ? 'once' : 'reject'
+      )
       return
     }
-    const optionId = result.outcome.optionId
-    pending.resolve(
-      optionId === 'allow-always' ? 'always' : optionId === 'allow-once' ? 'once' : 'reject'
-    )
+    const elicitation = this.pendingElicitations.get(message.id)
+    if (!elicitation) return
+    this.pendingElicitations.delete(message.id)
+    const result = message.result as { action?: string; content?: { answer?: unknown } } | undefined
+    if (message.error || result?.action !== 'accept') {
+      elicitation.runtime.replyQuestion(elicitation.questionId, {
+        selected: [],
+        custom: null,
+        cancelled: true
+      })
+      return
+    }
+    const answer = typeof result.content?.answer === 'string' ? result.content.answer.trim() : ''
+    const labels = elicitation.question.options.map((option) => option.label)
+    let selected = labels.filter((label) => label.toLowerCase() === answer.toLowerCase())
+    if (elicitation.question.multiple && answer) {
+      selected = labels.filter((label) =>
+        answer
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .includes(label.toLowerCase())
+      )
+    }
+    elicitation.runtime.replyQuestion(elicitation.questionId, {
+      selected,
+      custom:
+        answer && !labels.some((label) => label.toLowerCase() === answer.toLowerCase())
+          ? answer
+          : null,
+      cancelled: false
+    })
   }
 
   private handleEvent(envelope: AgentEventEnvelope): void {
@@ -427,10 +570,44 @@ export class AcpServer {
 
     if (event.type === 'question.asked') {
       const session = this.sessions.get(event.question.sessionId)
-      session?.runtime.replyQuestion(event.question.id, {
-        selected: [],
-        custom: null,
-        cancelled: true
+      if (!session) return
+      if (!this.elicitationForm) {
+        session.runtime.replyQuestion(event.question.id, {
+          selected: [],
+          custom: null,
+          cancelled: true
+        })
+        return
+      }
+      const id = this.nextRequestId++
+      const question = questionInputFrom(event.question)
+      this.pendingElicitations.set(id, {
+        runtime: session.runtime,
+        questionId: event.question.id,
+        question
+      })
+      this.write({
+        jsonrpc: '2.0',
+        id,
+        method: 'elicitation/create',
+        params: {
+          sessionId: event.question.sessionId,
+          toolCallId: event.question.toolCallId,
+          mode: 'form',
+          message: questionMessage(question),
+          requestedSchema: {
+            type: 'object',
+            properties: {
+              answer: {
+                type: 'string',
+                title: question.header,
+                description: questionDescription(question)
+              }
+            },
+            required: ['answer'],
+            additionalProperties: false
+          }
+        }
       })
     }
   }

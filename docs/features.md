@@ -288,7 +288,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 ## 20. Server API 与 SDK
 
 - 入口：`pnpm serve -- [server options] [model options]`，复用 Agent 运行时并在本机启动 HTTP 服务（默认 `127.0.0.1:4096`）。
-- 安全：默认仅监听回环地址；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权，非回环地址且无 token 时会打印警告；`/health` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
+- 安全：默认仅监听回环地址并拒绝在无 token 时绑定非回环地址（`--allow-unauthenticated-remote` 可显式放宽）；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权；`/health` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
 - REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
 - SDK：`apps/desktop/src/sdk/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
@@ -349,7 +349,8 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
   }
   ```
 - 支持 `session/load` 历史回放与图片 prompt（转为附件）；初始化声明 `loadSession: true`、`promptCapabilities.image/embeddedContext: true`。
-- 限制：客户端提供的 MCP server 配置尚未接入；`question` 工具会自动取消。
+- 客户端在 `session/new` / `session/load` 中提供的 MCP server 会作为该会话的临时 server 接入（不写入用户配置）。
+- 客户端声明 `clientCapabilities.elicitation.form` 时，`question` 工具会映射为 ACP `elicitation/create` 表单；未声明时自动取消。
 
 ## 25. Code Mode（`execute` 工具）
 
@@ -372,20 +373,25 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - `session_move` 将当前会话迁移到新目录（通常是刚创建的工作树）；迁移在下一轮对话生效，当前运行继续使用原目录，避免中途切换导致工具与快照不一致。
 - 允许的目标：当前工作区内、ATEAM 管理的 worktree 根目录下，或同一仓库的其他 worktree；其他绝对路径会被拒绝。新会话在创建时固定记录自己的工作目录，避免多个运行时（CLI / Server / ACP）共用数据目录时串用工作区。
 - `worktree_remove` 需要 `edit` 权限，且不能删除主检出、非 ATeam 管理工作树，或仍被运行中/已绑定会话使用的工作树。工作区不是 Git 仓库时，工具返回明确提示。
-- 限制：桌面端默认工作区若不包含 Git 仓库则无法使用；MCP server 仍以应用启动时的工作区运行。快照带有自己的根目录，跨目录 undo / redo 会被拒绝（`SNAPSHOT_WORKSPACE_MISMATCH`），不会把旧目录内容写进新工作树。
+- MCP server 按会话实际工作区创建独立连接；会话迁移后会使用新目录启动对应 MCP 进程。
+- 快照记录自己的根目录，跨目录 undo / redo 会恢复到快照所属目录，而不是写入当前工作树；桌面端使用 worktree 工具需要工作区位于 Git 仓库内。
 
 ## 28. 桌面浏览器自动化
 
-- 桌面应用为每个会话维护一个隐藏的 Chromium 窗口（独立权限、禁用弹窗与站点权限），代理可通过工具操作页面：
-  - `browser_open`：打开 HTTP/HTTPS 页面，按 `webfetch` 权限确认；
+- 桌面应用为每个会话维护最多 8 个隐藏的 Chromium 标签页（独立会话分区、禁用弹窗与站点权限），代理可通过工具操作页面：
+  - `browser_open`：打开 HTTP/HTTPS 页面，按 `webfetch` 权限确认；`newTab` 可新建标签页并返回 tab id；
+  - `browser_tabs`：列出标签页及其 tab id；
   - `browser_snapshot`：返回标题、URL、可见文本、控制台输出和带编号的可交互元素；
   - `browser_click` / `browser_type`：按快照 ref 点击或输入，可提交表单；
   - `browser_screenshot`：返回 PNG 截图并作为图片内容交给模型；
   - `browser_eval`：在页面执行 JavaScript，按 `shell` 权限确认；
-  - `browser_close`：关闭窗口。
+  - `browser_network`：列出最近的网络请求与状态码；
+  - `browser_upload`：把工作区文件附加到 file input（按 `read` 权限确认）；
+  - `browser_close`：关闭指定标签页，未指定 tabId 时关闭整个浏览器。
 - 每个会话使用独立的临时浏览器分区（不共享 cookie / localStorage，关闭后不落盘）；同一会话的浏览器操作串行执行，排队超过请求时限的操作会被放弃。导航 30 秒、页面脚本 20 秒、执行 JavaScript 15 秒超时；页面无响应会销毁并重置窗口，避免队列永久卡死。
 - 页面内容、控制台与执行结果均视为不可信数据，不构成指令；页面导航与重定向限制在 HTTP/HTTPS，`file://` 等协议会被拦截；下载与站点权限请求一律拒绝。会话删除时关闭其浏览器窗口。
-- 限制：仅桌面应用可用（CLI / Server / ACP 会返回不可用）；一个会话同时只有一个页面；不提供多标签、网络面板或文件上传。
+- 除 `browser_open`/`browser_tabs` 外的工具都接受可选 `tabId`，默认操作当前活动标签页。
+- 限制：仅桌面应用可用（CLI / Server / ACP 会返回不可用）。
 
 ## 29. SQLite 会话存储
 
@@ -393,5 +399,6 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 首次启动时若数据库尚未迁移，会在单个事务中导入旧的 `agent/sessions/*.json` 会话文件并记录迁移标记；导入成功后旧文件改名为 `.migrated` 保留备份。损坏的旧文件隔离为 `.corrupt-*`，不会阻塞其他会话；损坏的数据库行移入 `corrupt_sessions` / `corrupt_messages` 表而不是直接丢弃。
 - 数据库文件及 WAL/SHM 权限为 `0600`。存储层可切换：`new SessionsStore(path, { backend: 'json' | 'sqlite' | 'auto' })`，`auto`（默认）使用 SQLite；若 Node 不支持 `node:sqlite` 且已有数据库文件，会明确报错而不是静默回退导致会话“消失”，仅在尚未创建数据库时回退 JSON。
 - 兼容原有修复逻辑：启动时恢复 running/waiting-permission 状态、补齐缺失字段、重置中断的工具调用。
-- 持久化按消息位置增量写入：仅更新内容变化的行，删除被 undo 截断的尾部行。当前仍为 SQLite 状态存储而非完整事件溯源。
+- 持久化按消息位置增量写入：仅更新内容变化的行，删除被 undo 截断的尾部行。
+- 事件溯源：`session_events` 追加记录会话创建/更新、消息 upsert 与删除；状态表作为物化视图。状态行损坏或缺失时，启动会自动从事件日志重建；既有数据库首次加载也会补写基线事件。
 - 导入后的 `.migrated` 备份不会自动重新导入；运行 `pnpm cli -- --restore-sessions --data <dir>` 可把备份恢复为 `.json`、清除迁移标记并立即重新导入。

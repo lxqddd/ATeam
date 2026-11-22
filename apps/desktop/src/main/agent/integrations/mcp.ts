@@ -42,6 +42,7 @@ export interface McpManagerLike {
   updateServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig>
   removeServer(id: string): Promise<boolean>
   setMcpAuth(auths: import('@ateam/shared').McpAuthRecord[]): Promise<void>
+  setTransientServers(servers: McpServerInput[]): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -127,6 +128,7 @@ export class McpManager implements McpManagerLike {
   private readonly connecting = new Map<string, Promise<Connection | null>>()
   private readonly statusesById = new Map<string, McpServerStatus>()
   private authByServer = new Map<string, McpAuthRecord>()
+  private transient: McpServerConfig[] = []
   private disposed = false
 
   constructor(private readonly options: McpManagerOptions) {
@@ -135,14 +137,43 @@ export class McpManager implements McpManagerLike {
     this.ready = this.store.init()
   }
 
+  private configs(): McpServerConfig[] {
+    return [...this.store.list(), ...this.transient]
+  }
+
+  async setTransientServers(inputs: McpServerInput[]): Promise<void> {
+    await this.ready
+    for (const config of this.transient) {
+      const entry = this.connections.get(config.id)
+      this.connections.delete(config.id)
+      this.connecting.delete(config.id)
+      this.statusesById.delete(config.id)
+      await entry?.client.close().catch(() => undefined)
+    }
+    const now = new Date().toISOString()
+    this.transient = inputs.map((input, index) => ({
+      id: `transient-${index}-${createHash('sha1').update(input.name).digest('hex').slice(0, 8)}`,
+      name: input.name,
+      type: input.type,
+      command: input.command ?? null,
+      args: input.args ?? [],
+      url: input.url ?? null,
+      headers: input.headers ?? {},
+      env: input.env ?? {},
+      enabled: true,
+      createdAt: now,
+      updatedAt: now
+    }))
+  }
+
   async servers(): Promise<McpServerConfig[]> {
     await this.ready
-    return this.store.list()
+    return this.configs()
   }
 
   async statuses(options: { probe?: boolean } = {}): Promise<McpServerStatus[]> {
     await this.ready
-    const configs = this.store.list()
+    const configs = this.configs()
     if (options.probe) {
       for (const config of configs) {
         if (config.enabled && !this.connections.has(config.id)) {
@@ -159,7 +190,7 @@ export class McpManager implements McpManagerLike {
     const used = new Set<string>()
     const result: Record<string, unknown> = {}
 
-    for (const config of this.store.list()) {
+    for (const config of this.configs()) {
       if (!config.enabled) continue
       const entry = await this.connectionFor(config)
       if (!entry) continue
@@ -201,7 +232,7 @@ export class McpManager implements McpManagerLike {
     await this.ready
     if (this.disposed) return []
     const summaries: McpPromptSummary[] = []
-    for (const config of this.store.list()) {
+    for (const config of this.configs()) {
       if (!config.enabled) continue
       const entry = await this.connectionFor(config)
       if (!entry) continue
@@ -229,7 +260,7 @@ export class McpManager implements McpManagerLike {
     await this.ready
     if (this.disposed) return []
     const summaries: McpResourceSummary[] = []
-    for (const config of this.store.list()) {
+    for (const config of this.configs()) {
       if (!config.enabled) continue
       const entry = await this.connectionFor(config)
       if (!entry) continue

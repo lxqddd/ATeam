@@ -108,6 +108,77 @@ describe('SQLite session storage', () => {
     await importing.close()
   })
 
+  it('rebuilds corrupt sessions from the event journal', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'user', parts: [makeTextPart('journal message')] })
+    )
+    await store.close()
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    database.prepare('UPDATE sessions SET data = ? WHERE id = ?').run('{bad', session.id)
+    database.close()
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)?.title).toBe('journal message')
+    expect(reloaded.getMessages(session.id)).toHaveLength(1)
+    await reloaded.close()
+
+    const check = new DatabaseSync(databaseFile)
+    const corrupt = check.prepare('SELECT COUNT(*) AS count FROM corrupt_sessions').get() as {
+      count: number
+    }
+    expect(corrupt.count).toBe(0)
+    const events = check.prepare('SELECT COUNT(*) AS count FROM session_events').get() as {
+      count: number
+    }
+    expect(events.count).toBeGreaterThan(0)
+    check.close()
+  })
+
+  it('rebuilds a deleted session row from events', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'user', parts: [makeTextPart('kept by journal')] })
+    )
+    await store.close()
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    database.prepare('DELETE FROM sessions WHERE id = ?').run(session.id)
+    database.close()
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)?.title).toBe('kept by journal')
+    expect(reloaded.getMessages(session.id)).toHaveLength(1)
+    await reloaded.close()
+  })
+
+  it('rebuilds corrupt message rows from the event journal', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'user', parts: [makeTextPart('recover me')] })
+    )
+    await store.close()
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    database
+      .prepare('UPDATE messages SET data = ? WHERE session_id = ? AND position = 0')
+      .run('{bad', session.id)
+    database.close()
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getMessages(session.id)?.[0]?.parts).toEqual([
+      { type: 'text', text: 'recover me' }
+    ])
+    await reloaded.close()
+  })
+
   it('quarantines corrupt database rows', async () => {
     const session = await store.create()
     await store.close()
