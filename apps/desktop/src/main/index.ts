@@ -15,6 +15,8 @@ import { ModelsStore } from './stores/models'
 import { ModelCatalogStore } from './models/catalog-store'
 import { WebSearchStore } from './stores/websearch'
 import { McpAuthStore } from './agent/integrations/mcp-auth-store'
+import { ProviderAuthStore } from './models/oauth-tokens'
+import { runtimeModelsWithOAuth } from './models/runtime'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
 import { createTrustedSender } from './ipc/trusted-sender'
@@ -152,6 +154,12 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('[mcp-auth] failed to load OAuth credentials', error)
     }
+    const providerAuthStore = new ProviderAuthStore(userDataPath)
+    try {
+      await providerAuthStore.init()
+    } catch (error) {
+      console.error('[provider-auth] failed to load OAuth tokens', error)
+    }
     const catalogStore = new ModelCatalogStore({ userDataPath })
     try {
       await mkdir(workspacePath, { recursive: true })
@@ -202,10 +210,17 @@ if (!hasSingleInstanceLock) {
       modelsStore,
       webSearchStore,
       mcpAuthStore,
+      providerAuthStore,
       workspacePath,
       isTrustedSender
     })
-    registerModelsIpc({ manager, modelsStore, catalogStore, isTrustedSender })
+    registerModelsIpc({
+      manager,
+      modelsStore,
+      providerAuthStore,
+      catalogStore,
+      isTrustedSender
+    })
 
     // Default development shortcuts (F12 for DevTools, etc.).
     app.on('browser-window-created', (_, window) => {
@@ -215,7 +230,10 @@ if (!hasSingleInstanceLock) {
     createWindow()
 
     void manager
-      .start(modelsStore.runtimeConfig(), webSearchStore.runtimeConfig())
+      .start(
+        runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore),
+        webSearchStore.runtimeConfig()
+      )
       .catch((error: unknown) => {
         console.error('[agent] failed to start', error)
       })

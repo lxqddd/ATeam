@@ -36,6 +36,8 @@ import { expandCommandTemplate, runWorkspaceShell } from '../agent/commands'
 import { modelRefSchema } from './model-schema'
 import type { McpAuthStore } from '../agent/integrations/mcp-auth-store'
 import { authorizeMcpServer } from '../agent/integrations/mcp-oauth-flow'
+import type { ProviderAuthStore } from '../models/oauth-tokens'
+import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../models/runtime'
 import { agentConfigPatchSchema } from './config-schema'
 import { webSearchUpdateSchema } from './websearch-schema'
 import { normalizeImageAttachment } from '../attachments/image'
@@ -147,13 +149,27 @@ export interface AgentIpcOptions {
   modelsStore: ModelsStore
   webSearchStore: WebSearchStore
   mcpAuthStore: McpAuthStore
+  providerAuthStore: ProviderAuthStore
   workspacePath: string
   isTrustedSender: TrustedSender
 }
 
 export function registerAgentIpc(options: AgentIpcOptions): void {
-  const { manager, modelsStore, webSearchStore, mcpAuthStore, workspacePath, isTrustedSender } =
-    options
+  const {
+    manager,
+    modelsStore,
+    webSearchStore,
+    mcpAuthStore,
+    providerAuthStore,
+    workspacePath,
+    isTrustedSender
+  } = options
+
+  const refreshProviderTokens = async (): Promise<void> => {
+    const changed = await refreshExpiringProviderAuth(providerAuthStore)
+    if (!changed) return
+    await manager.setModels(runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore))
+  }
   const configStore = new AgentConfigStore(app.getPath('userData'))
   const configReady = configStore.init()
 
@@ -288,6 +304,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
 
   handle(AGENT_CHANNELS.chatSend, async (payload): Promise<void> => {
     const input = chatSendSchema.parse(payload)
+    await refreshProviderTokens()
     const directory = attachmentDirectory(app.getPath('userData'), input.sessionId)
     for (const attachment of input.attachments ?? []) {
       if (!attachment.path.startsWith(`${directory}${path.sep}`)) {
@@ -340,6 +357,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
 
   handle(AGENT_CHANNELS.chatRetry, async (payload): Promise<void> => {
     const { sessionId } = sessionIdSchema.parse(payload)
+    await refreshProviderTokens()
     await manager.request('chat.retry', { sessionId })
   })
 

@@ -25,14 +25,47 @@ export interface ModelVariantInput {
   settings: ModelVariantSettings
 }
 
+export type ProviderAuthMode = 'apiKey' | 'oauth'
+
+export interface ProviderOAuthConfig {
+  authorizationEndpoint: string
+  tokenEndpoint: string
+  clientId: string
+  scope?: string | null
+  redirectUri?: string | null
+}
+
 export interface ProviderPublic {
   id: string
   name: string
   type: ProviderType
   baseURL?: string
   hasApiKey: boolean
+  authMode?: ProviderAuthMode
+  oauth?: ProviderOAuthConfig | null
+  hasOAuthClientSecret?: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface ProviderOAuthStatus {
+  providerId: string
+  providerName: string
+  authorized: boolean
+  expiresAt: string | null
+}
+
+/** OAuth tokens for a provider. Never exposed to the renderer. */
+export interface ProviderAuthRecord {
+  providerId: string
+  accessToken: string
+  refreshToken?: string | null
+  /** Epoch milliseconds. */
+  expiresAt?: number | null
+  tokenEndpoint: string
+  clientId: string
+  clientSecret?: string | null
+  scope?: string | null
 }
 
 export interface ModelPublic {
@@ -98,6 +131,9 @@ export interface ProviderCreateInput {
   type: ProviderType
   baseURL?: string
   apiKey?: string
+  authMode?: ProviderAuthMode
+  oauth?: ProviderOAuthConfig | null
+  oauthClientSecret?: string | null
 }
 
 export interface ProviderUpdateInput {
@@ -107,6 +143,10 @@ export interface ProviderUpdateInput {
   baseURL?: string
   apiKey?: string
   clearApiKey?: boolean
+  authMode?: ProviderAuthMode
+  oauth?: ProviderOAuthConfig | null
+  oauthClientSecret?: string | null
+  clearOAuthClientSecret?: boolean
 }
 
 export interface ModelCreateInput {

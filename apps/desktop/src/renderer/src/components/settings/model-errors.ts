@@ -13,6 +13,12 @@ export function modelErrorMessage(t: (key: string) => string, error: unknown): s
       return t('settings.providerNotFound')
     case 'MODEL_NOT_FOUND':
       return t('settings.modelNotFound')
+    case 'INVALID_OAUTH_CONFIG':
+      return t('settings.invalidOAuthConfig')
+    case 'OAUTH_UNSUPPORTED_PROVIDER':
+      return t('settings.oauthUnsupportedProvider')
+    case 'OAUTH_NOT_CONFIGURED':
+      return t('settings.oauthNotConfigured')
     case 'INVALID_VARIANT':
       return t('settings.invalidVariant')
     case 'NAME_REQUIRED':

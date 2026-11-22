@@ -1,4 +1,4 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import {
   MODEL_CHANNELS,
@@ -8,7 +8,9 @@ import {
   type ModelTestResult,
   type ModelUpdateInput,
   type ModelsConfigPublic,
+  type ProviderAuthRecord,
   type ProviderCreateInput,
+  type ProviderOAuthStatus,
   type ProviderUpdateInput
 } from '@ateam/shared'
 import { modelCreateSchema, modelRefSchema, modelUpdateSchema } from './model-schema'
@@ -17,16 +19,30 @@ import { normalizeError } from '../agent/errors'
 import { listProviderModels } from '../models/available'
 import type { ModelCatalogStore } from '../models/catalog-store'
 import type { ModelsStore } from '../stores/models'
+import type { ProviderAuthStore } from '../models/oauth-tokens'
+import { authorizeProvider } from '../models/oauth-flow'
+import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../models/runtime'
 import type { TrustedSender } from './trusted-sender'
 
 const providerTypeSchema = z.enum(['anthropic', 'openai', 'google', 'openai-compatible'])
 const idSchema = z.string().min(1).max(200)
 
+const oauthConfigSchema = z.object({
+  authorizationEndpoint: z.string().min(1).max(2_000),
+  tokenEndpoint: z.string().min(1).max(2_000),
+  clientId: z.string().min(1).max(300),
+  scope: z.string().max(500).nullable().optional(),
+  redirectUri: z.string().max(2_000).nullable().optional()
+})
+
 const providerCreateSchema = z.object({
   name: z.string().min(1).max(100),
   type: providerTypeSchema,
   baseURL: z.string().max(500).optional(),
-  apiKey: z.string().max(500).optional()
+  apiKey: z.string().max(500).optional(),
+  authMode: z.enum(['apiKey', 'oauth']).optional(),
+  oauth: oauthConfigSchema.nullable().optional(),
+  oauthClientSecret: z.string().max(1_000).nullable().optional()
 })
 
 const providerUpdateSchema = z.object({
@@ -35,7 +51,11 @@ const providerUpdateSchema = z.object({
   type: providerTypeSchema.optional(),
   baseURL: z.string().max(500).optional(),
   apiKey: z.string().max(500).optional(),
-  clearApiKey: z.boolean().optional()
+  clearApiKey: z.boolean().optional(),
+  authMode: z.enum(['apiKey', 'oauth']).optional(),
+  oauth: oauthConfigSchema.nullable().optional(),
+  oauthClientSecret: z.string().max(1_000).nullable().optional(),
+  clearOAuthClientSecret: z.boolean().optional()
 })
 
 const idPayloadSchema = z.object({ id: idSchema })
@@ -51,12 +71,13 @@ const providerPreviewSchema = z.object({
 export interface ModelsIpcOptions {
   manager: AgentManager
   modelsStore: ModelsStore
+  providerAuthStore: ProviderAuthStore
   catalogStore: ModelCatalogStore
   isTrustedSender: TrustedSender
 }
 
 export function registerModelsIpc(options: ModelsIpcOptions): void {
-  const { manager, modelsStore, catalogStore, isTrustedSender } = options
+  const { manager, modelsStore, providerAuthStore, catalogStore, isTrustedSender } = options
 
   let syncChain: Promise<void> = Promise.resolve()
 
@@ -65,7 +86,9 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
       .catch(() => undefined)
       .then(async () => {
         try {
-          await manager.setModels(modelsStore.runtimeConfig())
+          await manager.setModels(
+            runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore)
+          )
         } catch (error) {
           console.error('[models] failed to sync the agent configuration', error)
         }
@@ -91,7 +114,17 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
 
   handle(MODEL_CHANNELS.providerUpdate, async (payload): Promise<ModelsConfigPublic> => {
     const input = providerUpdateSchema.parse(payload) as ProviderUpdateInput
+    const before = modelsStore.publicConfig().providers.find((provider) => provider.id === input.id)
     const config = await modelsStore.updateProvider(input)
+    const after = config.providers.find((provider) => provider.id === input.id)
+    const oauthChanged =
+      before?.authMode !== after?.authMode ||
+      before?.type !== after?.type ||
+      before?.baseURL !== after?.baseURL ||
+      before?.oauth?.authorizationEndpoint !== after?.oauth?.authorizationEndpoint ||
+      before?.oauth?.tokenEndpoint !== after?.oauth?.tokenEndpoint ||
+      before?.oauth?.clientId !== after?.oauth?.clientId
+    if (oauthChanged) await providerAuthStore.remove(input.id)
     await sync()
     return config
   })
@@ -99,6 +132,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
   handle(MODEL_CHANNELS.providerDelete, async (payload): Promise<ModelsConfigPublic> => {
     const { id } = idPayloadSchema.parse(payload)
     const config = await modelsStore.deleteProvider(id)
+    await providerAuthStore.remove(id)
     await sync()
     return config
   })
@@ -141,17 +175,68 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     return config
   })
 
+  handle(MODEL_CHANNELS.providerAuthStatuses, (): ProviderOAuthStatus[] => {
+    return providerAuthStore.statuses(modelsStore.publicConfig().providers)
+  })
+
+  handle(MODEL_CHANNELS.providerOAuthAuthorize, async (payload): Promise<ProviderOAuthStatus[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    const provider = modelsStore.publicConfig().providers.find((candidate) => candidate.id === id)
+    if (!provider) throw new Error('PROVIDER_NOT_FOUND')
+    if (provider.authMode !== 'oauth') throw new Error('OAUTH_NOT_CONFIGURED')
+    const oauth = modelsStore.oauthConfig(id)
+    if (!oauth) throw new Error('OAUTH_NOT_CONFIGURED')
+    const tokens = await authorizeProvider({
+      providerId: id,
+      providerName: provider.name,
+      oauth,
+      clientSecret: oauth.clientSecret,
+      authStore: providerAuthStore,
+      openExternal: (url) => shell.openExternal(url)
+    })
+    const record: ProviderAuthRecord = {
+      providerId: id,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      tokenEndpoint: oauth.tokenEndpoint,
+      clientId: oauth.clientId,
+      clientSecret: oauth.clientSecret,
+      scope: tokens.scope
+    }
+    await providerAuthStore.set(record)
+    await sync()
+    return providerAuthStore.statuses(modelsStore.publicConfig().providers)
+  })
+
+  handle(MODEL_CHANNELS.providerOAuthLogout, async (payload): Promise<ProviderOAuthStatus[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    await providerAuthStore.remove(id)
+    await sync()
+    return providerAuthStore.statuses(modelsStore.publicConfig().providers)
+  })
+
   handle(MODEL_CHANNELS.providerModels, async (payload): Promise<AvailableModel[]> => {
     const { id } = idPayloadSchema.parse(payload)
-    const provider = modelsStore.runtimeConfig().providers.find((candidate) => candidate.id === id)
+    await refreshExpiringProviderAuth(providerAuthStore)
+    const provider = runtimeModelsWithOAuth(
+      modelsStore.runtimeConfig(),
+      providerAuthStore
+    ).providers.find((candidate) => candidate.id === id)
     if (!provider) throw new Error('PROVIDER_NOT_FOUND')
     return listProviderModels(provider)
   })
 
   handle(MODEL_CHANNELS.providerModelsPreview, async (payload): Promise<AvailableModel[]> => {
     const input = providerPreviewSchema.parse(payload)
+    const injected = input.providerId
+      ? runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore).providers.find(
+          (candidate) => candidate.id === input.providerId
+        )
+      : undefined
     const apiKey =
       input.apiKey?.trim() ||
+      injected?.apiKey ||
       (input.providerId ? (modelsStore.revealApiKey(input.providerId) ?? undefined) : undefined)
     if (input.type !== 'openai-compatible' && !apiKey) {
       throw new Error('API_KEY_REQUIRED')
@@ -178,6 +263,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     if (!manager.isReady()) {
       return { ok: false, message: 'The agent is not running.' }
     }
+    await refreshExpiringProviderAuth(providerAuthStore)
     await sync()
     try {
       return await manager.request<ModelTestResult>('models.test', { providerId, modelId })

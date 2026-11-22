@@ -29,6 +29,14 @@ interface ProviderFormValues {
   baseURL?: string
   apiKey?: string
   clearApiKey?: boolean
+  authMode?: 'apiKey' | 'oauth'
+  oauthAuthorizationEndpoint?: string
+  oauthTokenEndpoint?: string
+  oauthClientId?: string
+  oauthScope?: string
+  oauthRedirectUri?: string
+  oauthClientSecret?: string
+  clearOAuthClientSecret?: boolean
 }
 
 function ProviderForm({
@@ -55,6 +63,8 @@ function ProviderForm({
   >([])
   const [form] = Form.useForm<ProviderFormValues>()
   const type = Form.useWatch('type', form) ?? provider?.type ?? 'anthropic'
+  const authMode = Form.useWatch('authMode', form) ?? provider?.authMode ?? 'apiKey'
+  const supportsOAuth = type === 'openai' || type === 'openai-compatible'
   const apiKey = Form.useWatch('apiKey', form) ?? ''
   const baseURL = Form.useWatch('baseURL', form) ?? ''
   const requiresApiKey = type !== 'openai-compatible'
@@ -139,14 +149,34 @@ function ProviderForm({
     setError(null)
     const models = available?.filter((model) => selectedModels.includes(model.id)) ?? []
     try {
+      const mode = values.authMode ?? 'apiKey'
+      const oauth =
+        mode === 'oauth'
+          ? {
+              authorizationEndpoint: values.oauthAuthorizationEndpoint?.trim() ?? '',
+              tokenEndpoint: values.oauthTokenEndpoint?.trim() ?? '',
+              clientId: values.oauthClientId?.trim() ?? '',
+              scope: values.oauthScope?.trim() || null,
+              redirectUri: values.oauthRedirectUri?.trim() || null
+            }
+          : undefined
       if (provider) {
         const input: ProviderUpdateInput = {
           id: provider.id,
           name: values.name,
           type: values.type,
           baseURL: values.baseURL?.trim() ?? '',
-          clearApiKey: values.clearApiKey ?? false,
-          apiKey: values.apiKey?.trim() || undefined
+          ...(mode === 'oauth' || provider.authMode === 'oauth' ? { authMode: mode } : {}),
+          ...(mode === 'oauth'
+            ? {
+                oauth,
+                oauthClientSecret: values.oauthClientSecret?.trim() || undefined,
+                clearOAuthClientSecret: values.clearOAuthClientSecret ?? false
+              }
+            : {
+                clearApiKey: values.clearApiKey ?? false,
+                apiKey: values.apiKey?.trim() || undefined
+              })
         }
         await onSubmit(input, models)
       } else {
@@ -154,7 +184,10 @@ function ProviderForm({
           name: values.name,
           type: values.type,
           baseURL: values.baseURL?.trim() || undefined,
-          apiKey: values.apiKey?.trim() || undefined
+          ...(mode === 'oauth' ? { authMode: mode } : {}),
+          ...(mode === 'oauth'
+            ? { oauth, oauthClientSecret: values.oauthClientSecret?.trim() || undefined }
+            : { apiKey: values.apiKey?.trim() || undefined })
         }
         await onSubmit(input, models)
       }
@@ -182,7 +215,15 @@ function ProviderForm({
           type: provider?.type ?? 'anthropic',
           baseURL: provider?.baseURL ?? '',
           apiKey: '',
-          clearApiKey: false
+          clearApiKey: false,
+          authMode: provider?.authMode ?? 'apiKey',
+          oauthAuthorizationEndpoint: provider?.oauth?.authorizationEndpoint ?? '',
+          oauthTokenEndpoint: provider?.oauth?.tokenEndpoint ?? '',
+          oauthClientId: provider?.oauth?.clientId ?? '',
+          oauthScope: provider?.oauth?.scope ?? '',
+          oauthRedirectUri: provider?.oauth?.redirectUri ?? '',
+          oauthClientSecret: '',
+          clearOAuthClientSecret: false
         }}
         onValuesChange={(changed) => {
           if (changed.apiKey && changed.apiKey !== loadedKey) {
@@ -238,6 +279,17 @@ function ProviderForm({
               }))}
             />
           </Form.Item>
+          {supportsOAuth && (
+            <Form.Item name="authMode" label={t('settings.providerAuthMode')}>
+              <Select
+                aria-label={t('settings.providerAuthMode')}
+                options={[
+                  { value: 'apiKey', label: t('settings.authModeApiKey') },
+                  { value: 'oauth', label: t('settings.authModeOAuth') }
+                ]}
+              />
+            </Form.Item>
+          )}
           <div className="sm:col-span-2">
             <Form.Item
               name="baseURL"
@@ -253,37 +305,96 @@ function ProviderForm({
               <Input placeholder={t('settings.baseURLPlaceholder')} />
             </Form.Item>
           </div>
-          <div className="sm:col-span-2">
-            <Form.Item
-              name="apiKey"
-              label={t('settings.apiKey')}
-              rules={
-                !provider && type !== 'openai-compatible'
-                  ? [{ required: true, message: t('settings.apiKeyRequired') }]
-                  : []
-              }
-            >
-              <Input.Password
-                placeholder={
-                  provider?.hasApiKey
-                    ? t('settings.apiKeyKeepPlaceholder')
-                    : t('settings.apiKeyPlaceholder')
+          {authMode === 'apiKey' && (
+            <div className="sm:col-span-2">
+              <Form.Item
+                name="apiKey"
+                label={t('settings.apiKey')}
+                rules={
+                  !provider && type !== 'openai-compatible'
+                    ? [{ required: true, message: t('settings.apiKeyRequired') }]
+                    : []
                 }
-                autoComplete="off"
-              />
-            </Form.Item>
-            <div className="flex flex-wrap items-center gap-3 text-caption text-muted">
-              {provider?.hasApiKey && <span>{t('settings.apiKeyStored')}</span>}
-              {provider?.hasApiKey && (
-                <Form.Item name="clearApiKey" valuePropName="checked" noStyle>
-                  <Checkbox disabled={requiresApiKey || (Boolean(apiKey) && apiKey !== loadedKey)}>
-                    {t('settings.clearApiKey')}
+              >
+                <Input.Password
+                  placeholder={
+                    provider?.hasApiKey
+                      ? t('settings.apiKeyKeepPlaceholder')
+                      : t('settings.apiKeyPlaceholder')
+                  }
+                  autoComplete="off"
+                />
+              </Form.Item>
+              <div className="flex flex-wrap items-center gap-3 text-caption text-muted">
+                {provider?.hasApiKey && <span>{t('settings.apiKeyStored')}</span>}
+                {provider?.hasApiKey && (
+                  <Form.Item name="clearApiKey" valuePropName="checked" noStyle>
+                    <Checkbox
+                      disabled={requiresApiKey || (Boolean(apiKey) && apiKey !== loadedKey)}
+                    >
+                      {t('settings.clearApiKey')}
+                    </Checkbox>
+                  </Form.Item>
+                )}
+                {type === 'openai-compatible' && <span>{t('settings.apiKeyOptional')}</span>}
+              </div>
+            </div>
+          )}
+          {authMode === 'oauth' && (
+            <div className="sm:col-span-2 grid gap-x-3 sm:grid-cols-2">
+              <Form.Item
+                name="oauthAuthorizationEndpoint"
+                label={t('settings.oauthAuthorizationEndpoint')}
+                rules={[{ required: true, message: t('settings.oauthFieldRequired') }]}
+              >
+                <Input placeholder="https://provider.example.com/oauth/authorize" />
+              </Form.Item>
+              <Form.Item
+                name="oauthTokenEndpoint"
+                label={t('settings.oauthTokenEndpoint')}
+                rules={[{ required: true, message: t('settings.oauthFieldRequired') }]}
+              >
+                <Input placeholder="https://provider.example.com/oauth/token" />
+              </Form.Item>
+              <Form.Item
+                name="oauthClientId"
+                label={t('settings.oauthClientId')}
+                rules={[{ required: true, message: t('settings.oauthFieldRequired') }]}
+              >
+                <Input placeholder={t('settings.oauthClientId')} />
+              </Form.Item>
+              <Form.Item name="oauthScope" label={t('settings.oauthScope')}>
+                <Input placeholder="models.read" />
+              </Form.Item>
+              <Form.Item name="oauthRedirectUri" label={t('settings.oauthRedirectUri')}>
+                <Input placeholder="http://127.0.0.1:19877/provider/oauth/callback" />
+              </Form.Item>
+              <Form.Item name="oauthClientSecret" label={t('settings.oauthClientSecret')}>
+                <Input.Password
+                  autoComplete="off"
+                  placeholder={
+                    provider?.hasOAuthClientSecret
+                      ? t('settings.apiKeyKeepPlaceholder')
+                      : t('settings.oauthClientSecretPlaceholder')
+                  }
+                />
+              </Form.Item>
+              {provider?.hasOAuthClientSecret && (
+                <Form.Item
+                  name="clearOAuthClientSecret"
+                  valuePropName="checked"
+                  className="sm:col-span-2 mb-0"
+                >
+                  <Checkbox disabled={Boolean(form.getFieldValue('oauthClientSecret'))}>
+                    {t('settings.clearOAuthClientSecret')}
                   </Checkbox>
                 </Form.Item>
               )}
-              {type === 'openai-compatible' && <span>{t('settings.apiKeyOptional')}</span>}
+              <p className="sm:col-span-2 m-0 text-caption text-muted">
+                {t('settings.oauthProviderHint')}
+              </p>
             </div>
-          </div>
+          )}
           <div className="sm:col-span-2 flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -291,7 +402,7 @@ function ProviderForm({
                   void fetchModels()
                 }}
                 loading={fetching}
-                disabled={saving}
+                disabled={saving || (authMode === 'oauth' && !provider)}
               >
                 {t('settings.fetchModels')}
               </Button>

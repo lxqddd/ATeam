@@ -11,7 +11,9 @@ import type {
   ModelVariantSettings,
   VariantReasoningEffort,
   ModelsConfigPublic,
+  ProviderAuthMode,
   ProviderCreateInput,
+  ProviderOAuthConfig,
   ProviderPublic,
   ProviderType,
   ProviderUpdateInput,
@@ -25,6 +27,8 @@ interface StoredProvider {
   name: string
   type: ProviderType
   baseURL?: string
+  authMode?: ProviderAuthMode
+  oauth?: ProviderOAuthConfig
   createdAt: string
   updatedAt: string
 }
@@ -155,6 +159,77 @@ function normalizeBaseUrl(value: string | undefined): string | undefined {
   return trimmed.replace(/\/+$/, '')
 }
 
+function oauthSecretKey(providerId: string): string {
+  return `oauth:${providerId}`
+}
+
+function normalizeOAuthEndpoint(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) throw new Error('INVALID_OAUTH_CONFIG')
+  let url: URL
+  try {
+    url = new URL(value.trim())
+  } catch {
+    throw new Error('INVALID_OAUTH_CONFIG')
+  }
+  const loopback = ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname)
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    throw new Error('INVALID_OAUTH_CONFIG')
+  }
+  if (value.length > 2_000) throw new Error('INVALID_OAUTH_CONFIG')
+  return url.toString()
+}
+
+function normalizeOAuthConfig(
+  value: ProviderOAuthConfig | null | undefined,
+  existing?: ProviderOAuthConfig
+): ProviderOAuthConfig | null {
+  const raw = value === undefined ? existing : value
+  if (!raw) return null
+  const clientId = typeof raw.clientId === 'string' ? raw.clientId.trim() : ''
+  if (!clientId || clientId.length > 300) throw new Error('INVALID_OAUTH_CONFIG')
+  const scope =
+    typeof raw.scope === 'string' && raw.scope.trim() ? raw.scope.trim().slice(0, 500) : null
+  if (scope && (scope.includes('\u0000') || scope.includes('\r') || scope.includes('\n'))) {
+    throw new Error('INVALID_OAUTH_CONFIG')
+  }
+  let redirectUri: string | null = null
+  if (raw.redirectUri) {
+    let url: URL
+    try {
+      url = new URL(raw.redirectUri)
+    } catch {
+      throw new Error('INVALID_OAUTH_CONFIG')
+    }
+    if (
+      url.protocol !== 'http:' ||
+      !['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname)
+    ) {
+      throw new Error('INVALID_OAUTH_CONFIG')
+    }
+    redirectUri = raw.redirectUri
+  }
+  return {
+    authorizationEndpoint: normalizeOAuthEndpoint(raw.authorizationEndpoint),
+    tokenEndpoint: normalizeOAuthEndpoint(raw.tokenEndpoint),
+    clientId,
+    scope,
+    redirectUri
+  }
+}
+
+function normalizeAuthMode(
+  value: ProviderAuthMode | undefined,
+  fallback: ProviderAuthMode
+): ProviderAuthMode {
+  const mode = value ?? fallback
+  if (mode !== 'apiKey' && mode !== 'oauth') throw new Error('INVALID_AUTH_MODE')
+  return mode
+}
+
+function supportsOAuth(type: ProviderType): boolean {
+  return type === 'openai' || type === 'openai-compatible'
+}
+
 function normalizeProviderType(value: ProviderType): ProviderType {
   if (!PROVIDER_TYPES.includes(value)) throw new Error('INVALID_PROVIDER_TYPE')
   return value
@@ -249,23 +324,39 @@ export class ModelsStore {
       const type = normalizeProviderType(input.type)
       const baseURL = normalizeBaseUrl(input.baseURL)
       if (type === 'openai-compatible' && !baseURL) throw new Error('BASE_URL_REQUIRED')
+      const authMode = normalizeAuthMode(input.authMode, 'apiKey')
+      const oauth = normalizeOAuthConfig(input.oauth)
+      if (authMode === 'oauth') {
+        if (!supportsOAuth(type)) throw new Error('OAUTH_UNSUPPORTED_PROVIDER')
+        if (!oauth) throw new Error('INVALID_OAUTH_CONFIG')
+      }
 
       const apiKey = input.apiKey?.trim()
-      if (type !== 'openai-compatible' && !apiKey) throw new Error('API_KEY_REQUIRED')
+      if (authMode === 'apiKey' && type !== 'openai-compatible' && !apiKey) {
+        throw new Error('API_KEY_REQUIRED')
+      }
 
       const id = randomUUID()
       if (apiKey) {
         this.secrets.keys[id] = this.encryptOrThrow(apiKey)
       }
+      if (authMode === 'oauth' && input.oauthClientSecret?.trim()) {
+        this.secrets.keys[oauthSecretKey(id)] = this.encryptOrThrow(input.oauthClientSecret.trim())
+      }
       const timestamp = nowIso()
-      this.config.providers.push({
+      const provider: StoredProvider = {
         id,
         name,
         type,
         baseURL,
         createdAt: timestamp,
         updatedAt: timestamp
-      })
+      }
+      if (authMode === 'oauth' && oauth) {
+        provider.authMode = 'oauth'
+        provider.oauth = oauth
+      }
+      this.config.providers.push(provider)
       await this.persist()
     })
   }
@@ -279,22 +370,44 @@ export class ModelsStore {
       const nextBaseURL =
         input.baseURL !== undefined ? normalizeBaseUrl(input.baseURL) : provider.baseURL
       if (nextType === 'openai-compatible' && !nextBaseURL) throw new Error('BASE_URL_REQUIRED')
+      const nextAuthMode = normalizeAuthMode(input.authMode, provider.authMode ?? 'apiKey')
+      const nextOAuth = normalizeOAuthConfig(input.oauth, provider.oauth)
+      if (nextAuthMode === 'oauth') {
+        if (!supportsOAuth(nextType)) throw new Error('OAUTH_UNSUPPORTED_PROVIDER')
+        if (!nextOAuth) throw new Error('INVALID_OAUTH_CONFIG')
+      }
 
       const nextApiKey = input.apiKey?.trim()
       const willHaveKey = input.clearApiKey
         ? false
         : Boolean(nextApiKey) || Boolean(this.secrets.keys[provider.id])
-      if (nextType !== 'openai-compatible' && !willHaveKey) throw new Error('API_KEY_REQUIRED')
+      if (nextAuthMode === 'apiKey' && nextType !== 'openai-compatible' && !willHaveKey) {
+        throw new Error('API_KEY_REQUIRED')
+      }
 
       if (input.clearApiKey) {
         delete this.secrets.keys[provider.id]
       } else if (nextApiKey) {
         this.secrets.keys[provider.id] = this.encryptOrThrow(nextApiKey)
       }
+      if (nextAuthMode !== 'oauth' || input.clearOAuthClientSecret) {
+        delete this.secrets.keys[oauthSecretKey(provider.id)]
+      } else if (input.oauthClientSecret?.trim()) {
+        this.secrets.keys[oauthSecretKey(provider.id)] = this.encryptOrThrow(
+          input.oauthClientSecret.trim()
+        )
+      }
 
       if (input.name !== undefined) provider.name = normalizeName(input.name)
       provider.type = nextType
       provider.baseURL = nextBaseURL
+      if (nextAuthMode === 'oauth' && nextOAuth) {
+        provider.authMode = 'oauth'
+        provider.oauth = nextOAuth
+      } else {
+        delete provider.authMode
+        delete provider.oauth
+      }
       provider.updatedAt = nowIso()
       await this.persist()
     })
@@ -307,6 +420,7 @@ export class ModelsStore {
       this.config.providers.splice(index, 1)
       this.config.models = this.config.models.filter((model) => model.providerId !== id)
       delete this.secrets.keys[id]
+      delete this.secrets.keys[oauthSecretKey(id)]
       if (this.config.defaultModel?.providerId === id) {
         this.config.defaultModel = this.firstModelRef()
       }
@@ -445,6 +559,9 @@ export class ModelsStore {
       type: provider.type,
       baseURL: provider.baseURL,
       hasApiKey: Boolean(this.secrets.keys[provider.id]),
+      authMode: provider.authMode ?? 'apiKey',
+      oauth: provider.oauth ? { ...provider.oauth } : null,
+      hasOAuthClientSecret: Boolean(this.secrets.keys[oauthSecretKey(provider.id)]),
       createdAt: provider.createdAt,
       updatedAt: provider.updatedAt
     }
@@ -453,6 +570,21 @@ export class ModelsStore {
   private encryptOrThrow(apiKey: string): string {
     if (!this.isEncryptionAvailable()) throw new Error('ENCRYPTION_UNAVAILABLE')
     return safeStorage.encryptString(apiKey).toString('base64')
+  }
+
+  oauthConfig(providerId: string): (ProviderOAuthConfig & { clientSecret: string | null }) | null {
+    const provider = this.config.providers.find((candidate) => candidate.id === providerId)
+    if (!provider?.oauth) return null
+    let clientSecret: string | null = null
+    const encrypted = this.secrets.keys[oauthSecretKey(providerId)]
+    if (encrypted) {
+      try {
+        clientSecret = safeStorage.decryptString(Buffer.from(encrypted, 'base64'))
+      } catch {
+        clientSecret = null
+      }
+    }
+    return { ...provider.oauth, clientSecret }
   }
 
   private decryptKey(providerId: string): string | undefined {

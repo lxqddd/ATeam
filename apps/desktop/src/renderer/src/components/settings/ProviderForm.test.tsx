@@ -30,6 +30,43 @@ beforeEach(() => {
 })
 
 describe('ProviderForm', () => {
+  it('creates an OAuth provider', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ProviderForm onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Name'), 'OAuth OpenAI')
+    await user.click(screen.getByRole('combobox', { name: 'Type' }))
+    await user.click(await screen.findByTitle('OpenAI'))
+    await user.click(screen.getByRole('combobox', { name: 'Authentication' }))
+    await user.click(await screen.findByTitle('OAuth 2.0'))
+    await user.type(
+      screen.getByLabelText('OAuth authorization URL'),
+      'https://auth.example.com/authorize'
+    )
+    await user.type(screen.getByLabelText('OAuth token URL'), 'https://auth.example.com/token')
+    await user.type(screen.getByLabelText('OAuth client ID'), 'client-1')
+    await user.type(screen.getByLabelText('OAuth client secret'), 'secret-1')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'OAuth OpenAI',
+          type: 'openai',
+          authMode: 'oauth',
+          oauth: expect.objectContaining({
+            authorizationEndpoint: 'https://auth.example.com/authorize',
+            tokenEndpoint: 'https://auth.example.com/token',
+            clientId: 'client-1'
+          }),
+          oauthClientSecret: 'secret-1'
+        }),
+        []
+      )
+    )
+  })
+
   it('creates an OpenAI-compatible provider without an API key', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn().mockResolvedValue(undefined)

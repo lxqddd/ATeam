@@ -10,6 +10,7 @@ import type {
   ModelTestResult,
   ModelUpdateInput,
   ProviderCreateInput,
+  ProviderOAuthStatus,
   ProviderPublic,
   ProviderUpdateInput
 } from '@ateam/shared'
@@ -97,16 +98,19 @@ function ModelsPage(): React.JSX.Element {
   const [modelForm, setModelForm] = useState<ModelFormState | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [tests, setTests] = useState<Record<string, TestState>>({})
+  const [oauthStatuses, setOauthStatuses] = useState<ProviderOAuthStatus[]>([])
 
   const load = useCallback(async (): Promise<void> => {
     setLoadError(null)
     try {
-      const [nextConfig, nextInfo] = await Promise.all([
+      const [nextConfig, nextInfo, nextOAuth] = await Promise.all([
         window.api.models.get(),
-        window.api.agent.info()
+        window.api.agent.info(),
+        window.api.models.oauthStatuses()
       ])
       setConfig(nextConfig)
       setInfo(nextInfo)
+      setOauthStatuses(nextOAuth)
     } catch (error) {
       setLoadError(errorMessage(error))
     }
@@ -120,6 +124,37 @@ function ModelsPage(): React.JSX.Element {
     setMutationError(null)
     const next = await operation()
     setConfig(next)
+    try {
+      setOauthStatuses(await window.api.models.oauthStatuses())
+    } catch {
+      /* status refresh is best effort */
+    }
+  }
+
+  async function authorizeProvider(provider: ProviderPublic): Promise<void> {
+    setBusyId(provider.id)
+    setMutationError(null)
+    try {
+      setOauthStatuses(await window.api.models.authorizeOAuth(provider.id))
+      await load()
+    } catch (error) {
+      setMutationError(errorMessage(error))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function logoutProvider(provider: ProviderPublic): Promise<void> {
+    setBusyId(provider.id)
+    setMutationError(null)
+    try {
+      setOauthStatuses(await window.api.models.logoutOAuth(provider.id))
+      await load()
+    } catch (error) {
+      setMutationError(errorMessage(error))
+    } finally {
+      setBusyId(null)
+    }
   }
 
   async function saveProvider(
@@ -331,6 +366,7 @@ function ModelsPage(): React.JSX.Element {
               )
               const selectedModel = providerModels.find(isDefaultModel)
               const selectedTest = selectedModel ? tests[selectedModel.id] : undefined
+              const oauth = oauthStatuses.find((item) => item.providerId === provider.id)
               return (
                 <section
                   key={provider.id}
@@ -347,9 +383,17 @@ function ModelsPage(): React.JSX.Element {
                           {provider.name}
                         </h2>
                         <Chip tone="neutral">{t(`providerTypes.${provider.type}`)}</Chip>
-                        <Chip tone={provider.hasApiKey ? 'success' : 'warning'}>
-                          {provider.hasApiKey ? t('settings.hasApiKey') : t('settings.noApiKey')}
-                        </Chip>
+                        {provider.authMode === 'oauth' ? (
+                          <Chip tone={oauth?.authorized ? 'success' : 'warning'}>
+                            {oauth?.authorized
+                              ? t('settings.oauthAuthorized')
+                              : t('settings.oauthNeedsAuth')}
+                          </Chip>
+                        ) : (
+                          <Chip tone={provider.hasApiKey ? 'success' : 'warning'}>
+                            {provider.hasApiKey ? t('settings.hasApiKey') : t('settings.noApiKey')}
+                          </Chip>
+                        )}
                         {providerHasDefault(provider) && (
                           <Chip tone="success">{t('modelsPage.defaultChip')}</Chip>
                         )}
@@ -364,6 +408,36 @@ function ModelsPage(): React.JSX.Element {
                       </p>
                     </div>
                     <div className="ml-auto flex flex-none items-center gap-1">
+                      {provider.authMode === 'oauth' && (
+                        <>
+                          <Button
+                            type="text"
+                            size="small"
+                            loading={busyId === provider.id}
+                            onClick={() => {
+                              void authorizeProvider(provider)
+                            }}
+                          >
+                            {busyId === provider.id
+                              ? t('settings.oauthAuthorizing')
+                              : oauth?.authorized
+                                ? t('settings.oauthReauthorize')
+                                : t('settings.oauthAuthorize')}
+                          </Button>
+                          {oauth?.authorized && (
+                            <Button
+                              type="text"
+                              size="small"
+                              disabled={busyId === provider.id}
+                              onClick={() => {
+                                void logoutProvider(provider)
+                              }}
+                            >
+                              {t('settings.oauthLogout')}
+                            </Button>
+                          )}
+                        </>
+                      )}
                       <Button
                         type="text"
                         size="small"

@@ -336,6 +336,73 @@ describe('ModelsStore', () => {
     ).rejects.toThrow('INVALID_VARIANT')
   })
 
+  it('supports OAuth providers with encrypted client secrets', async () => {
+    const config = await store.addProvider({
+      name: 'OAuth OpenAI',
+      type: 'openai',
+      authMode: 'oauth',
+      oauth: {
+        authorizationEndpoint: 'https://auth.example.com/authorize',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client-1',
+        scope: 'models.read'
+      },
+      oauthClientSecret: 'secret-1'
+    })
+    const provider = config.providers[0]
+
+    expect(provider).toMatchObject({
+      authMode: 'oauth',
+      oauth: expect.objectContaining({ clientId: 'client-1', scope: 'models.read' }),
+      hasOAuthClientSecret: true,
+      hasApiKey: false
+    })
+    const stored = await readStoredJson<{ keys: Record<string, string> }>('secrets.json')
+    expect(stored.keys[provider.id]).toBeUndefined()
+    expect(stored.keys[`oauth:${provider.id}`]).toBeDefined()
+    expect(store.oauthConfig(provider.id)).toMatchObject({
+      clientId: 'client-1',
+      clientSecret: 'secret-1'
+    })
+
+    const reverted = await store.updateProvider({
+      id: provider.id,
+      authMode: 'apiKey',
+      apiKey: 'sk-test',
+      clearOAuthClientSecret: true
+    })
+    expect(reverted.providers[0]).toMatchObject({ authMode: 'apiKey', oauth: null })
+    expect(store.oauthConfig(provider.id)).toBeNull()
+  })
+
+  it('rejects OAuth for unsupported provider types and invalid endpoints', async () => {
+    await expect(
+      store.addProvider({
+        name: 'OAuth Anthropic',
+        type: 'anthropic',
+        authMode: 'oauth',
+        oauth: {
+          authorizationEndpoint: 'https://auth.example.com/authorize',
+          tokenEndpoint: 'https://auth.example.com/token',
+          clientId: 'client-1'
+        }
+      })
+    ).rejects.toThrow('OAUTH_UNSUPPORTED_PROVIDER')
+
+    await expect(
+      store.addProvider({
+        name: 'Bad OAuth',
+        type: 'openai',
+        authMode: 'oauth',
+        oauth: {
+          authorizationEndpoint: 'http://auth.example.com/authorize',
+          tokenEndpoint: 'https://auth.example.com/token',
+          clientId: 'client-1'
+        }
+      })
+    ).rejects.toThrow('INVALID_OAUTH_CONFIG')
+  })
+
   it('keeps the previous key when re-encryption is unavailable', async () => {
     const providerId = await addAnthropic()
     safeStorage.isEncryptionAvailable.mockReturnValue(false)

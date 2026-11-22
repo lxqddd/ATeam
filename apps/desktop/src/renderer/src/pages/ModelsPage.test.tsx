@@ -151,6 +151,62 @@ describe('ModelsPage', () => {
     )
   })
 
+  it('authorizes OAuth providers from the provider card', async () => {
+    const oauthProvider: ProviderPublic = {
+      ...secondProvider,
+      authMode: 'oauth',
+      hasApiKey: false,
+      oauth: {
+        authorizationEndpoint: 'https://auth.example.com/authorize',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client-1'
+      }
+    }
+    mock = createApiMock({ models: makeConfig({ providers: [oauthProvider] }) })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    vi.mocked(mock.api.models.oauthStatuses).mockResolvedValue([
+      { providerId: 'p2', providerName: 'Second', authorized: false, expiresAt: null }
+    ])
+    vi.mocked(mock.api.models.authorizeOAuth).mockResolvedValue([
+      { providerId: 'p2', providerName: 'Second', authorized: true, expiresAt: null }
+    ])
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+
+    expect(await screen.findByText('OAuth not authorized')).toBeInTheDocument()
+    await user.click(within(providerCard('Second')).getByRole('button', { name: 'Authorize' }))
+
+    await waitFor(() => expect(mock.api.models.authorizeOAuth).toHaveBeenCalledWith('p2'))
+  })
+
+  it('signs out authorized OAuth providers', async () => {
+    const oauthProvider: ProviderPublic = {
+      ...secondProvider,
+      authMode: 'oauth',
+      hasApiKey: false,
+      oauth: {
+        authorizationEndpoint: 'https://auth.example.com/authorize',
+        tokenEndpoint: 'https://auth.example.com/token',
+        clientId: 'client-1'
+      }
+    }
+    mock = createApiMock({ models: makeConfig({ providers: [oauthProvider] }) })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    vi.mocked(mock.api.models.oauthStatuses).mockResolvedValue([
+      { providerId: 'p2', providerName: 'Second', authorized: true, expiresAt: null }
+    ])
+    vi.mocked(mock.api.models.logoutOAuth).mockResolvedValue([
+      { providerId: 'p2', providerName: 'Second', authorized: false, expiresAt: null }
+    ])
+    const user = userEvent.setup()
+    render(<ModelsPage />)
+
+    expect(await screen.findByText('OAuth authorized')).toBeInTheDocument()
+    await user.click(within(providerCard('Second')).getByRole('button', { name: 'Sign out' }))
+
+    await waitFor(() => expect(mock.api.models.logoutOAuth).toHaveBeenCalledWith('p2'))
+  })
+
   it('clears the default model', async () => {
     const user = userEvent.setup()
     render(<ModelsPage />)

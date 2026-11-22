@@ -34,6 +34,7 @@ import type {
   ProviderCreateInput,
   ProviderUpdateInput,
   ProviderModelListInput,
+  ProviderOAuthStatus,
   AvailableModel
 } from './model-types'
 
@@ -123,6 +124,9 @@ export interface ModelsBridge {
   updateProvider: (input: ProviderUpdateInput) => Promise<ModelsConfigPublic>
   deleteProvider: (id: string) => Promise<ModelsConfigPublic>
   revealApiKey: (providerId: string) => Promise<string | null>
+  oauthStatuses: () => Promise<ProviderOAuthStatus[]>
+  authorizeOAuth: (providerId: string) => Promise<ProviderOAuthStatus[]>
+  logoutOAuth: (providerId: string) => Promise<ProviderOAuthStatus[]>
   addModel: (input: ModelCreateInput) => Promise<ModelsConfigPublic>
   updateModel: (input: ModelUpdateInput) => Promise<ModelsConfigPublic>
   deleteModel: (id: string) => Promise<ModelsConfigPublic>
