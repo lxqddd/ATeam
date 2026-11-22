@@ -277,7 +277,8 @@
 - [ ] ACP / 编辑器集成
 - [ ] GitHub Action
 - [ ] SQLite / 事件溯源会话存储
-- [ ] References（命名外部资料）与组织级 Policies
+- [x] References（命名外部资料：本地目录 / Git 仓库、描述注入、外部目录自动放行、设置页编辑）
+- [ ] 组织级 Policies
 
 ## 建议实施顺序
 

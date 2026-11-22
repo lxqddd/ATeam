@@ -229,7 +229,7 @@
 | 权限     | 查看与删除已保存的权限规则                                              |
 | MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                      |
 | 网页搜索 | 服务商选择、加密 API Key、配置状态                                      |
-| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件                   |
+| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用          |
 
 模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据。
 
@@ -247,6 +247,7 @@ agent/
 ├── config.json          # 快照 / LSP / 格式化开关与额外指令
 ├── mcp.json             # MCP 服务器配置
 ├── mcp-auth.json        # 加密的 MCP OAuth token 与客户端注册信息
+├── references/          # Git 引用的本地缓存
 ├── websearch.json       # 搜索服务商与加密 Key
 ├── model-catalog.json   # models.dev 目录缓存
 ├── commands.json        # JSON 自定义命令
@@ -260,6 +261,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 ## 17. 已知限制与后续方向
 
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible），未内置 ChatGPT、GitHub Copilot 等供应商专属 OAuth 流程；模型一键导入与 MCP prompts 命令已完成。
+- 外部引用尚未接入 `@别名` 自动补全；对引用目录的写入不在会话快照 / undo 范围内；组织级 Policies 尚未实现。
 - 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
 - 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
 - ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
@@ -293,3 +295,10 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
 - SDK：`apps/desktop/src/sdk/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
 - 限制：未实现 API 版本前缀与远程部署加固；SDK 目前以源码形式提供，尚未发布独立 npm 包。
+
+## 21. 外部引用（References）
+
+- 配置：用户级 `agent/config.json` 的 `references`（数组或对象形式），或项目级 `.opencode/references.json`；项目别名覆盖用户别名。
+- 支持本地目录（`path`，绝对 / 相对 / `~`）与 Git 仓库（`repository` + 可选 `branch`，GitHub `owner/repo` 简写自动展开）；Git 仓库按分支缓存到 `agent/references/`。
+- `description` 与引用路径会注入 system prompt，Agent 可直接用绝对路径和常规工具读取；引用目录自动通过 `external_directory` 边界，但读 / 写 / shell 等工具权限仍然生效。
+- 设置页“外部引用”按行编辑：`alias=path`、`alias=owner/repo#branch`，可在 `|` 后填写描述；`hidden` 仅支持配置文件。
