@@ -116,7 +116,7 @@ function AssistantMessage({
         </div>
       )}
 
-      {streaming && <StreamingStatus startedAt={message.createdAt} />}
+      {streaming && <StreamingStatus startedAt={message.createdAt} retry={message.retry} />}
 
       {message.status === 'complete' &&
         !text &&

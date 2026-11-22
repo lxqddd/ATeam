@@ -16,6 +16,7 @@ import {
 } from './mcp-client'
 import { McpStore } from './mcp-store'
 import { refreshMcpAuthRecord } from './mcp-oauth'
+import { readProjectConfig } from '../config/project-config'
 
 const MAX_OUTPUT = 200_000
 const MAX_TOOL_NAME = 64
@@ -32,6 +33,7 @@ export interface McpToolContext {
 
 export interface McpManagerLike {
   tools(context: McpToolContext): Promise<ToolSet>
+  instructions?(): Promise<Array<{ server: string; instructions: string }>>
   servers(): Promise<McpServerConfig[]>
   statuses(options?: { probe?: boolean }): Promise<McpServerStatus[]>
   prompts(): Promise<McpPromptSummary[]>
@@ -129,18 +131,41 @@ export class McpManager implements McpManagerLike {
   private readonly generations = new Map<string, number>()
   private readonly statusesById = new Map<string, McpServerStatus>()
   private authByServer = new Map<string, McpAuthRecord>()
+  private project: McpServerConfig[] = []
   private transient: McpServerConfig[] = []
   private transientEpoch = 0
   private disposed = false
 
   constructor(private readonly options: McpManagerOptions) {
-    this.store = new McpStore(options.userDataPath)
+    const store = new McpStore(options.userDataPath)
+    this.store = store
     this.authByServer = new Map((options.auth ?? []).map((auth) => [auth.serverId, auth]))
-    this.ready = this.store.init()
+    this.ready = (async () => {
+      await store.init()
+      const config = await readProjectConfig(options.workspace)
+      const now = new Date().toISOString()
+      this.project = (config.mcp ?? []).map((server) => ({
+        id: `project-${createHash('sha1').update(server.name).digest('hex').slice(0, 8)}`,
+        name: server.name,
+        type: server.type,
+        command: server.command ?? null,
+        args: server.args ?? [],
+        url: server.url ?? null,
+        headers: server.headers ?? {},
+        env: server.env ?? {},
+        enabled: server.enabled !== false,
+        createdAt: now,
+        updatedAt: now
+      }))
+    })()
   }
 
   private configs(): McpServerConfig[] {
-    return [...this.store.list(), ...this.transient]
+    const byName = new Map<string, McpServerConfig>()
+    for (const config of this.store.list()) byName.set(config.name, config)
+    for (const config of this.project) byName.set(config.name, config)
+    for (const config of this.transient) byName.set(config.name, config)
+    return [...byName.values()]
   }
 
   async setTransientServers(inputs: McpServerInput[]): Promise<void> {
@@ -171,7 +196,7 @@ export class McpManager implements McpManagerLike {
 
   async servers(): Promise<McpServerConfig[]> {
     await this.ready
-    return this.configs()
+    return [...this.store.list(), ...this.transient]
   }
 
   async statuses(options: { probe?: boolean } = {}): Promise<McpServerStatus[]> {
@@ -185,6 +210,21 @@ export class McpManager implements McpManagerLike {
       }
     }
     return configs.map((config) => this.statusesById.get(config.id) ?? idleStatus(config))
+  }
+
+  async instructions(): Promise<Array<{ server: string; instructions: string }>> {
+    await this.ready
+    if (this.disposed) return []
+    const result: Array<{ server: string; instructions: string }> = []
+    for (const config of this.configs()) {
+      if (!config.enabled) continue
+      const entry = await this.connectionFor(config)
+      const instructions = entry?.client.instructions?.()
+      if (instructions?.trim()) {
+        result.push({ server: config.name, instructions: instructions.trim() })
+      }
+    }
+    return result
   }
 
   async tools(context: McpToolContext): Promise<ToolSet> {

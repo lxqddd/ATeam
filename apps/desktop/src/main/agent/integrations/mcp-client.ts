@@ -58,6 +58,7 @@ export interface McpResourceContent {
 
 export interface McpClientLike {
   connect(): Promise<void>
+  instructions?(): string | undefined
   listTools(): Promise<McpToolDefinition[]>
   listPrompts(): Promise<McpPromptDefinition[]>
   listResources(): Promise<McpResourceDefinition[]>
@@ -363,6 +364,7 @@ export class McpClient implements McpClientLike {
   >()
   private readonly changeHandlers = new Set<() => void>()
   private readonly requestTimeoutMs: number
+  private serverInstructions: string | undefined
 
   constructor(
     private readonly options: {
@@ -383,16 +385,22 @@ export class McpClient implements McpClientLike {
 
   async connect(): Promise<void> {
     await this.options.transport.start()
-    await this.request('initialize', {
+    const initialized = (await this.request('initialize', {
       protocolVersion: '2025-06-18',
       capabilities: {},
       clientInfo: {
         name: 'ATeam',
         version: this.options.clientVersion ?? '0.1.0'
       }
-    })
+    })) as { instructions?: unknown } | null
+    this.serverInstructions =
+      typeof initialized?.instructions === 'string' ? initialized.instructions : undefined
     await this.options.transport.send({ jsonrpc: '2.0', method: 'notifications/initialized' })
     this.open = true
+  }
+
+  instructions(): string | undefined {
+    return this.serverInstructions
   }
 
   async listTools(): Promise<McpToolDefinition[]> {

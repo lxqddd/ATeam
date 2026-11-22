@@ -94,7 +94,7 @@ export type ToolState =
 
 export type MessagePart =
   | { type: 'text'; text: string }
-  | { type: 'reasoning'; text: string }
+  | { type: 'reasoning'; text: string; providerMetadata?: Record<string, unknown> }
   | { type: 'attachment'; attachment: MessageAttachment }
   | {
       type: 'tool'
@@ -165,6 +165,13 @@ export interface MessageSnapshotStep {
   files: string[]
 }
 
+export interface ChatRetryStatus {
+  attempt: number
+  maxAttempts: number
+  delayMs: number
+  reason: string
+}
+
 export interface ChatMessage {
   id: string
   sessionId: string
@@ -174,6 +181,9 @@ export interface ChatMessage {
   updatedAt: string
   status: 'streaming' | 'complete' | 'interrupted' | 'error'
   error?: string
+  /** Model that produced this assistant message. */
+  model?: ModelRef
+  retry?: ChatRetryStatus
   usage?: TokenUsage
   /** Provider usage for the final model step, used for context sizing. */
   contextUsage?: TokenUsage
@@ -328,6 +338,16 @@ export interface AgentConfig {
   references?: AgentReference[]
   /** File extension (e.g. .ts) to formatter id, or "none" to disable formatting. */
   formatterOverrides: Record<string, string>
+  /** Project-level permission rules loaded from ateam.json. */
+  permissionRules?: PermissionRuleInput[]
+  /** Project-level MCP servers loaded from ateam.json. */
+  mcpServers?: McpServerInput[]
+  /** Raw project-level agent definitions, parsed by the agent loader. */
+  agents?: unknown[]
+  /** Raw project-level provider definitions reserved for future use. */
+  providers?: unknown[]
+  /** Project-level plugin specs reserved for the plugin loader. */
+  plugins?: string[]
 }
 
 export type McpServerType = 'local' | 'remote'

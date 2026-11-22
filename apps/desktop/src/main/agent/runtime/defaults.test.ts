@@ -90,7 +90,7 @@ describe('AgentRuntime default dependencies', () => {
     expect(finished?.event).toMatchObject({ status: 'completed' })
 
     const options = aiMock.captured()
-    expect(options).toMatchObject({ maxRetries: 1, maxOutputTokens: 8_192 })
+    expect(options).toMatchObject({ maxRetries: 0, maxOutputTokens: 8_192 })
     expect(typeof options?.system).toBe('string')
     expect(aiMock.stepCountIs).toHaveBeenCalledWith(25)
 

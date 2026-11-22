@@ -449,6 +449,8 @@ const zhCN = {
     toolDetails: '查看详情',
     hideDetails: '收起详情',
     working: '正在处理…',
+    retrying: '正在重试…',
+    retryStatus: '第 {{attempt}}/{{max}} 次，{{seconds}} 秒后重试',
     stepLimitHint: '本次运行已达到工具调用上限，可以继续发送消息。',
     agentStoppedHint: 'Agent 未在运行，会话记录仍可查看。'
   }

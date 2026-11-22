@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { AgentConfig, AgentReference } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
+import { mergeAgentConfig, readProjectConfig } from './project-config'
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   snapshots: true,
@@ -15,7 +16,7 @@ function configFile(userDataPath: string): string {
   return path.join(userDataPath, 'agent', 'config.json')
 }
 
-function normalizeFormatterOverrides(value: unknown): Record<string, string> {
+export function normalizeFormatterOverrides(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const overrides: Record<string, string> = {}
   for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
@@ -89,7 +90,7 @@ export function normalizeReferences(value: unknown): AgentReference[] {
   return [...byAlias.values()]
 }
 
-function normalizeInstructions(value: unknown): string[] {
+export function normalizeInstructions(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [
     ...new Set(
@@ -112,12 +113,22 @@ function normalizeConfig(value: unknown): AgentConfig {
     formatterOverrides: normalizeFormatterOverrides(config.formatterOverrides),
     ...(normalizeReferences(config.references).length > 0
       ? { references: normalizeReferences(config.references) }
-      : {})
+      : {}),
+    ...(Array.isArray(config.permissionRules) ? { permissionRules: config.permissionRules } : {}),
+    ...(Array.isArray(config.mcpServers) ? { mcpServers: config.mcpServers } : {}),
+    ...(Array.isArray(config.agents) ? { agents: config.agents } : {}),
+    ...(Array.isArray(config.providers) ? { providers: config.providers } : {}),
+    ...(Array.isArray(config.plugins) ? { plugins: config.plugins } : {})
   }
 }
 
-export async function readAgentConfig(userDataPath: string): Promise<AgentConfig> {
-  return normalizeConfig(await readJsonFile<unknown>(configFile(userDataPath)))
+export async function readAgentConfig(
+  userDataPath: string,
+  workspacePath?: string
+): Promise<AgentConfig> {
+  const base = normalizeConfig(await readJsonFile<unknown>(configFile(userDataPath)))
+  if (!workspacePath) return base
+  return mergeAgentConfig(base, await readProjectConfig(workspacePath))
 }
 
 export class AgentConfigStore {
@@ -138,7 +149,16 @@ export class AgentConfigStore {
       formatterOverrides: { ...this.config.formatterOverrides },
       ...(this.config.references
         ? { references: this.config.references.map((ref) => ({ ...ref })) }
-        : {})
+        : {}),
+      ...(this.config.permissionRules
+        ? { permissionRules: this.config.permissionRules.map((rule) => ({ ...rule })) }
+        : {}),
+      ...(this.config.mcpServers
+        ? { mcpServers: this.config.mcpServers.map((server) => ({ ...server })) }
+        : {}),
+      ...(this.config.agents ? { agents: this.config.agents } : {}),
+      ...(this.config.providers ? { providers: this.config.providers } : {}),
+      ...(this.config.plugins ? { plugins: [...this.config.plugins] } : {})
     }
   }
 

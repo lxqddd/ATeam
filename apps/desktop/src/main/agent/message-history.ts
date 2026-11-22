@@ -1,5 +1,19 @@
-import type { FilePart, ImagePart, ModelMessage, TextPart, ToolCallPart, ToolResultPart } from 'ai'
-import type { AttachmentKind, ChatMessage } from '@ateam/shared'
+import type {
+  AssistantModelMessage,
+  FilePart,
+  ImagePart,
+  ModelMessage,
+  TextPart,
+  ToolCallPart,
+  ToolResultPart
+} from 'ai'
+import type { AttachmentKind, ChatMessage, ModelRef } from '@ateam/shared'
+
+interface ReasoningContentPart {
+  type: 'reasoning'
+  text: string
+  providerOptions?: Record<string, unknown>
+}
 
 export interface AttachmentPayload {
   kind: AttachmentKind
@@ -22,7 +36,8 @@ function userText(message: ChatMessage): string {
  */
 export function buildModelMessages(
   messages: ChatMessage[],
-  attachments?: Map<string, AttachmentPayload>
+  attachments?: Map<string, AttachmentPayload>,
+  options: { currentModel?: ModelRef | null } = {}
 ): ModelMessage[] {
   const result: ModelMessage[] = []
 
@@ -74,10 +89,23 @@ export function buildModelMessages(
 
     if (message.status === 'error' || message.status === 'streaming') continue
 
-    const assistantContent: Array<TextPart | ToolCallPart> = []
+    const assistantContent: Array<TextPart | ToolCallPart | ReasoningContentPart> = []
     const toolResults: ToolResultPart[] = []
+    const sameModel =
+      Boolean(message.model && options.currentModel) &&
+      message.model?.providerId === options.currentModel?.providerId &&
+      message.model?.modelId === options.currentModel?.modelId
 
     for (const part of message.parts) {
+      if (part.type === 'reasoning') {
+        if (!sameModel || !part.providerMetadata || !part.text.trim()) continue
+        assistantContent.push({
+          type: 'reasoning',
+          text: part.text,
+          providerOptions: part.providerMetadata
+        })
+        continue
+      }
       if (part.type === 'text' && part.text.trim()) {
         assistantContent.push({ type: 'text', text: part.text })
         continue
@@ -133,7 +161,10 @@ export function buildModelMessages(
     }
 
     if (assistantContent.length > 0) {
-      result.push({ role: 'assistant', content: assistantContent })
+      result.push({
+        role: 'assistant',
+        content: assistantContent as AssistantModelMessage['content']
+      })
     }
     if (toolResults.length > 0) {
       result.push({ role: 'tool', content: toolResults })
@@ -141,4 +172,42 @@ export function buildModelMessages(
   }
 
   return result
+}
+
+/** Add an Anthropic cache breakpoint to the last user turn. */
+export function applyAnthropicCache(messages: ModelMessage[]): ModelMessage[] {
+  let index = -1
+  for (let cursor = messages.length - 1; cursor >= 0; cursor -= 1) {
+    if (messages[cursor].role === 'user') {
+      index = cursor
+      break
+    }
+  }
+  if (index < 0) return messages
+  const target = messages[index]
+  if (target.role !== 'user') return messages
+  const cacheOptions = {
+    anthropic: { cacheControl: { type: 'ephemeral' } }
+  } as TextPart['providerOptions']
+
+  if (typeof target.content === 'string') {
+    const next = {
+      ...target,
+      content: [{ type: 'text' as const, text: target.content, providerOptions: cacheOptions }]
+    }
+    return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
+  }
+
+  const content = [...target.content]
+  for (let cursor = content.length - 1; cursor >= 0; cursor -= 1) {
+    const part = content[cursor]
+    if (part.type !== 'text') continue
+    content[cursor] = {
+      ...part,
+      providerOptions: { ...part.providerOptions, ...cacheOptions }
+    }
+    const next = { ...target, content }
+    return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
+  }
+  return messages
 }

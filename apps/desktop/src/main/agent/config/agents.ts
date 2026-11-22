@@ -9,6 +9,7 @@ import type {
   PermissionRuleAction
 } from '@ateam/shared'
 import { readJsonFile } from '../atomic-json'
+import { readProjectConfig } from './project-config'
 import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100
@@ -52,7 +53,16 @@ export const BUILTIN_AGENTS: readonly AgentDefinition[] = [
     description: 'Read-only planning agent that inspects the codebase without modifying it.',
     mode: 'primary',
     model: null,
-    tools: [...READ_TOOLS, 'todowrite', 'todoread', 'question'],
+    tools: [
+      ...READ_TOOLS,
+      'write',
+      'edit',
+      'patch',
+      'todowrite',
+      'todoread',
+      'question',
+      'plan_exit'
+    ],
     permissions: [],
     temperature: null,
     maxSteps: 20,
@@ -353,6 +363,11 @@ export async function loadAgents(input: {
     )) {
       add(agent)
     }
+  }
+  const projectConfig = await readProjectConfig(input.workspacePath)
+  for (const entry of projectConfig.agents ?? []) {
+    const agent = parseAgentJson(entry, 'project')
+    if (agent) add(agent)
   }
 
   return [...byName.values()]

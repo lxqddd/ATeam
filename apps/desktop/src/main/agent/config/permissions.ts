@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
+import { shellCommandPrefix } from './shell-arity'
 
 export interface PermissionRuleRequest {
   action: PermissionRuleAction
@@ -85,7 +86,10 @@ export function evaluatePermissionRules(
 
 export function alwaysPermissionResource(action: PermissionRuleAction, resource: string): string {
   const normalized = normalizeResource(action, resource)
-  if (action === 'shell') return normalized
+  if (action === 'shell') {
+    const prefix = shellCommandPrefix(normalized)
+    return prefix ? `${prefix} *` : normalized
+  }
   const directory = path.posix.dirname(normalized)
   if (!directory || directory === '.') return '*'
   return `${directory}/*`

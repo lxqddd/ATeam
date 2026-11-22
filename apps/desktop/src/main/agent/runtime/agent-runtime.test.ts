@@ -188,6 +188,26 @@ let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
 const generateTitle = vi.fn(async () => '')
 let browserRequest: Mock<NonNullable<AgentRuntimeOptions['browserRequest']>>
+
+function cachedUser(text: string): {
+  role: 'user'
+  content: Array<{
+    type: 'text'
+    text: string
+    providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+  }>
+} {
+  return {
+    role: 'user',
+    content: [
+      {
+        type: 'text',
+        text,
+        providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+      }
+    ]
+  }
+}
 let runtime: AgentRuntime
 let sessionId: string
 
@@ -573,6 +593,7 @@ beforeEach(async () => {
   mcpManagerInput = null
   mcpManager = {
     tools: mcpTools as unknown as McpManagerLike['tools'],
+    instructions: vi.fn(async () => []),
     dispose: mcpDispose as unknown as McpManagerLike['dispose'],
     servers: vi.fn(async () => []),
     statuses: vi.fn(async () => []),
@@ -608,7 +629,7 @@ describe('AgentRuntime', () => {
     const finished = await sink.next('run.finished')
 
     expect(finished.event).toMatchObject({ status: 'completed' })
-    expect(turns[0].messages).toEqual([{ role: 'user', content: 'hi' }])
+    expect(turns[0].messages).toEqual([cachedUser('hi')])
     const [assistant] = assistantMessages()
     expect(assistant.status).toBe('complete')
     expect(assistant.parts).toEqual([{ type: 'text', text: 'Hello' }])
@@ -1435,7 +1456,7 @@ describe('AgentRuntime', () => {
     await runtime.sendChat(sessionId, 'hi')
     await sink.next('run.started')
     for (let index = 0; index < 50 && !resumeTurn; index += 1) {
-      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     }
     expect(resumeTurn).not.toBeNull()
 
@@ -1536,7 +1557,8 @@ describe('AgentRuntime', () => {
     expect(summaries).toHaveLength(1)
     expect(turns[1].system).toContain('SUMMARY')
     expect(turns[1].messages).toHaveLength(1)
-    expect(turns[1].messages[0]).toMatchObject({ role: 'user', content: 'b'.repeat(20_000) })
+    expect(turns[1].messages[0]).toMatchObject({ role: 'user' })
+    expect(JSON.stringify(turns[1].messages[0])).toContain('b'.repeat(20_000))
     expect(runtime.listSessions()[0].compaction).toMatchObject({ summary: 'SUMMARY' })
   })
 
@@ -1586,10 +1608,30 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
 
     expect(summaries).toEqual([])
-    expect(turns[0].messages).toEqual([{ role: 'user', content: 'short' }])
+    expect(turns[0].messages).toEqual([cachedUser('short')])
     const session = runtime.listSessions()[0]
     expect(session.contextTokens).toBeGreaterThan(0)
     expect(session.contextWindow).toBe(128_000)
+  })
+
+  it('loads project plugins from ateam.json', async () => {
+    const workspace = path.join(directory, 'workspace')
+    await fs.writeFile(
+      path.join(workspace, 'ateam.json'),
+      JSON.stringify({ plugins: ['./plugin.mjs'] })
+    )
+    await fs.writeFile(
+      path.join(workspace, 'plugin.mjs'),
+      `export default () => ({
+        system: (_input, output) => { output.system += '\\nPLUGIN_MARKER' }
+      })`
+    )
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('PLUGIN_MARKER')
   })
 
   it('injects discovered instruction files into the system prompt', async () => {
@@ -2272,7 +2314,7 @@ describe('agent selection', () => {
     await sink.next('run.finished')
 
     expect(turns[0].system).toContain('plan agent')
-    expect(Object.keys(turns[0].tools)).toEqual(['read'])
+    expect(Object.keys(turns[0].tools)).toEqual(['read', 'write'])
     expect(turns[0].maxSteps).toBe(20)
   })
 
@@ -2461,7 +2503,11 @@ describe('attachments', () => {
         role: 'user',
         content: [
           { type: 'text', text: 'see attached' },
-          { type: 'text', text: 'File: notes.txt\n```\nattached text\n```' }
+          {
+            type: 'text',
+            text: 'File: notes.txt\n```\nattached text\n```',
+            providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+          }
         ]
       }
     ])

@@ -39,9 +39,13 @@ describe('builtin agents', () => {
       'glob',
       'lsp_hover',
       'lsp_definition',
+      'write',
+      'edit',
+      'patch',
       'todowrite',
       'todoread',
-      'question'
+      'question',
+      'plan_exit'
     ])
     expect(plan?.prompt).toContain('plan')
   })
@@ -266,7 +270,7 @@ describe('filterToolsForAgent', () => {
 
   it('keeps only the tools listed for the agent', () => {
     const plan = BUILTIN_AGENTS.find((agent) => agent.id === 'plan') as AgentDefinition
-    expect(Object.keys(filterToolsForAgent(tools, plan))).toEqual(['read'])
+    expect(Object.keys(filterToolsForAgent(tools, plan))).toEqual(['read', 'write'])
   })
 
   it('drops the subagent tool for subagent runs', () => {

@@ -71,7 +71,7 @@ import { PermissionsStore } from '../config/permissions-store'
 import { SessionsStore, type SessionRecord, makeTitle } from '../sessions/sessions-store'
 import { SnapshotStore } from '../sessions/snapshots'
 import { ToolOutputStore } from '../sessions/tool-output-store'
-import { buildModelMessages, type AttachmentPayload } from '../message-history'
+import { applyAnthropicCache, buildModelMessages, type AttachmentPayload } from '../message-history'
 import {
   attachmentDirectory,
   isPathInsideDirectory,
@@ -117,6 +117,7 @@ import { DEFAULT_DEPENDENCIES } from './defaults'
 import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
 import { buildSystemPrompt, modePermissionRules } from './policy'
 import { runSubagentTask } from './subagents'
+import { loadPlugins, PluginRegistry } from '../plugins'
 import {
   MAX_STEPS,
   PERMISSION_TIMEOUT_MS,
@@ -139,6 +140,7 @@ export class AgentRuntime {
   private readonly lspManagers = new Map<string, LspManager>()
   private readonly formatterCaches = new Map<string, Promise<FormatterDefinition[]>>()
   private readonly skillCaches = new Map<string, Promise<SkillDefinition[]>>()
+  private readonly pluginCaches = new Map<string, Promise<PluginRegistry>>()
   private readonly mcpManagers = new Map<string, McpManagerLike>()
   private mcpAuth: McpAuthRecord[] = []
   private webSearchConfig: RuntimeWebSearchConfig | null = null
@@ -756,9 +758,9 @@ export class AgentRuntime {
 
       const user = makeUserMessage(sessionId, content, attachments)
       const assistant = makeAssistantMessage(sessionId)
-      const config = await readAgentConfig(this.options.userDataPath)
+      const workspace = this.sessionWorkspace(sessionId)
+      const config = await readAgentConfig(this.options.userDataPath, workspace)
       if (config.snapshots) {
-        const workspace = this.sessionWorkspace(sessionId)
         assistant.snapshotBefore = await this.createSnapshotId(
           sessionId,
           workspace,
@@ -847,9 +849,9 @@ export class AgentRuntime {
       if (!lastUser) throw new Error('NOTHING_TO_RETRY')
       resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
       const assistant = makeAssistantMessage(sessionId)
-      const config = await readAgentConfig(this.options.userDataPath)
+      const workspace = this.sessionWorkspace(sessionId)
+      const config = await readAgentConfig(this.options.userDataPath, workspace)
       if (config.snapshots) {
-        const workspace = this.sessionWorkspace(sessionId)
         assistant.snapshotBefore = await this.createSnapshotId(
           sessionId,
           workspace,
@@ -945,6 +947,18 @@ export class AgentRuntime {
     for (const manager of mcpManagers) {
       await manager.dispose()
     }
+  }
+
+  private plugins(config: AgentConfig, workspace: string): Promise<PluginRegistry> {
+    const specs = config.plugins ?? []
+    if (specs.length === 0) return Promise.resolve(new PluginRegistry())
+    const key = `${workspace}\u0000${specs.join('\u0000')}`
+    let cached = this.pluginCaches.get(key)
+    if (!cached) {
+      cached = loadPlugins(specs, { workspace, config })
+      this.pluginCaches.set(key, cached)
+    }
+    return cached
   }
 
   private mcp(workspace = this.options.workspacePath): McpManagerLike {
@@ -1405,6 +1419,43 @@ export class AgentRuntime {
     return message
   }
 
+  private planFilePath(run: Run): string {
+    return path.posix.join('.ateam', 'plans', `${run.sessionId}.md`)
+  }
+
+  private async isGitRepository(workspace: string): Promise<boolean> {
+    let directory = path.resolve(workspace)
+    for (;;) {
+      try {
+        const stat = await fs.stat(path.join(directory, '.git'))
+        if (stat.isDirectory() || stat.isFile()) return true
+      } catch {
+        /* keep walking up */
+      }
+      const parent = path.dirname(directory)
+      if (parent === directory) return false
+      directory = parent
+    }
+  }
+
+  private async exitPlan(run: Run): Promise<string> {
+    const record = this.record(run.sessionId)
+    if ((record.session.permissionMode ?? 'ask') !== 'plan') {
+      throw new Error('NOT_IN_PLAN_MODE')
+    }
+    const withAgent = await this.store.setAgent(run.sessionId, 'build')
+    if (!withAgent) throw new Error('SESSION_NOT_FOUND')
+    const session = await this.store.setSettings(run.sessionId, {
+      reasoningEffort: withAgent.reasoningEffort,
+      permissionMode: 'ask'
+    })
+    if (!session) throw new Error('SESSION_NOT_FOUND')
+    run.agent =
+      (await this.agents(run.workspace)).find((candidate) => candidate.id === 'build') ?? run.agent
+    this.emit({ type: 'session.upsert', session })
+    return `Switched to build agent. The plan is saved at ${this.planFilePath(run)}. Ask the user to send the next message to start implementing.`
+  }
+
   private findToolPart(message: ChatMessage, toolCallId: string): MessagePart | undefined {
     return message.parts.find((part) => part.type === 'tool' && part.toolCallId === toolCallId)
   }
@@ -1483,8 +1534,16 @@ export class AgentRuntime {
     const sessionRules = storedRules.filter((rule) => rule.sessionId !== null)
     const agentRules = agentRulesOverride ?? run.agent?.permissions ?? []
     const rules = [
-      ...modePermissionRules(mode),
+      ...modePermissionRules(mode, { planPath: this.planFilePath(run) }),
       ...globalRules,
+      ...(run.config.permissionRules ?? []).map((rule, index) => ({
+        id: `project-${run.sessionId}-${index}`,
+        action: rule.action,
+        resource: rule.resource,
+        effect: rule.effect,
+        sessionId: null,
+        createdAt: ''
+      })),
       ...agentRules.map((rule, index) => ({
         id: `agent-${run.sessionId}-${index}`,
         action: rule.action,
@@ -1517,7 +1576,16 @@ export class AgentRuntime {
       if (externalEffect === 'deny') return false
     }
 
-    if (effect === 'allow' && externalEffect === 'allow') return true
+    if (effect === 'allow' && externalEffect === 'allow' && !run.plugins) return true
+    if (run.plugins) {
+      const status = {
+        status: (effect === 'allow' && externalEffect === 'allow' ? 'allow' : 'ask') as
+          'allow' | 'ask' | 'deny'
+      }
+      await run.plugins.permissionAsk({ action, resource, toolName }, status)
+      if (status.status === 'allow') return true
+      if (status.status === 'deny') return false
+    }
 
     const message = this.assistantFor(run)
     const part = this.ensureToolPart(message, toolCallId, toolName)
@@ -1752,6 +1820,7 @@ export class AgentRuntime {
     message.snapshotAfter = undefined
     message.snapshotSteps = []
     message.changedFiles = undefined
+    delete message.retry
     message.status = 'streaming'
     message.updatedAt = nowIso()
     run.steps = 0
@@ -2036,8 +2105,16 @@ export class AgentRuntime {
       run.agent = agent
       const target = this.resolveAgentTarget(agent, record.session.model)
       runTarget = target
+      if (target) message.model = { ...target }
+      schedulePersist()
       const model = this.deps.createLanguageModel(this.models, target, {
-        sessionId: run.sessionId
+        sessionId: run.sessionId,
+        onRetry: (info) => {
+          if (info) message.retry = info
+          else delete message.retry
+          message.updatedAt = nowIso()
+          this.emit({ type: 'message.upsert', message: structuredClone(message) })
+        }
       })
       const resolvedTarget = resolveModelRef(this.models, target)
       const targetInfo = resolvedTarget.model
@@ -2090,6 +2167,8 @@ export class AgentRuntime {
         },
         storeOutput: (toolCallId, output) =>
           this.toolOutputs.bound(run.sessionId, toolCallId, output),
+        shellEnv: () =>
+          run.plugins ? run.plugins.shellEnv(run.workspace, run.sessionId) : Promise.resolve({}),
         onToolOutput: (toolCallId, delta) => this.appendToolOutput(run, toolCallId, delta),
         backgroundOutputPath: (toolCallId) => this.toolOutputs.pathFor(run.sessionId, toolCallId),
         onBackgroundFinished: (info) =>
@@ -2131,6 +2210,7 @@ export class AgentRuntime {
         writeTodos: (todos) => this.writeTodos(run, todos),
         readTodos: async () => this.readTodos(run),
         askQuestion: (input, toolCallId) => this.askQuestion(run, input, toolCallId),
+        exitPlan: () => this.exitPlan(run),
         listMcpPrompts: (server) => this.listMcpPrompts(server, run.workspace),
         getMcpPrompt: (server, prompt, args) =>
           this.getMcpPrompt(server, prompt, args, run.workspace),
@@ -2151,71 +2231,129 @@ export class AgentRuntime {
           this.browserAction(run, 'upload', { ref, path: filePath }),
         browserClose: () => this.browserAction(run, 'close')
       }
+      const plugins = await this.plugins(run.config, run.workspace)
+      run.plugins = plugins
+      const pluginTools = await plugins.tools({
+        workspace: run.workspace,
+        sessionId: run.sessionId,
+        config: run.config
+      })
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
+      let mcpInstructions: Array<{ server: string; instructions: string }> = []
       try {
-        mcpTools = await this.mcp(run.workspace).tools(toolContext)
+        const mcpManager = this.mcp(run.workspace)
+        mcpTools = await mcpManager.tools(toolContext)
+        mcpInstructions = (await mcpManager.instructions?.()) ?? []
       } catch {
         /* MCP servers are best effort */
       }
-      const tools = filterToolsForAgent(
-        filterToolsForModel({ ...mcpTools, ...baseTools }, targetInfo.applyPatch === true),
-        agent
+      const tools = plugins.wrapTools(
+        filterToolsForAgent(
+          filterToolsForModel(
+            { ...mcpTools, ...baseTools, ...pluginTools },
+            targetInfo.applyPatch === true
+          ),
+          agent
+        ),
+        run.sessionId
       )
       toolContext.codeModeTools = () => tools
 
       const systemSections = [
         systemWithInstructions(
           systemWithSummary(
-            buildSystemPrompt(run.workspace, current.session.permissionMode ?? 'ask'),
+            buildSystemPrompt({
+              workspacePath: run.workspace,
+              permissionMode: current.session.permissionMode ?? 'ask',
+              model: target,
+              gitRepository: await this.isGitRepository(run.workspace),
+              mcpInstructions:
+                (current.session.permissionMode ?? 'ask') === 'plan' ||
+                agent?.permissions.some((rule) => rule.action === 'mcp' && rule.effect === 'deny')
+                  ? []
+                  : mcpInstructions
+            }),
             current.session.compaction?.summary
           ),
           instructions
         )
       ]
+      const planPath = this.planFilePath(run)
+      if ((current.session.permissionMode ?? 'ask') === 'plan') {
+        systemSections.push(
+          `You are in plan mode. Write the complete plan to ${planPath} using the write or patch tool. ` +
+            'Do not modify other files or run shell commands. When the plan is ready, call plan_exit.'
+        )
+      }
       if (agent?.prompt) systemSections.push(agent.prompt)
       const referenceSection = referencesPrompt(references)
       if (referenceSection) systemSections.push(referenceSection)
       const skillSection = skillsPrompt(skills)
       if (skillSection) systemSections.push(skillSection)
-      const system = systemSections.join('\n\n')
+      const systemState = { system: systemSections.join('\n\n') }
+      await plugins.transformSystem(
+        {
+          sessionId: run.sessionId,
+          model: `${resolvedTarget.ref.providerId}/${resolvedTarget.ref.modelId}`
+        },
+        systemState
+      )
+      const system = systemState.system
 
       const modelHistory = this.historyMessages(run, message.id)
+      const historyMessages = buildModelMessages(
+        modelHistory,
+        await this.attachmentPayloads(run.sessionId, modelHistory),
+        { currentModel: target }
+      )
+      const messages =
+        resolvedTarget.provider.type === 'anthropic'
+          ? applyAnthropicCache(historyMessages)
+          : historyMessages
+      const providerOptions: Record<string, Record<string, unknown>> = {}
+      if (nativeCompaction && resolvedTarget.provider.type === 'anthropic') {
+        providerOptions.anthropic = {
+          contextManagement: {
+            edits: [
+              {
+                type: 'compact_20260112',
+                trigger: { type: 'input_tokens', value: contextTokenLimit(contextWindow) }
+              }
+            ]
+          }
+        }
+      }
+      if (resolvedTarget.provider.type === 'openai') {
+        providerOptions.openai = {
+          ...(providerOptions.openai ?? {}),
+          promptCacheKey: run.sessionId
+        }
+      }
+      const params = {
+        reasoning: variantSettings.reasoningEffort ?? current.session.reasoningEffort,
+        maxOutputTokens: variantSettings.maxOutputTokens ?? targetInfo.maxOutputTokens,
+        temperature: agent?.temperature ?? variantSettings.temperature ?? undefined
+      }
+      await plugins.transformParams(
+        {
+          sessionId: run.sessionId,
+          agent: agent?.id ?? null,
+          model: `${resolvedTarget.ref.providerId}/${resolvedTarget.ref.modelId}`
+        },
+        params
+      )
       const result = this.deps.createTurn({
         model,
         system,
-        messages: buildModelMessages(
-          modelHistory,
-          await this.attachmentPayloads(run.sessionId, modelHistory)
-        ),
+        messages,
         tools,
         abortSignal: run.abort.signal,
-        reasoning: variantSettings.reasoningEffort ?? current.session.reasoningEffort,
+        reasoning: params.reasoning,
         maxSteps: agent?.maxSteps ?? undefined,
-        maxOutputTokens: variantSettings.maxOutputTokens ?? targetInfo.maxOutputTokens,
-        temperature: agent?.temperature ?? variantSettings.temperature ?? undefined,
-        providerOptions: nativeCompaction
-          ? resolvedTarget.provider.type === 'anthropic'
-            ? {
-                anthropic: {
-                  contextManagement: {
-                    edits: [
-                      {
-                        type: 'compact_20260112',
-                        trigger: { type: 'input_tokens', value: contextTokenLimit(contextWindow) }
-                      }
-                    ]
-                  }
-                }
-              }
-            : {
-                openai: {
-                  contextManagement: [
-                    { type: 'compaction', compactThreshold: contextTokenLimit(contextWindow) }
-                  ]
-                }
-              }
-          : undefined
+        maxOutputTokens: params.maxOutputTokens,
+        temperature: params.temperature,
+        providerOptions: Object.keys(providerOptions).length > 0 ? providerOptions : undefined
       })
 
       for await (const part of result.stream) {
@@ -2250,7 +2388,13 @@ export class AgentRuntime {
             break
           case 'reasoning-start': {
             const index = message.parts.length
-            message.parts.push({ type: 'reasoning', text: '' })
+            message.parts.push({
+              type: 'reasoning',
+              text: '',
+              ...(part.providerMetadata
+                ? { providerMetadata: structuredClone(part.providerMetadata) }
+                : {})
+            })
             reasoningParts.set(part.id, index)
             this.emitPart(run, message.parts[index], index)
             break
@@ -2273,9 +2417,18 @@ export class AgentRuntime {
             schedulePersist()
             break
           }
-          case 'reasoning-end':
+          case 'reasoning-end': {
+            const index = reasoningParts.get(part.id)
+            if (index !== undefined && part.providerMetadata) {
+              const reasoningPart = message.parts[index]
+              if (reasoningPart?.type === 'reasoning') {
+                reasoningPart.providerMetadata = structuredClone(part.providerMetadata)
+                this.emitPart(run, reasoningPart, index)
+              }
+            }
             reasoningParts.delete(part.id)
             break
+          }
           case 'tool-input-start': {
             const toolPart = this.ensureToolPart(message, part.id, part.toolName)
             toolPart.state = 'pending'
@@ -2358,6 +2511,7 @@ export class AgentRuntime {
       }
 
       message.status = 'complete'
+      delete message.retry
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
@@ -2400,6 +2554,7 @@ export class AgentRuntime {
       const interrupted =
         run.abort.signal.aborted || /ABORTED|AbortError|interrupted/i.test(normalizeError(error))
       message.status = interrupted ? 'interrupted' : 'error'
+      delete message.retry
       message.error = interrupted ? 'Interrupted by user' : normalizeError(error)
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt

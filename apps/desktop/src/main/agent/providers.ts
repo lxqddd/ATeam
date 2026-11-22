@@ -4,7 +4,8 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { randomUUID } from 'node:crypto'
 import type { LanguageModel } from 'ai'
-import type { ModelRef, RuntimeModelsConfig } from '@ateam/shared'
+import type { ChatRetryStatus, ModelRef, RuntimeModelsConfig } from '@ateam/shared'
+import { createRetryFetch } from '../models/retry-fetch'
 
 export function resolveModelRef(
   config: RuntimeModelsConfig,
@@ -62,30 +63,36 @@ export function normalizeAnthropicBaseURL(baseURL: string | undefined): string |
 export function createLanguageModel(
   config: RuntimeModelsConfig,
   ref: ModelRef | null,
-  options: { sessionId?: string } = {}
+  options: {
+    sessionId?: string
+    onRetry?: (info: ChatRetryStatus | null) => void
+  } = {}
 ): LanguageModel {
   const { ref: target, provider } = resolveModelRef(config, ref)
   const apiKey = provider.apiKey
   const headers = providerHeaders(provider.baseURL, options.sessionId)
+  const fetch = createRetryFetch({ onRetry: options.onRetry })
 
   switch (provider.type) {
     case 'anthropic':
       return createAnthropic({
         apiKey,
         baseURL: normalizeAnthropicBaseURL(provider.baseURL),
-        headers
+        headers,
+        fetch
       })(target.modelId)
     case 'openai':
-      return createOpenAI({ apiKey, baseURL: provider.baseURL, headers })(target.modelId)
+      return createOpenAI({ apiKey, baseURL: provider.baseURL, headers, fetch })(target.modelId)
     case 'google':
-      return createGoogle({ apiKey, baseURL: provider.baseURL, headers })(target.modelId)
+      return createGoogle({ apiKey, baseURL: provider.baseURL, headers, fetch })(target.modelId)
     case 'openai-compatible':
       if (!provider.baseURL) throw new Error('INVALID_PROVIDER: baseURL is required')
       return createOpenAICompatible({
         name: provider.name,
         baseURL: provider.baseURL,
         apiKey,
-        headers
+        headers,
+        fetch
       })(target.modelId)
   }
 }

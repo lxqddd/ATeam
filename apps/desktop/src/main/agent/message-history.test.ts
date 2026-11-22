@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MessageAttachment } from '@ateam/shared'
-import { buildModelMessages } from './message-history'
+import { applyAnthropicCache, buildModelMessages } from './message-history'
 import { makeMessage, makeReasoningPart, makeTextPart, makeToolPart } from './test/factories'
 
 describe('buildModelMessages', () => {
@@ -134,6 +134,79 @@ describe('buildModelMessages', () => {
     })
     expect(buildModelMessages([message])).toEqual([
       { role: 'assistant', content: [{ type: 'text', text: 'answer' }] }
+    ])
+  })
+
+  it('replays reasoning metadata for the same model', () => {
+    const message = makeMessage({
+      model: { providerId: 'anthropic', modelId: 'claude-x' },
+      parts: [
+        {
+          type: 'reasoning',
+          text: 'thinking',
+          providerMetadata: { anthropic: { signature: 'sig-1' } }
+        },
+        makeTextPart('answer')
+      ]
+    })
+
+    expect(
+      buildModelMessages([message], undefined, {
+        currentModel: { providerId: 'anthropic', modelId: 'claude-x' }
+      })
+    ).toEqual([
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'reasoning',
+            text: 'thinking',
+            providerOptions: { anthropic: { signature: 'sig-1' } }
+          },
+          { type: 'text', text: 'answer' }
+        ]
+      }
+    ])
+  })
+
+  it('drops reasoning metadata for a different model', () => {
+    const message = makeMessage({
+      model: { providerId: 'anthropic', modelId: 'claude-x' },
+      parts: [
+        {
+          type: 'reasoning',
+          text: 'thinking',
+          providerMetadata: { anthropic: { signature: 'sig-1' } }
+        },
+        makeTextPart('answer')
+      ]
+    })
+
+    expect(
+      buildModelMessages([message], undefined, {
+        currentModel: { providerId: 'openai', modelId: 'gpt-x' }
+      })
+    ).toEqual([{ role: 'assistant', content: [{ type: 'text', text: 'answer' }] }])
+  })
+
+  it('adds an Anthropic cache breakpoint to the last user turn', () => {
+    const first = makeMessage({ role: 'user', parts: [makeTextPart('one')] })
+    const assistant = makeMessage({ role: 'assistant', parts: [makeTextPart('answer')] })
+    const second = makeMessage({ role: 'user', parts: [makeTextPart('two')] })
+
+    expect(applyAnthropicCache(buildModelMessages([first, assistant, second]))).toEqual([
+      { role: 'user', content: 'one' },
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: 'two',
+            providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+          }
+        ]
+      }
     ])
   })
 

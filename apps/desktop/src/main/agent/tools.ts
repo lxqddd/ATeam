@@ -42,6 +42,7 @@ export interface ToolContext {
   loadNestedInstructions?: (targetPath: string) => Promise<string>
   storeOutput?: (toolCallId: string, output: string) => Promise<{ output: string; path?: string }>
   onToolOutput?: (toolCallId: string, delta: string) => void
+  shellEnv?: () => Promise<Record<string, string>>
   backgroundOutputPath?: (toolCallId: string) => Promise<string>
   onBackgroundFinished?: (info: {
     toolCallId: string
@@ -58,6 +59,7 @@ export interface ToolContext {
   writeTodos?: (todos: TodoInput[]) => Promise<string>
   readTodos?: () => Promise<string>
   askQuestion?: (input: QuestionInput, toolCallId: string) => Promise<string>
+  exitPlan?: () => Promise<string>
   listMcpPrompts?: (server?: string) => Promise<string>
   getMcpPrompt?: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
   listMcpResources?: (server?: string) => Promise<string>
@@ -663,6 +665,7 @@ export function createTools(context: ToolContext): ToolSet {
         const allowed = await context.askPermission('shell', command, 'shell', options.toolCallId)
         if (!allowed) return 'Permission denied; the command was not run.'
         const workdir = await resolvePath(context.workspace, cwd, false, external)
+        const env = { ...process.env, ...(await context.shellEnv?.()) }
 
         if (background) {
           const outputPath = context.backgroundOutputPath
@@ -674,7 +677,7 @@ export function createTools(context: ToolContext): ToolSet {
             cwd: workdir,
             shell: true,
             detached: process.platform !== 'win32',
-            env: process.env,
+            env,
             stdio: descriptor === null ? 'ignore' : ['ignore', descriptor, descriptor]
           })
           let finished = false
@@ -702,7 +705,7 @@ export function createTools(context: ToolContext): ToolSet {
             cwd: workdir,
             shell: true,
             detached: process.platform !== 'win32',
-            env: process.env
+            env
           })
           let output = ''
           let settled = false
@@ -1106,6 +1109,31 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const planExit = tool({
+    description:
+      'Finish planning and ask the user whether to switch to the build agent. Only use this in plan mode after the plan file is complete.',
+    inputSchema: z.object({}),
+    execute: async (_input, options) => {
+      if (!context.exitPlan) return 'Error: plan mode is not active.'
+      if (!context.askQuestion) return 'Error: questions are not available.'
+      const answer = await context.askQuestion(
+        {
+          header: 'Build Agent',
+          question: 'The plan is ready. Switch to the build agent and start implementing?',
+          options: [
+            { label: 'Yes', description: 'Switch to the build agent' },
+            { label: 'No', description: 'Stay in plan mode' }
+          ],
+          multiple: false,
+          allowCustom: false
+        },
+        options.toolCallId
+      )
+      if (!/yes/i.test(answer)) return 'The user chose to stay in plan mode.'
+      return context.exitPlan()
+    }
+  })
+
   const browserOpen = tool({
     description:
       'Open a URL in the desktop app browser and return the page title. Use browser_snapshot afterwards to see the page and its interactive elements.',
@@ -1424,6 +1452,7 @@ export function createTools(context: ToolContext): ToolSet {
     todowrite,
     todoread,
     question,
+    plan_exit: planExit,
     lsp_hover: lspHover,
     lsp_definition: lspDefinition,
     worktree_create: worktreeCreate,

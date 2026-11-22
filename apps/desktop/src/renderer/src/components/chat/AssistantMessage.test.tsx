@@ -46,6 +46,18 @@ describe('forking', () => {
 })
 
 describe('changed files', () => {
+  it('shows retry progress while streaming', () => {
+    const message = makeMessage({
+      parts: [makeTextPart('answer')],
+      status: 'streaming',
+      retry: { attempt: 2, maxAttempts: 5, delayMs: 3_000, reason: 'HTTP 503' }
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning />)
+
+    expect(screen.getByText('Retrying…')).toBeInTheDocument()
+    expect(screen.getByText('attempt 2/5, retrying in 3s')).toBeInTheDocument()
+  })
+
   it('opens the review panel for a message with changes', async () => {
     const userEvent = (await import('@testing-library/user-event')).default
     const user = userEvent.setup()

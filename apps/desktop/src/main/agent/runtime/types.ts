@@ -23,6 +23,7 @@ import type { WebFetchResult } from '../integrations/webfetch'
 import type { WebSearchResult } from '../integrations/websearch'
 import type { ToolContext } from '../tools'
 import type { ResolvedReference } from '../references'
+import type { PluginRegistry } from '../plugins'
 
 export const MAX_STEPS = 25
 export const PERMISSION_TIMEOUT_MS = 10 * 60 * 1000
@@ -42,6 +43,7 @@ export interface Run {
   parentSessionId?: string
   references?: ResolvedReference[]
   policyRules?: PermissionRule[]
+  plugins?: PluginRegistry
   permissionDelegate?: (
     action: PermissionAction,
     resource: string,
@@ -101,7 +103,10 @@ export interface AgentRuntimeDependencies {
   createLanguageModel: (
     models: RuntimeModelsConfig,
     ref: ModelRef | null,
-    options?: { sessionId?: string }
+    options?: {
+      sessionId?: string
+      onRetry?: (info: import('@ateam/shared').ChatRetryStatus | null) => void
+    }
   ) => LanguageModel
   createTools: (context: ToolContext) => ToolSet
   createTurn: (input: AgentTurnInput) => AgentTurnStream

@@ -459,6 +459,8 @@ const enUS = {
     toolDetails: 'Show details',
     hideDetails: 'Hide details',
     working: 'Working…',
+    retrying: 'Retrying…',
+    retryStatus: 'attempt {{attempt}}/{{max}}, retrying in {{seconds}}s',
     stepLimitHint: 'This run reached the tool-call limit. Send another message to continue.',
     agentStoppedHint: 'The agent is not running. Past messages are still available.'
   }

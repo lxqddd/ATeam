@@ -211,7 +211,11 @@ describe('alwaysPermissionResource', () => {
     expect(alwaysPermissionResource('write', 'src/a.ts')).toBe('src/*')
     expect(alwaysPermissionResource('edit', 'a.ts')).toBe('*')
     expect(alwaysPermissionResource('write', 'src/nested/a.ts')).toBe('src/nested/*')
-    expect(alwaysPermissionResource('shell', '  bun test  ')).toBe('bun test')
+    expect(alwaysPermissionResource('shell', '  bun test  ')).toBe('bun test *')
+    expect(alwaysPermissionResource('shell', 'git status -sb')).toBe('git status *')
+    expect(alwaysPermissionResource('shell', 'git status && rm -rf build')).toBe(
+      'git status && rm -rf build'
+    )
     expect(alwaysPermissionResource('external_directory', '/tmp/project/a.txt')).toBe(
       '/tmp/project/*'
     )
