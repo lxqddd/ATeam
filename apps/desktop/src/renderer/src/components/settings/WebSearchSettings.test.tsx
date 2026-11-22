@@ -67,6 +67,20 @@ describe('WebSearchSettings', () => {
     )
   })
 
+  it('retries after the initial load fails', async () => {
+    vi.mocked(mock.api.agent.websearch.get)
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ provider: 'exa', hasApiKey: false, updatedAt: null })
+    const user = userEvent.setup()
+    render(<WebSearchSettings />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('boom')
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByLabelText('Provider')).toHaveValue('exa')
+  })
+
   it('shows save errors', async () => {
     vi.mocked(mock.api.agent.websearch.get).mockResolvedValue({
       provider: 'tavily',

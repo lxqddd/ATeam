@@ -232,6 +232,7 @@ const zhCN = {
     instructionFiles: '已加载规则',
     openWorkspace: '打开文件夹',
     loading: '加载中…',
+    retry: '重试',
     loadFailed: '无法读取模型配置。',
     saveFailed: '保存失败',
     deleteModel: '删除模型',

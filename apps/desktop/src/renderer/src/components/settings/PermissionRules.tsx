@@ -1,4 +1,5 @@
 import { errorMessage } from '../../lib/errors'
+import SettingsLoadError from './SettingsLoadError'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
@@ -39,6 +40,7 @@ function PermissionRules(): React.JSX.Element {
   const { t } = useTranslation()
   const [rules, setRules] = useState<PermissionRule[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [removing, setRemoving] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [action, setAction] = useState<PermissionRuleAction>('write')
@@ -58,7 +60,7 @@ function PermissionRules(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [])
+  }, [reloadKey])
 
   async function add(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -97,9 +99,13 @@ function PermissionRules(): React.JSX.Element {
 
   if (!rules) {
     return error ? (
-      <p role="alert" className="m-0 py-2 text-caption text-danger">
-        {error}
-      </p>
+      <SettingsLoadError
+        message={error}
+        onRetry={() => {
+          setError(null)
+          setReloadKey((value) => value + 1)
+        }}
+      />
     ) : (
       <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
     )

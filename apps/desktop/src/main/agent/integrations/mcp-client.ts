@@ -189,9 +189,11 @@ export function createHttpTransport(options: {
   headers?: Record<string, string>
   fetch?: typeof fetch
   maxSseBytes?: number
+  maxRequestMs?: number
 }): McpTransport {
   const fetchImpl = options.fetch ?? fetch
   const maxSseBytes = options.maxSseBytes ?? 10 * 1024 * 1024
+  const maxRequestMs = options.maxRequestMs ?? 10 * 60_000
   let sessionId: string | null = null
   let closed = false
   const controllers = new Set<AbortController>()
@@ -221,6 +223,17 @@ export function createHttpTransport(options: {
       if (sessionId) headers['mcp-session-id'] = sessionId
       const controller = new AbortController()
       controllers.add(controller)
+      let timedOut = false
+      const timer = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, maxRequestMs)
+      const failure = (error: unknown): string =>
+        timedOut
+          ? `MCP request timed out after ${maxRequestMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error)
 
       try {
         let response: Response
@@ -232,9 +245,7 @@ export function createHttpTransport(options: {
             signal: controller.signal
           })
         } catch (error) {
-          if (message.id !== undefined) {
-            emitError(message.id, error instanceof Error ? error.message : String(error))
-          }
+          if (message.id !== undefined) emitError(message.id, failure(error))
           return
         }
 
@@ -257,9 +268,7 @@ export function createHttpTransport(options: {
           try {
             await consumeSse(response.body, emit, maxSseBytes)
           } catch (error) {
-            if (message.id !== undefined) {
-              emitError(message.id, error instanceof Error ? error.message : String(error))
-            }
+            if (message.id !== undefined) emitError(message.id, failure(error))
           }
           return
         }
@@ -278,6 +287,7 @@ export function createHttpTransport(options: {
           emit(parsed as McpJsonRpcMessage)
         }
       } finally {
+        clearTimeout(timer)
         controllers.delete(controller)
       }
     },

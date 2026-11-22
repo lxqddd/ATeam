@@ -1,4 +1,5 @@
 import { errorMessage } from '../../lib/errors'
+import SettingsLoadError from './SettingsLoadError'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { WEB_SEARCH_PROVIDERS } from '@ateam/shared'
@@ -12,6 +13,7 @@ function WebSearchSettings(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -28,7 +30,7 @@ function WebSearchSettings(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [])
+  }, [reloadKey])
 
   async function save(): Promise<void> {
     if (saving) return
@@ -53,9 +55,13 @@ function WebSearchSettings(): React.JSX.Element {
 
   if (!config) {
     return error ? (
-      <p role="alert" className="m-0 py-2 text-caption text-danger">
-        {error}
-      </p>
+      <SettingsLoadError
+        message={error}
+        onRetry={() => {
+          setError(null)
+          setReloadKey((value) => value + 1)
+        }}
+      />
     ) : (
       <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
     )

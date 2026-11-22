@@ -241,6 +241,7 @@ const enUS = {
     instructionFiles: 'Loaded instructions',
     openWorkspace: 'Open folder',
     loading: 'Loading…',
+    retry: 'Retry',
     loadFailed: 'Could not load the model configuration.',
     saveFailed: 'Save failed',
     deleteModel: 'Delete model',

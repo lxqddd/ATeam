@@ -1,4 +1,5 @@
 import { errorMessage } from '../../lib/errors'
+import SettingsLoadError from './SettingsLoadError'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentConfig, AgentInfo } from '@ateam/shared'
@@ -47,6 +48,7 @@ function AgentSettings(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<'instructions' | 'overrides' | 'references' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -75,7 +77,7 @@ function AgentSettings(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [])
+  }, [reloadKey])
 
   async function updateConfig(patch: Partial<AgentConfig>): Promise<void> {
     setSaving(true)
@@ -166,9 +168,13 @@ function AgentSettings(): React.JSX.Element {
 
   if (!config) {
     return error ? (
-      <p role="alert" className="m-0 py-2 text-caption text-danger">
-        {error}
-      </p>
+      <SettingsLoadError
+        message={error}
+        onRetry={() => {
+          setError(null)
+          setReloadKey((value) => value + 1)
+        }}
+      />
     ) : (
       <p className="m-0 py-2 text-caption text-muted">{t('settings.loading')}</p>
     )

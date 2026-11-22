@@ -439,6 +439,33 @@ describe('createHttpTransport', () => {
     ])
   })
 
+  it('times out requests that never settle', async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError'))
+          )
+        })
+    )
+    const transport = createHttpTransport({
+      url: 'https://example.com/mcp',
+      fetch: fetchMock,
+      maxRequestMs: 20
+    })
+    const received: McpJsonRpcMessage[] = []
+    transport.onMessage((message) => received.push(message))
+
+    await transport.send({ jsonrpc: '2.0', id: 1, method: 'tools/list' })
+
+    expect(received).toEqual([
+      expect.objectContaining({
+        id: 1,
+        error: expect.objectContaining({ message: expect.stringContaining('timed out') })
+      })
+    ])
+  })
+
   it('turns HTTP failures into JSON-RPC errors', async () => {
     const fetchMock = vi.fn<typeof fetch>(
       async () => new Response('server exploded', { status: 500 })
