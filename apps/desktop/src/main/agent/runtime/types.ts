@@ -30,6 +30,7 @@ export const PERMISSION_TIMEOUT_MS = 10 * 60 * 1000
 export interface Run {
   sessionId: string
   messageId: string
+  workspace: string
   abort: AbortController
   startedAt: number
   steps: number

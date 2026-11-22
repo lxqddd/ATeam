@@ -101,6 +101,14 @@ import type { McpManagerLike } from '../integrations/mcp'
 import { formatWebFetchResult } from '../integrations/webfetch'
 import { formatSearchResults } from '../integrations/websearch'
 import { normalizeError } from '../errors'
+import {
+  createWorktree,
+  isPathInside,
+  listWorktrees,
+  removeWorktree,
+  repositoryRoot,
+  worktreeRootFor
+} from '../worktrees'
 import { DEFAULT_DEPENDENCIES } from './defaults'
 import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
 import { buildSystemPrompt, modePermissionRules } from './policy'
@@ -123,12 +131,12 @@ export class AgentRuntime {
   private readonly runs = new Map<string, Run>()
   private readonly pending = new Map<string, PendingPermission>()
   private readonly pendingQuestions = new Map<string, PendingQuestion>()
-  private lspManager: LspManager | null = null
-  private formattersCache: Promise<FormatterDefinition[]> | null = null
+  private readonly lspManagers = new Map<string, LspManager>()
+  private readonly formatterCaches = new Map<string, Promise<FormatterDefinition[]>>()
+  private readonly skillCaches = new Map<string, Promise<SkillDefinition[]>>()
   private mcpManager: McpManagerLike | null = null
   private mcpAuth: McpAuthRecord[] = []
   private webSearchConfig: RuntimeWebSearchConfig | null = null
-  private skills: SkillDefinition[] = []
   private models: RuntimeModelsConfig
   private readonly deps: AgentRuntimeDependencies
   private seq = 0
@@ -149,10 +157,19 @@ export class AgentRuntime {
     await this.store.init()
     await this.permissionRules.init()
     await this.snapshots.init()
-    this.skills = await loadSkills({
-      userDataPath: this.options.userDataPath,
-      workspacePath: this.options.workspacePath
-    }).catch(() => [])
+    await this.skillsFor(this.options.workspacePath)
+  }
+
+  private skillsFor(workspace: string): Promise<SkillDefinition[]> {
+    let cached = this.skillCaches.get(workspace)
+    if (!cached) {
+      cached = loadSkills({
+        userDataPath: this.options.userDataPath,
+        workspacePath: workspace
+      }).catch(() => [])
+      this.skillCaches.set(workspace, cached)
+    }
+    return cached
   }
 
   listSessions(): SessionMeta[] {
@@ -218,7 +235,7 @@ export class AgentRuntime {
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
     if (agentId) {
-      const agents = await this.agents()
+      const agents = await this.agents(record.session.directory ?? this.options.workspacePath)
       const agent = agents.find(
         (candidate) =>
           candidate.id === agentId || candidate.name.toLowerCase() === agentId.toLowerCase()
@@ -232,10 +249,10 @@ export class AgentRuntime {
     return session
   }
 
-  private agents(): Promise<AgentDefinition[]> {
+  private agents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {
     return loadAgents({
       userDataPath: this.options.userDataPath,
-      workspacePath: this.options.workspacePath
+      workspacePath: workspace
     })
   }
 
@@ -340,7 +357,7 @@ export class AgentRuntime {
     if (assistant.snapshotBefore && files.length > 0) {
       try {
         await this.snapshots.restorePaths(
-          this.options.workspacePath,
+          this.sessionWorkspace(id),
           assistant.snapshotBefore,
           files
         )
@@ -374,11 +391,7 @@ export class AgentRuntime {
 
     if (redo.snapshotAfter && redo.files.length > 0) {
       try {
-        await this.snapshots.restorePaths(
-          this.options.workspacePath,
-          redo.snapshotAfter,
-          redo.files
-        )
+        await this.snapshots.restorePaths(this.sessionWorkspace(id), redo.snapshotAfter, redo.files)
       } catch {
         throw new Error('SNAPSHOT_RESTORE_FAILED')
       }
@@ -612,6 +625,7 @@ export class AgentRuntime {
     const run: Run = {
       sessionId,
       messageId: assistant.id,
+      workspace: this.sessionWorkspace(sessionId),
       abort: new AbortController(),
       startedAt: Date.now(),
       steps: 0,
@@ -720,9 +734,9 @@ export class AgentRuntime {
       this.rejectPendingForRun(run)
     }
     await this.store.flush()
-    if (this.lspManager) {
-      const manager = this.lspManager
-      this.lspManager = null
+    const lspManagers = [...this.lspManagers.values()]
+    this.lspManagers.clear()
+    for (const manager of lspManagers) {
       await manager.dispose()
     }
     if (this.mcpManager) {
@@ -771,25 +785,34 @@ export class AgentRuntime {
     this.webSearchConfig = config
   }
 
-  private lsp(): LspManager {
-    this.lspManager ??= new LspManager({ workspace: this.options.workspacePath })
-    return this.lspManager
+  private lsp(workspace: string): LspManager {
+    let manager = this.lspManagers.get(workspace)
+    if (!manager) {
+      manager = new LspManager({ workspace })
+      this.lspManagers.set(workspace, manager)
+    }
+    return manager
   }
 
-  private formatters(): Promise<FormatterDefinition[]> {
-    this.formattersCache ??= discoverFormatters(this.options.workspacePath).catch(() => [])
-    return this.formattersCache
+  private formatters(workspace: string): Promise<FormatterDefinition[]> {
+    let cached = this.formatterCaches.get(workspace)
+    if (!cached) {
+      cached = discoverFormatters(workspace).catch(() => [])
+      this.formatterCaches.set(workspace, cached)
+    }
+    return cached
   }
 
   private async formatFiles(
+    workspace: string,
     files: string[],
     overrides: Record<string, string> = {}
   ): Promise<string> {
-    const formatters = await this.formatters()
+    const formatters = await this.formatters(workspace)
     const notes: string[] = []
     for (const file of files) {
-      const result = await formatFile(file, formatters, this.options.workspacePath, { overrides })
-      const relative = path.relative(this.options.workspacePath, file).split(path.sep).join('/')
+      const result = await formatFile(file, formatters, workspace, { overrides })
+      const relative = path.relative(workspace, file).split(path.sep).join('/')
       if (result.formatted) {
         notes.push(`Formatted ${relative} with ${result.formatter}`)
       } else if (result.error) {
@@ -799,17 +822,27 @@ export class AgentRuntime {
     return notes.join('\n')
   }
 
-  private async lspHover(file: string, line: number, character: number): Promise<string> {
-    return this.lsp().hover(file, line, character)
+  private async lspHover(
+    workspace: string,
+    file: string,
+    line: number,
+    character: number
+  ): Promise<string> {
+    return this.lsp(workspace).hover(file, line, character)
   }
 
-  private async lspDefinition(file: string, line: number, character: number): Promise<string> {
-    return this.lsp().definition(file, line, character)
+  private async lspDefinition(
+    workspace: string,
+    file: string,
+    line: number,
+    character: number
+  ): Promise<string> {
+    return this.lsp(workspace).definition(file, line, character)
   }
 
-  private async diagnoseFiles(files: string[]): Promise<string> {
+  private async diagnoseFiles(workspace: string, files: string[]): Promise<string> {
     try {
-      return formatDiagnosticReport(await this.lsp().diagnostics(files), this.options.workspacePath)
+      return formatDiagnosticReport(await this.lsp(workspace).diagnostics(files), workspace)
     } catch {
       return ''
     }
@@ -1062,7 +1095,7 @@ export class AgentRuntime {
     return runSubagentTask(
       {
         store: this.store,
-        agents: () => this.agents(),
+        agents: (workspace) => this.agents(workspace),
         record: (sessionId) => this.record(sessionId),
         hasRun: (sessionId) => this.runs.has(sessionId),
         registerRun: (sessionId, run) => {
@@ -1174,12 +1207,12 @@ export class AgentRuntime {
     }
     if (
       action === 'external_directory' &&
-      isInsideReferences(resource, run.references ?? [], this.options.workspacePath)
+      isInsideReferences(resource, run.references ?? [], run.workspace)
     ) {
       return true
     }
     const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
-    const scan = action === 'shell' ? scanShellCommand(resource, this.options.workspacePath) : null
+    const scan = action === 'shell' ? scanShellCommand(resource, run.workspace) : null
     const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
     const storedRules = this.permissionRules.list(run.sessionId)
     const globalRules = storedRules.filter((rule) => rule.sessionId === null)
@@ -1208,8 +1241,7 @@ export class AgentRuntime {
 
     let externalEffect: PermissionEffect = 'allow'
     const externalPaths = (scan?.externalPaths ?? []).filter(
-      (externalPath) =>
-        !isInsideReferences(externalPath, run.references ?? [], this.options.workspacePath)
+      (externalPath) => !isInsideReferences(externalPath, run.references ?? [], run.workspace)
     )
     if (externalPaths.length > 0) {
       externalEffect =
@@ -1478,9 +1510,16 @@ export class AgentRuntime {
     }
   }
 
-  private async createSnapshotId(sessionId: string): Promise<string | undefined> {
+  private sessionWorkspace(sessionId: string): string {
+    return this.store.getSession(sessionId)?.directory ?? this.options.workspacePath
+  }
+
+  private async createSnapshotId(
+    sessionId: string,
+    workspace = this.sessionWorkspace(sessionId)
+  ): Promise<string | undefined> {
     try {
-      const snapshot = await this.snapshots.create(this.options.workspacePath, sessionId)
+      const snapshot = await this.snapshots.create(workspace, sessionId)
       return snapshot.id
     } catch {
       return undefined
@@ -1492,7 +1531,7 @@ export class AgentRuntime {
     const before = steps[steps.length - 1]?.after ?? message.snapshotBefore
     if (!before) return
     try {
-      const snapshot = await this.snapshots.create(this.options.workspacePath, run.sessionId)
+      const snapshot = await this.snapshots.create(run.workspace, run.sessionId)
       const diff = await this.snapshots.diff(before, snapshot.id)
       const files = [...diff.added, ...diff.modified, ...diff.deleted]
       message.snapshotSteps = [...steps, { before, after: snapshot.id, files }]
@@ -1513,13 +1552,98 @@ export class AgentRuntime {
       return
     }
     try {
-      const snapshot = await this.snapshots.create(this.options.workspacePath, run.sessionId)
+      const snapshot = await this.snapshots.create(run.workspace, run.sessionId)
       const diff = await this.snapshots.diff(message.snapshotBefore, snapshot.id)
       message.snapshotAfter = snapshot.id
       message.changedFiles = [...diff.added, ...diff.modified, ...diff.deleted]
       await this.store.persist(run.sessionId)
     } catch {
       /* snapshots are best effort */
+    }
+  }
+
+  private worktreeErrorMessage(error: unknown): string {
+    const messages: Record<string, string> = {
+      NOT_A_GIT_REPOSITORY: 'The workspace is not a Git repository.',
+      INVALID_WORKTREE_NAME: 'The worktree name is not valid.',
+      WORKTREE_EXISTS: 'A worktree already exists at that directory.',
+      WORKTREE_NOT_FOUND: 'No managed worktree matches that path.',
+      WORKTREE_MAIN: 'The main checkout cannot be removed.',
+      WORKTREE_OUTSIDE_ROOT: 'Only worktrees created by ATeam can be removed.',
+      SESSION_DIRECTORY_INVALID: 'The target directory does not exist.',
+      SESSION_DIRECTORY_NOT_ALLOWED:
+        'Sessions can only move inside their workspace, a managed worktree, or another worktree of the same repository.'
+    }
+    const message = errorMessage(error)
+    return messages[message] ?? message
+  }
+
+  private async createSessionWorktree(
+    run: Run,
+    input: { name: string; base?: string | null; directory?: string | null }
+  ): Promise<string> {
+    try {
+      const repository = await repositoryRoot(run.workspace)
+      const root = worktreeRootFor(this.options.userDataPath, repository)
+      const info = await createWorktree(run.workspace, input, { root })
+      return `Created worktree ${info.branch ?? info.path} at ${info.path}.\nUse session_move with this directory to continue there.`
+    } catch (error) {
+      return `Error: ${this.worktreeErrorMessage(error)}`
+    }
+  }
+
+  private async listSessionWorktrees(run: Run): Promise<string> {
+    try {
+      const entries = await listWorktrees(run.workspace)
+      const lines = entries.map(
+        (entry) => `- ${entry.path} · ${entry.branch ?? 'detached'}${entry.main ? ' (main)' : ''}`
+      )
+      return ['Worktrees:', ...lines].join('\n')
+    } catch (error) {
+      return `Error: ${this.worktreeErrorMessage(error)}`
+    }
+  }
+
+  private async removeSessionWorktree(run: Run, target: string, force: boolean): Promise<string> {
+    try {
+      const repository = await repositoryRoot(run.workspace)
+      const root = worktreeRootFor(this.options.userDataPath, repository)
+      await removeWorktree(run.workspace, target, { root, force })
+      return `Removed worktree ${target}.`
+    } catch (error) {
+      return `Error: ${this.worktreeErrorMessage(error)}`
+    }
+  }
+
+  private async resolveSessionDirectory(current: string, target: string): Promise<string> {
+    if (!path.isAbsolute(target)) throw new Error('SESSION_DIRECTORY_INVALID')
+    const real = await fs.realpath(target).catch(() => path.resolve(target))
+    const stat = await fs.stat(real).catch(() => null)
+    if (!stat?.isDirectory()) throw new Error('SESSION_DIRECTORY_INVALID')
+
+    const currentReal = await fs.realpath(current).catch(() => path.resolve(current))
+    if (real === currentReal || isPathInside(currentReal, real)) return real
+
+    try {
+      const repository = await repositoryRoot(current)
+      const root = worktreeRootFor(this.options.userDataPath, repository)
+      if (isPathInside(root, real)) return real
+      const worktrees = await listWorktrees(current)
+      if (worktrees.some((entry) => path.resolve(entry.path) === real)) return real
+    } catch {
+      /* not a repository */
+    }
+    throw new Error('SESSION_DIRECTORY_NOT_ALLOWED')
+  }
+
+  private async moveSession(run: Run, target: string): Promise<string> {
+    try {
+      const directory = await this.resolveSessionDirectory(run.workspace, target)
+      const session = await this.store.setDirectory(run.sessionId, directory)
+      if (session) this.emit({ type: 'session.upsert', session })
+      return `Session will move to ${directory} on the next message.`
+    } catch (error) {
+      return `Error: ${this.worktreeErrorMessage(error)}`
     }
   }
 
@@ -1562,8 +1686,9 @@ export class AgentRuntime {
       const agent =
         run.agent ??
         (record.session.agent
-          ? ((await this.agents()).find((candidate) => candidate.id === record.session.agent) ??
-            null)
+          ? ((await this.agents(run.workspace)).find(
+              (candidate) => candidate.id === record.session.agent
+            ) ?? null)
           : null)
       run.agent = agent
       const target = this.resolveAgentTarget(agent, record.session.model)
@@ -1595,34 +1720,34 @@ export class AgentRuntime {
       const current = this.record(run.sessionId)
       const instructions = [
         ...(await this.deps.loadInstructions({
-          workspacePath: this.options.workspacePath,
+          workspacePath: run.workspace,
           globalDirectory: this.options.userDataPath
         })),
         ...(run.config.instructions.length > 0
-          ? await loadConfiguredInstructions(run.config.instructions, this.options.workspacePath)
+          ? await loadConfiguredInstructions(run.config.instructions, run.workspace)
           : [])
       ]
       const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
-      const skills = this.skills
+      const skills = await this.skillsFor(run.workspace)
       const hasReferences =
-        (run.config.references?.length ?? 0) > 0 || hasProjectReferences(this.options.workspacePath)
+        (run.config.references?.length ?? 0) > 0 || hasProjectReferences(run.workspace)
       const references = hasReferences
         ? await resolveReferences({
             references: run.config.references ?? [],
-            workspacePath: this.options.workspacePath,
+            workspacePath: run.workspace,
             globalDirectory: path.join(this.options.userDataPath, 'agent'),
             cacheDirectory: path.join(this.options.userDataPath, 'agent', 'references')
           }).catch(() => [])
         : []
       run.references = references
       const toolContext: ToolContext = {
-        workspace: this.options.workspacePath,
+        workspace: run.workspace,
         signal: run.abort.signal,
         askPermission: (action, resource, toolName, toolCallId) =>
           this.askPermission(run, action, resource, toolName, toolCallId),
         loadNestedInstructions: async (targetPath) => {
           const nested = await discoverNestedInstructions(
-            this.options.workspacePath,
+            run.workspace,
             targetPath,
             loadedInstructionPaths
           )
@@ -1640,14 +1765,16 @@ export class AgentRuntime {
             ...info
           }),
         formatFiles: run.config.formatters
-          ? (files) => this.formatFiles(files, run.config.formatterOverrides)
+          ? (files) => this.formatFiles(run.workspace, files, run.config.formatterOverrides)
           : undefined,
-        diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined,
+        diagnoseFiles: run.config.lsp
+          ? (files) => this.diagnoseFiles(run.workspace, files)
+          : undefined,
         lspHover: run.config.lsp
-          ? (file, line, character) => this.lspHover(file, line, character)
+          ? (file, line, character) => this.lspHover(run.workspace, file, line, character)
           : undefined,
         lspDefinition: run.config.lsp
-          ? (file, line, character) => this.lspDefinition(file, line, character)
+          ? (file, line, character) => this.lspDefinition(run.workspace, file, line, character)
           : undefined,
         runSubagent: (input, toolCallId) => this.runSubagent(run, input, toolCallId),
         fetchWeb: (input) => this.fetchWebPage(input),
@@ -1672,7 +1799,11 @@ export class AgentRuntime {
         listMcpPrompts: (server) => this.listMcpPrompts(server),
         getMcpPrompt: (server, prompt, args) => this.getMcpPrompt(server, prompt, args),
         listMcpResources: (server) => this.listMcpResources(server),
-        readMcpResource: (server, uri) => this.readMcpResource(server, uri)
+        readMcpResource: (server, uri) => this.readMcpResource(server, uri),
+        worktreeCreate: (input) => this.createSessionWorktree(run, input),
+        worktreeList: () => this.listSessionWorktrees(run),
+        worktreeRemove: (target, force) => this.removeSessionWorktree(run, target, force),
+        moveSession: (directory) => this.moveSession(run, directory)
       }
       const baseTools = this.deps.createTools(toolContext)
       let mcpTools: ToolSet = {}
@@ -1689,7 +1820,7 @@ export class AgentRuntime {
       const systemSections = [
         systemWithInstructions(
           systemWithSummary(
-            buildSystemPrompt(this.options.workspacePath, current.session.permissionMode ?? 'ask'),
+            buildSystemPrompt(run.workspace, current.session.permissionMode ?? 'ask'),
             current.session.compaction?.summary
           ),
           instructions

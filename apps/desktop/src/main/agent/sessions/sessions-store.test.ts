@@ -457,6 +457,35 @@ describe('agent metadata', () => {
       agent: null
     })
   })
+
+  it('persists and clears the session directory', async () => {
+    const session = await store.create({ directory: '/tmp/project' })
+    expect(session.directory).toBe('/tmp/project')
+
+    await expect(store.setDirectory(session.id, '/tmp/worktree')).resolves.toMatchObject({
+      directory: '/tmp/worktree'
+    })
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)?.directory).toBe('/tmp/worktree')
+
+    await expect(store.setDirectory(session.id, null)).resolves.toMatchObject({ directory: null })
+    await expect(store.setDirectory('missing', '/tmp/x')).resolves.toBeUndefined()
+  })
+
+  it('repairs invalid directory metadata', async () => {
+    const session = await store.create()
+    const file = path.join(sessionsDirectory, `${session.id}.json`)
+    const data = JSON.parse(await fs.readFile(file, 'utf8')) as {
+      session: Record<string, unknown>
+    }
+    data.session.directory = 42
+    await fs.writeFile(file, JSON.stringify(data))
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getSession(session.id)?.directory).toBeNull()
+  })
 })
 
 describe('todos', () => {

@@ -1131,6 +1131,45 @@ describe('AgentRuntime', () => {
     expect(toolPart('call-2')).toMatchObject({ state: 'completed', output: 'done:b.txt' })
   })
 
+  it('moves a session to another directory at the next run boundary', async () => {
+    const workspace = path.join(directory, 'workspace')
+    const target = path.join(workspace, 'feature')
+    await fs.mkdir(target, { recursive: true })
+
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'hello')
+    await sink.next('run.finished')
+    if (!toolContext) throw new Error('tool context not initialized')
+    expect(toolContext.workspace).toBe(workspace)
+
+    await expect(toolContext.moveSession?.(target)).resolves.toContain('next message')
+    const moved = runtime.listSessions().find((session) => session.id === sessionId)
+    expect(moved?.directory).toBe(await fs.realpath(target))
+
+    scripts.push(textScript('two'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+    if (!toolContext) throw new Error('tool context not initialized')
+    expect(toolContext.workspace).toBe(await fs.realpath(target))
+  })
+
+  it('rejects session moves outside the workspace and its worktrees', async () => {
+    const outside = path.join(directory, 'outside')
+    await fs.mkdir(outside, { recursive: true })
+
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'hello')
+    await sink.next('run.finished')
+    if (!toolContext) throw new Error('tool context not initialized')
+
+    await expect(toolContext.moveSession?.(outside)).resolves.toContain(
+      'Sessions can only move inside their workspace'
+    )
+    await expect(toolContext.moveSession?.('relative/path')).resolves.toContain(
+      'The target directory does not exist'
+    )
+  })
+
   it('aggregates mixed outcomes from parallel tool calls', async () => {
     scripts.push(mixedParallelToolScript())
 

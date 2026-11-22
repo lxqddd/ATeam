@@ -270,7 +270,7 @@
 
 - [x] Code Mode / `execute`：用 JavaScript 批量编排工具调用，减少中间结果进入上下文
 - [x] 并行工具编排与结果聚合（同一步多个工具调用并发执行，结果按 toolCallId 聚合）
-- [ ] Git worktree 管理：创建、列出、删除，并支持会话迁移
+- [x] Git worktree 管理：创建、列出、删除，并支持会话迁移（`worktree_*` 工具与 `session_move`）
 - [ ] 桌面浏览器自动化
 - [x] Headless CLI（`pnpm cli -- ...`：prompt、工作区、模型、权限模式、会话续跑与 JSON 事件）
 - [x] Server API / SDK（`pnpm serve`：REST + SSE、Bearer token、会话/消息/权限/提问接口与 `AteamClient` SDK）

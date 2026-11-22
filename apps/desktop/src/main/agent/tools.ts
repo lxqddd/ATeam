@@ -66,6 +66,14 @@ export interface ToolContext {
   globTimeoutMs?: number
   lspHover?: (file: string, line: number, character: number) => Promise<string>
   lspDefinition?: (file: string, line: number, character: number) => Promise<string>
+  worktreeCreate?: (input: {
+    name: string
+    base?: string | null
+    directory?: string | null
+  }) => Promise<string>
+  worktreeList?: () => Promise<string>
+  worktreeRemove?: (path: string, force: boolean) => Promise<string>
+  moveSession?: (directory: string) => Promise<string>
   codeTimeoutMs?: number
 }
 
@@ -1144,6 +1152,65 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const worktreeCreate = tool({
+    description:
+      'Create a Git worktree for the current project and return its directory. The worktree gets its own branch, or reuses an existing branch with the same name. Use session_move to continue working there.',
+    inputSchema: z.object({
+      name: z.string().min(1).max(200).describe('Worktree and branch name, e.g. feature/login'),
+      base: z.string().max(200).optional().describe('Revision to branch from (default HEAD)'),
+      directory: z
+        .string()
+        .max(1_000)
+        .optional()
+        .describe('Optional absolute destination; defaults to the managed worktree directory')
+    }),
+    execute: async (input) => {
+      if (!context.worktreeCreate) return 'Error: worktree management is not available.'
+      return context.worktreeCreate(input)
+    }
+  })
+
+  const worktreeList = tool({
+    description: 'List the Git worktrees of the current project, including the main checkout.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.worktreeList) return 'Error: worktree management is not available.'
+      return context.worktreeList()
+    }
+  })
+
+  const worktreeRemove = tool({
+    description:
+      'Remove a worktree managed by ATeam. Set force to discard uncommitted changes. The main checkout cannot be removed.',
+    inputSchema: z.object({
+      path: z.string().min(1).max(1_000).describe('Worktree directory'),
+      force: z.boolean().optional().describe('Discard uncommitted changes')
+    }),
+    execute: async ({ path: worktreePath, force = false }, options) => {
+      if (!context.worktreeRemove) return 'Error: worktree management is not available.'
+      const allowed = await context.askPermission(
+        'edit',
+        worktreePath,
+        'worktree_remove',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the worktree was not removed.'
+      return context.worktreeRemove(worktreePath, force)
+    }
+  })
+
+  const sessionMove = tool({
+    description:
+      'Move this session to another directory, typically a newly created worktree. The move takes effect on the next message; the current run keeps using the current directory.',
+    inputSchema: z.object({
+      directory: z.string().min(1).max(1_000).describe('Absolute path of the new working directory')
+    }),
+    execute: async ({ directory }) => {
+      if (!context.moveSession) return 'Error: session moves are not available.'
+      return context.moveSession(directory)
+    }
+  })
+
   const mcpPrompt = tool({
     description:
       'List MCP prompts, or load one prompt by server and name and return its messages. Omit prompt to list.',
@@ -1214,6 +1281,10 @@ export function createTools(context: ToolContext): ToolSet {
     question,
     lsp_hover: lspHover,
     lsp_definition: lspDefinition,
+    worktree_create: worktreeCreate,
+    worktree_list: worktreeList,
+    worktree_remove: worktreeRemove,
+    session_move: sessionMove,
     mcp_prompt: mcpPrompt,
     mcp_resource: mcpResource
   }

@@ -68,6 +68,8 @@ export interface SessionMeta extends SessionSettings {
   parentId: string | null
   hidden: boolean
   todos: TodoItem[]
+  /** Session workspace override; null uses the runtime workspace. */
+  directory: string | null
 }
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
@@ -257,6 +259,14 @@ export interface OrgPolicyInfo {
   path: string | null
   rules: PolicyRule[]
   error: string | null
+}
+
+export interface WorktreeInfo {
+  path: string
+  branch: string | null
+  head: string | null
+  main: boolean
+  detached: boolean
 }
 
 export interface AgentInfo {

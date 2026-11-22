@@ -116,6 +116,10 @@ function repairRecord(record: SessionRecord): boolean {
     record.session.compaction = null
     changed = true
   }
+  if (record.session.directory !== null && typeof record.session.directory !== 'string') {
+    record.session.directory = null
+    changed = true
+  }
   const redoAvailable = Boolean(record.redo)
   if (record.session.redoAvailable !== redoAvailable) {
     record.session.redoAvailable = redoAvailable
@@ -278,6 +282,7 @@ export class SessionsStore {
       parentId?: string | null
       agent?: string | null
       permissionMode?: PermissionMode
+      directory?: string | null
     } = {}
   ): Promise<SessionMeta> {
     const timestamp = nowIso()
@@ -297,7 +302,8 @@ export class SessionsStore {
       agent: options.agent ?? null,
       parentId: options.parentId ?? null,
       hidden: options.hidden ?? false,
-      todos: []
+      todos: [],
+      directory: options.directory ?? null
     }
     this.records.set(session.id, { session, messages: [] })
     await this.persist(session.id)
@@ -308,6 +314,15 @@ export class SessionsStore {
     const record = this.records.get(id)
     if (!record) return undefined
     record.session.agent = agent
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
+  }
+
+  async setDirectory(id: string, directory: string | null): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    record.session.directory = directory
     record.session.updatedAt = nowIso()
     await this.persist(id)
     return clone(record.session)

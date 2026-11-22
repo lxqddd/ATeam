@@ -49,6 +49,10 @@ let listMcpResources: Mock<NonNullable<ToolContext['listMcpResources']>>
 let readMcpResource: Mock<NonNullable<ToolContext['readMcpResource']>>
 let lspHover: Mock<NonNullable<ToolContext['lspHover']>>
 let lspDefinition: Mock<NonNullable<ToolContext['lspDefinition']>>
+let worktreeCreate: Mock<NonNullable<ToolContext['worktreeCreate']>>
+let worktreeList: Mock<NonNullable<ToolContext['worktreeList']>>
+let worktreeRemove: Mock<NonNullable<ToolContext['worktreeRemove']>>
+let moveSession: Mock<NonNullable<ToolContext['moveSession']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -73,6 +77,12 @@ beforeEach(async () => {
   readMcpResource = vi.fn(async () => 'resource body')
   lspHover = vi.fn(async () => 'hover text')
   lspDefinition = vi.fn(async () => 'definition text')
+  worktreeCreate = vi.fn(async (input: { name: string }) => `Worktree ready: /tmp/${input.name}`)
+  worktreeList = vi.fn(async () => 'Worktrees:\n- /tmp/project (main, main)')
+  worktreeRemove = vi.fn(async () => 'Removed worktree /tmp/wt')
+  moveSession = vi.fn(
+    async (directory: string) => `Session will move to ${directory} next message.`
+  )
   baseContext = {
     workspace: directory,
     grepEngine: 'js',
@@ -97,7 +107,11 @@ beforeEach(async () => {
     listMcpResources,
     readMcpResource,
     lspHover,
-    lspDefinition
+    lspDefinition,
+    worktreeCreate,
+    worktreeList,
+    worktreeRemove,
+    moveSession
   }
   tools = createTools(baseContext)
 })
@@ -1023,6 +1037,61 @@ describe('execute (code mode)', () => {
     const limited = createTools({ ...baseContext, codeTimeoutMs: 20 })
     const result = await execute(limited.execute, { code: 'while (true) {}' })
     expect(result).toContain('timed out')
+  })
+})
+
+describe('worktree and session tools', () => {
+  it('creates and lists worktrees', async () => {
+    await expect(
+      execute(tools.worktree_create, { name: 'feature/login', base: 'main' })
+    ).resolves.toBe('Worktree ready: /tmp/feature/login')
+    expect(worktreeCreate).toHaveBeenCalledWith({
+      name: 'feature/login',
+      base: 'main',
+      directory: undefined
+    })
+
+    await expect(execute(tools.worktree_list, {})).resolves.toContain('/tmp/project')
+  })
+
+  it('removes worktrees through the edit permission', async () => {
+    await expect(execute(tools.worktree_remove, { path: '/tmp/wt', force: true })).resolves.toBe(
+      'Removed worktree /tmp/wt'
+    )
+    expect(askPermission).toHaveBeenCalledWith('edit', '/tmp/wt', 'worktree_remove', 'call-1')
+    expect(worktreeRemove).toHaveBeenCalledWith('/tmp/wt', true)
+
+    askPermission.mockResolvedValue(false)
+    await expect(execute(tools.worktree_remove, { path: '/tmp/wt' })).resolves.toBe(
+      'Permission denied; the worktree was not removed.'
+    )
+  })
+
+  it('moves the session directory', async () => {
+    await expect(execute(tools.session_move, { directory: '/tmp/wt' })).resolves.toBe(
+      'Session will move to /tmp/wt next message.'
+    )
+    expect(moveSession).toHaveBeenCalledWith('/tmp/wt')
+  })
+
+  it('reports when worktree management is unavailable', async () => {
+    const limited = createTools({
+      ...baseContext,
+      worktreeCreate: undefined,
+      worktreeList: undefined,
+      worktreeRemove: undefined,
+      moveSession: undefined
+    })
+    await expect(execute(limited.worktree_create, { name: 'x' })).resolves.toContain(
+      'not available'
+    )
+    await expect(execute(limited.worktree_list, {})).resolves.toContain('not available')
+    await expect(execute(limited.worktree_remove, { path: '/tmp/x' })).resolves.toContain(
+      'not available'
+    )
+    await expect(execute(limited.session_move, { directory: '/tmp/x' })).resolves.toContain(
+      'not available'
+    )
   })
 })
 

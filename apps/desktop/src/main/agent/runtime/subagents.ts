@@ -10,7 +10,7 @@ import type { Run } from './types'
 
 export interface SubagentHost {
   store: SessionsStore
-  agents(): Promise<AgentDefinition[]>
+  agents(workspace: string): Promise<AgentDefinition[]>
   record(sessionId: string): SessionRecord
   hasRun(sessionId: string): boolean
   registerRun(sessionId: string, run: Run): void
@@ -43,7 +43,7 @@ export async function runSubagentTask(
 ): Promise<string> {
   if (parent.depth >= 1) return 'Error: subagents cannot spawn subagents.'
   const requested = input.agent?.trim() || 'general'
-  const agent = (await host.agents()).find(
+  const agent = (await host.agents(parent.workspace)).find(
     (candidate) =>
       (candidate.id === requested || candidate.name.toLowerCase() === requested.toLowerCase()) &&
       (candidate.mode === 'subagent' || candidate.mode === 'all')
@@ -65,7 +65,8 @@ export async function runSubagentTask(
       hidden: true,
       parentId: parent.sessionId,
       agent: agent.id,
-      permissionMode: parentRecord.session.permissionMode
+      permissionMode: parentRecord.session.permissionMode,
+      directory: parent.workspace
     })
     sessionId = session.id
   }
@@ -87,6 +88,7 @@ export async function runSubagentTask(
   const childRun: Run = {
     sessionId,
     messageId: assistant.id,
+    workspace: parent.workspace,
     abort: childAbort,
     startedAt: Date.now(),
     steps: 0,

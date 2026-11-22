@@ -28,6 +28,7 @@ export function makeSession(overrides: Partial<SessionMeta> = {}): SessionMeta {
     parentId: null,
     hidden: false,
     todos: [],
+    directory: null,
     ...overrides
   }
 }
