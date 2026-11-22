@@ -105,6 +105,11 @@ const zhCN = {
     webNotConfigured: '未配置',
     webSave: '保存',
     webHint: '密钥会加密保存在本机，供 websearch 工具使用。',
+    references: '外部引用',
+    referencesDescription:
+      '每行一个引用：别名=路径 或 别名=owner/repo#分支，可在 | 后填写描述。路径支持绝对路径、相对路径与 ~。',
+    referencesPlaceholder: 'docs=../product-docs | 产品行为说明',
+    saveReferences: '保存引用',
     instructions: '自定义指令文件',
     instructionsDescription: '每行一个路径或 URL，支持相对路径、绝对路径、~/ 路径和 glob。',
     instructionsPlaceholder: 'AGENTS.md\nhttps://example.com/rules.md',

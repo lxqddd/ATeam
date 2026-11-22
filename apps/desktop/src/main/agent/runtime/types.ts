@@ -21,6 +21,7 @@ import type { McpManagerLike } from '../integrations/mcp'
 import type { WebFetchResult } from '../integrations/webfetch'
 import type { WebSearchResult } from '../integrations/websearch'
 import type { ToolContext } from '../tools'
+import type { ResolvedReference } from '../references'
 
 export const MAX_STEPS = 25
 export const PERMISSION_TIMEOUT_MS = 10 * 60 * 1000
@@ -37,6 +38,7 @@ export interface Run {
   agent: AgentDefinition | null
   depth: number
   parentSessionId?: string
+  references?: ResolvedReference[]
   permissionDelegate?: (
     action: PermissionAction,
     resource: string,

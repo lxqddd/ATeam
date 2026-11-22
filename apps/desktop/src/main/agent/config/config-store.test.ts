@@ -55,6 +55,35 @@ describe('AgentConfigStore', () => {
     expect(reloaded.get()).toEqual(updated)
   })
 
+  it('normalizes references', async () => {
+    const updated = await store.update({
+      references: [
+        { alias: 'docs', path: '../docs', description: ' Product docs ' },
+        { alias: 'sdk', repository: 'owner/repo', branch: 'main' },
+        { alias: 'both', path: 'a', repository: 'b' },
+        { alias: 'bad alias', path: 'a' }
+      ]
+    })
+
+    expect(updated.references).toEqual([
+      { alias: 'docs', path: '../docs', description: 'Product docs' },
+      { alias: 'sdk', repository: 'owner/repo', branch: 'main' }
+    ])
+  })
+
+  it('reads the object reference form', async () => {
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, JSON.stringify({ references: { docs: '../docs', sdk: 'owner/repo' } }))
+
+    expect(await readAgentConfig(directory)).toMatchObject({
+      references: [
+        { alias: 'docs', path: '../docs' },
+        { alias: 'sdk', repository: 'owner/repo' }
+      ]
+    })
+  })
+
   it('normalizes formatter overrides', async () => {
     const updated = await store.update({
       formatterOverrides: { ts: 'prettier', '.PY': 'none', '.md': 'bad value!' }

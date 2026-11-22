@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { AgentConfig } from '@ateam/shared'
+import type { AgentConfig, AgentReference } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 
 export const DEFAULT_AGENT_CONFIG: AgentConfig = {
@@ -31,6 +31,64 @@ function normalizeFormatterOverrides(value: unknown): Record<string, string> {
   return overrides
 }
 
+const REFERENCE_ALIAS = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+export function normalizeReferences(value: unknown): AgentReference[] {
+  if (!value) return []
+  const entries: Array<[string, unknown]> = Array.isArray(value)
+    ? value.map((entry) => [
+        entry &&
+        typeof entry === 'object' &&
+        typeof (entry as { alias?: unknown }).alias === 'string'
+          ? String((entry as { alias: string }).alias)
+          : '',
+        entry
+      ])
+    : typeof value === 'object'
+      ? Object.entries(value as Record<string, unknown>)
+      : []
+  const byAlias = new Map<string, AgentReference>()
+  for (const [key, raw] of entries) {
+    if (byAlias.size >= 50) break
+    const entry =
+      typeof raw === 'string'
+        ? /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(raw.trim()) && !raw.trim().startsWith('.')
+          ? { repository: raw.trim() }
+          : { path: raw }
+        : raw && typeof raw === 'object'
+          ? raw
+          : null
+    if (!entry) continue
+    const rawEntry = entry as Record<string, unknown>
+    const alias = String(rawEntry.alias ?? key).trim()
+    if (!REFERENCE_ALIAS.test(alias)) continue
+    const pathValue =
+      typeof rawEntry.path === 'string' && rawEntry.path.trim() ? rawEntry.path.trim() : null
+    const repository =
+      typeof rawEntry.repository === 'string' && rawEntry.repository.trim()
+        ? rawEntry.repository.trim()
+        : null
+    if (Boolean(pathValue) === Boolean(repository)) continue
+    const branch =
+      repository && typeof rawEntry.branch === 'string' && rawEntry.branch.trim()
+        ? rawEntry.branch.trim().slice(0, 200)
+        : null
+    const description =
+      typeof rawEntry.description === 'string' && rawEntry.description.trim()
+        ? rawEntry.description.trim().slice(0, 500)
+        : null
+    byAlias.set(alias, {
+      alias,
+      ...(pathValue ? { path: pathValue.slice(0, 1_000) } : {}),
+      ...(repository ? { repository: repository.slice(0, 500) } : {}),
+      ...(branch ? { branch } : {}),
+      ...(description ? { description } : {}),
+      ...(rawEntry.hidden === true ? { hidden: true } : {})
+    })
+  }
+  return [...byAlias.values()]
+}
+
 function normalizeInstructions(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [
@@ -51,7 +109,10 @@ function normalizeConfig(value: unknown): AgentConfig {
     instructions: normalizeInstructions(config.instructions),
     lsp: typeof config.lsp === 'boolean' ? config.lsp : true,
     formatters: typeof config.formatters === 'boolean' ? config.formatters : true,
-    formatterOverrides: normalizeFormatterOverrides(config.formatterOverrides)
+    formatterOverrides: normalizeFormatterOverrides(config.formatterOverrides),
+    ...(normalizeReferences(config.references).length > 0
+      ? { references: normalizeReferences(config.references) }
+      : {})
   }
 }
 
@@ -74,7 +135,10 @@ export class AgentConfigStore {
       instructions: [...this.config.instructions],
       lsp: this.config.lsp,
       formatters: this.config.formatters,
-      formatterOverrides: { ...this.config.formatterOverrides }
+      formatterOverrides: { ...this.config.formatterOverrides },
+      ...(this.config.references
+        ? { references: this.config.references.map((ref) => ({ ...ref })) }
+        : {})
     }
   }
 

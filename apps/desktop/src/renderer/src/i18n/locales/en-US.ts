@@ -108,6 +108,11 @@ const enUS = {
     webNotConfigured: 'Not configured',
     webSave: 'Save',
     webHint: 'The key is stored encrypted on this device. Used by the websearch tool.',
+    references: 'References',
+    referencesDescription:
+      'One reference per line: alias=path or alias=owner/repo#branch, optionally followed by | description. Paths may be absolute, relative or use ~.',
+    referencesPlaceholder: 'docs=../product-docs | Product behavior',
+    saveReferences: 'Save references',
     instructions: 'Instruction files',
     instructionsDescription:
       'One path or URL per line. Relative, absolute, ~/ and glob paths are supported.',

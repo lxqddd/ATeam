@@ -256,11 +256,21 @@ export interface AgentInfo {
   formatters: string[]
 }
 
+export interface AgentReference {
+  alias: string
+  path?: string | null
+  repository?: string | null
+  branch?: string | null
+  description?: string | null
+  hidden?: boolean
+}
+
 export interface AgentConfig {
   snapshots: boolean
   instructions: string[]
   lsp: boolean
   formatters: boolean
+  references?: AgentReference[]
   /** File extension (e.g. .ts) to formatter id, or "none" to disable formatting. */
   formatterOverrides: Record<string, string>
 }

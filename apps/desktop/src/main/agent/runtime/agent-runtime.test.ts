@@ -294,6 +294,7 @@ async function writeAgentConfig(config: {
   instructions?: string[]
   lsp?: boolean
   formatters?: boolean
+  references?: import('@ateam/shared').AgentReference[]
 }): Promise<void> {
   const directoryPath = path.join(directory, 'agent')
   await fs.mkdir(directoryPath, { recursive: true })
@@ -1634,6 +1635,31 @@ describe('AgentRuntime', () => {
 })
 
 describe('agent tooling configuration', () => {
+  it('advertises references and allows their external paths', async () => {
+    const referenceDirectory = path.join(directory, 'reference-docs')
+    await fs.mkdir(referenceDirectory, { recursive: true })
+    await fs.writeFile(path.join(referenceDirectory, 'guide.md'), '# Guide')
+    await writeAgentConfig({
+      references: [{ alias: 'docs', path: referenceDirectory, description: 'Product docs' }]
+    })
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain(`docs: ${referenceDirectory}`)
+    expect(turns[0].system).toContain('Product docs')
+    await expect(
+      toolContext?.askPermission(
+        'external_directory',
+        path.join(referenceDirectory, 'guide.md'),
+        'read',
+        'call-ref'
+      )
+    ).resolves.toBe(true)
+    expect(sink.count('permission.asked')).toBe(0)
+  })
+
   it('stores text and images from tool results separately', async () => {
     scripts.push(imageResultScript())
 

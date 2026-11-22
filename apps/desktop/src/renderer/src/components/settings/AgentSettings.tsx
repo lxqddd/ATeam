@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentConfig, AgentInfo } from '@ateam/shared'
+import { formatReferenceLines, parseReferenceLines } from './reference-lines'
 
 interface ToggleRowProps {
   label: string
@@ -41,8 +42,9 @@ function AgentSettings(): React.JSX.Element {
   const [info, setInfo] = useState<AgentInfo | null>(null)
   const [instructions, setInstructions] = useState('')
   const [formatterOverrides, setFormatterOverrides] = useState('')
+  const [referencesText, setReferencesText] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState<'instructions' | 'overrides' | null>(null)
+  const [saved, setSaved] = useState<'instructions' | 'overrides' | 'references' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -58,6 +60,7 @@ function AgentSettings(): React.JSX.Element {
             .map(([extension, formatter]) => `${extension}=${formatter}`)
             .join('\n')
         )
+        setReferencesText(formatReferenceLines(next.references ?? []))
       })
       .catch((caught: unknown) => {
         if (active) setError(caught instanceof Error ? caught.message : String(caught))
@@ -128,6 +131,24 @@ function AgentSettings(): React.JSX.Element {
           .join('\n')
       )
       setSaved('overrides')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveReferences(): Promise<void> {
+    setSaving(true)
+    setError(null)
+    setSaved(null)
+    try {
+      const next = await window.api.agent.config.update({
+        references: parseReferenceLines(referencesText)
+      })
+      setConfig(next)
+      setReferencesText(formatReferenceLines(next.references ?? []))
+      setSaved('references')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -222,6 +243,41 @@ function AgentSettings(): React.JSX.Element {
             className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-55"
           >
             {saving ? t('settings.saving') : t('settings.saveOverrides')}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="agent-references" className="text-label font-medium text-foreground">
+          {t('settings.references')}
+        </label>
+        <textarea
+          id="agent-references"
+          aria-label={t('settings.references')}
+          value={referencesText}
+          onChange={(event) => {
+            setReferencesText(event.target.value)
+            setSaved(null)
+          }}
+          rows={3}
+          spellCheck={false}
+          className="w-full resize-y rounded-md border border-border bg-surface px-3 py-2 font-mono text-caption text-foreground outline-none placeholder:text-subtle focus:border-border-strong"
+          placeholder={t('settings.referencesPlaceholder')}
+        />
+        <p className="m-0 text-caption text-muted">{t('settings.referencesDescription')}</p>
+        <div className="flex items-center justify-end gap-2">
+          {saved === 'references' && (
+            <span className="text-caption text-success">{t('settings.saved')}</span>
+          )}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              void saveReferences()
+            }}
+            className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-55"
+          >
+            {saving ? t('settings.saving') : t('settings.saveReferences')}
           </button>
         </div>
       </div>

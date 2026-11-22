@@ -82,6 +82,12 @@ import { filterToolsForModel, type ToolContext } from '../tools'
 import { filterToolsForAgent, loadAgents } from '../config/agents'
 import { loadCommands } from '../commands'
 import { loadSkills, skillsPrompt } from '../skills'
+import {
+  hasProjectReferences,
+  isInsideReferences,
+  referencesPrompt,
+  resolveReferences
+} from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
 import { computeMessageCost } from '../cost'
 import {
@@ -1165,6 +1171,12 @@ export class AgentRuntime {
         run.agent?.permissions ?? []
       )
     }
+    if (
+      action === 'external_directory' &&
+      isInsideReferences(resource, run.references ?? [], this.options.workspacePath)
+    ) {
+      return true
+    }
     const mode = this.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
     const scan = action === 'shell' ? scanShellCommand(resource, this.options.workspacePath) : null
     const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
@@ -1193,11 +1205,15 @@ export class AgentRuntime {
     if (effect === 'deny') return false
 
     let externalEffect: PermissionEffect = 'allow'
-    if (scan && scan.externalPaths.length > 0) {
+    const externalPaths = (scan?.externalPaths ?? []).filter(
+      (externalPath) =>
+        !isInsideReferences(externalPath, run.references ?? [], this.options.workspacePath)
+    )
+    if (externalPaths.length > 0) {
       externalEffect =
         evaluatePermissionRules(rules, {
           action: 'external_directory',
-          resources: scan.externalPaths,
+          resources: externalPaths,
           sessionId: run.sessionId
         }) ?? 'ask'
       if (externalEffect === 'deny') return false
@@ -1574,6 +1590,17 @@ export class AgentRuntime {
       ]
       const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
       const skills = this.skills
+      const hasReferences =
+        (run.config.references?.length ?? 0) > 0 || hasProjectReferences(this.options.workspacePath)
+      const references = hasReferences
+        ? await resolveReferences({
+            references: run.config.references ?? [],
+            workspacePath: this.options.workspacePath,
+            globalDirectory: path.join(this.options.userDataPath, 'agent'),
+            cacheDirectory: path.join(this.options.userDataPath, 'agent', 'references')
+          }).catch(() => [])
+        : []
+      run.references = references
       const toolContext: ToolContext = {
         workspace: this.options.workspacePath,
         signal: run.abort.signal,
@@ -1655,6 +1682,8 @@ export class AgentRuntime {
         )
       ]
       if (agent?.prompt) systemSections.push(agent.prompt)
+      const referenceSection = referencesPrompt(references)
+      if (referenceSection) systemSections.push(referenceSection)
       const skillSection = skillsPrompt(skills)
       if (skillSection) systemSections.push(skillSection)
       const system = systemSections.join('\n\n')

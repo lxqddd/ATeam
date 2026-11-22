@@ -14,6 +14,17 @@ describe('agentConfigPatchSchema', () => {
     })
   })
 
+  it('keeps references', () => {
+    const parsed = agentConfigPatchSchema.parse({
+      references: [
+        { alias: 'docs', path: '../docs', description: 'Product docs' },
+        { alias: 'sdk', repository: 'owner/repo', branch: 'main', hidden: true }
+      ]
+    })
+
+    expect(parsed.references).toHaveLength(2)
+  })
+
   it('rejects overly broad overrides', () => {
     expect(() =>
       agentConfigPatchSchema.parse({ formatterOverrides: { ['.x'.repeat(20)]: 'prettier' } })

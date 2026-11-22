@@ -73,6 +73,37 @@ describe('AgentSettings', () => {
     )
   })
 
+  it('loads and saves references', async () => {
+    vi.mocked(mock.api.agent.config.get).mockResolvedValue({
+      ...DEFAULTS,
+      references: [{ alias: 'docs', path: '../docs', description: 'Docs' }]
+    })
+    vi.mocked(mock.api.agent.config.update).mockResolvedValue({
+      ...DEFAULTS,
+      references: [
+        { alias: 'docs', path: '../docs', description: 'Docs' },
+        { alias: 'sdk', repository: 'owner/repo', branch: 'main' }
+      ]
+    })
+    const user = userEvent.setup()
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('References')
+    expect(input).toHaveValue('docs=../docs | Docs')
+
+    await user.type(input, '\nsdk=owner/repo#main')
+    await user.click(screen.getByRole('button', { name: 'Save references' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.config.update).toHaveBeenCalledWith({
+        references: [
+          { alias: 'docs', path: '../docs', description: 'Docs' },
+          { alias: 'sdk', repository: 'owner/repo', branch: 'main' }
+        ]
+      })
+    )
+  })
+
   it('saves formatter overrides', async () => {
     vi.mocked(mock.api.agent.config.update).mockResolvedValue({
       ...DEFAULTS,
