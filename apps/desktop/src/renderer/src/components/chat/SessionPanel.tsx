@@ -350,7 +350,7 @@ function SessionPanel(): React.JSX.Element {
             <div
               role="menu"
               aria-label={t('chat.newChatDirectory')}
-              className="absolute right-0 top-9 z-30 w-72 rounded-md border border-border bg-surface p-1 shadow-lg"
+              className="absolute right-0 top-9 z-30 w-60 rounded-md border border-border bg-surface p-1 shadow-lg"
             >
               <div className="px-2 py-1 text-caption text-muted">{t('chat.newChatDirectory')}</div>
               {recentDirectories.map((directory) => (
