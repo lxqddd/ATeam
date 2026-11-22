@@ -267,6 +267,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
+- 桌面安装包尚未配置代码签名与公证（macOS `notarize: false`）；正式分发前需提供证书、公证凭据并调整 `electron-builder.yml`。
 
 ## 18. 关键文件索引
 
@@ -406,3 +407,11 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 事件溯源：`session_events` 追加记录会话创建/更新、消息 upsert 与删除；状态表作为物化视图。状态行损坏或缺失时，启动会自动从事件日志事务化重建；既有数据库首次加载也会补写基线事件。
 - 事件日志每 2,000 条写入一次 `session.checkpoint`（含完整状态与消息）并清理更早事件，避免无限增长。
 - 导入后的 `.migrated` 备份不会自动重新导入；运行 `pnpm cli -- --restore-sessions --data <dir>` 可把备份恢复为 `.json`、清除迁移标记并立即重新导入。
+
+## 30. 打包与发行验收
+
+- `pnpm --filter @ateam/desktop build:unpack` 生成当前平台的未打包应用；`CSC_IDENTITY_AUTO_DISCOVERY=false` 可在无签名证书的环境跳过 macOS 签名。
+- `pnpm --filter @ateam/desktop smoke:packaged` 启动打包产物（临时用户数据目录与调试端口），验证渲染窗口、Agent worker、会话创建/持久化，并通过本地 OpenAI-compatible mock 模型完成一次 `grep` 工具调用对话。
+- `.github/workflows/package.yml` 在 macOS / Linux / Windows 上构建未打包应用、运行冒烟测试（Linux 使用 `xvfb-run`），并把 `.app` / `linux-unpacked` / `win-unpacked` 打包为 zip / tar.gz 上传；推送 `v*` 标签时额外构建 dmg / nsis exe / AppImage + deb 安装包。
+- 冒烟脚本只依赖 Node 内置模块与打包产物，不需要安装 Playwright 浏览器；Linux 需要 `xvfb`，脚本自动传入 `--no-sandbox --disable-gpu`。
+- 当前产包未签名、未公证；正式发布需配置 Apple Developer ID / Windows 代码签名，并为 macOS 增加公证步骤。

@@ -60,22 +60,24 @@ pnpm dev
 
 ## 常用命令
 
-| 命令                | 说明                         |
-| ------------------- | ---------------------------- |
-| `pnpm dev`          | 启动桌面应用开发模式         |
-| `pnpm start`        | 预览已构建的应用             |
-| `pnpm build`        | 类型检查并构建桌面应用       |
-| `pnpm typecheck`    | 对全部包执行 TypeScript 检查 |
-| `pnpm lint`         | 对全部包执行 ESLint          |
-| `pnpm format`       | 对全部包执行 Prettier        |
-| `pnpm format:check` | 检查全部文件格式             |
-| `pnpm build:unpack` | 构建未打包的 macOS 应用目录  |
-| `pnpm build:mac`    | 构建 macOS 安装包            |
-| `pnpm build:win`    | 构建 Windows 安装包          |
-| `pnpm build:linux`  | 构建 Linux 安装包            |
-| `pnpm cli -- ...`   | 运行 Headless CLI            |
-| `pnpm serve -- ...` | 启动本地 HTTP API 服务       |
-| `pnpm acp -- ...`   | 以 ACP 协议供编辑器接入      |
+| 命令                                          | 说明                         |
+| --------------------------------------------- | ---------------------------- |
+| `pnpm dev`                                    | 启动桌面应用开发模式         |
+| `pnpm start`                                  | 预览已构建的应用             |
+| `pnpm build`                                  | 类型检查并构建桌面应用       |
+| `pnpm typecheck`                              | 对全部包执行 TypeScript 检查 |
+| `pnpm lint`                                   | 对全部包执行 ESLint          |
+| `pnpm format`                                 | 对全部包执行 Prettier        |
+| `pnpm format:check`                           | 检查全部文件格式             |
+| `pnpm build:unpack`                           | 构建未打包的 macOS 应用目录  |
+| `pnpm build:mac`                              | 构建 macOS 安装包            |
+| `pnpm build:win`                              | 构建 Windows 安装包          |
+| `pnpm build:linux`                            | 构建 Linux 安装包            |
+| `pnpm --filter @ateam/desktop build:unpack`   | 构建当前平台未打包目录       |
+| `pnpm --filter @ateam/desktop smoke:packaged` | 启动打包产物并跑冒烟验收     |
+| `pnpm cli -- ...`                             | 运行 Headless CLI            |
+| `pnpm serve -- ...`                           | 启动本地 HTTP API 服务       |
+| `pnpm acp -- ...`                             | 以 ACP 协议供编辑器接入      |
 
 ## 架构约定
 
@@ -89,6 +91,12 @@ pnpm dev
 - **路由**：React Router 8 Hash 路由，兼容 Electron 的 `file://` 加载方式。
 - **共享类型**：`@ateam/shared` 直接导出 TypeScript 源码，由 electron-vite / Vite 在构建时打包，因此作为开发依赖引入。
 - **Electron 二进制**：默认通过 npmmirror 下载（见 `apps/desktop/scripts/install-electron.mjs`），可用 `ELECTRON_MIRROR` 覆盖。`electron-builder.yml` 的 `electronDownload.mirror` 同样使用 npmmirror；`pnpm-workspace.yaml` 通过 override 将 electron-builder 使用的 `@electron/get` 固定到兼容版本。
+
+## 打包与发行验收
+
+本地可用 `CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @ateam/desktop build:unpack` 生成当前平台的未打包应用；随后运行 `pnpm --filter @ateam/desktop smoke:packaged`，脚本会以临时用户数据目录启动打包产物，验证窗口、Agent worker、会话持久化，并通过本地 mock 模型完成一次带 `grep` 工具调用的对话。
+
+仓库的 `Package` 工作流在 macOS / Linux / Windows 上构建未打包应用并执行同一冒烟测试，Linux 使用 `xvfb-run`；产物会打包为 zip / tar.gz 上传。当前产物未做代码签名或公证，正式分发需要另外配置证书与公证凭据。
 
 ## 功能范围
 
