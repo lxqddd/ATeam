@@ -42,7 +42,8 @@
 ### 2.1 供应商
 
 - 支持 Anthropic、OpenAI、Google 与 OpenAI-compatible 四类供应商；可配置名称、Base URL 与 API Key。
-- API Key 使用 Electron `safeStorage` 加密后保存在主进程；渲染层只能看到“是否已配置”，编辑时通过小眼睛按需解密回显。
+- OpenAI 与 OpenAI-compatible 供应商可选择 OAuth 2.0 认证：填写授权地址、Token 地址、Client ID / Secret、Scope 与回调地址，在供应商卡片完成授权 / 重新授权 / 退出登录；access token 作为 Bearer 凭据使用，过期前自动刷新。
+- API Key 与 OAuth 客户端密钥、access / refresh token 使用 Electron `safeStorage` 加密后保存在主进程；渲染层只能看到配置状态。
 - 支持从供应商接口拉取模型列表并批量添加。
 
 ### 2.2 模型元数据
@@ -253,12 +254,12 @@ agent/
 ├── agents/              # 用户级 Markdown Agent
 ├── agents.json          # JSON 自定义 Agent
 └── skills/              # 用户级 Skills
-models/                  # 供应商 / 模型配置与加密密钥
+models/                  # 供应商 / 模型配置、加密密钥与 OAuth token
 ```
 
 ## 17. 已知限制与后续方向
 
-- 供应商 OAuth 认证尚未实现（MCP OAuth 已完成）；模型一键导入与 MCP prompts 命令已完成。
+- 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible），未内置 ChatGPT、GitHub Copilot 等供应商专属 OAuth 流程；模型一键导入与 MCP prompts 命令已完成。
 - 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
 - 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
 - ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
