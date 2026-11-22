@@ -43,6 +43,7 @@ import {
   compactionKeepTokens,
   contextTokenLimit,
   DEFAULT_CONTEXT_WINDOW,
+  estimateContextTokens,
   estimateMessagesTokens,
   estimateTextTokens,
   messagesAfterCompaction,
@@ -75,7 +76,7 @@ import {
   removeSessionAttachments
 } from '../attachments'
 import { resolveModelRef } from '../providers'
-import type { ToolContext } from '../tools'
+import { filterToolsForModel, type ToolContext } from '../tools'
 import { filterToolsForAgent, loadAgents } from '../config/agents'
 import { loadCommands } from '../commands'
 import { loadSkills, skillsPrompt } from '../skills'
@@ -1342,7 +1343,8 @@ export class AgentRuntime {
       run.sessionId,
       this.historyMessages(run, run.messageId),
       model,
-      run.abort.signal
+      run.abort.signal,
+      true
     )
     return session !== null
   }
@@ -1379,7 +1381,7 @@ export class AgentRuntime {
         (message) => message.status !== 'streaming'
       )
       const tokens =
-        estimateMessagesTokens(history) +
+        estimateContextTokens(history) +
         estimateTextTokens(record.session.compaction?.summary ?? '')
       const session = await this.store.setContextUsage(sessionId, tokens, window)
       if (session) this.emit({ type: 'session.upsert', session })
@@ -1468,7 +1470,8 @@ export class AgentRuntime {
       const model = this.deps.createLanguageModel(this.models, target, {
         sessionId: run.sessionId
       })
-      const targetInfo = resolveModelRef(this.models, target).model
+      const resolvedTarget = resolveModelRef(this.models, target)
+      const targetInfo = resolvedTarget.model
       const variantId = target?.variant
       const variant = variantId
         ? (targetInfo.variants ?? []).find((candidate) => candidate.id === variantId)
@@ -1476,8 +1479,10 @@ export class AgentRuntime {
       if (variantId && !variant) throw new Error('INVALID_VARIANT')
       const variantSettings = variant?.settings ?? {}
       const contextWindow = targetInfo.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+      const nativeCompaction =
+        targetInfo.compaction === true && resolvedTarget.provider.type === 'anthropic'
       const history = this.historyMessages(run, message.id)
-      if (shouldCompact(history, contextWindow)) {
+      if (!nativeCompaction && shouldCompact(history, contextWindow)) {
         await this.compactMessages(run.sessionId, history, model, run.abort.signal)
       }
 
@@ -1551,7 +1556,10 @@ export class AgentRuntime {
       } catch {
         /* MCP servers are best effort */
       }
-      const tools = filterToolsForAgent({ ...mcpTools, ...baseTools }, agent)
+      const tools = filterToolsForModel(
+        filterToolsForAgent({ ...mcpTools, ...baseTools }, agent),
+        targetInfo.applyPatch === true
+      )
 
       const systemSections = [
         systemWithInstructions(
@@ -1577,7 +1585,21 @@ export class AgentRuntime {
         reasoning: variantSettings.reasoningEffort ?? current.session.reasoningEffort,
         maxSteps: agent?.maxSteps ?? undefined,
         maxOutputTokens: variantSettings.maxOutputTokens ?? targetInfo.maxOutputTokens,
-        temperature: agent?.temperature ?? variantSettings.temperature ?? undefined
+        temperature: agent?.temperature ?? variantSettings.temperature ?? undefined,
+        providerOptions: nativeCompaction
+          ? {
+              anthropic: {
+                contextManagement: {
+                  edits: [
+                    {
+                      type: 'compact_20260112',
+                      trigger: { type: 'input_tokens', value: contextTokenLimit(contextWindow) }
+                    }
+                  ]
+                }
+              }
+            }
+          : undefined
       })
 
       for await (const part of result.stream) {

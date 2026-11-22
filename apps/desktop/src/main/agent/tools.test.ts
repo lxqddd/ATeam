@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import type { ToolExecutionOptions } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { createTools, type ToolContext } from './tools'
+import { createTools, filterToolsForModel, type ToolContext } from './tools'
 
 function execute(
   tool: unknown,
@@ -724,6 +724,23 @@ describe('formatting and diagnostics', () => {
       path.join(directory, 'added.ts'),
       path.join(directory, 'old.txt')
     ])
+  })
+})
+
+describe('filterToolsForModel', () => {
+  it('exposes patch instead of edit and write for capable models', () => {
+    expect(Object.keys(filterToolsForModel(tools, true)).sort()).toEqual(
+      Object.keys(tools)
+        .filter((name) => name !== 'edit' && name !== 'write')
+        .sort()
+    )
+  })
+
+  it('falls back to edit and write for other models', () => {
+    const filtered = filterToolsForModel(tools, false)
+    expect(filtered.patch).toBeUndefined()
+    expect(filtered.edit).toBeDefined()
+    expect(filtered.write).toBeDefined()
   })
 })
 

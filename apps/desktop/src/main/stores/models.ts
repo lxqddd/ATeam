@@ -345,6 +345,8 @@ export class ModelsStore {
       if (costOutput !== undefined) model.costOutput = costOutput
       const variants = normalizeVariants(input.variants)
       if (variants) model.variants = variants
+      if (input.applyPatch !== undefined) model.applyPatch = input.applyPatch
+      if (input.compaction !== undefined) model.compaction = input.compaction
       this.config.models.push(model)
       if (!this.config.defaultModel) {
         this.config.defaultModel = { providerId: model.providerId, modelId: model.modelId }
@@ -385,6 +387,8 @@ export class ModelsStore {
         if (variants === undefined) delete model.variants
         else model.variants = variants
       }
+      if (input.applyPatch !== undefined) model.applyPatch = input.applyPatch
+      if (input.compaction !== undefined) model.compaction = input.compaction
       await this.persist()
     })
   }

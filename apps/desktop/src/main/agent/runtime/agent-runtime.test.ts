@@ -93,6 +93,19 @@ function textScript(text: string, finishReason = 'stop'): Script {
   }
 }
 
+function measuredTextScript(text: string, inputTokens: number): Script {
+  return async function* () {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text })
+    yield part({ type: 'text-end', id: 't1' })
+    yield part({
+      type: 'finish',
+      finishReason: 'stop',
+      totalUsage: { inputTokens, outputTokens: 10, totalTokens: inputTokens + 10 }
+    })
+  }
+}
+
 function mutatingScript(changes: Record<string, string>): Script {
   return async function* () {
     for (const [relative, content] of Object.entries(changes)) {
@@ -1273,6 +1286,37 @@ describe('AgentRuntime', () => {
     expect(runtime.listSessions()[0].compaction).toMatchObject({ summary: 'SUMMARY' })
   })
 
+  it('defers to provider-native compaction for capable models', async () => {
+    runtime.setModels({
+      ...MODELS,
+      models: [{ ...MODELS.models[0], contextWindow: 20_000, compaction: true }]
+    })
+    scripts.push(textScript('first'))
+    await runtime.sendChat(sessionId, 'a'.repeat(20_000))
+    await sink.next('run.finished')
+
+    scripts.push(textScript('second'))
+    await runtime.sendChat(sessionId, 'b'.repeat(20_000))
+    await sink.next('run.finished')
+
+    expect(summaries).toEqual([])
+    expect(turns[0].providerOptions).toMatchObject({
+      anthropic: {
+        contextManagement: {
+          edits: [{ type: 'compact_20260112', trigger: { type: 'input_tokens' } }]
+        }
+      }
+    })
+  })
+
+  it('reports provider usage as the context size', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(runtime.listSessions()[0].contextTokens).toBe(7)
+  })
+
   it('leaves a history under the limit untouched', async () => {
     scripts.push(textScript('ok'))
     await runtime.sendChat(sessionId, 'short')
@@ -1338,10 +1382,10 @@ describe('AgentRuntime', () => {
   })
 
   it('compacts a session on demand without deleting stored messages', async () => {
-    scripts.push(textScript('ok'))
+    scripts.push(measuredTextScript('ok', 20_000))
     await runtime.sendChat(sessionId, 'a'.repeat(70_000))
     await sink.next('run.finished')
-    scripts.push(textScript('ok'))
+    scripts.push(measuredTextScript('ok', 20_000))
     await runtime.sendChat(sessionId, 'b'.repeat(70_000))
     await sink.next('run.finished')
     const before = runtime.messages(sessionId).messages.length
@@ -1370,10 +1414,10 @@ describe('AgentRuntime', () => {
   })
 
   it('prepares a summary and reuses it for compaction', async () => {
-    scripts.push(textScript('first'))
+    scripts.push(measuredTextScript('first', 20_000))
     await runtime.sendChat(sessionId, 'a'.repeat(70_000))
     await sink.next('run.finished')
-    scripts.push(textScript('second'))
+    scripts.push(measuredTextScript('second', 20_000))
     await runtime.sendChat(sessionId, 'b'.repeat(70_000))
     await sink.next('run.finished')
     summaries = []

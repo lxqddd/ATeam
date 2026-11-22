@@ -77,6 +77,7 @@ export interface AgentTurnInput {
   maxSteps?: number
   maxOutputTokens?: number
   temperature?: number
+  providerOptions?: Record<string, Record<string, unknown>>
 }
 
 export interface AgentTurnStream {

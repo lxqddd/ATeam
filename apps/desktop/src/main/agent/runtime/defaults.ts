@@ -53,6 +53,7 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       temperature: input.temperature,
       maxRetries: 1,
       maxOutputTokens: input.maxOutputTokens ?? 8_192,
+      providerOptions: input.providerOptions as Parameters<typeof streamText>[0]['providerOptions'],
       onError: () => undefined
     }).stream
   }),

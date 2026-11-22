@@ -44,6 +44,28 @@ export function estimateMessagesTokens(messages: ChatMessage[]): number {
   return messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
 }
 
+function lastUsageTokens(messages: ChatMessage[]): { index: number; tokens: number } | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role !== 'assistant' || !message.usage) continue
+    const input = message.usage.inputTokens ?? 0
+    if (input <= 0) continue
+    return { index, tokens: input + (message.usage.outputTokens ?? 0) }
+  }
+  return null
+}
+
+/**
+ * Estimate the next request's context size. When the provider reported usage,
+ * anchor on the last assistant message and estimate only what came after it;
+ * otherwise fall back to the heuristic.
+ */
+export function estimateContextTokens(messages: ChatMessage[]): number {
+  const usage = lastUsageTokens(messages)
+  if (!usage) return estimateMessagesTokens(messages)
+  return usage.tokens + estimateMessagesTokens(messages.slice(usage.index + 1))
+}
+
 export function contextTokenLimit(contextWindow: number): number {
   const buffer = Math.max(MIN_CONTEXT_BUFFER, Math.round(contextWindow * CONTEXT_BUFFER_RATIO))
   return Math.max(1, contextWindow - buffer)
@@ -57,7 +79,7 @@ export function compactionKeepTokens(contextWindow: number): number {
 }
 
 export function shouldCompact(messages: ChatMessage[], contextWindow: number): boolean {
-  return estimateMessagesTokens(messages) > contextTokenLimit(contextWindow)
+  return estimateContextTokens(messages) > contextTokenLimit(contextWindow)
 }
 
 export function planCompaction(
@@ -66,7 +88,7 @@ export function planCompaction(
   keepTokens = COMPACTION_KEEP_TOKENS,
   force = false
 ): CompactionPlan | null {
-  const tokensBefore = estimateMessagesTokens(messages)
+  const tokensBefore = estimateContextTokens(messages)
   const limit = Math.min(keepTokens, compactionKeepTokens(contextWindow))
   if (!force && tokensBefore <= limit) return null
 

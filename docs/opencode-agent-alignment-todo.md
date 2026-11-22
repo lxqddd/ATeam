@@ -27,7 +27,7 @@
 
 **OpenCode 参考**：自动 / 手动 / 后台压缩，保留最近一段对话，按模型窗口留 buffer，超长错误自动压缩后重试一次。
 
-**进度（2026-11-21）**：已实现自动预检压缩、强制手动压缩、超长错误重试一次、压缩边界与摘要展示、上下文占用显示、后台预生成摘要和模型上下文窗口配置；provider 原生压缩和真实 tokenizer 仍待补充。
+**进度（2026-11-22）**：已实现自动预检压缩、强制手动压缩、超长错误重试一次、压缩边界与摘要展示、上下文占用显示、后台预生成摘要和模型上下文窗口配置；上下文估算优先使用供应商返回的真实 usage，Anthropic 模型可开启供应商侧压缩（`compact_20260112`），超长错误恢复改为强制压缩。
 
 - [x] 为模型增加 `contextWindow` 元数据，并在模型表单与存储中维护
 - [x] 补充 `maxOutputTokens`、推理能力等模型元数据（与 P1-7 一起做）
@@ -39,8 +39,8 @@
 - [x] 在消息列表标记压缩边界，并可展开查看摘要
 - [x] 展示上下文占用
 - [x] 后台预生成摘要，达到阈值时复用
-- [ ] provider 原生压缩
-- [ ] 用模型 tokenizer 或真实用量替代启发式估算（与 P1-7 一起做）
+- [x] provider 原生压缩（Anthropic `compact_20260112`，按模型开关）
+- [x] 用真实用量替代启发式估算（以上一条 assistant 消息的供应商 usage 为锚点，缺失时回退启发式）
 - [x] 测试压缩阈值、摘要消息构建、超长重试、重启后恢复
 
 **验收**：超过模型上下文窗口的会话仍可继续；压缩后原始消息仍能在 UI 查看；不会无限重试。
@@ -109,11 +109,11 @@
 
 ### P0-5 工具集补齐
 
-**进度（2026-11-21）**：已增加 glob、patch 多文件编辑、后台 shell 与完成通知、shell 输出流式回传、大输出落盘、grep literal / caseSensitive / limit，以及工作区外路径的 `external_directory` 审批。剩余：按模型暴露 apply_patch、glob 超时、ripgrep 加速、read 图片/PDF。
+**进度（2026-11-21）**：已增加 glob、patch 多文件编辑、后台 shell 与完成通知、shell 输出流式回传、大输出落盘、grep literal / caseSensitive / limit，以及工作区外路径的 `external_directory` 审批。剩余：glob 超时、ripgrep 加速、read 图片/PDF。模型能力 `applyPatch` 已控制 patch 与 edit / write 的暴露。
 
 - [x] 增加 `glob` 工具：`**/*.ts` 模式、hidden、limit（超时待补）
 - [x] 增加 `patch` / `apply_patch` 多文件工具：新增、更新、删除文件
-- [ ] 对支持的模型优先暴露 patch，其余模型继续使用 edit / write
+- [x] 对支持的模型优先暴露 patch，其余模型继续使用 edit / write（模型能力 `applyPatch`）
 - [x] shell 支持 `background`，完成后向会话发送通知
 - [x] shell 输出流式回传 UI
 - [x] 大输出写入受管文件，模型上下文只保留截断视图

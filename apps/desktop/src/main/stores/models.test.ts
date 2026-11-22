@@ -268,6 +268,25 @@ describe('ModelsStore', () => {
     )
   })
 
+  it('stores tool and compaction capabilities', async () => {
+    const providerId = await addAnthropic()
+    const config = await store.addModel({
+      providerId,
+      modelId: 'm1',
+      applyPatch: true,
+      compaction: true
+    })
+
+    expect(config.models[0]).toMatchObject({ applyPatch: true, compaction: true })
+
+    const updated = await store.updateModel({
+      id: config.models[0].id,
+      name: 'Model One',
+      applyPatch: false
+    })
+    expect(updated.models[0]).toMatchObject({ applyPatch: false, compaction: true })
+  })
+
   it('stores model variants', async () => {
     const providerId = await addAnthropic()
     const config = await store.addModel({

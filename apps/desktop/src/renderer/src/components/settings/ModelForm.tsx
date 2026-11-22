@@ -32,6 +32,8 @@ interface ModelFormValues {
   attachment?: boolean
   costInput?: number | null
   costOutput?: number | null
+  applyPatch?: boolean
+  compaction?: boolean
   variants?: Array<{
     name?: string
     reasoningEffort?: VariantReasoningEffort | null
@@ -123,6 +125,8 @@ function ModelForm({
           attachment: values.attachment ?? false,
           costInput: values.costInput ?? null,
           costOutput: values.costOutput ?? null,
+          applyPatch: values.applyPatch ?? false,
+          compaction: values.compaction ?? false,
           variants: variantInputs(values)
         })
       } else {
@@ -137,6 +141,8 @@ function ModelForm({
         if (values.attachment) input.attachment = true
         if (values.costInput != null) input.costInput = values.costInput
         if (values.costOutput != null) input.costOutput = values.costOutput
+        if (values.applyPatch) input.applyPatch = true
+        if (values.compaction) input.compaction = true
         const variants = variantInputs(values)
         if (variants.length > 0) input.variants = variants
         await onSubmit(input)
@@ -207,6 +213,8 @@ function ModelForm({
           attachment: model?.attachment ?? false,
           costInput: model?.costInput,
           costOutput: model?.costOutput,
+          applyPatch: model?.applyPatch ?? false,
+          compaction: model?.compaction ?? false,
           variants: (model?.variants ?? []).map((variant) => ({
             name: variant.name,
             reasoningEffort: variant.settings.reasoningEffort ?? null,
@@ -309,6 +317,22 @@ function ModelForm({
             name="attachment"
             label={t('settings.modelAttachment')}
             valuePropName="checked"
+          >
+            <Checkbox />
+          </Form.Item>
+          <Form.Item
+            name="applyPatch"
+            label={t('settings.modelApplyPatch')}
+            valuePropName="checked"
+            extra={t('settings.modelApplyPatchHint')}
+          >
+            <Checkbox />
+          </Form.Item>
+          <Form.Item
+            name="compaction"
+            label={t('settings.modelCompaction')}
+            valuePropName="checked"
+            extra={t('settings.modelCompactionHint')}
           >
             <Checkbox />
           </Form.Item>

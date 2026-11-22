@@ -48,6 +48,7 @@
 ### 2.2 模型元数据
 
 - 上下文窗口、最大输出 token、是否支持推理、是否支持附件、输入 / 输出价格（USD / 百万 token）。
+- 工具与压缩能力：`applyPatch`（用多文件 patch 替代 edit / write）与 `compaction`（供应商侧压缩，当前支持 Anthropic）。
 - 运行时使用上下文窗口做压缩判断、最大输出限制单次生成；推理与附件控件按能力显隐。
 - 每条消息按实际用量与模型价格计算成本。
 - 模型变体（variants）：每个模型可定义命名预设（推理强度、温度、最大输出），在输入框选择；选择结果保存为 `provider/model#variant`，运行时按“Agent 设置 > 变体 > 模型默认”应用。
@@ -95,8 +96,8 @@
 | `grep`      | 正则 / 字面量搜索，include、大小写、结果上限                       | `grep`             |
 | `glob`      | 按 glob 模式找文件，hidden、数量上限                               | `list`             |
 | `write`     | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`            |
-| `edit`      | 精确字符串替换，唯一匹配或 replaceAll                              | `edit`             |
-| `patch`     | 单次多文件新增 / 更新 / 删除，逐文件审批                           | `edit`             |
+| `edit`      | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`             |
+| `patch`     | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`             |
 | `shell`     | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`            |
 | `webfetch`  | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`         |
 | `websearch` | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch`        |
@@ -139,7 +140,8 @@
 
 ## 7. 上下文压缩
 
-- 发送前按模型窗口估算 token（中英文分别估算），超过“窗口 − 15%（最少 16k）”时自动压缩。
+- 发送前估算上下文：优先使用上一条 assistant 消息的供应商 usage（input + output）作为锚点，只估算其后的新消息；无 usage 时回退中英文启发式估算。超过“窗口 − 15%（最少 16k）”时自动压缩。
+- 模型开启 `compaction` 且供应商为 Anthropic 时不进行本地预压缩，改为请求 Anthropic 的 `compact_20260112` 服务端压缩；供应商报告 context overflow 时仍强制本地压缩并重试一次。
 - 保留最近约 15k token，其余替换为一条摘要消息（原始消息仍保留，仅影响发给模型的历史）；可在消息列表展开查看摘要。
 - 支持手动压缩（头部按钮）与“强制压缩短历史”；达到 60% 占用时后台预生成摘要，压缩时复用。
 - 供应商返回 context-length 类错误时自动压缩并重试一次，第二次失败如实报错。
@@ -250,8 +252,8 @@ models/                  # 供应商 / 模型配置与加密密钥
 ## 17. 已知限制与后续方向
 
 - MCP / 供应商 OAuth 授权（按先前决定暂缓）；模型一键导入与 MCP prompts 命令已完成。
-- 上下文压缩仍使用启发式 token 估算，尚未接入模型 tokenizer 或供应商原生压缩。
-- `patch` 与 `edit` / `write` 同时提供，尚未按模型能力隐藏其一。
+- 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
+- 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
 - P2 方向：Code Mode、并行工具编排、worktree、浏览器自动化、Headless CLI、Server API / SDK、ACP 集成等尚未开始。
 
 ## 18. 关键文件索引

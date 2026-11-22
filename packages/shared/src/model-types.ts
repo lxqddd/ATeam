@@ -50,6 +50,10 @@ export interface ModelPublic {
   /** USD per 1M output tokens. */
   costOutput?: number
   variants?: ModelVariant[]
+  /** Model handles the multi-file patch tool; edit/write are hidden. */
+  applyPatch?: boolean
+  /** Provider performs context compaction server-side. */
+  compaction?: boolean
 }
 
 export interface ModelCatalogEntry {
@@ -116,6 +120,8 @@ export interface ModelCreateInput {
   costInput?: number
   costOutput?: number
   variants?: ModelVariantInput[]
+  applyPatch?: boolean
+  compaction?: boolean
 }
 
 export interface ModelUpdateInput {
@@ -128,6 +134,8 @@ export interface ModelUpdateInput {
   costInput?: number | null
   costOutput?: number | null
   variants?: ModelVariantInput[] | null
+  applyPatch?: boolean
+  compaction?: boolean
 }
 
 export interface ModelTestResult {

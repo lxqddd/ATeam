@@ -108,7 +108,9 @@ describe('ModelForm', () => {
         attachment: false,
         costInput: null,
         costOutput: null,
-        variants: []
+        variants: [],
+        applyPatch: false,
+        compaction: false
       })
     )
   })
@@ -150,6 +152,27 @@ describe('model capability metadata', () => {
           costOutput: 15
         })
       )
+    )
+  })
+
+  it('submits tool and compaction capabilities', async () => {
+    const user = userEvent.setup()
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<ModelForm providers={[provider]} onSubmit={onSubmit} onCancel={vi.fn()} />)
+
+    await user.type(screen.getByLabelText('Model ID'), 'claude-new')
+    await user.click(screen.getByLabelText('Apply patch tool'))
+    await user.click(screen.getByLabelText('Provider compaction'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        providerId: 'p1',
+        modelId: 'claude-new',
+        name: undefined,
+        applyPatch: true,
+        compaction: true
+      })
     )
   })
 

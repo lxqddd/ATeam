@@ -973,6 +973,17 @@ export function createTools(context: ToolContext): ToolSet {
   )
 }
 
+export function filterToolsForModel(tools: ToolSet, applyPatch: boolean): ToolSet {
+  const filtered = { ...tools }
+  if (applyPatch) {
+    delete filtered.edit
+    delete filtered.write
+  } else {
+    delete filtered.patch
+  }
+  return filtered
+}
+
 function wrapToolOutputs(tools: ToolSet, context: ToolContext): ToolSet {
   if (!context.storeOutput) return tools
   const wrapped: Record<string, unknown> = {}

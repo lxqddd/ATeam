@@ -3,6 +3,7 @@ import type { ChatMessage } from '@ateam/shared'
 import {
   compactionKeepTokens,
   contextTokenLimit,
+  estimateContextTokens,
   estimateMessagesTokens,
   estimateTextTokens,
   messagesAfterCompaction,
@@ -66,6 +67,33 @@ describe('compactionKeepTokens', () => {
     expect(compactionKeepTokens(128_000)).toBe(15_000)
     expect(compactionKeepTokens(20_000)).toBe(2_000)
     expect(compactionKeepTokens(10_000)).toBe(500)
+  })
+})
+
+describe('estimateContextTokens', () => {
+  const reported = makeMessage({
+    id: 'a1',
+    role: 'assistant',
+    parts: [makeTextPart('done')],
+    usage: { inputTokens: 5_000, outputTokens: 200 }
+  })
+
+  it('uses provider usage as the anchor', () => {
+    expect(estimateContextTokens([user('u1', 'x'.repeat(4_000)), reported])).toBe(5_200)
+  })
+
+  it('adds estimated tokens for messages after the usage anchor', () => {
+    const followUp = user('u2', 'y'.repeat(40))
+
+    expect(estimateContextTokens([user('u1', 'x'.repeat(4_000)), reported, followUp])).toBe(
+      5_200 + estimateMessagesTokens([followUp])
+    )
+  })
+
+  it('falls back to the heuristic without reported usage', () => {
+    const messages = [user('u1', 'x'.repeat(4_000)), assistant('a1', 'done')]
+
+    expect(estimateContextTokens(messages)).toBe(estimateMessagesTokens(messages))
   })
 })
 
