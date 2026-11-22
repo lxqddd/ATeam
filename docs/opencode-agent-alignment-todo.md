@@ -273,7 +273,7 @@
 - [ ] Git worktree 管理：创建、列出、删除，并支持会话迁移
 - [ ] 桌面浏览器自动化
 - [x] Headless CLI（`pnpm cli -- ...`：prompt、工作区、模型、权限模式、会话续跑与 JSON 事件）
-- [ ] Server API / SDK
+- [x] Server API / SDK（`pnpm serve`：REST + SSE、Bearer token、会话/消息/权限/提问接口与 `AteamClient` SDK）
 - [ ] ACP / 编辑器集成
 - [ ] GitHub Action
 - [ ] SQLite / 事件溯源会话存储

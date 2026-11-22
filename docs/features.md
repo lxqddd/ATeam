@@ -284,3 +284,12 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
 - 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
 - 限制：凭据通过命令行或环境变量以明文传入，不能解密桌面端 `safeStorage` 配置；尚未提供独立打包的二进制。
+
+## 20. Server API 与 SDK
+
+- 入口：`pnpm serve -- [server options] [model options]`，复用 Agent 运行时并在本机启动 HTTP 服务（默认 `127.0.0.1:4096`）。
+- 安全：默认仅监听回环地址；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权，非回环地址且无 token 时会打印警告；`/health` 无需鉴权。
+- REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
+- 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
+- SDK：`apps/desktop/src/sdk/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
+- 限制：未实现 API 版本前缀与远程部署加固；SDK 目前以源码形式提供，尚未发布独立 npm 包。
