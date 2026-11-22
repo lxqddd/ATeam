@@ -1,4 +1,4 @@
-import { app, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
+import { app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import fsSync from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
@@ -249,9 +249,12 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     manager.request('sessions.list')
   )
 
-  handle(AGENT_CHANNELS.sessionCreate, (): Promise<SessionMeta> =>
-    manager.request('sessions.create')
-  )
+  handle(AGENT_CHANNELS.sessionCreate, (payload): Promise<SessionMeta> => {
+    const { directory } = z
+      .object({ directory: z.string().max(2_000).nullable().optional() })
+      .parse(payload ?? {})
+    return manager.request('sessions.create', { directory })
+  })
 
   handle(AGENT_CHANNELS.sessionRename, (payload): Promise<SessionMeta> => {
     const { id, title } = renameSchema.parse(payload)
@@ -545,6 +548,17 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
     await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
     return mcpAuthStore.statuses(servers)
+  })
+
+  handle(AGENT_CHANNELS.workspacePick, async (payload): Promise<string | null> => {
+    const { defaultPath } = z
+      .object({ defaultPath: z.string().max(2_000).optional() })
+      .parse(payload ?? {})
+    const result = await dialog.showOpenDialog({
+      defaultPath: defaultPath || workspacePath,
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
   handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {

@@ -97,7 +97,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'sessions.list':
       return requireRuntime().listSessions()
     case 'sessions.create':
-      return requireRuntime().createSession()
+      return requireRuntime().createSession(request.params?.directory)
     case 'sessions.rename':
       return requireRuntime().renameSession(request.params.id, request.params.title)
     case 'sessions.delete':

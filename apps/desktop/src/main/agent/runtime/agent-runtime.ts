@@ -258,8 +258,15 @@ export class AgentRuntime {
     })
   }
 
-  async createSession(): Promise<SessionMeta> {
-    const session = await this.store.create({ directory: this.options.workspacePath })
+  async createSession(directory?: string | null): Promise<SessionMeta> {
+    let target = this.options.workspacePath
+    if (directory) {
+      if (!path.isAbsolute(directory)) throw new Error('INVALID_SESSION_DIRECTORY')
+      const stat = await fs.stat(directory).catch(() => null)
+      if (!stat?.isDirectory()) throw new Error('INVALID_SESSION_DIRECTORY')
+      target = await fs.realpath(directory).catch(() => path.resolve(directory))
+    }
+    const session = await this.store.create({ directory: target })
     this.emit({ type: 'session.upsert', session })
     return session
   }

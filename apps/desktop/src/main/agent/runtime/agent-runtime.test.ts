@@ -1169,6 +1169,20 @@ describe('AgentRuntime', () => {
     expect(session.directory).toBe(path.join(directory, 'workspace'))
   })
 
+  it('creates sessions in an explicitly selected directory', async () => {
+    const project = path.join(directory, 'project-one')
+    await fs.mkdir(project, { recursive: true })
+    const session = await runtime.createSession(project)
+    expect(session.directory).toBe(await fs.realpath(project))
+
+    await expect(runtime.createSession('relative/path')).rejects.toThrow(
+      'INVALID_SESSION_DIRECTORY'
+    )
+    await expect(runtime.createSession(path.join(directory, 'missing'))).rejects.toThrow(
+      'INVALID_SESSION_DIRECTORY'
+    )
+  })
+
   it('refuses to remove a worktree used by a session', async () => {
     const workspace = path.join(directory, 'workspace')
     await runGit('git', ['init', '-b', 'main'], { cwd: workspace })

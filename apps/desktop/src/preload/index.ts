@@ -123,7 +123,9 @@ const api: AteamApi = {
     catalog: (refresh) => ipcRenderer.invoke(MODEL_CHANNELS.catalog, { refresh })
   },
   workspace: {
-    open: () => ipcRenderer.invoke(AGENT_CHANNELS.workspaceOpen)
+    open: () => ipcRenderer.invoke(AGENT_CHANNELS.workspaceOpen),
+    pickDirectory: (defaultPath?: string) =>
+      ipcRenderer.invoke(AGENT_CHANNELS.workspacePick, { defaultPath })
   },
   openExternal: (url) => ipcRenderer.invoke(AGENT_CHANNELS.openExternal, url)
 }

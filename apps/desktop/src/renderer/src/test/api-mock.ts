@@ -106,7 +106,10 @@ export function createApiMock(
     versions: { electron: '44.11.5' },
     theme: { set: vi.fn() },
     openExternal: vi.fn(async () => undefined),
-    workspace: { open: vi.fn(async () => undefined) },
+    workspace: {
+      open: vi.fn(async () => undefined),
+      pickDirectory: vi.fn(async () => null)
+    },
     agent: {
       status: vi.fn(async () => status),
       restart: vi.fn(async () => status),

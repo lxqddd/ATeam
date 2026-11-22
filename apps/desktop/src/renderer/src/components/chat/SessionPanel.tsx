@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionMeta, SessionSearchResult } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
@@ -62,6 +62,11 @@ function XIcon(): React.JSX.Element {
       <path d="M7 7l10 10M17 7 7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   )
+}
+
+function baseName(directory: string): string {
+  const trimmed = directory.replace(/[\\/]+$/, '')
+  return trimmed.split(/[\\/]/).pop() || trimmed
 }
 
 function statusDot(status: SessionMeta['status']): string {
@@ -234,9 +239,11 @@ function SessionRow({ session, active, onError }: SessionRowProps): React.JSX.El
 
 function SessionPanel(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId } = useChatStore()
+  const { sessions, selectedSessionId, info } = useChatStore()
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const newMenuRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SessionSearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -268,11 +275,38 @@ function SessionPanel(): React.JSX.Element {
     }
   }, [query])
 
-  async function newChat(): Promise<void> {
+  const defaultDirectory = info?.workspacePath ?? null
+  const recentDirectories = useMemo(() => {
+    const seen = new Set<string>()
+    if (defaultDirectory) seen.add(defaultDirectory)
+    for (const session of sessions) {
+      if (session.directory) seen.add(session.directory)
+    }
+    return [...seen]
+  }, [defaultDirectory, sessions])
+
+  useEffect(() => {
+    if (!newMenuOpen) return undefined
+    const onDown = (event: MouseEvent): void => {
+      if (!newMenuRef.current?.contains(event.target as Node)) setNewMenuOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setNewMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [newMenuOpen])
+
+  async function newChat(directory?: string | null): Promise<void> {
+    setNewMenuOpen(false)
     setCreating(true)
     setError(null)
     try {
-      await chatStore.createSession()
+      await chatStore.createSession(directory)
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {
@@ -280,29 +314,92 @@ function SessionPanel(): React.JSX.Element {
     }
   }
 
+  async function chooseDirectory(): Promise<void> {
+    setNewMenuOpen(false)
+    const picked = await window.api.workspace
+      .pickDirectory(defaultDirectory ?? undefined)
+      .catch(() => null)
+    if (picked) await newChat(picked)
+  }
+
   return (
     <aside data-testid="session-panel" className="flex w-[260px] flex-none flex-col px-2 pt-2 pb-1">
       <div className="flex h-11 flex-none items-center justify-between gap-2 px-1">
         <span className="text-label font-semibold text-foreground">{t('chat.sessions')}</span>
-        <button
-          type="button"
-          onClick={() => {
-            void newChat()
-          }}
-          disabled={creating}
-          title={t('chat.newChat')}
-          aria-label={t('chat.newChat')}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
-        >
-          {creating ? (
-            <span
-              aria-hidden
-              className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-            />
-          ) : (
-            <PlusIcon />
+        <div className="relative" ref={newMenuRef}>
+          <button
+            type="button"
+            onClick={() => setNewMenuOpen((open) => !open)}
+            disabled={creating}
+            title={t('chat.newChat')}
+            aria-label={t('chat.newChat')}
+            aria-haspopup="menu"
+            aria-expanded={newMenuOpen}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+          >
+            {creating ? (
+              <span
+                aria-hidden
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              />
+            ) : (
+              <PlusIcon />
+            )}
+          </button>
+          {newMenuOpen && (
+            <div
+              role="menu"
+              aria-label={t('chat.newChatDirectory')}
+              className="absolute right-0 top-9 z-30 w-72 rounded-md border border-border bg-surface p-1 shadow-lg"
+            >
+              <div className="px-2 py-1 text-caption text-muted">{t('chat.newChatDirectory')}</div>
+              {recentDirectories.map((directory) => (
+                <button
+                  key={directory}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    void newChat(directory)
+                  }}
+                  title={directory}
+                  className="flex w-full flex-col rounded px-2 py-1.5 text-left transition-colors hover:bg-hover"
+                >
+                  <span className="flex w-full items-center gap-1.5">
+                    <span className="truncate text-label text-foreground">
+                      {baseName(directory)}
+                    </span>
+                    {directory === defaultDirectory && (
+                      <span className="flex-none rounded bg-hover px-1 text-caption text-muted">
+                        {t('chat.defaultWorkspace')}
+                      </span>
+                    )}
+                  </span>
+                  <span className="block w-full truncate font-mono text-caption text-subtle">
+                    {directory}
+                  </span>
+                </button>
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  void chooseDirectory()
+                }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-label text-foreground transition-colors hover:bg-hover"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                {t('chat.chooseFolder')}
+              </button>
+            </div>
           )}
-        </button>
+        </div>
       </div>
 
       {error && <p className="px-1 py-1 text-caption text-danger">{error}</p>}

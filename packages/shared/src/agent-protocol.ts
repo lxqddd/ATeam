@@ -45,7 +45,11 @@ export type WorkerRequest =
   | { id: string; method: 'agents.list'; params?: undefined }
   | { id: string; method: 'commands.list'; params?: undefined }
   | { id: string; method: 'sessions.list'; params?: undefined }
-  | { id: string; method: 'sessions.create'; params?: undefined }
+  | {
+      id: string
+      method: 'sessions.create'
+      params?: { directory?: string | null }
+    }
   | { id: string; method: 'sessions.rename'; params: { id: string; title: string } }
   | { id: string; method: 'sessions.delete'; params: { id: string } }
   | {

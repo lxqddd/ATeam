@@ -52,6 +52,7 @@ export const AGENT_CHANNELS = {
   commandsList: 'ateam:agent:commands:list',
   commandExpand: 'ateam:agent:commands:expand',
   workspaceOpen: 'ateam:workspace:open',
+  workspacePick: 'ateam:workspace:pick',
   openExternal: 'ateam:shell:open-external'
 } as const
 

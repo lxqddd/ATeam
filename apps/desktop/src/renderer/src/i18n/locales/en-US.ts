@@ -277,6 +277,9 @@ const enUS = {
   },
   chat: {
     newChat: 'New chat',
+    newChatDirectory: 'Workspace for the new chat',
+    defaultWorkspace: 'Default',
+    chooseFolder: 'Choose folder…',
     sessions: 'Chats',
     untitled: 'New chat',
     emptyTitle: 'Start a conversation',

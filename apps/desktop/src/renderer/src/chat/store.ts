@@ -246,8 +246,8 @@ export class ChatStore {
     }
   }
 
-  async createSession(): Promise<SessionMeta> {
-    const session = await window.api.agent.sessions.create()
+  async createSession(directory?: string | null): Promise<SessionMeta> {
+    const session = await window.api.agent.sessions.create(directory)
     this.upsertSession(session)
     this.setState({
       selectedSessionId: session.id,

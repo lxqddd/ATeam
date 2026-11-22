@@ -46,7 +46,7 @@ export interface AgentBridge {
   onEvent: (callback: (envelope: AgentEventEnvelope) => void) => () => void
   sessions: {
     list: () => Promise<SessionMeta[]>
-    create: () => Promise<SessionMeta>
+    create: (directory?: string | null) => Promise<SessionMeta>
     rename: (id: string, title: string) => Promise<SessionMeta>
     remove: (id: string) => Promise<void>
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
@@ -145,6 +145,9 @@ export interface AteamApi {
   theme: { set: (theme: 'light' | 'dark') => void }
   agent: AgentBridge
   models: ModelsBridge
-  workspace: { open: () => Promise<void> }
+  workspace: {
+    open: () => Promise<void>
+    pickDirectory: (defaultPath?: string) => Promise<string | null>
+  }
   openExternal: (url: string) => Promise<void>
 }
