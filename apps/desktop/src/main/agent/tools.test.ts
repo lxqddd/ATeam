@@ -965,6 +965,67 @@ describe('question tool', () => {
   })
 })
 
+describe('execute (code mode)', () => {
+  it('orchestrates tool calls and returns only the script output', async () => {
+    await fs.writeFile(path.join(directory, 'a.txt'), 'alpha')
+
+    const result = await execute(tools.execute, {
+      code: [
+        "const content = await tools.read({ path: 'a.txt' })",
+        "const entries = await tools.list({ path: '.' })",
+        "console.log('read ok:', content.includes('alpha'))",
+        'return entries.split("\\n").length'
+      ].join('\n')
+    })
+
+    expect(result).toContain('read ok: true')
+    expect(result).toContain('=> 1')
+    expect(result).not.toContain('1  alpha')
+    expect(askPermission).toHaveBeenCalledWith(
+      'shell',
+      expect.stringContaining('code mode:'),
+      'execute',
+      'call-1'
+    )
+    expect(askPermission).toHaveBeenCalledWith('read', 'a.txt', 'read', 'call-1-code-1')
+    expect(askPermission).toHaveBeenCalledWith('list', '.', 'list', 'call-1-code-2')
+  })
+
+  it('runs writes through the normal permission path', async () => {
+    const result = await execute(tools.execute, {
+      code: ["await tools.write({ path: 'b.txt', content: 'hi' })", "return 'done'"].join('\n')
+    })
+
+    expect(result).toBe('=> done')
+    await expect(fs.readFile(path.join(directory, 'b.txt'), 'utf8')).resolves.toBe('hi')
+    expect(askPermission).toHaveBeenCalledWith('write', 'b.txt', 'write', 'call-1-code-1')
+  })
+
+  it('returns denials and script errors instead of throwing', async () => {
+    askPermission.mockResolvedValue(false)
+    await expect(
+      execute(tools.execute, {
+        code: "return await tools.read({ path: 'a.txt' })"
+      })
+    ).resolves.toContain('Permission denied')
+
+    askPermission.mockResolvedValue(true)
+    await expect(execute(tools.execute, { code: 'return tools.missing({})' })).resolves.toContain(
+      'Unknown tool: missing'
+    )
+    await expect(execute(tools.execute, { code: 'return (' })).resolves.toContain('Error:')
+    await expect(
+      execute(tools.execute, { code: "return tools.execute({ code: '' })" })
+    ).resolves.toContain('Unknown tool: execute')
+  })
+
+  it('times out synchronous snippets', async () => {
+    const limited = createTools({ ...baseContext, codeTimeoutMs: 20 })
+    const result = await execute(limited.execute, { code: 'while (true) {}' })
+    expect(result).toContain('timed out')
+  })
+})
+
 describe('mcp prompt and resource tools', () => {
   it('lists and loads prompts with permission', async () => {
     listMcpPrompts.mockResolvedValue('MCP prompts:\n- demo/greet: Say hello')

@@ -350,3 +350,10 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
   }
   ```
 - 限制：仅实现核心 ACP 子集，不支持 `session/load`、客户端提供的 MCP server 配置、图片 / 音频 prompt；`question` 工具会自动取消。
+
+## 25. Code Mode（`execute` 工具）
+
+- 模型可调用 `execute`，用 JavaScript 在一个步骤内编排多次工具调用：`await tools.read({ path: 'a.ts' })`、`await tools.list({ ... })` 等，工具名与直接调用一致。
+- 脚本可 `console.log` 输出，并通过 `return` 返回摘要；只有返回值与日志进入对话上下文，中间工具结果留在脚本内，适合批量搜索、跨文件汇总与 `Promise.all` 并行调用。
+- 安全：运行脚本前按 `shell` 权限请求确认；脚本内的每次工具调用仍走各自的权限检查（读写、外部目录、MCP 等）；脚本在受限 VM 中执行，禁用动态代码生成，同步执行默认 10 秒超时。
+- 单个操作仍应直接调用对应工具；`execute` 面向多步编排。

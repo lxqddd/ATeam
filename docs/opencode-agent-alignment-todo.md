@@ -268,7 +268,7 @@
 
 ## P2：平台与生态
 
-- [ ] Code Mode / `execute`：用 JavaScript 批量编排工具调用，减少中间结果进入上下文
+- [x] Code Mode / `execute`：用 JavaScript 批量编排工具调用，减少中间结果进入上下文
 - [ ] 并行工具编排与结果聚合
 - [ ] Git worktree 管理：创建、列出、删除，并支持会话迁移
 - [ ] 桌面浏览器自动化
