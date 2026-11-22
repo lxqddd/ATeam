@@ -34,6 +34,7 @@ mac:
 dmg:
   artifactName: ${productName}-${version}-${arch}.${ext}
 linux:
+  executableName: ateam
   target:
     - AppImage
     - snap

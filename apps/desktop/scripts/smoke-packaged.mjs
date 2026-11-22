@@ -36,6 +36,8 @@ async function resolveExecutable(dist) {
   } else {
     candidates.push(path.join(dist, 'linux-unpacked', APP_NAME))
     candidates.push(path.join(dist, 'linux-unpacked', 'ATeam'))
+    candidates.push(path.join(dist, 'linux-unpacked', '@ateamdesktop'))
+    candidates.push(path.join(dist, 'linux-unpacked', 'ateam-desktop'))
   }
   for (const candidate of candidates) {
     if (await exists(candidate)) return candidate
@@ -153,9 +155,33 @@ function startModelMock() {
           prerelease: false,
           assets: [
             {
-              name: 'ATeam-99.0.0.dmg',
+              name: 'ATeam-99.0.0-arm64.dmg',
               browser_download_url:
-                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0.dmg',
+                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0-arm64.dmg',
+              size: 1024,
+              content_type: 'application/octet-stream',
+              digest: null
+            },
+            {
+              name: 'ATeam-99.0.0-x64-setup.exe',
+              browser_download_url:
+                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0-x64-setup.exe',
+              size: 1024,
+              content_type: 'application/octet-stream',
+              digest: null
+            },
+            {
+              name: 'ATeam-99.0.0-x86_64.AppImage',
+              browser_download_url:
+                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0-x86_64.AppImage',
+              size: 1024,
+              content_type: 'application/octet-stream',
+              digest: null
+            },
+            {
+              name: 'ateam_99.0.0_amd64.deb',
+              browser_download_url:
+                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ateam_99.0.0_amd64.deb',
               size: 1024,
               content_type: 'application/octet-stream',
               digest: null
