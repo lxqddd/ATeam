@@ -5,7 +5,7 @@ import path from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { z } from 'zod'
-import type { UpdateAsset, UpdateDownloadResult, UpdateInfo } from '@ateam/shared'
+import type { UpdateAsset, UpdateDownloadResult, UpdateInfo, UpdateProgress } from '@ateam/shared'
 
 export const DEFAULT_RELEASE_REPO = 'lxqddd/ATeam'
 const CHECK_TIMEOUT_MS = 15_000
@@ -140,6 +140,7 @@ export interface ReleaseUpdaterOptions {
   fetchImpl?: typeof fetch
   token?: string | null
   apiBaseUrl?: string
+  onProgress?: (progress: UpdateProgress) => void
   openInstaller?: (filePath: string) => Promise<boolean>
 }
 
@@ -152,6 +153,7 @@ export class ReleaseUpdater {
   private readonly fetchImpl: typeof fetch
   private readonly token: string | null
   private readonly apiBaseUrl: string
+  private readonly onProgress?: (progress: UpdateProgress) => void
   private readonly openInstaller?: (filePath: string) => Promise<boolean>
 
   constructor(options: ReleaseUpdaterOptions) {
@@ -166,6 +168,7 @@ export class ReleaseUpdater {
     this.fetchImpl = options.fetchImpl ?? fetch
     this.token = options.token ?? null
     this.apiBaseUrl = (options.apiBaseUrl ?? 'https://api.github.com').replace(/\/+$/, '')
+    this.onProgress = options.onProgress
     this.openInstaller = options.openInstaller
   }
 
@@ -192,10 +195,17 @@ export class ReleaseUpdater {
     }
     if (asset.size > MAX_ASSET_BYTES) throw new Error('UPDATE_ASSET_TOO_LARGE')
 
-    const response = await this.fetchImpl(asset.url, {
-      headers: this.headers(),
-      signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
-    })
+    let response: Response
+    try {
+      response = await this.fetchImpl(asset.url, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
+      })
+    } catch (error) {
+      throw new Error(
+        `UPDATE_DOWNLOAD_FAILED: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
     if (!response.ok) throw new Error(`UPDATE_DOWNLOAD_FAILED: HTTP ${response.status}`)
     if (response.url) {
       const finalUrl = new URL(response.url)
@@ -212,7 +222,23 @@ export class ReleaseUpdater {
       `.${path.basename(target)}.${randomUUID()}.part`
     )
     const hash = createHash('sha256')
+    const totalBytes = asset.size || Number(response.headers.get('content-length') ?? 0)
     let downloaded = 0
+    let lastProgressAt = 0
+    const reportProgress = (force = false): void => {
+      const now = Date.now()
+      if (!force && now - lastProgressAt < 200) return
+      lastProgressAt = now
+      try {
+        this.onProgress?.({
+          version: info.latestVersion,
+          downloadedBytes: downloaded,
+          totalBytes
+        })
+      } catch {
+        /* progress is best effort */
+      }
+    }
     const limiter = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         downloaded += chunk.length
@@ -221,6 +247,7 @@ export class ReleaseUpdater {
           return
         }
         hash.update(chunk)
+        reportProgress()
         callback(null, chunk)
       }
     })
@@ -239,6 +266,7 @@ export class ReleaseUpdater {
         throw new Error('UPDATE_ASSET_DIGEST_MISMATCH')
       }
       await fs.rename(temporary, target)
+      reportProgress(true)
     } catch (error) {
       await fs.rm(temporary, { force: true }).catch(() => undefined)
       throw error

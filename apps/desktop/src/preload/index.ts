@@ -5,9 +5,11 @@ import {
   MODEL_CHANNELS,
   THEME_CHANNEL,
   UPDATE_CHANNELS,
+  UPDATE_EVENT_CHANNEL,
   type AgentEventEnvelope,
   type AteamApi,
-  type DesktopPlatform
+  type DesktopPlatform,
+  type UpdateProgress
 } from '@ateam/shared'
 
 const api: AteamApi = {
@@ -20,7 +22,16 @@ const api: AteamApi = {
   },
   updates: {
     check: () => ipcRenderer.invoke(UPDATE_CHANNELS.check),
-    download: (version) => ipcRenderer.invoke(UPDATE_CHANNELS.download, { version })
+    download: (version) => ipcRenderer.invoke(UPDATE_CHANNELS.download, { version }),
+    onProgress: (callback) => {
+      const listener = (_event: IpcRendererEvent, progress: UpdateProgress): void => {
+        callback(progress)
+      }
+      ipcRenderer.on(UPDATE_EVENT_CHANNEL, listener)
+      return () => {
+        ipcRenderer.removeListener(UPDATE_EVENT_CHANNEL, listener)
+      }
+    }
   },
   agent: {
     status: () => ipcRenderer.invoke(AGENT_CHANNELS.status),

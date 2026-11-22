@@ -23,3 +23,9 @@ export interface UpdateDownloadResult {
   assetName: string
   opened: boolean
 }
+
+export interface UpdateProgress {
+  version: string
+  downloadedBytes: number
+  totalBytes: number
+}

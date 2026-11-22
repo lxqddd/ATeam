@@ -121,7 +121,8 @@ export function createApiMock(
         path: `/tmp/ATeam-${version}.dmg`,
         assetName: `ATeam-${version}.dmg`,
         opened: true
-      }))
+      })),
+      onProgress: vi.fn(() => () => undefined)
     },
     openExternal: vi.fn(async () => undefined),
     workspace: {

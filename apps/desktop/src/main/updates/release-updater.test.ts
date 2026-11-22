@@ -137,12 +137,14 @@ describe('ReleaseUpdater', () => {
       return new Response(content, { status: 200 })
     })
     const openInstaller = vi.fn(async () => true)
+    const progress: Array<{ downloadedBytes: number; totalBytes: number }> = []
     const instance = new ReleaseUpdater({
       currentVersion: '0.1.0',
       downloadsPath: directory,
       platform: 'darwin',
       arch: 'arm64',
       fetchImpl: fetchMock,
+      onProgress: (next) => progress.push(next),
       openInstaller
     })
 
@@ -151,6 +153,10 @@ describe('ReleaseUpdater', () => {
     expect(result).toMatchObject({ version: '0.2.0', assetName: 'ATeam-0.2.0.dmg', opened: true })
     await expect(fs.readFile(result.path)).resolves.toEqual(content)
     expect(openInstaller).toHaveBeenCalledWith(result.path)
+    expect(progress.at(-1)).toMatchObject({
+      downloadedBytes: content.length,
+      totalBytes: content.length
+    })
   })
 
   it('rejects untrusted asset hosts and changed versions', async () => {

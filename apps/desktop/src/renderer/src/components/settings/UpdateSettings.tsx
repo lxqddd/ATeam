@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
-import type { UpdateDownloadResult, UpdateInfo } from '@ateam/shared'
+import type { UpdateDownloadResult, UpdateInfo, UpdateProgress } from '@ateam/shared'
 import { errorMessage } from '../../lib/errors'
 
 function formatBytes(size: number): string {
@@ -27,6 +27,7 @@ function updateError(t: TFunction, caught: unknown): string {
     case 'UPDATE_VERSION_CHANGED':
       return t('settings.updateChanged')
     default:
+      if (message.startsWith('UPDATE_DOWNLOAD_FAILED')) return t('settings.updateDownloadFailed')
       return message.startsWith('UPDATE_') ? t('settings.updateFailed') : message
   }
 }
@@ -36,6 +37,7 @@ function UpdateSettings(): React.JSX.Element {
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState(true)
   const [downloading, setDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<UpdateProgress | null>(null)
   const [downloaded, setDownloaded] = useState<UpdateDownloadResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,6 +59,12 @@ function UpdateSettings(): React.JSX.Element {
     }
   }, [t])
 
+  useEffect(() => {
+    return window.api.updates.onProgress((next) => {
+      setDownloadProgress(next)
+    })
+  }, [])
+
   async function check(): Promise<void> {
     setChecking(true)
     setError(null)
@@ -75,14 +83,28 @@ function UpdateSettings(): React.JSX.Element {
     setDownloading(true)
     setError(null)
     setDownloaded(null)
+    setDownloadProgress({
+      version: info.latestVersion,
+      downloadedBytes: 0,
+      totalBytes: info.asset.size
+    })
     try {
       setDownloaded(await window.api.updates.download(info.latestVersion))
     } catch (caught) {
+      setDownloadProgress(null)
       setError(updateError(t, caught))
     } finally {
       setDownloading(false)
     }
   }
+
+  const progressPercent =
+    downloadProgress && downloadProgress.totalBytes > 0
+      ? Math.min(
+          100,
+          Math.round((downloadProgress.downloadedBytes / downloadProgress.totalBytes) * 100)
+        )
+      : null
 
   return (
     <div className="flex flex-col gap-3 text-label text-foreground">
@@ -140,7 +162,9 @@ function UpdateSettings(): React.JSX.Element {
                     className="h-8 rounded-md bg-accent px-3 text-caption font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-50"
                   >
                     {downloading
-                      ? t('settings.downloadingUpdate')
+                      ? progressPercent !== null
+                        ? t('settings.downloadProgress', { percent: progressPercent })
+                        : t('settings.downloadingUpdate')
                       : t('settings.downloadAndInstall')}
                   </button>
                 ) : (
@@ -163,6 +187,27 @@ function UpdateSettings(): React.JSX.Element {
                   {t('settings.openRelease')}
                 </button>
               </div>
+              {downloadProgress && downloadProgress.totalBytes > 0 && (
+                <div className="flex items-center gap-2">
+                  <span
+                    role="progressbar"
+                    aria-label={t('settings.downloadingUpdate')}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={progressPercent ?? 0}
+                    className="h-1.5 flex-1 overflow-hidden rounded-full bg-active"
+                  >
+                    <span
+                      className="block h-full rounded-full bg-accent transition-[width]"
+                      style={{ width: `${progressPercent ?? 0}%` }}
+                    />
+                  </span>
+                  <span className="flex-none text-caption text-subtle">
+                    {formatBytes(downloadProgress.downloadedBytes)} /{' '}
+                    {formatBytes(downloadProgress.totalBytes)}
+                  </span>
+                </div>
+              )}
               {downloaded && (
                 <p className="m-0 text-caption text-muted">
                   {t(

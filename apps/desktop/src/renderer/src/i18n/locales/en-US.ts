@@ -252,6 +252,7 @@ const enUS = {
     releaseNotes: 'Release notes',
     downloadAndInstall: 'Download and install',
     downloadingUpdate: 'Downloading…',
+    downloadProgress: 'Downloading {{percent}}%',
     openRelease: 'Open release page',
     updateDownloaded: 'Installer downloaded to {{path}}.',
     updateDownloadedOpened: 'Installer downloaded and opened: {{path}}',
@@ -261,6 +262,7 @@ const enUS = {
     updateAssetInvalid: 'The downloaded installer failed verification.',
     updateChanged: 'A newer release appeared. Check again.',
     updateFailed: 'Update check failed.',
+    updateDownloadFailed: 'Could not download the installer.',
     checkAgain: 'Check again',
 
     loadFailed: 'Could not load the model configuration.',

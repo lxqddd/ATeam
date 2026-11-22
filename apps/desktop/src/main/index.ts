@@ -8,6 +8,7 @@ import {
   APP_ID,
   APP_NAME,
   THEME_CHANNEL,
+  UPDATE_EVENT_CHANNEL,
   type AgentEventEnvelope
 } from '@ateam/shared'
 import { AgentManager } from './agent/agent-manager'
@@ -237,6 +238,12 @@ if (!hasSingleInstanceLock) {
         repo: process.env.ATEAM_GITHUB_REPO,
         token: process.env.ATEAM_GITHUB_TOKEN,
         apiBaseUrl: process.env.ATEAM_GITHUB_API_URL,
+        onProgress: (progress) => {
+          const window = mainWindow
+          if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+            window.webContents.send(UPDATE_EVENT_CHANNEL, progress)
+          }
+        },
         openInstaller: async (filePath) => (await shell.openPath(filePath)) === ''
       }),
       isTrustedSender

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import UpdateSettings from './UpdateSettings'
@@ -46,6 +46,64 @@ describe('UpdateSettings', () => {
     expect(
       await screen.findByText('Installer downloaded and opened: /tmp/ATeam-0.2.0.dmg')
     ).toBeInTheDocument()
+  })
+
+  it('shows download progress for the selected asset', async () => {
+    vi.mocked(api.api.updates.check).mockResolvedValue({
+      currentVersion: '0.1.0',
+      latestVersion: '0.2.0',
+      available: true,
+      releaseName: 'ATeam 0.2.0',
+      releaseNotes: '',
+      releaseUrl: 'https://github.com/lxqddd/ATeam/releases/tag/v0.2.0',
+      publishedAt: null,
+      asset: {
+        name: 'ATeam-0.2.0.dmg',
+        url: 'https://github.com/lxqddd/ATeam/releases/download/v0.2.0/ATeam-0.2.0.dmg',
+        size: 1024,
+        contentType: null,
+        digest: null
+      }
+    })
+    let listener:
+      | ((progress: { version: string; downloadedBytes: number; totalBytes: number }) => void)
+      | null = null
+    vi.mocked(api.api.updates.onProgress).mockImplementation((callback) => {
+      listener = callback
+      return () => undefined
+    })
+    let resolveDownload: (result: {
+      version: string
+      path: string
+      assetName: string
+      opened: boolean
+    }) => void = () => undefined
+    vi.mocked(api.api.updates.download).mockReturnValue(
+      new Promise((resolve) => {
+        resolveDownload = resolve
+      })
+    )
+    const user = userEvent.setup()
+    render(<UpdateSettings />)
+
+    await screen.findByText('Version 0.2.0 is available.')
+    await user.click(screen.getByRole('button', { name: 'Download and install' }))
+    act(() => {
+      listener?.({ version: '0.2.0', downloadedBytes: 512, totalBytes: 1024 })
+    })
+
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    expect(screen.getByRole('button', { name: 'Downloading 50%' })).toBeDisabled()
+
+    act(() => {
+      resolveDownload({
+        version: '0.2.0',
+        path: '/tmp/ATeam-0.2.0.dmg',
+        assetName: 'ATeam-0.2.0.dmg',
+        opened: true
+      })
+    })
+    await screen.findByText('Installer downloaded and opened: /tmp/ATeam-0.2.0.dmg')
   })
 
   it('reports the latest version and rechecks', async () => {

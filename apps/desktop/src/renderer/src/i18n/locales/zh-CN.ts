@@ -243,6 +243,7 @@ const zhCN = {
     releaseNotes: '更新说明',
     downloadAndInstall: '下载并安装',
     downloadingUpdate: '正在下载…',
+    downloadProgress: '正在下载 {{percent}}%',
     openRelease: '打开发布页',
     updateDownloaded: '安装包已下载到 {{path}}。',
     updateDownloadedOpened: '安装包已下载并打开：{{path}}',
@@ -252,6 +253,7 @@ const zhCN = {
     updateAssetInvalid: '安装包校验失败。',
     updateChanged: '出现了更新的版本，请重新检查。',
     updateFailed: '检查更新失败。',
+    updateDownloadFailed: '下载安装包失败。',
     checkAgain: '重新检查',
 
     loadFailed: '无法读取模型配置。',

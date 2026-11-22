@@ -422,7 +422,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - 设置 → 更新：显示当前版本，自动检查 GitHub `releases/latest`，展示新版本号、发布时间与 release notes；支持手动重新检查。
 - 版本比较使用语义化版本规则（支持 `v` 前缀与预发布标识）；只有远端版本高于当前版本时才提示更新。
-- 下载：按平台选择资产（macOS dmg/zip、Windows exe/msi、Linux AppImage/deb），优先匹配当前 CPU 架构；主进程下载到系统下载目录，校验 GitHub 提供的 sha256 digest 与文件大小，随后打开安装包。
+- 下载：按平台选择资产（macOS dmg/zip、Windows exe/msi、Linux AppImage/deb），优先匹配当前 CPU 架构；主进程下载到系统下载目录并通过进度事件实时显示已下载字节与百分比，校验 GitHub 提供的 sha256 digest 与文件大小，随后打开安装包。
 - 安全：下载地址必须来自 GitHub 允许的域名（`github.com` / GitHub release assets 域名），拒绝任意 URL；不会静默执行下载内容。
 - 仓库默认为 `lxqddd/ATeam`，可用 `ATEAM_GITHUB_REPO` 覆盖；`ATEAM_GITHUB_TOKEN` 可提高 GitHub API 限额，`ATEAM_GITHUB_API_URL` 用于测试或 GitHub Enterprise。
 - 当前不做应用内静默升级：更新由用户下载并运行安装包完成；未签名/未公证的安装包可能触发 Gatekeeper 或 SmartScreen 提示。

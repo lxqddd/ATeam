@@ -62,6 +62,8 @@ export const UPDATE_CHANNELS = {
   download: 'ateam:updates:download'
 } as const
 
+export const UPDATE_EVENT_CHANNEL = 'ateam:updates:progress'
+
 export const MODEL_CHANNELS = {
   get: 'ateam:models:get',
   providerAdd: 'ateam:models:providers:add',

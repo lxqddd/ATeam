@@ -24,7 +24,7 @@ import type {
   WebSearchInput,
   WebSearchProviderPublic
 } from './agent-types'
-import type { UpdateDownloadResult, UpdateInfo } from './update-types'
+import type { UpdateDownloadResult, UpdateInfo, UpdateProgress } from './update-types'
 import type {
   ModelCatalogEntry,
   ModelCreateInput,
@@ -153,6 +153,7 @@ export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
 export interface UpdateBridge {
   check: () => Promise<UpdateInfo>
   download: (version: string) => Promise<UpdateDownloadResult>
+  onProgress: (callback: (progress: UpdateProgress) => void) => () => void
 }
 
 export interface AteamApi {
