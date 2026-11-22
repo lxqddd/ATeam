@@ -22,24 +22,36 @@
 ## 第二轮复审：与当前 OpenCode master 的差距（2026-11-22）
 
 > 第一轮的 P0/P1/P2 记录保留在下方。第一轮中的“剩余：无”表示当时的对齐范围内已完成，不代表与当前 OpenCode `master` 完全一致。第二轮条目是新增待办，第一轮的基础版实现仍然有效。
+>
+> **配置方向（2026-11-22）**：参考 OpenCode 的分层发现、深合并与字段组织，但使用 ATeam 自有配置文件和 schema；不读取 `opencode.json(c)`，不承诺 OpenCode 配置格式兼容。现有 `.opencode/agent|command|skill` 资源目录可保留为便利入口，但不作为新配置基线。
 
-### 第二轮 P0：核心运行时与兼容性
+### 第二轮 P0：核心运行时与配置
 
-#### R-P0-1 项目配置兼容层
+#### R-P0-1 分层配置模型（ATeam 自有格式）
 
-**现状**：ATeam 只读取 `userData/agent/config.json`（[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)），项目侧仅支持 `.opencode/agent|command|skill` 目录与 `references.json`；不读取 OpenCode 的 `opencode.json` / `opencode.jsonc`，也没有项目级 provider、MCP、LSP、formatter、permission、plugin 配置。
+**现状**：ATeam 只读取 `userData/agent/config.json`（[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)），项目侧仅支持 `.opencode/agent|command|skill` 目录与 `references.json`；没有项目级 provider、MCP、LSP、formatter、permission、plugin 配置。
 
-**OpenCode 参考**：`packages/opencode/src/config/config.ts` 按“全局 → 项目 → `.opencode`”逐层发现并深合并配置，覆盖 agents、providers、mcp、lsp、plugins、permissions、formatters、instructions、references 等字段。
+**OpenCode 参考**：`packages/opencode/src/config/config.ts` 的分层发现与深合并思路，以及 agents、providers、mcp、lsp、plugins、permissions、formatters、instructions、references 的字段组织。
+
+**建议方案**：
+
+- 全局层：沿用现有 `userData/agent/config.json`，或后续迁移为 `config.jsonc`。
+- 项目层：项目根 `ateam.json` / `ateam.jsonc` 与 `.ateam/` 资源目录（agents、commands、skills 等）。
+- 设置页默认编辑全局配置；项目层配置由仓库文件提供，设置页展示来源与覆盖结果。
+- API Key、OAuth token、MCP 凭据继续放在全局加密存储，不写入项目配置。
+- 现有 `.opencode` 资源发现保留为便利入口，但不实现 `opencode.json` 字段兼容。
 
 **待办**：
 
-- [ ] 增加 `opencode.json` / `opencode.jsonc` 的全局、项目根、`.opencode` 三层发现与深合并
+- [ ] 定义 ATeam 配置 schema、文件名与目录约定，明确哪些字段可放在项目层
+- [ ] 实现“全局 → 项目（后续可扩展工作区）”的分层发现与深合并
 - [ ] 覆盖 agents / providers / mcp / lsp / permissions / formatters / instructions / references / plugin 字段
-- [ ] 明确与现有 `agent/config.json`、设置页写入、组织策略的覆盖顺序
-- [ ] 对非法字段跳过并在设置页展示来源文件与错误，不让单个坏配置阻断启动
-- [ ] 测试发现顺序、深合并、项目覆盖全局、旧配置兼容、配置变更后的运行时刷新
+- [ ] 明确与现有 `agent/config.json`、设置页、组织策略的覆盖顺序
+- [ ] 对非法字段跳过并展示来源文件与错误，不让单个坏配置阻断启动
+- [ ] 设置页展示每项配置的来源（全局/项目）与生效值
+- [ ] 测试层级覆盖、深合并、UI 与文件一致性、旧配置迁移
 
-**验收**：把一个现有 OpenCode 项目直接交给 ATeam，项目级 agents / MCP / LSP / 权限 / 格式化配置无需手工迁移即可生效。
+**验收**：ATeam 可以通过全局与项目两层自有配置管理 agents / MCP / LSP / 权限 / 格式化，不依赖任何 OpenCode 配置文件，设置页能看清每项配置来源。
 
 #### R-P0-2 插件系统
 
@@ -315,7 +327,7 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P0-1 配置兼容层**（中等）——收益最大，决定能否复用 OpenCode 项目生态。
+1. **R-P0-1 分层配置模型**（中等）——统一项目级 Agents / MCP / LSP / 权限 / 插件配置；只借鉴 OpenCode 结构，不做格式兼容。
 2. **R-P0-3 重试 + R-P0-5 推理/缓存 + R-P1-2 max steps + R-P1-1 steering**（小到中等）——直接改善长任务可靠性。
 3. **R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——补齐日常编码体验。
 4. **R-P0-2 插件系统**（大）——如果目标是 OpenCode 级扩展生态则必须做，否则明确列为非目标。
@@ -599,7 +611,7 @@
 - 权限规则系统是 MCP、子代理、Web 工具、Skills 等新工具统一审批的基础。
 - 文件快照是 undo / redo、回滚到消息、以及后续 worktree 场景的基础。
 - 工具输出落盘是后台 shell、MCP 大结果、Web 抓取大页面的共同基础设施。
-- 第二轮：配置兼容层是项目级 Agents / MCP / LSP / 权限 / 插件配置的共同入口。
+- 第二轮：分层配置模型是项目级 Agents / MCP / LSP / 权限 / 插件配置的共同入口，使用 ATeam 自有格式。
 - 第二轮：重试与状态事件是 Steering、后台任务、UI 等待态的基础。
 - 第二轮：消息 part 模型是 part 级回滚、会话 diff、审查面板与统计的基础。
 
