@@ -104,6 +104,13 @@ export class BrowserController {
       }
       return { action: 'deny' }
     })
+    window.webContents.on('will-navigate', (event, url) => {
+      try {
+        validateBrowserUrl(url)
+      } catch {
+        event.preventDefault()
+      }
+    })
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
       callback(false)
     )
