@@ -20,6 +20,11 @@ describe('parseCliArgs', () => {
     })
   })
 
+  it('parses the restore-sessions flag', () => {
+    const options = parseCliArgs(['--restore-sessions', '--data', '/tmp/ateam-data'], {}, '/cwd')
+    expect(options).toMatchObject({ restoreSessions: true, dataDir: '/tmp/ateam-data' })
+  })
+
   it('parses flags with inline values', () => {
     const options = parseCliArgs(
       [

@@ -7,6 +7,8 @@ import type {
   RunOutcome
 } from '@ateam/shared'
 import { AgentRuntime } from '../main/agent/runtime'
+import { SessionsStore } from '../main/agent/sessions/sessions-store'
+import { restoreLegacySessionBackups } from '../main/agent/sessions/session-storage'
 import { buildCliModels, CLI_HELP, parseCliArgs, type CliOptions } from './args'
 
 async function readStdin(): Promise<string> {
@@ -34,6 +36,15 @@ async function main(): Promise<number> {
   }
   if (options.help) {
     process.stdout.write(CLI_HELP)
+    return 0
+  }
+  if (options.restoreSessions) {
+    const restored = await restoreLegacySessionBackups(options.dataDir)
+    const store = new SessionsStore(options.dataDir)
+    await store.init()
+    const total = store.list().length
+    await store.close()
+    console.log(`Restored ${restored} legacy session backup(s); ${total} session(s) available.`)
     return 0
   }
 

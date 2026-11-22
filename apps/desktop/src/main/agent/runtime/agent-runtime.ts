@@ -524,17 +524,23 @@ export class AgentRuntime {
         childRun.abort.abort()
         this.rejectPendingForRun(childRun)
       }
+      const childRecord = this.store.get(child.id)
       await this.store.delete(child.id)
       await this.permissionRules.removeForSession(child.id)
       await this.snapshots.removeSession(child.id)
       await removeSessionAttachments(this.options.userDataPath, child.id)
       await this.options.browserRequest?.(child.id, 'close').catch(() => undefined)
+      if (childRecord?.session.directory) {
+        void this.releaseWorkspace(childRecord.session.directory)
+      }
     }
+    const removed = this.store.get(id)
     await this.store.delete(id)
     await this.permissionRules.removeForSession(id)
     await this.snapshots.removeSession(id)
     await removeSessionAttachments(this.options.userDataPath, id)
     await this.options.browserRequest?.(id, 'close').catch(() => undefined)
+    if (removed?.session.directory) void this.releaseWorkspace(removed.session.directory)
     this.emit({ type: 'session.deleted', sessionId: id })
   }
 
@@ -811,6 +817,26 @@ export class AgentRuntime {
       this.formatterCaches.set(workspace, cached)
     }
     return cached
+  }
+
+  private async releaseWorkspace(workspace: string): Promise<void> {
+    if (path.resolve(workspace) === path.resolve(this.options.workspacePath)) return
+    const inUse =
+      [...this.runs.values()].some(
+        (run) => path.resolve(run.workspace) === path.resolve(workspace)
+      ) ||
+      this.store
+        .list()
+        .some(
+          (session) =>
+            session.directory && path.resolve(session.directory) === path.resolve(workspace)
+        )
+    if (inUse) return
+    const manager = this.lspManagers.get(workspace)
+    this.lspManagers.delete(workspace)
+    this.formatterCaches.delete(workspace)
+    this.skillCaches.delete(workspace)
+    await manager?.dispose().catch(() => undefined)
   }
 
   private async formatFiles(
@@ -1686,9 +1712,11 @@ export class AgentRuntime {
 
   private async moveSession(run: Run, target: string): Promise<string> {
     try {
+      const previous = run.workspace
       const directory = await this.resolveSessionDirectory(run.workspace, target)
       const session = await this.store.setDirectory(run.sessionId, directory)
       if (session) this.emit({ type: 'session.upsert', session })
+      void this.releaseWorkspace(previous)
       return `Session will move to ${directory} on the next message.`
     } catch (error) {
       return `Error: ${this.worktreeErrorMessage(error)}`
@@ -2125,6 +2153,7 @@ export class AgentRuntime {
       if (persistTimer) clearTimeout(persistTimer)
       this.runs.delete(run.sessionId)
       this.emitSession(run.sessionId)
+      void this.releaseWorkspace(run.workspace)
     }
   }
 }

@@ -32,6 +32,7 @@ export interface CliOptions {
   dataDir: string
   json: boolean
   listSessions: boolean
+  restoreSessions: boolean
   help: boolean
 }
 
@@ -74,6 +75,7 @@ export function parseCliArgs(
     dataDir: path.join(os.homedir(), '.ateam', 'cli'),
     json: false,
     listSessions: false,
+    restoreSessions: false,
     help: false
   }
   if (!PROVIDER_TYPES.includes(options.providerType)) {
@@ -143,6 +145,9 @@ export function parseCliArgs(
       case '--list-sessions':
         options.listSessions = true
         break
+      case '--restore-sessions':
+        options.restoreSessions = true
+        break
       case '--help':
       case '-h':
         options.help = true
@@ -207,6 +212,7 @@ Options:
   --session <id>           Continue an existing CLI session
   --data <dir>             CLI data directory (default: ~/.ateam/cli)
   --list-sessions          List stored CLI sessions and exit
+  --restore-sessions       Restore migrated legacy session backups and exit
   --json                   Print agent events as JSON lines
   --help                   Show this help
 `

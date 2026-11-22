@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SessionsStore } from './sessions-store'
+import { restoreLegacySessionBackups } from './session-storage'
 import { makeMessage, makeSession, makeTextPart } from '../test/factories'
 
 let directory: string
@@ -178,6 +179,32 @@ describe('SQLite session storage', () => {
     ).resolves.toBeDefined()
   })
 
+  it('restores migrated backups on request', async () => {
+    await store.close()
+    for (const suffix of ['', '-wal', '-shm']) {
+      await fs.rm(path.join(directory, 'agent', `sessions.db${suffix}`), { force: true })
+    }
+    const legacy = makeSession({ id: 'restore-1', title: 'Restored' })
+    await fs.writeFile(
+      path.join(sessionsDirectory, 'restore-1.json'),
+      JSON.stringify({ version: 1, session: legacy, messages: [] })
+    )
+    const importing = new SessionsStore(directory)
+    await importing.init()
+    await importing.close()
+    await expect(
+      fs.stat(path.join(sessionsDirectory, 'restore-1.json.migrated'))
+    ).resolves.toBeDefined()
+
+    await expect(restoreLegacySessionBackups(directory)).resolves.toBe(1)
+    await expect(fs.stat(path.join(sessionsDirectory, 'restore-1.json'))).resolves.toBeDefined()
+
+    const restored = new SessionsStore(directory)
+    await restored.init()
+    expect(restored.getSession('restore-1')?.title).toBe('Restored')
+    await restored.close()
+  })
+
   it('deletes sessions and their messages', async () => {
     const session = await store.create()
     await store.appendMessage(
@@ -220,6 +247,57 @@ describe('SQLite session storage', () => {
       todos: [{ content: 'Ship it', status: 'pending', priority: 'high' }]
     })
     await reloaded.close()
+  })
+
+  it('writes only changed message rows', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'user', parts: [makeTextPart('one')] })
+    )
+    await store.close()
+
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    database.exec(`
+      CREATE TABLE message_writes (count INTEGER NOT NULL);
+      INSERT INTO message_writes (count) VALUES (0);
+      CREATE TRIGGER count_message_writes AFTER INSERT ON messages
+      BEGIN UPDATE message_writes SET count = count + 1; END;
+      CREATE TRIGGER count_message_updates AFTER UPDATE ON messages
+      BEGIN UPDATE message_writes SET count = count + 1; END;
+      CREATE TRIGGER count_message_deletes AFTER DELETE ON messages
+      BEGIN UPDATE message_writes SET count = count + 1; END;
+    `)
+    database.close()
+
+    const reopened = new SessionsStore(directory)
+    await reopened.init()
+    const count = async (): Promise<number> => {
+      const check = new DatabaseSync(databaseFile)
+      const row = check.prepare('SELECT count FROM message_writes').get() as { count: number }
+      check.close()
+      return row.count
+    }
+
+    const baseline = await count()
+    await reopened.persist(session.id)
+    expect(await count()).toBe(baseline)
+
+    const record = reopened.get(session.id)
+    if (!record?.messages[0] || record.messages[0].parts[0]?.type !== 'text') {
+      throw new Error('unexpected record')
+    }
+    record.messages[0].parts[0].text = 'changed'
+    await reopened.persist(session.id)
+    expect(await count()).toBe(baseline + 1)
+
+    await reopened.appendMessage(
+      session.id,
+      makeMessage({ role: 'assistant', parts: [makeTextPart('two')] })
+    )
+    expect(await count()).toBe(baseline + 2)
+    await reopened.close()
   })
 
   it('uses the JSON backend when requested', async () => {

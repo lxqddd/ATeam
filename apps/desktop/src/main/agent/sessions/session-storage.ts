@@ -180,6 +180,7 @@ class SqliteSessionStorage implements SessionStorage {
   private readonly file: string
   private readonly legacyRoot: string
   private database: DatabaseSync | null = null
+  private readonly messageCache = new Map<string, string[]>()
 
   constructor(userDataPath: string) {
     this.file = path.join(userDataPath, 'agent', 'sessions.db')
@@ -243,6 +244,7 @@ class SqliteSessionStorage implements SessionStorage {
 
   async remove(id: string): Promise<void> {
     const database = this.requireDatabase()
+    this.messageCache.delete(id)
     database.exec('BEGIN')
     try {
       database.prepare('DELETE FROM sessions WHERE id = ?').run(id)
@@ -259,6 +261,7 @@ class SqliteSessionStorage implements SessionStorage {
   }
 
   async close(): Promise<void> {
+    this.messageCache.clear()
     this.database?.close()
     this.database = null
   }
@@ -300,13 +303,28 @@ class SqliteSessionStorage implements SessionStorage {
           'ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
       )
       .run(record.session.id, JSON.stringify(data), record.session.updatedAt)
-    database.prepare('DELETE FROM messages WHERE session_id = ?').run(record.session.id)
-    const statement = database.prepare(
-      'INSERT INTO messages (session_id, position, data) VALUES (?, ?, ?)'
+
+    const serialized = messages.map((message) => JSON.stringify(message))
+    const cached = this.messageCache.get(record.session.id)
+    const upsert = database.prepare(
+      'INSERT INTO messages (session_id, position, data) VALUES (?, ?, ?) ' +
+        'ON CONFLICT(session_id, position) DO UPDATE SET data = excluded.data'
     )
-    messages.forEach((message, index) => {
-      statement.run(record.session.id, index, JSON.stringify(message))
-    })
+    if (!cached) {
+      for (const [index, message] of serialized.entries()) {
+        upsert.run(record.session.id, index, message)
+      }
+    } else {
+      for (const [index, message] of serialized.entries()) {
+        if (cached[index] !== message) upsert.run(record.session.id, index, message)
+      }
+      if (cached.length > serialized.length) {
+        database
+          .prepare('DELETE FROM messages WHERE session_id = ? AND position >= ?')
+          .run(record.session.id, serialized.length)
+      }
+    }
+    this.messageCache.set(record.session.id, serialized)
   }
 
   private async importLegacy(database: DatabaseSync): Promise<void> {
@@ -353,6 +371,7 @@ class SqliteSessionStorage implements SessionStorage {
   }
 
   private quarantineSession(database: DatabaseSync, id: string, data: string): void {
+    this.messageCache.delete(id)
     database
       .prepare('INSERT OR REPLACE INTO corrupt_sessions (id, data, captured_at) VALUES (?, ?, ?)')
       .run(id, data, new Date().toISOString())
@@ -384,9 +403,11 @@ class SqliteSessionStorage implements SessionStorage {
         .prepare('SELECT position, data FROM messages WHERE session_id = ? ORDER BY position ASC')
         .all(row.id) as { position: number; data: string }[]
       const messages: ChatMessage[] = []
+      const cachedMessages: string[] = []
       for (const messageRow of messageRows) {
         try {
           messages.push(JSON.parse(messageRow.data) as ChatMessage)
+          cachedMessages.push(messageRow.data)
         } catch {
           database
             .prepare(
@@ -398,6 +419,7 @@ class SqliteSessionStorage implements SessionStorage {
             .run(row.id, messageRow.position)
         }
       }
+      this.messageCache.set(row.id, cachedMessages)
       records.push({
         session: stored.session,
         messages,
@@ -475,4 +497,37 @@ export function createSessionStorage(
   }
   if (backend === 'sqlite') return new SqliteSessionStorage(userDataPath)
   return new AutoSessionStorage(userDataPath)
+}
+
+export async function restoreLegacySessionBackups(userDataPath: string): Promise<number> {
+  const sessionsDirectory = path.join(userDataPath, 'agent', 'sessions')
+  let restored = 0
+  let files: string[] = []
+  try {
+    files = await fs.readdir(sessionsDirectory)
+  } catch {
+    return 0
+  }
+  for (const file of files) {
+    if (!file.endsWith('.json.migrated')) continue
+    const source = path.join(sessionsDirectory, file)
+    const target = path.join(sessionsDirectory, file.slice(0, -'.migrated'.length))
+    const existing = await fs.stat(target).catch(() => null)
+    if (existing) continue
+    await fs.rename(source, target).catch(() => undefined)
+    restored += 1
+  }
+
+  const databaseFile = path.join(userDataPath, 'agent', 'sessions.db')
+  const existingDatabase = await fs.stat(databaseFile).catch(() => null)
+  if (existingDatabase) {
+    const { DatabaseSync } = await import('node:sqlite')
+    const database = new DatabaseSync(databaseFile)
+    try {
+      database.prepare("DELETE FROM meta WHERE key = 'legacy_imported'").run()
+    } finally {
+      database.close()
+    }
+  }
+  return restored
 }

@@ -170,7 +170,7 @@
 
 ## 10. LSP 诊断与自动格式化
 
-- 内置语言服务器：TypeScript、Go、Python、Rust、C/C++；按工作区复用客户端，不可用时静默跳过。
+- 内置语言服务器：TypeScript、Go、Python、Rust、C/C++；按工作区复用客户端，不可用时静默跳过。会话迁移或删除后，不再被任何会话使用的工作区会立即释放对应 LSP、格式化器与 Skills 缓存。
 - read / write / edit / patch 后附带诊断（最多 20 条，含行号、级别、来源与代码），便于 Agent 自我修正。
 - `lsp_hover` / `lsp_definition` 工具可在指定行列查询类型、文档与定义位置。
 - 格式化器发现：prettier、biome、gofmt、rustfmt、ruff（配置文件、package.json 依赖、pyproject `[tool.ruff]`）；写入后自动执行，失败只提示、不影响工具结果。
@@ -285,7 +285,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - 入口：`pnpm cli -- [options] [prompt]`，直接复用 Agent 运行时，无需启动 Electron 窗口。
 - 模型：`--provider anthropic|openai|google|openai-compatible`、`--model`、`--api-key`（或 `ATEAM_API_KEY`）、`--base-url`、`--context-window`、`--max-output`、`--reasoning`。
-- 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话。
+- 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话，`--restore-sessions` 将 `.migrated` 旧会话备份恢复并重新导入数据库后退出。
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
 - 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
 - 限制：凭据通过命令行或环境变量以明文传入，不能解密桌面端 `safeStorage` 配置；尚未提供独立打包的二进制。
@@ -357,8 +357,8 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - 模型可调用 `execute`，用 JavaScript 在一个步骤内编排多次工具调用：`await tools.read({ path: 'a.ts' })`、`await tools.list({ ... })` 等，工具名与直接调用一致。
 - 脚本可 `console.log` 输出，并通过 `return` 返回摘要；只有返回值与日志进入对话上下文，中间工具结果留在脚本内，适合批量搜索、跨文件汇总与 `Promise.all` 并行调用。
-- 安全：运行脚本前按 `shell` 权限请求确认；脚本在单独的 worker 线程中执行，内部禁用动态代码生成，无工具活动超过 10 秒会被强制终止（`await` 后的死循环也能中断）。脚本内可用的工具目录与当前 Agent/模型实际可见的工具一致（含 MCP，不含被过滤的 write/edit 等），每次调用仍走各自的权限检查。
-- 注意：脚本本身应视为与 `shell` 同级的任意代码，不是强安全沙箱；外层批准意味着允许执行代码，请只批准可信来源触发的代码模式。
+- 安全：运行脚本前按 `shell` 权限请求确认；脚本在独立子进程中执行，并启用 Node 权限模型（默认禁止文件读写、子进程、worker、addon）。用户代码运行在双层 VM 中，宿主对象只通过受控桥接传递，无法直接取得 `process`、`require`、网络 API 或宿主任意对象；无工具活动超过 10 秒会强制终止（`await` 后的死循环也能中断）。脚本内可用的工具目录与当前 Agent/模型实际可见的工具一致（含 MCP，不含被过滤的 write/edit 等），每次调用仍走各自的权限检查。
+- 仍建议只批准可信来源触发的代码模式；沙箱不能替代对提示注入的警惕。
 - 单个操作仍应直接调用对应工具；`execute` 面向多步编排。
 
 ## 26. 并行工具调用与结果聚合
@@ -395,4 +395,5 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 首次启动时若数据库尚未迁移，会在单个事务中导入旧的 `agent/sessions/*.json` 会话文件并记录迁移标记；导入成功后旧文件改名为 `.migrated` 保留备份。损坏的旧文件隔离为 `.corrupt-*`，不会阻塞其他会话；损坏的数据库行移入 `corrupt_sessions` / `corrupt_messages` 表而不是直接丢弃。
 - 数据库文件及 WAL/SHM 权限为 `0600`。存储层可切换：`new SessionsStore(path, { backend: 'json' | 'sqlite' | 'auto' })`，`auto`（默认）使用 SQLite；若 Node 不支持 `node:sqlite` 且已有数据库文件，会明确报错而不是静默回退导致会话“消失”，仅在尚未创建数据库时回退 JSON。
 - 兼容原有修复逻辑：启动时恢复 running/waiting-permission 状态、补齐缺失字段、重置中断的工具调用。
-- 限制：当前为 SQLite 状态存储而非完整事件溯源；每次持久化重写该会话的消息行，超大历史会话的写入成本随消息数增长（后续可改为增量消息写入）。导入后的 `.migrated` 备份不会被自动重新导入；如需恢复，应在数据库不存在时把备份改回 `.json`。
+- 持久化按消息位置增量写入：仅更新内容变化的行，删除被 undo 截断的尾部行。当前仍为 SQLite 状态存储而非完整事件溯源。
+- 导入后的 `.migrated` 备份不会自动重新导入；运行 `pnpm cli -- --restore-sessions --data <dir>` 可把备份恢复为 `.json`、清除迁移标记并立即重新导入。

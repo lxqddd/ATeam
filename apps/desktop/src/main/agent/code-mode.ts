@@ -1,123 +1,173 @@
-import { Worker } from 'node:worker_threads'
+import { spawn } from 'node:child_process'
 import type { ToolSet } from 'ai'
 
 const MAX_OUTPUT = 200_000
+const MAX_LOGS = 200
+const MAX_LOG_CHARS = 20_000
+const STARTUP_TIMEOUT_MS = 8_000
 
-const WORKER_SOURCE = `
-const { parentPort, workerData } = require('node:worker_threads')
+const RUNNER_SOURCE = `
 const vm = require('node:vm')
+const send = process.send && process.send.bind(process)
+if (!send) process.exit(2)
+
 const MAX_LOGS = 200
 const MAX_LOG_CHARS = 20000
-const logs = []
+let logCount = 0
 let logChars = 0
 let truncated = false
-
-const format = (value) => {
-  if (value === undefined) return ''
-  if (value === null) return 'null'
-  if (typeof value === 'string') return value
-  if (typeof value === 'object' && 'image' in value) {
-    return '[image: ' + (value.summary || 'attached image') + ']'
-  }
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-const addLog = (level, args) => {
-  if (logs.length >= MAX_LOGS || logChars >= MAX_LOG_CHARS) {
-    truncated = true
+const forwardLog = (level, text) => {
+  if (logCount >= MAX_LOGS || logChars >= MAX_LOG_CHARS) {
+    if (!truncated) {
+      truncated = true
+      send({ type: 'log-truncated' })
+    }
     return
   }
-  const text = args.map(format).join(' ').slice(0, 4000)
-  const line = level === 'log' ? text : level + ': ' + text
-  logChars += line.length
-  logs.push(line)
+  logCount += 1
+  logChars += String(text).length
+  send({ type: 'log', level, text: String(text).slice(0, 4000) })
 }
 
-let seq = 0
-const pending = new Map()
-const tools = new Proxy(Object.create(null), {
-  get(_target, name) {
-    if (typeof name !== 'string' || name === 'execute') {
-      return async () => {
-        throw new Error('Unknown tool: ' + String(name))
-      }
+const bridgeBootstrap = \`
+(() => {
+  let seq = 0
+  const pending = new Map()
+  const parse = (text) => {
+    if (text === undefined) return undefined
+    try { return JSON.parse(text) } catch { return undefined }
+  }
+  globalThis.__resolve = (id, ok, payload) => {
+    const call = pending.get(id)
+    if (!call) return
+    pending.delete(id)
+    if (ok) call.resolve(parse(payload))
+    else call.reject(new Error(String(payload)))
+  }
+  const format = (value) => {
+    if (value === undefined) return ''
+    if (value === null) return 'null'
+    if (typeof value === 'string') return value
+    if (typeof value === 'object' && 'image' in value) {
+      return '[image: ' + (value.summary || 'attached image') + ']'
     }
-    return (input) =>
-      new Promise((resolve, reject) => {
+    try { return JSON.stringify(value) } catch { return String(value) }
+  }
+  const text = (args) => args.map(format).join(' ')
+  const tools = new Proxy(Object.create(null), {
+    get(_target, name) {
+      if (typeof name !== 'string' || name === 'execute') {
+        return async () => { throw new Error('Unknown tool: ' + String(name)) }
+      }
+      return (input) => new Promise((resolve, reject) => {
         const id = String(++seq)
         pending.set(id, { resolve, reject })
-        parentPort.postMessage({
-          type: 'tool',
-          id,
-          name,
-          input: input === undefined ? {} : input
-        })
+        try {
+          __send({ type: 'tool', id, name, input: input === undefined ? {} : input })
+        } catch {
+          pending.delete(id)
+          reject(new Error('Tool input is not serializable'))
+        }
       })
+    }
+  })
+  const consoleProxy = {
+    log: (...args) => __send({ type: 'log', level: 'log', text: text(args) }),
+    info: (...args) => __send({ type: 'log', level: 'info', text: text(args) }),
+    warn: (...args) => __send({ type: 'log', level: 'warn', text: text(args) }),
+    error: (...args) => __send({ type: 'log', level: 'error', text: text(args) }),
+    debug: (...args) => __send({ type: 'log', level: 'debug', text: text(args) })
   }
-})
-
-parentPort.on('message', (message) => {
-  if (!message || message.type !== 'tool-result') return
-  const call = pending.get(message.id)
-  if (!call) return
-  pending.delete(message.id)
-  if (message.ok) call.resolve(message.result)
-  else call.reject(new Error(message.error || 'Tool failed'))
-})
-
-const consoleProxy = {
-  log: (...args) => addLog('log', args),
-  info: (...args) => addLog('info', args),
-  warn: (...args) => addLog('warn', args),
-  error: (...args) => addLog('error', args),
-  debug: (...args) => addLog('debug', args)
-}
-
-;(async () => {
-  try {
-    const script = new vm.Script('(async () => {\\n' + workerData.code + '\\n})()')
-    const context = vm.createContext(
-      { tools, console: consoleProxy },
-      { codeGeneration: { strings: false, wasm: false } }
-    )
-    const value = await script.runInContext(context)
-    parentPort.postMessage({ type: 'done', logs, truncated, result: format(value) })
-  } catch (error) {
-    const message =
-      error && typeof error === 'object' && 'message' in error
-        ? String(error.message)
-        : String(error)
-    parentPort.postMessage({ type: 'error', logs, truncated, error: message })
-  }
+  globalThis.__bridge = { tools, console: consoleProxy }
 })()
+\`
+
+const bridgeContext = vm.createContext(
+  { __send: (message) => send(message) },
+  { codeGeneration: { strings: false, wasm: false } }
+)
+vm.runInContext(bridgeBootstrap, bridgeContext, { timeout: 2000 })
+const bridge = bridgeContext.__bridge
+
+const userContext = vm.createContext(
+  { tools: bridge.tools, console: bridge.console },
+  { codeGeneration: { strings: false, wasm: false } }
+)
+vm.runInContext(
+  \`globalThis.__serialize = (value) => {
+    try {
+      if (value === undefined) return ''
+      if (value === null) return 'null'
+      if (typeof value === 'string') return value
+      if (typeof value === 'object' && 'image' in value) {
+        return '[image: ' + (value.summary || 'attached image') + ']'
+      }
+      return JSON.stringify(value)
+    } catch {
+      return '[unserializable result]'
+    }
+  }\`,
+  userContext,
+  { timeout: 2000 }
+)
+
+process.on('message', (message) => {
+  if (!message || typeof message !== 'object') return
+  if (message.type === 'tool-result') {
+    bridgeContext.__resolve(message.id, message.ok, message.ok ? message.payload : message.error)
+    return
+  }
+  if (message.type !== 'run') return
+  const script = new vm.Script(
+    '(async () => { const __value = await (async () => {\\n' +
+      message.code +
+      '\\n})(); return __serialize(__value) })()'
+  )
+  script.runInContext(userContext).then(
+    (value) => send({ type: 'done', result: typeof value === 'string' ? value : String(value) }),
+    (error) =>
+      send({
+        type: 'error',
+        error:
+          error && typeof error === 'object' && 'message' in error
+            ? String(error.message)
+            : String(error)
+      })
+  )
+})
+send({ type: 'ready' })
 `
 
-interface ToolRequest {
+interface ToolMessage {
   type: 'tool'
   id: string
   name: string
   input: unknown
 }
 
+interface LogMessage {
+  type: 'log'
+  level: string
+  text: string
+}
+
 interface DoneMessage {
   type: 'done'
-  logs: string[]
-  truncated?: boolean
   result?: string
 }
 
 interface ErrorMessage {
   type: 'error'
-  logs: string[]
-  truncated?: boolean
   error: string
 }
 
-type CodeWorkerMessage = ToolRequest | DoneMessage | ErrorMessage
+type RunnerMessage =
+  | { type: 'ready' }
+  | ToolMessage
+  | LogMessage
+  | { type: 'log-truncated' }
+  | DoneMessage
+  | ErrorMessage
 
 export interface CodeScriptOptions {
   tools: ToolSet
@@ -132,12 +182,22 @@ function truncate(value: string): string {
   return `${value.slice(0, MAX_OUTPUT)}\n[output truncated]`
 }
 
-function toolResultForWorker(value: unknown): unknown {
-  if (value && typeof value === 'object' && 'image' in value) {
-    const image = value as { summary?: string }
-    return `[image: ${image.summary ?? 'attached image'}]`
+function toolResultForScript(value: unknown): string | undefined {
+  if (value === undefined) return undefined
+  const prepared =
+    value && typeof value === 'object' && 'image' in value
+      ? `[image: ${(value as { summary?: string }).summary ?? 'attached image'}]`
+      : value
+  try {
+    return JSON.stringify(prepared)
+  } catch {
+    return JSON.stringify(String(prepared))
   }
-  return value
+}
+
+function permissionFlag(): string {
+  const major = Number(process.versions.node.split('.')[0])
+  return major >= 23 ? '--permission' : '--experimental-permission'
 }
 
 export function runCodeScript(options: CodeScriptOptions): Promise<string> {
@@ -147,13 +207,23 @@ export function runCodeScript(options: CodeScriptOptions): Promise<string> {
       return
     }
 
+    const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+    delete env.NODE_OPTIONS
+    delete env.NODE_EXTRA_CA_CERTS
+
+    const child = spawn(process.execPath, [permissionFlag(), '-e', RUNNER_SOURCE], {
+      env,
+      stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+      windowsHide: true
+    })
+
     let settled = false
     let timer: NodeJS.Timeout | undefined
     let callIndex = 0
-    const worker = new Worker(WORKER_SOURCE, {
-      eval: true,
-      workerData: { code: options.code }
-    })
+    const logs: string[] = []
+    let logChars = 0
+    let logTruncated = false
+    let stderr = ''
 
     const disarm = (): void => {
       if (timer) clearTimeout(timer)
@@ -165,7 +235,7 @@ export function runCodeScript(options: CodeScriptOptions): Promise<string> {
       disarm()
       clearTimeout(startup)
       options.signal.removeEventListener('abort', onAbort)
-      void worker.terminate().catch(() => undefined)
+      child.kill('SIGKILL')
       resolve(truncate(text))
     }
     const arm = (): void => {
@@ -175,72 +245,108 @@ export function runCodeScript(options: CodeScriptOptions): Promise<string> {
     const onAbort = (): void => finish('Error: ABORTED')
     options.signal.addEventListener('abort', onAbort, { once: true })
     const startup = setTimeout(
-      () => finish('Error: Code execution timed out'),
-      Math.max(options.timeoutMs * 5, 5_000)
+      () => finish('Error: Code execution timed out while starting'),
+      STARTUP_TIMEOUT_MS
     )
 
-    const runTool = async (message: ToolRequest): Promise<void> => {
+    const sendToolResult = (
+      id: string,
+      ok: boolean,
+      payload: string | undefined,
+      error?: string
+    ): void => {
+      if (settled || !child.connected) return
+      try {
+        child.send(
+          ok
+            ? { type: 'tool-result', id, ok: true, payload }
+            : { type: 'tool-result', id, ok: false, error: error ?? 'Tool failed' }
+        )
+      } catch {
+        finish('Error: the code runner stopped unexpectedly')
+      }
+    }
+
+    const runTool = async (message: ToolMessage): Promise<void> => {
       const definition = options.tools[message.name]
       const execute = (definition as { execute?: unknown } | undefined)?.execute
       try {
         if (typeof execute !== 'function') throw new Error(`Unknown tool: ${message.name}`)
         callIndex += 1
+        const input = JSON.parse(JSON.stringify(message.input ?? {})) as unknown
         const result = await (
           execute as (input: unknown, executionOptions: unknown) => unknown
-        ).call(definition, message.input ?? {}, {
+        ).call(definition, input, {
           toolCallId: `${options.toolCallId}-code-${callIndex}`,
           messages: [],
           abortSignal: options.signal,
           context: undefined
         })
-        if (settled) return
-        worker.postMessage({
-          type: 'tool-result',
-          id: message.id,
-          ok: true,
-          result: toolResultForWorker(result)
-        })
+        sendToolResult(message.id, true, toolResultForScript(result))
       } catch (error) {
-        if (settled) return
-        worker.postMessage({
-          type: 'tool-result',
-          id: message.id,
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        })
+        sendToolResult(
+          message.id,
+          false,
+          undefined,
+          error instanceof Error ? error.message : String(error)
+        )
       } finally {
         if (!settled) arm()
       }
     }
 
-    worker.once('online', () => {
-      clearTimeout(startup)
-      arm()
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString()}`.slice(-4_000)
     })
-    worker.on('message', (message: CodeWorkerMessage) => {
+    child.on('error', (error) => finish(`Error: ${error.message}`))
+    child.on('exit', (code) => {
+      if (!settled) {
+        const detail = stderr.trim() ? `: ${stderr.trim().split('\n').slice(-1)[0]}` : ''
+        finish(`Error: the code runner exited (code ${code ?? 'unknown'})${detail}`)
+      }
+    })
+    child.on('message', (message: RunnerMessage) => {
       if (!message || typeof message !== 'object') return
+      if (message.type === 'ready') {
+        if (startup) clearTimeout(startup)
+        child.send({ type: 'run', code: options.code })
+        arm()
+        return
+      }
       if (message.type === 'tool') {
         disarm()
         void runTool(message)
         return
       }
+      if (message.type === 'log') {
+        if (logs.length >= MAX_LOGS || logChars >= MAX_LOG_CHARS) {
+          logTruncated = true
+          return
+        }
+        const level = typeof message.level === 'string' ? message.level : 'log'
+        const text = String(message.text ?? '').slice(0, 4_000)
+        const line = level === 'log' ? text : `${level}: ${text}`
+        logChars += line.length
+        logs.push(line)
+        return
+      }
+      if (message.type === 'log-truncated') {
+        logTruncated = true
+        return
+      }
       if (message.type === 'done') {
-        const parts = [...(message.logs ?? [])]
-        if (message.truncated) parts.push('[console output truncated]')
+        const parts = [...logs]
+        if (logTruncated) parts.push('[console output truncated]')
         if (message.result) parts.push(`=> ${message.result}`)
         finish(parts.join('\n') || '(no output)')
         return
       }
       if (message.type === 'error') {
-        const parts = [...(message.logs ?? [])]
-        if (message.truncated) parts.push('[console output truncated]')
+        const parts = [...logs]
+        if (logTruncated) parts.push('[console output truncated]')
         parts.push(`Error: ${message.error}`)
         finish(parts.join('\n'))
       }
-    })
-    worker.on('error', (error) => finish(`Error: ${error.message}`))
-    worker.on('exit', () => {
-      if (!settled) finish('Error: code runner exited unexpectedly')
     })
   })
 }

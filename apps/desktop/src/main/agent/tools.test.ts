@@ -1085,6 +1085,31 @@ describe('execute (code mode)', () => {
     expect(askPermission).not.toHaveBeenCalledWith('write', 'x', 'write', expect.anything())
   })
 
+  it('isolates scripts from the host realm', async () => {
+    await expect(
+      execute(tools.execute, {
+        code: "return [typeof process, typeof require, typeof fetch, typeof globalThis.process].join(',')"
+      })
+    ).resolves.toBe('=> undefined,undefined,undefined,undefined')
+
+    const escape = await execute(tools.execute, {
+      code: "try { return tools.read.constructor('return typeof process')() } catch (error) { return 'blocked: ' + error.message }"
+    })
+    expect(escape).toContain('blocked:')
+
+    const custom = createTools({
+      ...baseContext,
+      codeModeTools: () =>
+        ({
+          custom: { execute: async () => ({ secret: 'value' }) }
+        }) as never
+    })
+    const viaResult = await execute(custom.execute, {
+      code: "const value = await tools.custom({})\ntry { return value.constructor.constructor('return typeof process')() } catch (error) { return 'blocked: ' + error.message }"
+    })
+    expect(viaResult).toContain('blocked:')
+  })
+
   it('preserves null results and single error prefixes', async () => {
     await expect(execute(tools.execute, { code: 'return null' })).resolves.toBe('=> null')
     await expect(execute(tools.execute, { code: "throw new Error('boom')" })).resolves.toBe(
