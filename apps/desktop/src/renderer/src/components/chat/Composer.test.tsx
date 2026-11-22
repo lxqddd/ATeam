@@ -524,7 +524,7 @@ describe('Composer', () => {
     await user.click(await screen.findByRole('option', { name: 'src/main/index.ts' }))
 
     expect(textarea).toHaveValue('@src/main/index.ts ')
-    expect(api.api.agent.files.search).toHaveBeenCalledWith('src')
+    expect(api.api.agent.files.search).toHaveBeenCalledWith('src', undefined)
   })
 
   it('offers reference aliases for an empty @ query', async () => {
@@ -537,7 +537,7 @@ describe('Composer', () => {
     await user.click(await screen.findByRole('option', { name: 'docs/' }))
 
     expect(textarea).toHaveValue('@docs/')
-    expect(api.api.agent.files.search).toHaveBeenCalledWith('')
+    expect(api.api.agent.files.search).toHaveBeenCalledWith('', undefined)
   })
 
   it('inserts commands from the slash menu', async () => {

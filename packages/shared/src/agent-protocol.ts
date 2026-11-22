@@ -43,7 +43,7 @@ export type WorkerRequest =
       params: { config: RuntimeWebSearchConfig | null }
     }
   | { id: string; method: 'agents.list'; params?: undefined }
-  | { id: string; method: 'commands.list'; params?: undefined }
+  | { id: string; method: 'commands.list'; params?: { workspace?: string } }
   | { id: string; method: 'sessions.list'; params?: undefined }
   | {
       id: string

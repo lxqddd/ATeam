@@ -182,16 +182,16 @@ export class AgentRuntime {
     return this.agents()
   }
 
-  async listCommands(): Promise<CommandDefinition[]> {
+  async listCommands(workspace = this.options.workspacePath): Promise<CommandDefinition[]> {
     const commands = await loadCommands({
       userDataPath: this.options.userDataPath,
-      workspacePath: this.options.workspacePath
+      workspacePath: workspace
     })
     let prompts: Awaited<ReturnType<McpManagerLike['prompts']>> = []
     let timer: NodeJS.Timeout | undefined
     try {
       prompts = await Promise.race([
-        this.mcp().prompts(),
+        this.mcp(workspace).prompts(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error('MCP prompt discovery timed out')), 3_000)
         })

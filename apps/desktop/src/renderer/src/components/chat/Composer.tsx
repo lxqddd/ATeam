@@ -257,7 +257,7 @@ function Composer(): React.JSX.Element {
     const query = match[2]
     const start = cursor - query.length - 1
     window.api.agent.files
-      .search(query)
+      .search(query, session?.directory ?? undefined)
       .then((items) => {
         if (sequence !== mentionSeq.current) return
         setMention(items.length > 0 ? { query, start, items } : null)
@@ -401,7 +401,8 @@ function Composer(): React.JSX.Element {
     try {
       const text = await window.api.agent.commands.expand({
         template: pending.command.template,
-        args: pending.args
+        args: pending.args,
+        directory: session?.directory ?? undefined
       })
       await applyCommandBindings(pending.command)
       await chatStore.send(text, attachments)

@@ -300,7 +300,7 @@ function ChatHeader(): React.JSX.Element {
         title={t('chat.openWorkspace')}
         aria-label={t('chat.openWorkspace')}
         onClick={() => {
-          void window.api.workspace.open().catch(() => undefined)
+          void window.api.workspace.open(session?.directory ?? undefined).catch(() => undefined)
         }}
         className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground"
       >

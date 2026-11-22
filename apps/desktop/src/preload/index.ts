@@ -99,7 +99,8 @@ const api: AteamApi = {
       search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.filesSearch, { query })
     },
     commands: {
-      list: () => ipcRenderer.invoke(AGENT_CHANNELS.commandsList),
+      list: (directory?: string | null) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.commandsList, { directory }),
       expand: (input) => ipcRenderer.invoke(AGENT_CHANNELS.commandExpand, input)
     }
   },
@@ -123,7 +124,7 @@ const api: AteamApi = {
     catalog: (refresh) => ipcRenderer.invoke(MODEL_CHANNELS.catalog, { refresh })
   },
   workspace: {
-    open: () => ipcRenderer.invoke(AGENT_CHANNELS.workspaceOpen),
+    open: (path?: string | null) => ipcRenderer.invoke(AGENT_CHANNELS.workspaceOpen, { path }),
     pickDirectory: (defaultPath?: string) =>
       ipcRenderer.invoke(AGENT_CHANNELS.workspacePick, { defaultPath })
   },

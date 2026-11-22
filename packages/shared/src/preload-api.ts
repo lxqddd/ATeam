@@ -110,11 +110,15 @@ export interface AgentBridge {
     preview: (sessionId: string, path: string) => Promise<string | null>
   }
   files: {
-    search: (query: string) => Promise<string[]>
+    search: (query: string, directory?: string | null) => Promise<string[]>
   }
   commands: {
-    list: () => Promise<CommandDefinition[]>
-    expand: (input: { template: string; args: string }) => Promise<string>
+    list: (directory?: string | null) => Promise<CommandDefinition[]>
+    expand: (input: {
+      template: string
+      args: string
+      directory?: string | null
+    }) => Promise<string>
   }
 }
 
@@ -146,7 +150,7 @@ export interface AteamApi {
   agent: AgentBridge
   models: ModelsBridge
   workspace: {
-    open: () => Promise<void>
+    open: (path?: string | null) => Promise<void>
     pickDirectory: (defaultPath?: string) => Promise<string | null>
   }
   openExternal: (url: string) => Promise<void>

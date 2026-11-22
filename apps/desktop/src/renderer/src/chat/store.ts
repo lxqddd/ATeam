@@ -102,6 +102,7 @@ export class ChatStore {
   private initPromise: Promise<void> | null = null
   private loadingSessions: Promise<void> | null = null
   private reloadPromise: Promise<void> | null = null
+  private commandsDirectory: string | null = null
   private snapshotting = new Set<string>()
   private buffered = new Map<string, AgentEventEnvelope[]>()
   private unsubscribe: (() => void) | null = null
@@ -143,7 +144,10 @@ export class ChatStore {
     await this.refreshModels()
     await this.refreshAgents()
     await this.loadSessions()
-    await this.refreshCommands()
+    const selected = this.state.sessions.find(
+      (session) => session.id === this.state.selectedSessionId
+    )
+    await this.refreshCommands(selected?.directory ?? undefined)
 
     try {
       const permissions = await window.api.agent.permissions.list()
@@ -180,9 +184,12 @@ export class ChatStore {
     }
   }
 
-  async refreshCommands(): Promise<void> {
+  async refreshCommands(directory?: string | null, force = false): Promise<void> {
+    const key = directory ?? ''
+    if (!force && this.commandsDirectory === key && this.state.commands.length > 0) return
+    this.commandsDirectory = key
     try {
-      this.setState({ commands: await window.api.agent.commands.list() })
+      this.setState({ commands: await window.api.agent.commands.list(directory ?? undefined) })
     } catch {
       /* command discovery is best effort */
     }
@@ -241,6 +248,8 @@ export class ChatStore {
 
   selectSession(sessionId: string): void {
     this.setState({ selectedSessionId: sessionId })
+    const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
+    void this.refreshCommands(session?.directory ?? undefined)
     if (!this.state.loadedBySession[sessionId]) {
       void this.loadMessages(sessionId)
     }
@@ -255,6 +264,7 @@ export class ChatStore {
       loadedBySession: { ...this.state.loadedBySession, [session.id]: true },
       actionError: null
     })
+    void this.refreshCommands(session.directory ?? undefined)
     return session
   }
 
@@ -435,7 +445,7 @@ export class ChatStore {
       }
       await this.refreshModels()
       await this.refreshAgents()
-      await this.refreshCommands()
+      await this.refreshCommands(this.commandsDirectory || undefined, true)
     })()
     try {
       await this.reloadPromise

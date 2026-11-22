@@ -232,16 +232,28 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     manager.request('agents.list')
   )
 
-  handle(AGENT_CHANNELS.commandsList, (): Promise<CommandDefinition[]> =>
-    manager.request('commands.list')
-  )
+  const requestedDirectory = (value: unknown): string | undefined => {
+    if (typeof value !== 'string' || !value.trim()) return undefined
+    return path.isAbsolute(value) ? path.resolve(value) : undefined
+  }
+
+  handle(AGENT_CHANNELS.commandsList, (payload): Promise<CommandDefinition[]> => {
+    const { directory } = z
+      .object({ directory: z.string().max(2_000).nullable().optional() })
+      .parse(payload ?? {})
+    return manager.request('commands.list', { workspace: requestedDirectory(directory) })
+  })
 
   handle(AGENT_CHANNELS.commandExpand, async (payload): Promise<string> => {
-    const { template, args } = z
-      .object({ template: z.string().max(100_000), args: z.string().max(10_000) })
+    const { template, args, directory } = z
+      .object({
+        template: z.string().max(100_000),
+        args: z.string().max(10_000),
+        directory: z.string().max(2_000).nullable().optional()
+      })
       .parse(payload)
     return expandCommandTemplate(template, args, (command) =>
-      runWorkspaceShell(command, workspacePath)
+      runWorkspaceShell(command, requestedDirectory(directory) ?? workspacePath)
     )
   })
 
@@ -361,11 +373,17 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   })
 
   handle(AGENT_CHANNELS.filesSearch, async (payload): Promise<string[]> => {
-    const { query } = z.object({ query: z.string().max(200) }).parse(payload)
+    const { query, directory } = z
+      .object({
+        query: z.string().max(200),
+        directory: z.string().max(2_000).nullable().optional()
+      })
+      .parse(payload)
+    const searchRoot = requestedDirectory(directory) ?? workspacePath
     const config = configStore.get()
     let references: Array<{ alias: string; root: string }> = []
-    if ((config.references?.length ?? 0) > 0 || hasProjectReferences(workspacePath)) {
-      const projectFile = path.join(workspacePath, '.opencode', 'references.json')
+    if ((config.references?.length ?? 0) > 0 || hasProjectReferences(searchRoot)) {
+      const projectFile = path.join(searchRoot, '.opencode', 'references.json')
       const projectStamp = (() => {
         try {
           return String(fsSync.statSync(projectFile).mtimeMs)
@@ -373,7 +391,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
           return '0'
         }
       })()
-      const key = `${JSON.stringify(config.references ?? [])}:${projectStamp}`
+      const key = `${searchRoot}:${JSON.stringify(config.references ?? [])}:${projectStamp}`
       if (
         !referenceSearchCache ||
         referenceSearchCache.key !== key ||
@@ -384,7 +402,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
           expiresAt: Date.now() + 60_000,
           promise: resolveReferences({
             references: config.references ?? [],
-            workspacePath,
+            workspacePath: searchRoot,
             globalDirectory: path.join(app.getPath('userData'), 'agent'),
             cacheDirectory: path.join(app.getPath('userData'), 'agent', 'references'),
             allowClone: false
@@ -395,7 +413,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
       }
       references = await referenceSearchCache.promise
     }
-    return searchFilesWithReferences(workspacePath, query, references)
+    return searchFilesWithReferences(searchRoot, query, references)
   })
 
   handle(AGENT_CHANNELS.chatStop, async (payload): Promise<void> => {
@@ -561,8 +579,11 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
-  handle(AGENT_CHANNELS.workspaceOpen, async (): Promise<void> => {
-    const error = await shell.openPath(workspacePath)
+  handle(AGENT_CHANNELS.workspaceOpen, async (payload): Promise<void> => {
+    const { path: requestedPath } = z
+      .object({ path: z.string().max(2_000).nullable().optional() })
+      .parse(payload ?? {})
+    const error = await shell.openPath(requestedDirectory(requestedPath) ?? workspacePath)
     if (error) throw new Error(error)
   })
 
