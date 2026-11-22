@@ -412,10 +412,10 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - `pnpm --filter @ateam/desktop build:unpack` 生成当前平台的未打包应用；`CSC_IDENTITY_AUTO_DISCOVERY=false` 可在无签名证书的环境跳过 macOS 签名。
 - `pnpm --filter @ateam/desktop smoke:packaged` 启动打包产物（临时用户数据目录与调试端口），验证渲染窗口、Agent worker、会话创建/持久化，并通过本地 OpenAI-compatible mock 模型完成一次 `grep` 工具调用对话。
-- `.github/workflows/package.yml` 在 macOS / Linux / Windows 上构建未打包应用、运行冒烟测试（Linux 使用 `xvfb-run`），并把 `.app` / `linux-unpacked` / `win-unpacked` 打包为 zip / tar.gz 直接上传到 GitHub Release 草稿；不使用 Actions Artifacts。推送 `v*` 标签时额外构建 dmg / nsis exe / AppImage + deb，全部平台成功后才把草稿 Release 发布。
+- `.github/workflows/package.yml` 在 macOS / Linux / Windows 上构建未打包应用、运行冒烟测试（Linux 使用 `xvfb-run`），并把 `.app` / `linux-unpacked` / `win-unpacked` 打包为 zip / tar.gz 直接上传到 GitHub Release 草稿；不使用 Actions Artifacts。推送 `v*` 标签时额外构建 macOS arm64 + x64 dmg、nsis exe、AppImage + deb，全部平台成功后才把草稿 Release 发布。
 - 冒烟脚本只依赖 Node 内置模块与打包产物，不需要安装 Playwright 浏览器；Linux 需要 `xvfb`，脚本自动传入 `--no-sandbox --disable-gpu`。
 - 当前产包未签名、未公证；正式发布需配置 Apple Developer ID / Windows 代码签名，并为 macOS 增加公证步骤。
-- CI 产物架构跟随 runner（例如 macOS arm64 runner 只产出 arm64 包）；需要同时发布 x64/arm64 时应扩展构建矩阵。
+- Linux/Windows 产物架构跟随 runner；macOS 在 arm64 runner 上同时交叉构建 arm64 与 x64 安装包，但 x64 包未在 CI 实机启动验证。
 - 发布：更新 `apps/desktop/package.json` 版本并推送 `vX.Y.Z` 标签；工作流校验标签与版本一致后构建安装包，并创建/更新 GitHub Release。
 
 ## 31. 应用更新检查
