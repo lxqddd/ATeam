@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { promisify } from 'node:util'
 import type { LanguageModel, TextStreamPart, ToolSet } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type {
@@ -23,6 +25,8 @@ import type { ToolContext } from '../tools'
 import type { WebFetchResult } from '../integrations/webfetch'
 import type { WebSearchResult } from '../integrations/websearch'
 import type { AgentRuntimeOptions } from './types'
+
+const runGit = promisify(execFile)
 
 const MODELS: RuntimeModelsConfig = {
   providers: [{ id: 'provider-1', name: 'Test', type: 'anthropic', apiKey: 'sk-test' }],
@@ -1159,6 +1163,39 @@ describe('AgentRuntime', () => {
     await expect(toolContext.browserSnapshot?.()).resolves.toBe('Error: BROWSER_TIMEOUT')
   })
 
+  it('pins new sessions to the runtime workspace', async () => {
+    const session = await runtime.createSession()
+    expect(session.directory).toBe(path.join(directory, 'workspace'))
+  })
+
+  it('refuses to remove a worktree used by a session', async () => {
+    const workspace = path.join(directory, 'workspace')
+    await runGit('git', ['init', '-b', 'main'], { cwd: workspace })
+    await runGit('git', ['config', 'user.email', 'test@example.com'], { cwd: workspace })
+    await runGit('git', ['config', 'user.name', 'Test'], { cwd: workspace })
+    await fs.writeFile(path.join(workspace, 'README.md'), 'hello')
+    await runGit('git', ['add', '.'], { cwd: workspace })
+    await runGit('git', ['commit', '-m', 'init'], { cwd: workspace })
+
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'hello')
+    await sink.next('run.finished')
+    if (!toolContext) throw new Error('tool context not initialized')
+    const created = await toolContext.worktreeCreate?.({ name: 'feature' })
+    const worktree = /at (.+)\.\n/.exec(created ?? '')?.[1]
+    expect(worktree).toBeTruthy()
+
+    await toolContext.moveSession?.(worktree as string)
+    scripts.push(textScript('two'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+    if (!toolContext) throw new Error('tool context not initialized')
+
+    await expect(toolContext.worktreeRemove?.(worktree as string, true)).resolves.toContain(
+      'in use by a session'
+    )
+  })
+
   it('moves a session to another directory at the next run boundary', async () => {
     const workspace = path.join(directory, 'workspace')
     const target = path.join(workspace, 'feature')
@@ -2042,6 +2079,33 @@ describe('subagent tool', () => {
     expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'second answer' }])
     expect(toolOutput(assistantMessages().at(-1))).toContain('second answer')
     expect(runtime.listSessions()).toHaveLength(1)
+  })
+
+  it('keeps a continued subagent in its own directory', async () => {
+    scripts.push(subagentCallScript({ prompt: 'First task', agent: 'explore' }))
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+    const childId = /session ([0-9a-f-]+)/.exec(
+      toolOutput(assistantMessages().at(-1))
+    )?.[1] as string
+
+    const workspace = path.join(directory, 'workspace')
+    const feature = path.join(workspace, 'feature')
+    await fs.mkdir(feature, { recursive: true })
+    if (!toolContext) throw new Error('tool context not initialized')
+    await toolContext.moveSession?.(feature)
+    expect(runtime.listSessions().find((entry) => entry.id === sessionId)?.directory).toBe(
+      workspace
+    )
+
+    scripts.push(subagentCallScript({ prompt: 'Follow up', agent: 'explore', sessionId: childId }))
+    scripts.push(textScript('second answer'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+
+    expect(turns.at(-2)?.system).toContain(workspace)
+    expect(turns.at(-1)?.system).toContain(feature)
   })
 
   it('delegates child permissions to the parent request', async () => {

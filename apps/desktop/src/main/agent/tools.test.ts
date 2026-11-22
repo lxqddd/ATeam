@@ -1065,6 +1065,32 @@ describe('execute (code mode)', () => {
     const result = await execute(limited.execute, { code: 'while (true) {}' })
     expect(result).toContain('timed out')
   })
+
+  it('times out snippets that spin after an await', async () => {
+    const limited = createTools({ ...baseContext, codeTimeoutMs: 100 })
+    const result = await execute(limited.execute, {
+      code: 'await Promise.resolve()\nwhile (true) {}'
+    })
+    expect(result).toContain('timed out')
+  })
+
+  it('only exposes the filtered tool catalog', async () => {
+    const limited = createTools({
+      ...baseContext,
+      codeModeTools: () => ({ read: tools.read }) as never
+    })
+    await expect(
+      execute(limited.execute, { code: "return await tools.write({ path: 'x', content: 'y' })" })
+    ).resolves.toContain('Unknown tool: write')
+    expect(askPermission).not.toHaveBeenCalledWith('write', 'x', 'write', expect.anything())
+  })
+
+  it('preserves null results and single error prefixes', async () => {
+    await expect(execute(tools.execute, { code: 'return null' })).resolves.toBe('=> null')
+    await expect(execute(tools.execute, { code: "throw new Error('boom')" })).resolves.toBe(
+      'Error: boom'
+    )
+  })
 })
 
 describe('browser tools', () => {
@@ -1115,7 +1141,7 @@ describe('browser tools', () => {
     )
   })
 
-  it('reports when browser automation is unavailable', async () => {
+  it('omits browser tools when automation is unavailable', () => {
     const limited = createTools({
       ...baseContext,
       browserOpen: undefined,
@@ -1126,19 +1152,13 @@ describe('browser tools', () => {
       browserEval: undefined,
       browserClose: undefined
     })
-    for (const [tool, input] of [
-      [limited.browser_open, { url: 'https://example.com/' }],
-      [limited.browser_snapshot, {}],
-      [limited.browser_click, { ref: '1' }],
-      [limited.browser_type, { ref: '1', text: 'x' }],
-      [limited.browser_screenshot, {}],
-      [limited.browser_eval, { code: '1' }],
-      [limited.browser_close, {}]
-    ] as const) {
-      await expect(execute(tool, input)).resolves.toBe(
-        'Error: browser automation is not available.'
-      )
-    }
+    expect(limited.browser_open).toBeUndefined()
+    expect(limited.browser_snapshot).toBeUndefined()
+    expect(limited.browser_click).toBeUndefined()
+    expect(limited.browser_type).toBeUndefined()
+    expect(limited.browser_screenshot).toBeUndefined()
+    expect(limited.browser_eval).toBeUndefined()
+    expect(limited.browser_close).toBeUndefined()
   })
 })
 
@@ -1149,8 +1169,7 @@ describe('worktree and session tools', () => {
     ).resolves.toBe('Worktree ready: /tmp/feature/login')
     expect(worktreeCreate).toHaveBeenCalledWith({
       name: 'feature/login',
-      base: 'main',
-      directory: undefined
+      base: 'main'
     })
 
     await expect(execute(tools.worktree_list, {})).resolves.toContain('/tmp/project')

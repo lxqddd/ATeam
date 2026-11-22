@@ -174,6 +174,20 @@ describe('SnapshotStore', () => {
     })
   })
 
+  it('refuses to restore a snapshot into a different workspace', async () => {
+    await write('a.txt', 'one')
+    const snapshot = await store.create(workspace)
+    const other = path.join(directory, 'other')
+    await fs.mkdir(other, { recursive: true })
+    await fs.writeFile(path.join(other, 'a.txt'), 'other')
+
+    await expect(store.restorePaths(other, snapshot.id, ['a.txt'])).rejects.toThrow(
+      'SNAPSHOT_WORKSPACE_MISMATCH'
+    )
+    await expect(store.restore(other, snapshot.id)).rejects.toThrow('SNAPSHOT_WORKSPACE_MISMATCH')
+    await expect(fs.readFile(path.join(other, 'a.txt'), 'utf8')).resolves.toBe('other')
+  })
+
   it('removes a session snapshots and unreferenced blobs', async () => {
     await write('a.txt', 'one')
     const first = await store.create(workspace, 'session-1')

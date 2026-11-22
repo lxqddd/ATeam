@@ -79,6 +79,7 @@ function createWindow(): BrowserWindow {
 
   window.on('closed', () => {
     if (mainWindow === window) mainWindow = null
+    void browserController?.dispose()
   })
 
   window.webContents.setWindowOpenHandler((details) => {
@@ -181,8 +182,8 @@ if (!hasSingleInstanceLock) {
           console.error('[mcp-auth] failed to store refreshed credentials', error)
         })
       },
-      browserRequest: (sessionId, method, params) =>
-        browserController?.handle(sessionId, method, params) ??
+      browserRequest: (sessionId, method, params, deadline) =>
+        browserController?.handle(sessionId, method, params, deadline) ??
         Promise.reject(new Error('BROWSER_NOT_AVAILABLE')),
       onEvent: (envelope: AgentEventEnvelope) => {
         const window = mainWindow
@@ -245,7 +246,7 @@ if (!hasSingleInstanceLock) {
       })
 
     app.on('activate', function () {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      if (!mainWindow) createWindow()
     })
   })
 }

@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import vm from 'node:vm'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
+import { runCodeScript } from './code-mode'
 import { ripgrepSearch } from './integrations/ripgrep'
 import { extractPdfText } from './attachments'
 import type {
@@ -66,11 +66,7 @@ export interface ToolContext {
   globTimeoutMs?: number
   lspHover?: (file: string, line: number, character: number) => Promise<string>
   lspDefinition?: (file: string, line: number, character: number) => Promise<string>
-  worktreeCreate?: (input: {
-    name: string
-    base?: string | null
-    directory?: string | null
-  }) => Promise<string>
+  worktreeCreate?: (input: { name: string; base?: string | null }) => Promise<string>
   worktreeList?: () => Promise<string>
   worktreeRemove?: (path: string, force: boolean) => Promise<string>
   moveSession?: (directory: string) => Promise<string>
@@ -83,6 +79,7 @@ export interface ToolContext {
   >
   browserEval?: (code: string) => Promise<string>
   browserClose?: () => Promise<string>
+  codeModeTools?: () => ToolSet
   codeTimeoutMs?: number
 }
 
@@ -344,26 +341,6 @@ async function listDirectory(
   }
 }
 
-function formatCodeValue(value: unknown): string {
-  if (value === undefined || value === null) return ''
-  if (typeof value === 'string') return value
-  if (typeof value === 'object' && 'image' in value) {
-    const image = value as { summary?: string }
-    return `[image: ${image.summary ?? 'attached image'}]`
-  }
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function formatConsoleArg(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value instanceof Error) return value.message
-  return formatCodeValue(value) || String(value)
-}
-
 async function runCodeMode(
   tools: ToolSet,
   context: ToolContext,
@@ -379,68 +356,13 @@ async function runCodeMode(
   )
   if (!allowed) return 'Permission denied; the code was not run.'
 
-  const logs: string[] = []
-  const capture =
-    (level: string) =>
-    (...args: unknown[]): void => {
-      const prefix = level === 'log' ? '' : `${level}: `
-      logs.push(`${prefix}${args.map(formatConsoleArg).join(' ')}`)
-    }
-  const implementations: Record<string, (input?: Record<string, unknown>) => Promise<unknown>> =
-    Object.create(null)
-  let callIndex = 0
-  for (const [name, definition] of Object.entries(tools)) {
-    if (name === 'execute') continue
-    const execute = (definition as { execute?: unknown }).execute
-    if (typeof execute !== 'function') continue
-    implementations[name] = async (input = {}) => {
-      callIndex += 1
-      const inner = execute as (input: unknown, options: unknown) => unknown
-      return inner(input, {
-        toolCallId: `${toolCallId}-code-${callIndex}`,
-        messages: [],
-        abortSignal: context.signal,
-        context: undefined
-      })
-    }
-  }
-  const api = new Proxy(implementations, {
-    get(target, property) {
-      if (typeof property === 'symbol') return undefined
-      const found = target[property]
-      if (found) return found
-      return async () => {
-        throw new Error(`Unknown tool: ${property}`)
-      }
-    }
+  return runCodeScript({
+    tools: context.codeModeTools?.() ?? tools,
+    code,
+    timeoutMs: context.codeTimeoutMs ?? 10_000,
+    toolCallId,
+    signal: context.signal
   })
-
-  const sandbox = {
-    tools: api,
-    console: {
-      log: capture('log'),
-      info: capture('info'),
-      warn: capture('warn'),
-      error: capture('error'),
-      debug: capture('debug')
-    }
-  }
-  try {
-    const script = new vm.Script(`(async () => {\n${code}\n})()`)
-    const vmContext = vm.createContext(sandbox, { codeGeneration: { strings: false, wasm: false } })
-    const promise = script.runInContext(vmContext, {
-      timeout: context.codeTimeoutMs ?? 10_000,
-      displayErrors: true
-    }) as Promise<unknown>
-    const value = await promise
-    const rendered = formatCodeValue(value)
-    const parts = [...logs]
-    if (rendered) parts.push(`=> ${rendered}`)
-    return truncate(parts.join('\n') || '(no output)')
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return truncate([...logs, `Error: ${message}`].join('\n'))
-  }
 }
 
 export function createTools(context: ToolContext): ToolSet {
@@ -1273,12 +1195,7 @@ export function createTools(context: ToolContext): ToolSet {
       'Create a Git worktree for the current project and return its directory. The worktree gets its own branch, or reuses an existing branch with the same name. Use session_move to continue working there.',
     inputSchema: z.object({
       name: z.string().min(1).max(200).describe('Worktree and branch name, e.g. feature/login'),
-      base: z.string().max(200).optional().describe('Revision to branch from (default HEAD)'),
-      directory: z
-        .string()
-        .max(1_000)
-        .optional()
-        .describe('Optional absolute destination; defaults to the managed worktree directory')
+      base: z.string().max(200).optional().describe('Revision to branch from (default HEAD)')
     }),
     execute: async (input) => {
       if (!context.worktreeCreate) return 'Error: worktree management is not available.'
@@ -1401,20 +1318,24 @@ export function createTools(context: ToolContext): ToolSet {
     worktree_list: worktreeList,
     worktree_remove: worktreeRemove,
     session_move: sessionMove,
-    browser_open: browserOpen,
-    browser_snapshot: browserSnapshot,
-    browser_click: browserClick,
-    browser_type: browserType,
-    browser_screenshot: browserScreenshot,
-    browser_eval: browserEval,
-    browser_close: browserClose,
+    ...(context.browserOpen
+      ? {
+          browser_open: browserOpen,
+          browser_snapshot: browserSnapshot,
+          browser_click: browserClick,
+          browser_type: browserType,
+          browser_screenshot: browserScreenshot,
+          browser_eval: browserEval,
+          browser_close: browserClose
+        }
+      : {}),
     mcp_prompt: mcpPrompt,
     mcp_resource: mcpResource
   }
 
   const execute = tool({
     description:
-      'Run JavaScript to orchestrate several tool calls in one step. Access tools as `await tools.<name>(input)` using the same names and inputs as direct tool calls, and use console.log for output. Only the value you return and what you log are added to the conversation; intermediate tool results stay inside the script. Every inner tool call still goes through its normal permission checks. Prefer a direct tool call for a single operation.',
+      'Run JavaScript to orchestrate several tool calls in one step. Access tools as `await tools.<name>(input)` using the same names and inputs as direct tool calls, and use console.log for output. Only the value you return and what you log are added to the conversation; intermediate tool results stay inside the script. The script requires shell approval, runs in a separate terminated-after-inactivity worker, and inner tool calls still go through their normal permission checks. Prefer a direct tool call for a single operation.',
     inputSchema: z.object({
       code: z
         .string()

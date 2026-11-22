@@ -31,7 +31,8 @@ export interface AgentManagerOptions {
   browserRequest?: (
     sessionId: string,
     method: string,
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    deadline?: number
   ) => Promise<unknown>
 }
 
@@ -202,7 +203,7 @@ export class AgentManager {
       const worker = this.worker
       const handler = this.options.browserRequest
       const request = handler
-        ? handler(message.sessionId, message.method, message.params)
+        ? handler(message.sessionId, message.method, message.params, Date.now() + 55_000)
         : Promise.reject(new Error('BROWSER_NOT_AVAILABLE'))
       void request
         .then((result) => {

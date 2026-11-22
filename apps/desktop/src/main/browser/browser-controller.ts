@@ -10,6 +10,7 @@ import {
 } from './scripts'
 
 const LOAD_TIMEOUT_MS = 30_000
+const SCRIPT_TIMEOUT_MS = 20_000
 const EVAL_TIMEOUT_MS = 15_000
 const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 
@@ -28,16 +29,26 @@ interface InteractionResult {
 export class BrowserController {
   private readonly pages = new Map<string, PageEntry>()
   private readonly queues = new Map<string, Promise<unknown>>()
+  private readonly securedPartitions = new Set<string>()
+  private generation = 0
 
   handle(
     sessionId: string,
     method: string,
-    params: Record<string, unknown> = {}
+    params: Record<string, unknown> = {},
+    deadline?: number
   ): Promise<unknown> {
+    const generation = this.generation
     const previous = this.queues.get(sessionId) ?? Promise.resolve()
     const next = previous
       .catch(() => undefined)
-      .then(() => this.dispatch(sessionId, method, params))
+      .then(() => {
+        if (generation !== this.generation) throw new Error('BROWSER_CLOSED')
+        if (deadline !== undefined && Date.now() > deadline) {
+          throw new Error('BROWSER_ABANDONED')
+        }
+        return this.dispatch(sessionId, method, params)
+      })
     this.queues.set(sessionId, next)
     return next.finally(() => {
       if (this.queues.get(sessionId) === next) this.queues.delete(sessionId)
@@ -75,13 +86,16 @@ export class BrowserController {
   }
 
   async dispose(): Promise<void> {
+    this.generation += 1
     for (const entry of this.pages.values()) {
       if (!entry.window.isDestroyed()) entry.window.destroy()
     }
     this.pages.clear()
+    this.securedPartitions.clear()
   }
 
   private create(sessionId: string): PageEntry {
+    const partition = `ateam-browser-${sessionId.replace(/[^A-Za-z0-9_-]/g, '')}`
     const window = new BrowserWindow({
       show: false,
       width: 1280,
@@ -91,30 +105,40 @@ export class BrowserController {
         nodeIntegration: false,
         sandbox: true,
         backgroundThrottling: false,
-        partition: 'persist:ateam-browser'
+        partition
       }
     })
     const entry: PageEntry = { window, consoleLines: [] }
-    window.webContents.setWindowOpenHandler(({ url }) => {
+    const contents = window.webContents
+    const browserSession = contents.session
+    if (!this.securedPartitions.has(partition)) {
+      this.securedPartitions.add(partition)
+      browserSession.setPermissionRequestHandler((_contents, _permission, callback) =>
+        callback(false)
+      )
+      browserSession.on('will-download', (event) => {
+        event.preventDefault()
+      })
+    }
+    contents.setWindowOpenHandler(({ url }) => {
       try {
         const target = validateBrowserUrl(url)
-        void window.loadURL(target)
+        void this.handle(sessionId, 'open', { url: target }).catch(() => undefined)
       } catch {
         /* ignore non-web popups */
       }
       return { action: 'deny' }
     })
-    window.webContents.on('will-navigate', (event, url) => {
+    const guardNavigation = (event: { preventDefault: () => void }, url: string): void => {
       try {
         validateBrowserUrl(url)
       } catch {
         event.preventDefault()
       }
-    })
-    window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) =>
-      callback(false)
-    )
-    window.webContents.on('console-message', (details) => {
+    }
+    contents.on('will-navigate', guardNavigation)
+    contents.on('will-redirect', guardNavigation)
+    contents.on('console-message', (details) => {
       entry.consoleLines.push(`[${details.level}] ${details.message}`)
       if (entry.consoleLines.length > 50) entry.consoleLines.shift()
     })
@@ -129,6 +153,55 @@ export class BrowserController {
     const existing = this.pages.get(sessionId)
     if (existing && !existing.window.isDestroyed()) return existing
     return this.create(sessionId)
+  }
+
+  private destroyPage(sessionId: string, entry: PageEntry): void {
+    if (this.pages.get(sessionId) === entry) this.pages.delete(sessionId)
+    if (!entry.window.isDestroyed()) entry.window.destroy()
+  }
+
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('BROWSER_TIMEOUT')), timeoutMs)
+      promise.then(
+        (value) => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        (error: unknown) => {
+          clearTimeout(timer)
+          reject(error)
+        }
+      )
+    })
+  }
+
+  private script(
+    entry: PageEntry,
+    source: string,
+    timeoutMs = SCRIPT_TIMEOUT_MS
+  ): Promise<unknown> {
+    return new Promise((resolve, reject) => {
+      let active = true
+      const timer = setTimeout(() => {
+        active = false
+        reject(new Error('BROWSER_TIMEOUT'))
+      }, timeoutMs)
+      entry.window.webContents.executeJavaScript(source, true).then(
+        (value) => {
+          if (!active) return
+          active = false
+          clearTimeout(timer)
+          resolve(value)
+        },
+        (error: unknown) => {
+          if (!active) return
+          active = false
+          clearTimeout(timer)
+          reject(error)
+        }
+      )
+    })
   }
 
   private async open(sessionId: string, rawUrl: string): Promise<string> {
@@ -153,27 +226,41 @@ export class BrowserController {
         _event: unknown,
         code: number,
         description: string,
-        failedUrl: string
+        failedUrl: string,
+        isMainFrame?: boolean
       ): void => {
-        if (code === -3) return
+        if (code === -3 || isMainFrame === false) return
         cleanup()
         reject(new Error(`BROWSER_LOAD_FAILED: ${description} (${failedUrl})`))
       }
       contents.on('did-finish-load', onLoad)
       contents.on('did-fail-load', onFail)
     })
-    await entry.window.loadURL(url)
-    await loaded
+    try {
+      await entry.window.loadURL(url)
+      await loaded
+    } catch (error) {
+      await loaded.catch(() => undefined)
+      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
+        this.destroyPage(sessionId, entry)
+      }
+      throw error
+    }
     return `Opened ${contents.getTitle() || '(untitled)'} (${contents.getURL()})`
   }
 
   private async snapshot(sessionId: string): Promise<string> {
     const entry = this.page(sessionId)
-    const snapshot = (await entry.window.webContents.executeJavaScript(
-      snapshotScript(),
-      true
-    )) as BrowserSnapshot
-    return formatSnapshot(snapshot, entry.consoleLines)
+    try {
+      const snapshot = (await this.script(entry, snapshotScript())) as BrowserSnapshot
+      return formatSnapshot(snapshot, entry.consoleLines)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
+        this.destroyPage(sessionId, entry)
+        return 'Error: the page is not responding; the browser was reset.'
+      }
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
   }
 
   private formatInteraction(action: string, ref: string, result: InteractionResult): string {
@@ -181,27 +268,36 @@ export class BrowserController {
     return `${action} [${ref}] -> ${result.title || '(untitled)'} (${result.url})`
   }
 
-  private async click(sessionId: string, ref: string): Promise<string> {
-    const entry = this.page(sessionId)
-    const result = (await entry.window.webContents.executeJavaScript(
-      clickScript(ref),
-      true
-    )) as InteractionResult
-    return this.formatInteraction('Clicked', ref, result)
-  }
-
-  private async type(
+  private async interaction(
     sessionId: string,
+    action: string,
     ref: string,
-    text: string,
-    submit: boolean
+    source: string
   ): Promise<string> {
     const entry = this.page(sessionId)
-    const result = (await entry.window.webContents.executeJavaScript(
-      typeScript(ref, text, submit),
-      true
-    )) as InteractionResult
-    return this.formatInteraction(submit ? 'Typed and submitted' : 'Typed into', ref, result)
+    try {
+      const result = (await this.script(entry, source)) as InteractionResult
+      return this.formatInteraction(action, ref, result)
+    } catch (error) {
+      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
+        this.destroyPage(sessionId, entry)
+        return 'Error: the page is not responding; the browser was reset.'
+      }
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
+    }
+  }
+
+  private click(sessionId: string, ref: string): Promise<string> {
+    return this.interaction(sessionId, 'Clicked', ref, clickScript(ref))
+  }
+
+  private type(sessionId: string, ref: string, text: string, submit: boolean): Promise<string> {
+    return this.interaction(
+      sessionId,
+      submit ? 'Typed and submitted' : 'Typed into',
+      ref,
+      typeScript(ref, text, submit)
+    )
   }
 
   private async screenshot(
@@ -209,39 +305,42 @@ export class BrowserController {
   ): Promise<{ summary: string; image: { mimeType: string; data: string } } | string> {
     const entry = this.page(sessionId)
     const contents = entry.window.webContents
-    const image = await contents.capturePage()
-    const png = image.toPNG()
-    if (png.byteLength > MAX_SCREENSHOT_BYTES) return 'Error: screenshot exceeds 5 MB'
-    return {
-      summary: `Screenshot: ${contents.getTitle() || '(untitled)'} (${contents.getURL()})`,
-      image: { mimeType: 'image/png', data: png.toString('base64') }
+    try {
+      const image = await this.withTimeout(contents.capturePage(), SCRIPT_TIMEOUT_MS)
+      const png = image.toPNG()
+      if (png.byteLength > MAX_SCREENSHOT_BYTES) return 'Error: screenshot exceeds 5 MB'
+      return {
+        summary: `Screenshot: ${contents.getTitle() || '(untitled)'} (${contents.getURL()})`,
+        image: { mimeType: 'image/png', data: png.toString('base64') }
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
+        this.destroyPage(sessionId, entry)
+        return 'Error: the page is not responding; the browser was reset.'
+      }
+      return `Error: ${error instanceof Error ? error.message : String(error)}`
     }
   }
 
   private async evaluate(sessionId: string, code: string): Promise<string> {
     if (!code.trim()) return 'Error: code is required'
     const entry = this.page(sessionId)
-    let timer: NodeJS.Timeout | undefined
     try {
-      const value = await Promise.race([
-        entry.window.webContents.executeJavaScript(code, true),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('BROWSER_EVAL_TIMEOUT')), EVAL_TIMEOUT_MS)
-        })
-      ])
+      const value = await this.script(entry, code, EVAL_TIMEOUT_MS)
       return evalResult(value)
     } catch (error) {
+      if (error instanceof Error && error.message === 'BROWSER_TIMEOUT') {
+        this.destroyPage(sessionId, entry)
+        return 'Error: the page did not respond in time; the browser was reset.'
+      }
       return `Error: ${error instanceof Error ? error.message : String(error)}`
-    } finally {
-      if (timer) clearTimeout(timer)
     }
   }
 
   private close(sessionId: string): string {
     const entry = this.pages.get(sessionId)
     if (!entry) return 'Browser is not open.'
-    this.pages.delete(sessionId)
-    if (!entry.window.isDestroyed()) entry.window.destroy()
+    this.destroyPage(sessionId, entry)
     return 'Browser closed.'
   }
 }

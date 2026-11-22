@@ -218,6 +218,23 @@ describe('AcpServer', () => {
     expect(h.runtime.decisions).toEqual([{ id: 'perm-1', decision: 'once' }])
   })
 
+  it('responds with an error when the prompt cannot start', async () => {
+    harness = createHarness()
+    const sessionId = await openSession(harness)
+    harness.runtime.onChat = async () => {
+      throw new Error('boom')
+    }
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'hi' }] }
+    })
+
+    const response = await harness.next((message) => message.id === 3)
+    expect(response.error).toMatchObject({ code: -32603, message: 'boom' })
+  })
+
   it('cancels a running prompt', async () => {
     harness = createHarness()
     const h = harness

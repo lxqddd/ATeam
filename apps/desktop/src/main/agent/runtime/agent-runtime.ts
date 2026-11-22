@@ -257,7 +257,7 @@ export class AgentRuntime {
   }
 
   async createSession(): Promise<SessionMeta> {
-    const session = await this.store.create()
+    const session = await this.store.create({ directory: this.options.workspacePath })
     this.emit({ type: 'session.upsert', session })
     return session
   }
@@ -528,11 +528,13 @@ export class AgentRuntime {
       await this.permissionRules.removeForSession(child.id)
       await this.snapshots.removeSession(child.id)
       await removeSessionAttachments(this.options.userDataPath, child.id)
+      await this.options.browserRequest?.(child.id, 'close').catch(() => undefined)
     }
     await this.store.delete(id)
     await this.permissionRules.removeForSession(id)
     await this.snapshots.removeSession(id)
     await removeSessionAttachments(this.options.userDataPath, id)
+    await this.options.browserRequest?.(id, 'close').catch(() => undefined)
     this.emit({ type: 'session.deleted', sessionId: id })
   }
 
@@ -733,7 +735,15 @@ export class AgentRuntime {
       run.abort.abort()
       this.rejectPendingForRun(run)
     }
-    await this.store.flush()
+    const deadline = Date.now() + 1_000
+    while (this.runs.size > 0 && Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 20))
+    }
+    if (this.runs.size === 0) {
+      await this.store.close().catch(() => undefined)
+    } else {
+      await this.store.flush()
+    }
     const lspManagers = [...this.lspManagers.values()]
     this.lspManagers.clear()
     for (const manager of lspManagers) {
@@ -1609,7 +1619,7 @@ export class AgentRuntime {
 
   private async createSessionWorktree(
     run: Run,
-    input: { name: string; base?: string | null; directory?: string | null }
+    input: { name: string; base?: string | null }
   ): Promise<string> {
     try {
       const repository = await repositoryRoot(run.workspace)
@@ -1635,6 +1645,15 @@ export class AgentRuntime {
 
   private async removeSessionWorktree(run: Run, target: string, force: boolean): Promise<string> {
     try {
+      const real = await fs.realpath(target).catch(() => path.resolve(target))
+      const inUse =
+        [...this.runs.values()].some((active) => path.resolve(active.workspace) === real) ||
+        this.store
+          .list()
+          .some((session) => session.directory && path.resolve(session.directory) === real)
+      if (inUse) {
+        return 'Error: this worktree is in use by a session; move the session before removing it.'
+      }
       const repository = await repositoryRoot(run.workspace)
       const root = worktreeRootFor(this.options.userDataPath, repository)
       await removeWorktree(run.workspace, target, { root, force })
@@ -1852,6 +1871,7 @@ export class AgentRuntime {
         filterToolsForModel({ ...mcpTools, ...baseTools }, targetInfo.applyPatch === true),
         agent
       )
+      toolContext.codeModeTools = () => tools
 
       const systemSections = [
         systemWithInstructions(

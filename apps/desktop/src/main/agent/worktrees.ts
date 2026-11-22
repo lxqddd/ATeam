@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -48,7 +49,8 @@ export function sanitizeWorktreeName(name: string): string {
 
 export function worktreeRootFor(userDataPath: string, repoRoot: string): string {
   const name = slug(path.basename(repoRoot)) || 'workspace'
-  return path.join(userDataPath, 'worktrees', name)
+  const hash = createHash('sha1').update(path.resolve(repoRoot)).digest('hex').slice(0, 8)
+  return path.join(userDataPath, 'worktrees', `${name}-${hash}`)
 }
 
 function branchName(name: string): string {
@@ -118,15 +120,17 @@ async function branchExists(
 
 export async function createWorktree(
   workspace: string,
-  input: { name: string; base?: string | null; directory?: string | null },
+  input: { name: string; base?: string | null },
   options: WorktreeOptions
 ): Promise<WorktreeInfo> {
   const branch = branchName(input.name)
+  if (input.base !== undefined && input.base !== null && input.base.trim().startsWith('-')) {
+    throw new Error('INVALID_WORKTREE_BASE')
+  }
   const repoRoot = await repositoryRoot(workspace, options.exec)
-  const directory = input.directory
-    ? path.resolve(input.directory)
-    : path.join(options.root, sanitizeWorktreeName(input.name))
-  if (!directory) throw new Error('INVALID_WORKTREE_NAME')
+  const slugName = sanitizeWorktreeName(input.name)
+  if (!slugName) throw new Error('INVALID_WORKTREE_NAME')
+  const directory = path.join(options.root, slugName)
 
   try {
     await fs.stat(directory)

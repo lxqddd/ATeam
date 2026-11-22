@@ -106,6 +106,21 @@ describe('worktrees', () => {
     )
   })
 
+  it('rejects option-like base revisions', async () => {
+    await expect(
+      createWorktree(repo, { name: 'injected', base: '--force' }, { root })
+    ).rejects.toThrow('INVALID_WORKTREE_BASE')
+    await expect(createWorktree(repo, { name: 'injected', base: '-b' }, { root })).rejects.toThrow(
+      'INVALID_WORKTREE_BASE'
+    )
+  })
+
+  it('keeps managed roots separate for same-named repositories', () => {
+    const first = worktreeRootFor(directory, path.join(directory, 'one', 'project'))
+    const second = worktreeRootFor(directory, path.join(directory, 'two', 'project'))
+    expect(first).not.toBe(second)
+  })
+
   it('sanitizes names into branch-safe slugs', () => {
     expect(sanitizeWorktreeName('Feature Login')).toBe('Feature-Login')
     expect(sanitizeWorktreeName('feature/login')).toBe('feature-login')

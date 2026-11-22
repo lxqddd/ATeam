@@ -69,6 +69,7 @@ function toolKind(name: string): string {
 
 export class AcpServer {
   private readonly pendingPermissions = new Map<number | string, PendingPermission>()
+  private readonly promptAborts = new Set<AbortController>()
   private readonly sessions = new Map<string, { runtime: AcpRuntime; cwd: string }>()
   private readonly seenTools = new Set<string>()
   private readonly lineReader: Interface
@@ -94,6 +95,8 @@ export class AcpServer {
     for (const entry of this.sessions.values()) {
       await entry.runtime.shutdown().catch(() => undefined)
     }
+    for (const abort of this.promptAborts) abort.abort()
+    this.promptAborts.clear()
     this.sessions.clear()
     this.pendingPermissions.clear()
   }
@@ -189,18 +192,29 @@ export class AcpServer {
       this.fail(message.id, -32602, 'Prompt contains no text content')
       return
     }
+
+    const abort = new AbortController()
+    this.promptAborts.add(abort)
     const finished = this.options.bus.waitFor(
       'run.finished',
       (event) => event.type === 'run.finished' && event.sessionId === sessionId,
-      30 * 60_000
+      30 * 60_000,
+      abort.signal
     )
     try {
       await entry.runtime.sendChat(sessionId, text)
     } catch (error) {
+      abort.abort()
+      await finished.catch(() => undefined)
       this.fail(message.id, -32603, error instanceof Error ? error.message : String(error))
       return
     }
-    const envelope = await finished
+    let envelope
+    try {
+      envelope = await finished
+    } finally {
+      this.promptAborts.delete(abort)
+    }
     const event = envelope.event
     this.respond(message.id as number, {
       stopReason: event.type === 'run.finished' ? stopReason(event.status) : 'end_turn'

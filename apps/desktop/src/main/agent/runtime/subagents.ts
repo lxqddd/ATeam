@@ -53,6 +53,7 @@ export async function runSubagentTask(
 
   const parentRecord = host.record(parent.sessionId)
   let sessionId = input.sessionId?.trim() || null
+  let childDirectory = parent.workspace
   if (sessionId) {
     const record = host.store.get(sessionId)
     if (!record || record.session.parentId !== parent.sessionId) {
@@ -60,6 +61,7 @@ export async function runSubagentTask(
     }
     if (host.hasRun(sessionId)) return 'Error: the subagent session is busy.'
     if (record.session.agent !== agent.id) await host.store.setAgent(sessionId, agent.id)
+    childDirectory = record.session.directory ?? parent.workspace
   } else {
     const session = await host.store.create({
       hidden: true,
@@ -88,7 +90,7 @@ export async function runSubagentTask(
   const childRun: Run = {
     sessionId,
     messageId: assistant.id,
-    workspace: parent.workspace,
+    workspace: childDirectory,
     abort: childAbort,
     startedAt: Date.now(),
     steps: 0,

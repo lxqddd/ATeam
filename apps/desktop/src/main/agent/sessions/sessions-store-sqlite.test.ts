@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { DatabaseSync } from 'node:sqlite'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -55,11 +56,126 @@ describe('SQLite session storage', () => {
     expect(importing.list().map((entry) => entry.id)).toEqual(['legacy-1'])
     await importing.close()
 
-    await fs.rm(path.join(sessionsDirectory, 'legacy-1.json'))
+    await fs.rm(path.join(sessionsDirectory, 'legacy-1.json'), { force: true })
     const reloaded = new SessionsStore(directory)
     await reloaded.init()
     expect(reloaded.getSession('legacy-1')?.title).toBe('Old session')
     await reloaded.close()
+  })
+
+  it('skips invalid legacy records without blocking valid ones', async () => {
+    await store.close()
+    for (const suffix of ['', '-wal', '-shm']) {
+      await fs.rm(path.join(directory, 'agent', `sessions.db${suffix}`), { force: true })
+    }
+    await fs.mkdir(sessionsDirectory, { recursive: true })
+    await fs.writeFile(
+      path.join(sessionsDirectory, 'broken.json'),
+      JSON.stringify({ version: 1, session: {}, messages: [] })
+    )
+    const valid = makeSession({ id: 'valid-1', title: 'Valid' })
+    await fs.writeFile(
+      path.join(sessionsDirectory, 'valid-1.json'),
+      JSON.stringify({ version: 1, session: valid, messages: [] })
+    )
+
+    const importing = new SessionsStore(directory)
+    await importing.init()
+    expect(importing.list().map((entry) => entry.id)).toEqual(['valid-1'])
+    await importing.close()
+    const files = await fs.readdir(sessionsDirectory)
+    expect(files.some((file) => file.startsWith('broken.json.corrupt-'))).toBe(true)
+  })
+
+  it('retries an empty migration after legacy files appear', async () => {
+    await store.close()
+    for (const suffix of ['', '-wal', '-shm']) {
+      await fs.rm(path.join(directory, 'agent', `sessions.db${suffix}`), { force: true })
+    }
+    const empty = new SessionsStore(directory)
+    await empty.init()
+    await empty.close()
+
+    const legacy = makeSession({ id: 'late-1', title: 'Late import' })
+    await fs.writeFile(
+      path.join(sessionsDirectory, 'late-1.json'),
+      JSON.stringify({ version: 1, session: legacy, messages: [] })
+    )
+    const importing = new SessionsStore(directory)
+    await importing.init()
+    expect(importing.getSession('late-1')?.title).toBe('Late import')
+    await importing.close()
+  })
+
+  it('quarantines corrupt database rows', async () => {
+    const session = await store.create()
+    await store.close()
+    const databaseFile = path.join(directory, 'agent', 'sessions.db')
+    const database = new DatabaseSync(databaseFile)
+    database
+      .prepare('INSERT INTO sessions (id, data, updated_at) VALUES (?, ?, ?)')
+      .run('bad-row', '{not json', new Date().toISOString())
+    database
+      .prepare('INSERT INTO messages (session_id, position, data) VALUES (?, ?, ?)')
+      .run('bad-row', 0, '{not json')
+    database
+      .prepare(
+        'INSERT INTO corrupt_messages (session_id, position, data, captured_at) VALUES (?, ?, ?, ?)'
+      )
+      .run('bad-row', 0, '{not json', new Date().toISOString())
+    database.close()
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.list().map((entry) => entry.id)).toEqual([session.id])
+    await reloaded.close()
+
+    const check = new DatabaseSync(databaseFile)
+    const corrupt = check.prepare('SELECT COUNT(*) AS count FROM corrupt_sessions').get() as {
+      count: number
+    }
+    expect(corrupt.count).toBe(1)
+    check.close()
+  })
+
+  it('persists redo state and prepared compaction', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'user', parts: [makeTextPart('undo me')] })
+    )
+    await store.appendMessage(session.id, makeMessage({ role: 'assistant', parts: [] }))
+    await store.stageUndo(session.id, 0, null, 'undo me', [])
+    await store.setPreparedCompaction(session.id, {
+      summary: 'summary',
+      throughMessageId: 'message-1',
+      createdAt: new Date().toISOString()
+    })
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getRedo(session.id)?.prompt).toBe('undo me')
+    expect(reloaded.getPreparedCompaction(session.id)?.summary).toBe('summary')
+    await reloaded.close()
+  })
+
+  it('moves migrated legacy files aside', async () => {
+    await store.close()
+    for (const suffix of ['', '-wal', '-shm']) {
+      await fs.rm(path.join(directory, 'agent', `sessions.db${suffix}`), { force: true })
+    }
+    const legacy = makeSession({ id: 'moved-1', title: 'Moved' })
+    await fs.writeFile(
+      path.join(sessionsDirectory, 'moved-1.json'),
+      JSON.stringify({ version: 1, session: legacy, messages: [] })
+    )
+    const importing = new SessionsStore(directory)
+    await importing.init()
+    await importing.close()
+    await expect(fs.stat(path.join(sessionsDirectory, 'moved-1.json'))).rejects.toThrow()
+    await expect(
+      fs.stat(path.join(sessionsDirectory, 'moved-1.json.migrated'))
+    ).resolves.toBeDefined()
   })
 
   it('deletes sessions and their messages', async () => {

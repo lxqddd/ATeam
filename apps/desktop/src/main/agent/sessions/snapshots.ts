@@ -186,6 +186,9 @@ export class SnapshotStore {
   async restore(workspacePath: string, id: string): Promise<RestoreResult> {
     const snapshot = await this.get(id)
     if (!snapshot) throw new Error('SNAPSHOT_NOT_FOUND')
+    if (path.resolve(snapshot.root) !== path.resolve(workspacePath)) {
+      throw new Error('SNAPSHOT_WORKSPACE_MISMATCH')
+    }
     const root = path.resolve(workspacePath)
     const current = await walkFiles(root)
     const removed: string[] = []
@@ -213,6 +216,9 @@ export class SnapshotStore {
   async restorePaths(workspacePath: string, id: string, paths: string[]): Promise<RestoreResult> {
     const snapshot = await this.get(id)
     if (!snapshot) throw new Error('SNAPSHOT_NOT_FOUND')
+    if (path.resolve(snapshot.root) !== path.resolve(workspacePath)) {
+      throw new Error('SNAPSHOT_WORKSPACE_MISMATCH')
+    }
     const root = path.resolve(workspacePath)
     const removed: string[] = []
     const written: string[] = []

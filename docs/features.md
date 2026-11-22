@@ -64,12 +64,12 @@
 
 ### 3.1 内置 Agent
 
-| Agent     | 模式     | 工具范围                                                           |
-| --------- | -------- | ------------------------------------------------------------------ |
-| `build`   | primary  | 全部工具                                                           |
+| Agent     | 模式     | 工具范围                                                                         |
+| --------- | -------- | -------------------------------------------------------------------------------- |
+| `build`   | primary  | 全部工具                                                                         |
 | `plan`    | primary  | 只读工具（含 LSP 查询）+ todo + question（不能改文件、不能执行命令、不能用 MCP） |
-| `general` | subagent | 全部工具（不能再创建子代理）                                       |
-| `explore` | subagent | 只读工具（含 LSP 查询）                                            |
+| `general` | subagent | 全部工具（不能再创建子代理）                                                     |
+| `explore` | subagent | 只读工具（含 LSP 查询）                                                          |
 
 ### 3.2 自定义 Agent
 
@@ -90,28 +90,28 @@
 
 ## 4. 工具集
 
-| 工具        | 作用                                                               | 权限 action        |
-| ----------- | ------------------------------------------------------------------ | ------------------ |
-| `read`      | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本 | `read`             |
-| `list`      | 列目录（深度限制）                                                 | `list`             |
-| `grep`      | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep    | `grep`             |
-| `glob`      | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`             |
-| `write`     | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`            |
-| `edit`      | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`             |
-| `patch`     | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`             |
-| `shell`     | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`            |
-| `webfetch`  | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`         |
-| `websearch` | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch`        |
-| `skill`     | 按名称加载 Skill 全文与附带资源清单                                | `skill`            |
-| `subagent`  | 委派子任务到子代理（可后台运行）                                   | `subagent`         |
-| `mcp_prompt` | 列出 / 获取 MCP prompts 并展开为提示词                            | `mcp`              |
-| `mcp_resource` | 列出 / 读取 MCP resources                                      | `mcp`              |
-| `lsp_hover` | 查询符号的类型与文档                                               | `read`             |
-| `lsp_definition` | 查询符号定义位置                                              | `read`             |
-| `todowrite` | 替换会话任务列表                                                   | 不需要审批         |
-| `todoread`  | 读取任务列表                                                       | 不需要审批         |
-| `question`  | 向用户提出结构化问题                                               | 不需要审批         |
-| MCP 工具    | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`              |
+| 工具             | 作用                                                               | 权限 action |
+| ---------------- | ------------------------------------------------------------------ | ----------- |
+| `read`           | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本   | `read`      |
+| `list`           | 列目录（深度限制）                                                 | `list`      |
+| `grep`           | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep     | `grep`      |
+| `glob`           | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`      |
+| `write`          | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`     |
+| `edit`           | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`      |
+| `patch`          | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`      |
+| `shell`          | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`     |
+| `webfetch`       | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`  |
+| `websearch`      | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch` |
+| `skill`          | 按名称加载 Skill 全文与附带资源清单                                | `skill`     |
+| `subagent`       | 委派子任务到子代理（可后台运行）                                   | `subagent`  |
+| `mcp_prompt`     | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`       |
+| `mcp_resource`   | 列出 / 读取 MCP resources                                          | `mcp`       |
+| `lsp_hover`      | 查询符号的类型与文档                                               | `read`      |
+| `lsp_definition` | 查询符号定义位置                                                   | `read`      |
+| `todowrite`      | 替换会话任务列表                                                   | 不需要审批  |
+| `todoread`       | 读取任务列表                                                       | 不需要审批  |
+| `question`       | 向用户提出结构化问题                                               | 不需要审批  |
+| MCP 工具         | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`       |
 
 - 大输出统一截断（200k 字符），再经输出存储落盘（30k 展示上限，完整内容保存在 `agent/tool-outputs/`）。
 - 工作区外路径先触发 `external_directory` 审批；只读工具默认允许。
@@ -227,9 +227,9 @@
 | 外观     | 内置主题（跟随系统 / 浅色 / 深色 / 日落橙 / 暖墨 / 石墨 / 奶油 / 冷雾） |
 | 语言     | 跟随系统 / 中文 / English                                               |
 | 权限     | 查看与删除已保存的权限规则                                              |
-| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                      |
+| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                     |
 | 网页搜索 | 服务商选择、加密 API Key、配置状态                                      |
-| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用          |
+| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用         |
 
 模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据。
 
@@ -357,7 +357,8 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 - 模型可调用 `execute`，用 JavaScript 在一个步骤内编排多次工具调用：`await tools.read({ path: 'a.ts' })`、`await tools.list({ ... })` 等，工具名与直接调用一致。
 - 脚本可 `console.log` 输出，并通过 `return` 返回摘要；只有返回值与日志进入对话上下文，中间工具结果留在脚本内，适合批量搜索、跨文件汇总与 `Promise.all` 并行调用。
-- 安全：运行脚本前按 `shell` 权限请求确认；脚本内的每次工具调用仍走各自的权限检查（读写、外部目录、MCP 等）；脚本在受限 VM 中执行，禁用动态代码生成，同步执行默认 10 秒超时。
+- 安全：运行脚本前按 `shell` 权限请求确认；脚本在单独的 worker 线程中执行，内部禁用动态代码生成，无工具活动超过 10 秒会被强制终止（`await` 后的死循环也能中断）。脚本内可用的工具目录与当前 Agent/模型实际可见的工具一致（含 MCP，不含被过滤的 write/edit 等），每次调用仍走各自的权限检查。
+- 注意：脚本本身应视为与 `shell` 同级的任意代码，不是强安全沙箱；外层批准意味着允许执行代码，请只批准可信来源触发的代码模式。
 - 单个操作仍应直接调用对应工具；`execute` 面向多步编排。
 
 ## 26. 并行工具调用与结果聚合
@@ -369,11 +370,11 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 ## 27. Git Worktree 与会话迁移
 
 - 新增 `worktree_create` / `worktree_list` / `worktree_remove` 工具：为当前 Git 项目创建独立分支的工作树、列出主检出与链接工作树、删除 ATeam 管理的工作树（`force` 可丢弃未提交改动）。
-- 默认目录为应用数据目录下的 `worktrees/<仓库名>/<名称>`，不会污染仓库；名称会规范化为分支名，目录名则使用安全 slug；同名分支会直接复用。
+- 默认目录为应用数据目录下的 `worktrees/<仓库名>-<路径哈希>/<名称>`，不会污染仓库，也不会与同名但不同路径的仓库冲突；名称会规范化为分支名，目录名使用安全 slug；同名分支会直接复用；`base` 不允许以 `-` 开头，避免参数注入。
 - `session_move` 将当前会话迁移到新目录（通常是刚创建的工作树）；迁移在下一轮对话生效，当前运行继续使用原目录，避免中途切换导致工具与快照不一致。
-- 允许的目标：当前工作区内、ATEAM 管理的 worktree 根目录下，或同一仓库的其他 worktree；其他绝对路径会被拒绝。
-- `worktree_remove` 需要 `edit` 权限，且不能删除主检出或非 ATeam 管理工作树。工作区不是 Git 仓库时，工具返回明确提示。
-- 限制：桌面端默认工作区若不包含 Git 仓库则无法使用；MCP server 仍以应用启动时的工作区运行。会话迁移后 undo / redo 会在新目录恢复，迁移前快照中的文件路径仍指向旧目录，跨目录撤销可能失败。
+- 允许的目标：当前工作区内、ATEAM 管理的 worktree 根目录下，或同一仓库的其他 worktree；其他绝对路径会被拒绝。新会话在创建时固定记录自己的工作目录，避免多个运行时（CLI / Server / ACP）共用数据目录时串用工作区。
+- `worktree_remove` 需要 `edit` 权限，且不能删除主检出、非 ATeam 管理工作树，或仍被运行中/已绑定会话使用的工作树。工作区不是 Git 仓库时，工具返回明确提示。
+- 限制：桌面端默认工作区若不包含 Git 仓库则无法使用；MCP server 仍以应用启动时的工作区运行。快照带有自己的根目录，跨目录 undo / redo 会被拒绝（`SNAPSHOT_WORKSPACE_MISMATCH`），不会把旧目录内容写进新工作树。
 
 ## 28. 桌面浏览器自动化
 
@@ -384,14 +385,14 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
   - `browser_screenshot`：返回 PNG 截图并作为图片内容交给模型；
   - `browser_eval`：在页面执行 JavaScript，按 `shell` 权限确认；
   - `browser_close`：关闭窗口。
-- 同一会话的浏览器操作串行执行；导航 30 秒超时，执行脚本 15 秒超时；控制台保留最近 50 条并随快照返回。
-- 页面内容、控制台与执行结果均视为不可信数据，不构成指令；页面导航限制在 HTTP/HTTPS，`file://` 等协议会被拦截。
+- 每个会话使用独立的临时浏览器分区（不共享 cookie / localStorage，关闭后不落盘）；同一会话的浏览器操作串行执行，排队超过请求时限的操作会被放弃。导航 30 秒、页面脚本 20 秒、执行 JavaScript 15 秒超时；页面无响应会销毁并重置窗口，避免队列永久卡死。
+- 页面内容、控制台与执行结果均视为不可信数据，不构成指令；页面导航与重定向限制在 HTTP/HTTPS，`file://` 等协议会被拦截；下载与站点权限请求一律拒绝。会话删除时关闭其浏览器窗口。
 - 限制：仅桌面应用可用（CLI / Server / ACP 会返回不可用）；一个会话同时只有一个页面；不提供多标签、网络面板或文件上传。
 
 ## 29. SQLite 会话存储
 
 - 会话与消息默认存入应用数据目录的 `agent/sessions.db`：`sessions` 表保存会话元数据与 redo/压缩状态，`messages` 表按位置保存消息；WAL 模式、同步写入，进程重启后自动恢复。
-- 首次启动时若数据库尚未迁移，会自动导入旧的 `agent/sessions/*.json` 会话文件并记录迁移标记；损坏的旧文件按原逻辑隔离为 `.corrupt-*`，不会阻塞其他会话。
-- 存储层可切换：`new SessionsStore(path, { backend: 'json' | 'sqlite' | 'auto' })`，`auto`（默认）使用 SQLite；测试与迁移场景可显式使用 JSON 后端。
+- 首次启动时若数据库尚未迁移，会在单个事务中导入旧的 `agent/sessions/*.json` 会话文件并记录迁移标记；导入成功后旧文件改名为 `.migrated` 保留备份。损坏的旧文件隔离为 `.corrupt-*`，不会阻塞其他会话；损坏的数据库行移入 `corrupt_sessions` / `corrupt_messages` 表而不是直接丢弃。
+- 数据库文件及 WAL/SHM 权限为 `0600`。存储层可切换：`new SessionsStore(path, { backend: 'json' | 'sqlite' | 'auto' })`，`auto`（默认）使用 SQLite；若 Node 不支持 `node:sqlite` 且已有数据库文件，会明确报错而不是静默回退导致会话“消失”，仅在尚未创建数据库时回退 JSON。
 - 兼容原有修复逻辑：启动时恢复 running/waiting-permission 状态、补齐缺失字段、重置中断的工具调用。
 - 限制：当前为 SQLite 状态存储而非完整事件溯源；每次持久化重写该会话的消息行，超大历史会话的写入成本随消息数增长（后续可改为增量消息写入）。
