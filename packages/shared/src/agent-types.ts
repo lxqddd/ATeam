@@ -101,6 +101,7 @@ export type MessagePart =
       input?: unknown
       state: ToolState
       output?: string
+      images?: Array<{ mimeType: string; data: string }>
       error?: string
       startedAt?: string
       finishedAt?: string
@@ -258,6 +259,8 @@ export interface AgentConfig {
   instructions: string[]
   lsp: boolean
   formatters: boolean
+  /** File extension (e.g. .ts) to formatter id, or "none" to disable formatting. */
+  formatterOverrides: Record<string, string>
 }
 
 export type McpServerType = 'local' | 'remote'

@@ -7,11 +7,28 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   snapshots: true,
   instructions: [],
   lsp: true,
-  formatters: true
+  formatters: true,
+  formatterOverrides: {}
 }
 
 function configFile(userDataPath: string): string {
   return path.join(userDataPath, 'agent', 'config.json')
+}
+
+function normalizeFormatterOverrides(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const overrides: Record<string, string> = {}
+  for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
+    if (Object.keys(overrides).length >= 50) break
+    if (typeof rawValue !== 'string') continue
+    const trimmedKey = rawKey.trim().toLowerCase()
+    const extension = trimmedKey.startsWith('.') ? trimmedKey : `.${trimmedKey}`
+    if (!/^\.[a-z0-9+]{1,15}$/.test(extension)) continue
+    const formatter = rawValue.trim().toLowerCase()
+    if (formatter !== 'none' && !/^[a-z0-9_-]{1,40}$/.test(formatter)) continue
+    overrides[extension] = formatter
+  }
+  return overrides
 }
 
 function normalizeInstructions(value: unknown): string[] {
@@ -33,7 +50,8 @@ function normalizeConfig(value: unknown): AgentConfig {
     snapshots: typeof config.snapshots === 'boolean' ? config.snapshots : true,
     instructions: normalizeInstructions(config.instructions),
     lsp: typeof config.lsp === 'boolean' ? config.lsp : true,
-    formatters: typeof config.formatters === 'boolean' ? config.formatters : true
+    formatters: typeof config.formatters === 'boolean' ? config.formatters : true,
+    formatterOverrides: normalizeFormatterOverrides(config.formatterOverrides)
   }
 }
 
@@ -55,7 +73,8 @@ export class AgentConfigStore {
       snapshots: this.config.snapshots,
       instructions: [...this.config.instructions],
       lsp: this.config.lsp,
-      formatters: this.config.formatters
+      formatters: this.config.formatters,
+      formatterOverrides: { ...this.config.formatterOverrides }
     }
   }
 

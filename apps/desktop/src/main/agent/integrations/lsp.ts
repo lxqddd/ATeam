@@ -221,24 +221,65 @@ export class LspClient {
 
     const uri = fileUri(filePath)
     const pending = this.waitForDiagnostics(uri)
-    const version = this.openDocuments.get(uri)
     try {
-      if (version === undefined) {
-        this.openDocuments.set(uri, 1)
-        this.notify('textDocument/didOpen', {
-          textDocument: { uri, languageId: languageIdForFile(filePath), version: 1, text }
-        })
-      } else {
-        this.openDocuments.set(uri, version + 1)
-        this.notify('textDocument/didChange', {
-          textDocument: { uri, version: version + 1 },
-          contentChanges: [{ text }]
-        })
-      }
+      this.syncDocument(filePath, text)
     } catch {
       return []
     }
     return pending
+  }
+
+  private syncDocument(filePath: string, text: string): string {
+    const uri = fileUri(filePath)
+    const version = this.openDocuments.get(uri)
+    if (version === undefined) {
+      this.openDocuments.set(uri, 1)
+      this.notify('textDocument/didOpen', {
+        textDocument: { uri, languageId: languageIdForFile(filePath), version: 1, text }
+      })
+    } else {
+      this.openDocuments.set(uri, version + 1)
+      this.notify('textDocument/didChange', {
+        textDocument: { uri, version: version + 1 },
+        contentChanges: [{ text }]
+      })
+    }
+    return uri
+  }
+
+  async hover(filePath: string, text: string, line: number, character: number): Promise<unknown> {
+    return this.positionQuery('textDocument/hover', filePath, text, line, character)
+  }
+
+  async definition(
+    filePath: string,
+    text: string,
+    line: number,
+    character: number
+  ): Promise<unknown> {
+    return this.positionQuery('textDocument/definition', filePath, text, line, character)
+  }
+
+  private async positionQuery(
+    method: string,
+    filePath: string,
+    text: string,
+    line: number,
+    character: number
+  ): Promise<unknown> {
+    if (this.exited) return null
+    await this.start()
+    if (this.exited) return null
+    let uri: string
+    try {
+      uri = this.syncDocument(filePath, text)
+    } catch {
+      return null
+    }
+    return this.request(method, {
+      textDocument: { uri },
+      position: { line: Math.max(0, line - 1), character: Math.max(0, character - 1) }
+    })
   }
 
   async dispose(): Promise<void> {
@@ -394,6 +435,36 @@ export class LspManager {
     return results
   }
 
+  async hover(file: string, line: number, character: number): Promise<string> {
+    const server = lspServerForFile(file)
+    if (!server) return ''
+    try {
+      const client = await this.clientFor(server)
+      if (!client) return ''
+      const text = await readTextFile(file)
+      if (text === null) return ''
+      const result = await client.hover(file, text, line, character)
+      return formatHoverResult(result, file, line, character, this.options.workspace)
+    } catch {
+      return ''
+    }
+  }
+
+  async definition(file: string, line: number, character: number): Promise<string> {
+    const server = lspServerForFile(file)
+    if (!server) return ''
+    try {
+      const client = await this.clientFor(server)
+      if (!client) return ''
+      const text = await readTextFile(file)
+      if (text === null) return ''
+      const result = await client.definition(file, text, line, character)
+      return formatDefinitionResult(result, this.options.workspace)
+    } catch {
+      return ''
+    }
+  }
+
   async availableServers(): Promise<string[]> {
     const available: string[] = []
     for (const server of LSP_SERVERS) {
@@ -474,6 +545,66 @@ function severityLabel(severity: number): string {
   if (severity === 2) return 'warning'
   if (severity === 3) return 'info'
   return 'hint'
+}
+
+function hoverText(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.map(hoverText).filter(Boolean).join('\n\n')
+  if (value && typeof value === 'object') {
+    const text = (value as { value?: unknown }).value
+    if (typeof text === 'string') return text
+  }
+  return ''
+}
+
+export function formatHoverResult(
+  result: unknown,
+  file: string,
+  line: number,
+  character: number,
+  workspace: string
+): string {
+  const contents = (result as { contents?: unknown } | null)?.contents
+  const text = hoverText(contents).trim()
+  if (!text) return ''
+  const relative = path.relative(workspace, file).split(path.sep).join('/')
+  return `Hover at ${relative}:${line}:${character}:\n${text.slice(0, 4_000)}`
+}
+
+export function formatDefinitionResult(result: unknown, workspace: string): string {
+  const entries = Array.isArray(result) ? result : result ? [result] : []
+  const locations: string[] = []
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue
+    const location = entry as {
+      uri?: unknown
+      targetUri?: unknown
+      range?: { start?: { line?: unknown; character?: unknown } }
+      targetSelectionRange?: { start?: { line?: unknown; character?: unknown } }
+      targetRange?: { start?: { line?: unknown; character?: unknown } }
+    }
+    const uri =
+      typeof location.uri === 'string'
+        ? location.uri
+        : typeof location.targetUri === 'string'
+          ? location.targetUri
+          : null
+    if (!uri) continue
+    let file: string
+    try {
+      file = fileURLToPath(uri)
+    } catch {
+      continue
+    }
+    const range = location.range ?? location.targetSelectionRange ?? location.targetRange
+    const line = typeof range?.start?.line === 'number' ? range.start.line + 1 : 1
+    const character = typeof range?.start?.character === 'number' ? range.start.character + 1 : 1
+    locations.push(
+      `${path.relative(workspace, file).split(path.sep).join('/')}:${line}:${character}`
+    )
+  }
+  if (locations.length === 0) return ''
+  return `Definition:\n${[...new Set(locations)].map((entry) => `- ${entry}`).join('\n')}`
 }
 
 export function formatDiagnosticReport(

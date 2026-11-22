@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { ToolExecutionOptions } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { createTools, filterToolsForModel, type ToolContext } from './tools'
+import { makePdf } from './test/pdf'
 
 function execute(
   tool: unknown,
@@ -46,6 +47,8 @@ let listMcpPrompts: Mock<NonNullable<ToolContext['listMcpPrompts']>>
 let getMcpPrompt: Mock<NonNullable<ToolContext['getMcpPrompt']>>
 let listMcpResources: Mock<NonNullable<ToolContext['listMcpResources']>>
 let readMcpResource: Mock<NonNullable<ToolContext['readMcpResource']>>
+let lspHover: Mock<NonNullable<ToolContext['lspHover']>>
+let lspDefinition: Mock<NonNullable<ToolContext['lspDefinition']>>
 
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
@@ -68,8 +71,11 @@ beforeEach(async () => {
   getMcpPrompt = vi.fn(async () => 'Hello from prompt')
   listMcpResources = vi.fn(async () => 'MCP resources:\n- demo: demo://readme')
   readMcpResource = vi.fn(async () => 'resource body')
+  lspHover = vi.fn(async () => 'hover text')
+  lspDefinition = vi.fn(async () => 'definition text')
   baseContext = {
     workspace: directory,
+    grepEngine: 'js',
     signal: new AbortController().signal,
     askPermission,
     loadNestedInstructions: loadNested,
@@ -89,7 +95,9 @@ beforeEach(async () => {
     listMcpPrompts,
     getMcpPrompt,
     listMcpResources,
-    readMcpResource
+    readMcpResource,
+    lspHover,
+    lspDefinition
   }
   tools = createTools(baseContext)
 })
@@ -233,6 +241,29 @@ describe('list tool', () => {
   })
 })
 
+describe('read tool media', () => {
+  it('returns image data for models that accept images', async () => {
+    await fs.writeFile(path.join(directory, 'pixel.png'), Buffer.from([1, 2, 3]))
+
+    const result = (await execute(tools.read, { path: 'pixel.png' })) as unknown as {
+      summary: string
+      image: { mimeType: string; data: string }
+    }
+
+    expect(result.summary).toContain('pixel.png')
+    expect(result.image).toEqual({ mimeType: 'image/png', data: 'AQID' })
+  })
+
+  it('extracts text from PDF files', async () => {
+    await fs.writeFile(path.join(directory, 'doc.pdf'), makePdf('Hello PDF'))
+
+    const result = await execute(tools.read, { path: 'doc.pdf' })
+
+    expect(result).toContain('Hello PDF')
+    expect(result).not.toContain('%PDF')
+  })
+})
+
 describe('grep tool', () => {
   beforeEach(async () => {
     await fs.writeFile(path.join(directory, 'a.txt'), 'alpha\nbeta\ngamma')
@@ -287,7 +318,41 @@ describe('grep tool', () => {
   })
 })
 
+describe('lsp tools', () => {
+  it('queries hover and definitions after read permission', async () => {
+    await fs.mkdir(path.join(directory, 'src'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'src', 'a.ts'), 'const x = 1')
+
+    await expect(
+      execute(tools.lsp_hover, { path: 'src/a.ts', line: 3, character: 5 })
+    ).resolves.toBe('hover text')
+    expect(askPermission).toHaveBeenCalledWith('read', 'src/a.ts', 'lsp_hover', 'call-1')
+    expect(lspHover).toHaveBeenCalledWith(path.join(directory, 'src/a.ts'), 3, 5)
+
+    await expect(
+      execute(tools.lsp_definition, { path: 'src/a.ts', line: 2, character: 1 })
+    ).resolves.toBe('definition text')
+    expect(lspDefinition).toHaveBeenCalledWith(path.join(directory, 'src/a.ts'), 2, 1)
+  })
+
+  it('reports unavailable LSP support', async () => {
+    const limited = createTools({ ...baseContext, lspHover: undefined, lspDefinition: undefined })
+
+    await expect(
+      execute(limited.lsp_hover, { path: 'src/a.ts', line: 1, character: 1 })
+    ).resolves.toBe('Error: LSP is not available.')
+  })
+})
+
 describe('glob tool', () => {
+  it('stops when the traversal exceeds its time budget', async () => {
+    const limited = createTools({ ...baseContext, globTimeoutMs: 0 })
+
+    await expect(execute(limited.glob, { pattern: '**/*.ts' })).resolves.toContain(
+      '[glob timed out]'
+    )
+  })
+
   beforeEach(async () => {
     await fs.mkdir(path.join(directory, 'src', 'nested'), { recursive: true })
     await fs.writeFile(path.join(directory, 'src', 'a.ts'), 'a')

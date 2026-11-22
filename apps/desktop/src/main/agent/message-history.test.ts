@@ -276,6 +276,46 @@ describe('buildModelMessages with attachments', () => {
     expect(buildModelMessages([empty], new Map())).toEqual([])
   })
 
+  it('replays images returned by tools', () => {
+    const message = makeMessage({
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool',
+          toolCallId: 'call-1',
+          toolName: 'read',
+          state: 'completed',
+          output: 'Image: pixel.png (3 bytes)',
+          images: [{ mimeType: 'image/png', data: 'AQID' }]
+        }
+      ]
+    })
+
+    expect(buildModelMessages([message])).toEqual([
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolCallId: 'call-1', toolName: 'read', input: {} }]
+      },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call-1',
+            toolName: 'read',
+            output: {
+              type: 'content',
+              value: [
+                { type: 'text', text: 'Image: pixel.png (3 bytes)' },
+                { type: 'image-data', data: 'AQID', mediaType: 'image/png' }
+              ]
+            }
+          }
+        ]
+      }
+    ])
+  })
+
   it('prefers extracted PDF text over file parts', () => {
     const message = makeMessage({
       role: 'user',

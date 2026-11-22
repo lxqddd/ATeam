@@ -717,11 +717,14 @@ export class AgentRuntime {
     return this.formattersCache
   }
 
-  private async formatFiles(files: string[]): Promise<string> {
+  private async formatFiles(
+    files: string[],
+    overrides: Record<string, string> = {}
+  ): Promise<string> {
     const formatters = await this.formatters()
     const notes: string[] = []
     for (const file of files) {
-      const result = await formatFile(file, formatters, this.options.workspacePath)
+      const result = await formatFile(file, formatters, this.options.workspacePath, { overrides })
       const relative = path.relative(this.options.workspacePath, file).split(path.sep).join('/')
       if (result.formatted) {
         notes.push(`Formatted ${relative} with ${result.formatter}`)
@@ -730,6 +733,14 @@ export class AgentRuntime {
       }
     }
     return notes.join('\n')
+  }
+
+  private async lspHover(file: string, line: number, character: number): Promise<string> {
+    return this.lsp().hover(file, line, character)
+  }
+
+  private async lspDefinition(file: string, line: number, character: number): Promise<string> {
+    return this.lsp().definition(file, line, character)
   }
 
   private async diagnoseFiles(files: string[]): Promise<string> {
@@ -1522,8 +1533,16 @@ export class AgentRuntime {
             messageId: run.messageId,
             ...info
           }),
-        formatFiles: run.config.formatters ? (files) => this.formatFiles(files) : undefined,
+        formatFiles: run.config.formatters
+          ? (files) => this.formatFiles(files, run.config.formatterOverrides)
+          : undefined,
         diagnoseFiles: run.config.lsp ? (files) => this.diagnoseFiles(files) : undefined,
+        lspHover: run.config.lsp
+          ? (file, line, character) => this.lspHover(file, line, character)
+          : undefined,
+        lspDefinition: run.config.lsp
+          ? (file, line, character) => this.lspDefinition(file, line, character)
+          : undefined,
         runSubagent: (input, toolCallId) => this.runSubagent(run, input, toolCallId),
         fetchWeb: (input) => this.fetchWebPage(input),
         webSearch: (input) => this.searchTheWeb(input),
@@ -1678,8 +1697,23 @@ export class AgentRuntime {
             if (toolPart && toolPart.type === 'tool') {
               if (toolPart.state !== 'denied') {
                 toolPart.state = 'completed'
-                toolPart.output =
-                  typeof part.output === 'string' ? part.output : JSON.stringify(part.output)
+                const output = part.output as unknown
+                if (
+                  output &&
+                  typeof output === 'object' &&
+                  'summary' in output &&
+                  'image' in output
+                ) {
+                  const media = output as {
+                    summary: string
+                    image: { mimeType: string; data: string }
+                  }
+                  toolPart.output = media.summary
+                  toolPart.images = [media.image]
+                } else {
+                  toolPart.output =
+                    typeof part.output === 'string' ? part.output : JSON.stringify(part.output)
+                }
                 toolPart.finishedAt = nowIso()
                 this.emitPart(run, toolPart, message.parts.indexOf(toolPart))
               }

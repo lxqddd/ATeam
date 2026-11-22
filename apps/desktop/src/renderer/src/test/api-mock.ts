@@ -203,13 +203,15 @@ export function createApiMock(
           snapshots: true,
           instructions: [],
           lsp: true,
-          formatters: true
+          formatters: true,
+          formatterOverrides: {}
         })),
         update: vi.fn(async (patch: Partial<AgentConfig>) => ({
           snapshots: true,
           instructions: [],
           lsp: true,
           formatters: true,
+          formatterOverrides: {},
           ...patch
         }))
       },

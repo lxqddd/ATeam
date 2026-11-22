@@ -95,11 +95,25 @@ export function buildModelMessages(
       })
 
       if (part.state === 'completed') {
+        const images = part.images ?? []
         toolResults.push({
           type: 'tool-result',
           toolCallId: part.toolCallId,
           toolName: part.toolName,
-          output: { type: 'text', value: part.output ?? '' }
+          output:
+            images.length > 0
+              ? {
+                  type: 'content',
+                  value: [
+                    { type: 'text', text: part.output ?? '' },
+                    ...images.map((image) => ({
+                      type: 'image-data' as const,
+                      data: image.data,
+                      mediaType: image.mimeType
+                    }))
+                  ]
+                }
+              : { type: 'text', value: part.output ?? '' }
         })
       } else if (part.state === 'denied') {
         toolResults.push({

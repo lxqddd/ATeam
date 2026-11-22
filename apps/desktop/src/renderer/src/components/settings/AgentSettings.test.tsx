@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentSettings from './AgentSettings'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
 
-const DEFAULTS = { snapshots: true, instructions: [], lsp: true, formatters: true }
+const DEFAULTS = {
+  snapshots: true,
+  instructions: [],
+  lsp: true,
+  formatters: true,
+  formatterOverrides: {}
+}
 
 let mock: ApiMock
 
@@ -64,6 +70,25 @@ describe('AgentSettings', () => {
 
     await waitFor(() =>
       expect(mock.api.agent.config.update).toHaveBeenCalledWith({ formatters: false })
+    )
+  })
+
+  it('saves formatter overrides', async () => {
+    vi.mocked(mock.api.agent.config.update).mockResolvedValue({
+      ...DEFAULTS,
+      formatterOverrides: { '.ts': 'prettier' }
+    })
+    const user = userEvent.setup()
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Formatter overrides')
+    await user.type(input, '.ts=prettier')
+    await user.click(screen.getByRole('button', { name: 'Save overrides' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.config.update).toHaveBeenCalledWith({
+        formatterOverrides: { '.ts': 'prettier' }
+      })
     )
   })
 

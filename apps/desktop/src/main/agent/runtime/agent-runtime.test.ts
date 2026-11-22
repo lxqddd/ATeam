@@ -342,6 +342,22 @@ function parallelToolScript(values: string[]): Script {
   }
 }
 
+function imageResultScript(): Script {
+  return async function* () {
+    const input = { path: 'a.png' }
+    const output = {
+      summary: 'Image: a.png (2 bytes)',
+      image: { mimeType: 'image/png', data: 'AQID' }
+    }
+    yield part({ type: 'tool-input-start', id: 'call-img', toolName: 'read' })
+    yield part({ type: 'tool-call', toolCallId: 'call-img', toolName: 'read', input })
+    yield part({ type: 'tool-result', toolCallId: 'call-img', toolName: 'read', input, output })
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'seen' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function richStreamScript(): Script {
   return async function* () {
     yield part({ type: 'text-delta', id: 'missing', text: 'ignored' })
@@ -1584,6 +1600,22 @@ describe('AgentRuntime', () => {
 })
 
 describe('agent tooling configuration', () => {
+  it('stores text and images from tool results separately', async () => {
+    scripts.push(imageResultScript())
+
+    await runtime.sendChat(sessionId, 'read image')
+    await sink.next('run.finished')
+
+    const part = assistantMessages()
+      .at(-1)
+      ?.parts.find((candidate) => candidate.type === 'tool')
+    expect(part).toMatchObject({
+      state: 'completed',
+      output: 'Image: a.png (2 bytes)',
+      images: [{ mimeType: 'image/png', data: 'AQID' }]
+    })
+  })
+
   it('provides formatting and diagnostics hooks by default', async () => {
     scripts.push(textScript('Hello'))
 
@@ -1592,6 +1624,8 @@ describe('agent tooling configuration', () => {
 
     expect(typeof toolContext?.formatFiles).toBe('function')
     expect(typeof toolContext?.diagnoseFiles).toBe('function')
+    expect(typeof toolContext?.lspHover).toBe('function')
+    expect(typeof toolContext?.lspDefinition).toBe('function')
   })
 
   it('disables the hooks when the config turns them off', async () => {

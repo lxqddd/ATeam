@@ -40,8 +40,9 @@ function AgentSettings(): React.JSX.Element {
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const [info, setInfo] = useState<AgentInfo | null>(null)
   const [instructions, setInstructions] = useState('')
+  const [formatterOverrides, setFormatterOverrides] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
+  const [saved, setSaved] = useState<'instructions' | 'overrides' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -52,6 +53,11 @@ function AgentSettings(): React.JSX.Element {
         if (!active) return
         setConfig(next)
         setInstructions(next.instructions.join('\n'))
+        setFormatterOverrides(
+          Object.entries(next.formatterOverrides)
+            .map(([extension, formatter]) => `${extension}=${formatter}`)
+            .join('\n')
+        )
       })
       .catch((caught: unknown) => {
         if (active) setError(caught instanceof Error ? caught.message : String(caught))
@@ -82,7 +88,7 @@ function AgentSettings(): React.JSX.Element {
   async function saveInstructions(): Promise<void> {
     setSaving(true)
     setError(null)
-    setSaved(false)
+    setSaved(null)
     try {
       const entries = instructions
         .split('\n')
@@ -91,7 +97,37 @@ function AgentSettings(): React.JSX.Element {
       const next = await window.api.agent.config.update({ instructions: entries })
       setConfig(next)
       setInstructions(next.instructions.join('\n'))
-      setSaved(true)
+      setSaved('instructions')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveFormatterOverrides(): Promise<void> {
+    setSaving(true)
+    setError(null)
+    setSaved(null)
+    try {
+      const overrides: Record<string, string> = {}
+      for (const line of formatterOverrides.split('\n')) {
+        const trimmed = line.trim()
+        if (!trimmed) continue
+        const separator = trimmed.indexOf('=')
+        if (separator <= 0) continue
+        const extension = trimmed.slice(0, separator).trim()
+        const formatter = trimmed.slice(separator + 1).trim()
+        if (extension && formatter) overrides[extension] = formatter
+      }
+      const next = await window.api.agent.config.update({ formatterOverrides: overrides })
+      setConfig(next)
+      setFormatterOverrides(
+        Object.entries(next.formatterOverrides)
+          .map(([extension, formatter]) => `${extension}=${formatter}`)
+          .join('\n')
+      )
+      setSaved('overrides')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -156,6 +192,41 @@ function AgentSettings(): React.JSX.Element {
       )}
 
       <div className="flex flex-col gap-2">
+        <label htmlFor="formatter-overrides" className="text-label font-medium text-foreground">
+          {t('settings.formatterOverrides')}
+        </label>
+        <textarea
+          id="formatter-overrides"
+          aria-label={t('settings.formatterOverrides')}
+          value={formatterOverrides}
+          onChange={(event) => {
+            setFormatterOverrides(event.target.value)
+            setSaved(null)
+          }}
+          rows={3}
+          spellCheck={false}
+          className="w-full resize-y rounded-md border border-border bg-surface px-3 py-2 font-mono text-caption text-foreground outline-none placeholder:text-subtle focus:border-border-strong"
+          placeholder={t('settings.formatterOverridesPlaceholder')}
+        />
+        <p className="m-0 text-caption text-muted">{t('settings.formatterOverridesDescription')}</p>
+        <div className="flex items-center justify-end gap-2">
+          {saved === 'overrides' && (
+            <span className="text-caption text-success">{t('settings.saved')}</span>
+          )}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              void saveFormatterOverrides()
+            }}
+            className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-55"
+          >
+            {saving ? t('settings.saving') : t('settings.saveOverrides')}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
         <label htmlFor="agent-instructions" className="text-label font-medium text-foreground">
           {t('settings.instructions')}
         </label>
@@ -165,7 +236,7 @@ function AgentSettings(): React.JSX.Element {
           value={instructions}
           onChange={(event) => {
             setInstructions(event.target.value)
-            setSaved(false)
+            setSaved(null)
           }}
           rows={6}
           spellCheck={false}
@@ -174,7 +245,9 @@ function AgentSettings(): React.JSX.Element {
         />
         <p className="m-0 text-caption text-muted">{t('settings.instructionsDescription')}</p>
         <div className="flex items-center justify-end gap-2">
-          {saved && <span className="text-caption text-success">{t('settings.saved')}</span>}
+          {saved === 'instructions' && (
+            <span className="text-caption text-success">{t('settings.saved')}</span>
+          )}
           <button
             type="button"
             disabled={saving}

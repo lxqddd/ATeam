@@ -97,6 +97,7 @@ function ToolRow({ part }: ToolRowProps): React.JSX.Element {
   const summary = summarize(part.input)
   const inputText = formatInput(part.input)
   const output = part.output ?? part.error
+  const images = part.images ?? []
   const isError = part.state === 'failed' || part.state === 'denied'
 
   return (
@@ -137,7 +138,7 @@ function ToolRow({ part }: ToolRowProps): React.JSX.Element {
         </svg>
       </button>
 
-      {open && (inputText || output) && (
+      {open && (inputText || output || images.length > 0) && (
         <div className="mt-1.5 ml-2 flex flex-col gap-2 border-l border-border-subtle pl-3 pb-1">
           {inputText && (
             <div className="min-w-0">
@@ -145,6 +146,18 @@ function ToolRow({ part }: ToolRowProps): React.JSX.Element {
               <pre className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle bg-surface-sunken px-2.5 py-2 font-mono text-[11px] leading-[1.5] text-muted whitespace-pre-wrap">
                 {inputText}
               </pre>
+            </div>
+          )}
+          {images.length > 0 && (
+            <div className="flex min-w-0 flex-wrap gap-2">
+              {images.map((image, index) => (
+                <img
+                  key={index}
+                  src={`data:${image.mimeType};base64,${image.data}`}
+                  alt={t('chat.toolImage')}
+                  className="max-h-40 rounded-md border border-border-subtle object-contain"
+                />
+              ))}
             </div>
           )}
           {output && (

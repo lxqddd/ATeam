@@ -95,6 +95,23 @@ describe('discoverFormatters', () => {
 })
 
 describe('selectFormatter', () => {
+  it('honours per-extension overrides', () => {
+    const combined = [
+      PRETTIER,
+      { id: 'biome', extensions: ['.ts'], configFiles: [], command: () => ['biome'] }
+    ]
+
+    expect(selectFormatter(path.join(workspace, 'a.ts'), combined, { '.ts': 'biome' })?.id).toBe(
+      'biome'
+    )
+    expect(
+      selectFormatter(path.join(workspace, 'a.ts'), [PRETTIER], { '.ts': 'none' })
+    ).toBeUndefined()
+    expect(
+      selectFormatter(path.join(workspace, 'a.ts'), [PRETTIER], { '.ts': 'gofmt' })
+    ).toBeUndefined()
+  })
+
   it('matches by extension', () => {
     expect(selectFormatter(path.join(workspace, 'src', 'a.ts'), [PRETTIER])?.id).toBe('prettier')
     expect(selectFormatter(path.join(workspace, 'main.go'), [PRETTIER, GOFMT])?.id).toBe('gofmt')

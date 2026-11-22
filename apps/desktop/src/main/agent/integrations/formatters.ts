@@ -159,9 +159,17 @@ export async function discoverFormatters(workspace: string): Promise<FormatterDe
 
 export function selectFormatter(
   filePath: string,
-  formatters: readonly FormatterDefinition[]
+  formatters: readonly FormatterDefinition[],
+  overrides: Record<string, string> = {}
 ): FormatterDefinition | undefined {
   const extension = path.extname(filePath).toLowerCase()
+  const override = overrides[extension]
+  if (override === 'none') return undefined
+  if (override) {
+    return formatters.find(
+      (formatter) => formatter.id === override && formatter.extensions.includes(extension)
+    )
+  }
   return formatters.find((formatter) => formatter.extensions.includes(extension))
 }
 
@@ -173,9 +181,10 @@ export async function formatFile(
     spawn?: FormatterSpawn
     resolveExecutable?: (bin: string) => Promise<string | null>
     timeoutMs?: number
+    overrides?: Record<string, string>
   } = {}
 ): Promise<FormatResult> {
-  const formatter = selectFormatter(filePath, formatters)
+  const formatter = selectFormatter(filePath, formatters, options.overrides)
   if (!formatter) return { formatted: false }
 
   const [bin, ...args] = formatter.command(filePath)

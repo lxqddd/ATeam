@@ -23,13 +23,15 @@ describe('AgentConfigStore', () => {
       snapshots: true,
       instructions: [],
       lsp: true,
-      formatters: true
+      formatters: true,
+      formatterOverrides: {}
     })
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
       instructions: [],
       lsp: true,
-      formatters: true
+      formatters: true,
+      formatterOverrides: {}
     })
   })
 
@@ -45,11 +47,20 @@ describe('AgentConfigStore', () => {
       snapshots: false,
       lsp: false,
       formatters: false,
-      instructions: ['AGENTS.md', 'https://example.com/rules.md']
+      instructions: ['AGENTS.md', 'https://example.com/rules.md'],
+      formatterOverrides: {}
     })
     const reloaded = new AgentConfigStore(directory)
     await reloaded.init()
     expect(reloaded.get()).toEqual(updated)
+  })
+
+  it('normalizes formatter overrides', async () => {
+    const updated = await store.update({
+      formatterOverrides: { ts: 'prettier', '.PY': 'none', '.md': 'bad value!' }
+    })
+
+    expect(updated.formatterOverrides).toEqual({ '.ts': 'prettier', '.py': 'none' })
   })
 
   it('ignores invalid config files', async () => {
@@ -61,7 +72,8 @@ describe('AgentConfigStore', () => {
       snapshots: true,
       instructions: [],
       lsp: true,
-      formatters: true
+      formatters: true,
+      formatterOverrides: {}
     })
   })
 })

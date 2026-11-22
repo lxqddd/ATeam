@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -161,6 +162,36 @@ describe('LspClient', () => {
     await client.dispose()
   })
 
+  it('requests hover and definition at zero-based positions', async () => {
+    const hoverResult = { contents: { kind: 'markdown', value: '**Docs**' } }
+    const definitionResult = {
+      uri: 'file:///work/project/b.ts',
+      range: { start: { line: 2, character: 3 }, end: { line: 2, character: 4 } }
+    }
+    const { client, servers } = createClient(
+      initializing((server, message) => {
+        if (message.method === 'textDocument/hover') server.respond(message.id, hoverResult)
+        if (message.method === 'textDocument/definition') {
+          server.respond(message.id, definitionResult)
+        }
+      })
+    )
+
+    await expect(client.hover('/work/project/a.ts', 'const x = 1', 3, 5)).resolves.toEqual(
+      hoverResult
+    )
+    await expect(client.definition('/work/project/a.ts', 'const x = 1', 3, 5)).resolves.toEqual(
+      definitionResult
+    )
+
+    const hover = servers[0].requests.find((entry) => entry.method === 'textDocument/hover')
+    expect(hover?.params).toMatchObject({
+      textDocument: { uri: fileUri('/work/project/a.ts') },
+      position: { line: 2, character: 4 }
+    })
+    await client.dispose()
+  })
+
   it('opens a document and returns published diagnostics', async () => {
     const { client } = createClient(
       initializing((server, message) => {
@@ -305,6 +336,37 @@ describe('LspManager', () => {
     expect([...results.keys()]).toEqual(files.slice(0, 2))
     await manager.dispose()
     expect(servers[0].killed).toBe(true)
+  })
+
+  it('formats hover and definition results', async () => {
+    const file = path.join(workspace, 'a.ts')
+    await fs.writeFile(file, 'const x = 1')
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/hover') {
+            instance.respond(message.id, { contents: 'Docs for x' })
+          }
+          if (message.method === 'textDocument/definition') {
+            instance.respond(message.id, {
+              uri: pathToFileURL(file).toString(),
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } }
+            })
+          }
+        })
+      )
+      return server as unknown as LspChildProcess
+    })
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => '/bin/typescript-language-server',
+      diagnosticsTimeoutMs: 30
+    })
+
+    await expect(manager.hover(file, 1, 1)).resolves.toContain('Docs for x')
+    await expect(manager.definition(file, 1, 1)).resolves.toContain('a.ts:1:1')
+    await manager.dispose()
   })
 
   it('returns nothing when the server executable is unavailable', async () => {

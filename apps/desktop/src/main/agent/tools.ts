@@ -3,6 +3,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
+import { ripgrepSearch } from './integrations/ripgrep'
+import { extractPdfText } from './attachments'
 import type {
   PermissionAction,
   QuestionInput,
@@ -15,6 +17,16 @@ const MAX_TOOL_OUTPUT = 200_000
 const MAX_READ_LINES = 2_000
 const MAX_LIST_ENTRIES = 500
 const MAX_GREP_MATCHES = 100
+const GLOB_TIMEOUT_MS = 10_000
+const MAX_READ_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_READ_PDF_BYTES = 10 * 1024 * 1024
+const IMAGE_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif'
+}
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store'])
 
 export interface ToolContext {
@@ -49,6 +61,10 @@ export interface ToolContext {
   getMcpPrompt?: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
   listMcpResources?: (server?: string) => Promise<string>
   readMcpResource?: (server: string, uri: string) => Promise<string>
+  grepEngine?: 'auto' | 'js'
+  globTimeoutMs?: number
+  lspHover?: (file: string, line: number, character: number) => Promise<string>
+  lspDefinition?: (file: string, line: number, character: number) => Promise<string>
 }
 
 async function afterWrite(context: ToolContext, files: string[]): Promise<string> {
@@ -312,7 +328,7 @@ async function listDirectory(
 export function createTools(context: ToolContext): ToolSet {
   const read = tool({
     description:
-      'Read a text file inside the workspace. Returns numbered lines. Use offset/limit for large files.',
+      'Read a file inside the workspace. Text files return numbered lines (use offset/limit); images are returned as image content and PDFs as extracted text.',
     inputSchema: z.object({
       path: z.string().describe('Path relative to the workspace'),
       offset: z.number().int().min(1).optional().describe('First line (1-based)'),
@@ -330,6 +346,24 @@ export function createTools(context: ToolContext): ToolSet {
         const allowed = await context.askPermission('read', inputPath, 'read', options.toolCallId)
         if (!allowed) return 'Permission denied; the file was not read.'
         const filePath = await resolvePath(context.workspace, inputPath, false, external)
+        const extension = path.extname(filePath).toLowerCase()
+        const imageMime = IMAGE_MIME[extension]
+        if (imageMime) {
+          const data = await fs.readFile(filePath)
+          if (data.byteLength > MAX_READ_IMAGE_BYTES) return 'Error: image exceeds 5 MB'
+          return {
+            summary: `Image: ${inputPath} (${data.byteLength} bytes, ${imageMime})`,
+            image: { mimeType: imageMime, data: data.toString('base64') }
+          }
+        }
+        if (extension === '.pdf') {
+          const data = await fs.readFile(filePath)
+          if (data.byteLength > MAX_READ_PDF_BYTES) return 'Error: PDF exceeds 10 MB'
+          const extracted = await extractPdfText(new Uint8Array(data))
+          if (!extracted)
+            return 'Error: the PDF has no extractable text; attach it in the composer.'
+          return truncate(`PDF: ${inputPath}\n\`\`\`\n${extracted}\n\`\`\``)
+        }
         const text = await readFileText(filePath)
         const lines = text.split(/\r?\n/)
         const start = Math.max(0, offset - 1)
@@ -348,6 +382,19 @@ export function createTools(context: ToolContext): ToolSet {
       } catch (error) {
         return safeError(error)
       }
+    },
+    toModelOutput: ({ output }) => {
+      if (output && typeof output === 'object' && 'image' in output) {
+        const value = output as { summary: string; image: { mimeType: string; data: string } }
+        return {
+          type: 'content',
+          value: [
+            { type: 'text', text: value.summary },
+            { type: 'image-data', data: value.image.data, mediaType: value.image.mimeType }
+          ]
+        }
+      }
+      return { type: 'text', value: typeof output === 'string' ? output : JSON.stringify(output) }
     }
   })
 
@@ -420,29 +467,51 @@ export function createTools(context: ToolContext): ToolSet {
         const base = path.resolve(context.workspace)
         const matches: string[] = []
         let stop = false
-        await walk(
-          root,
-          async (filePath) => {
-            if (!matchesInclude(filePath, include)) return false
-            let text: string
-            try {
-              text = await readFileText(filePath)
-            } catch {
-              return false
+        let usedRipgrep = false
+        if (context.grepEngine !== 'js') {
+          const results = await ripgrepSearch({
+            cwd: root,
+            pattern,
+            literal,
+            caseSensitive,
+            include: include || undefined,
+            maxResults,
+            signal: context.signal
+          }).catch(() => null)
+          if (results) {
+            usedRipgrep = true
+            for (const match of results) {
+              matches.push(
+                `${path.relative(base, path.resolve(root, match.path))}:${match.line}: ${match.text}`
+              )
             }
-            for (const [index, line] of text.split(/\r?\n/).entries()) {
-              if (!expression.test(line)) continue
-              matches.push(`${path.relative(base, filePath)}:${index + 1}: ${line}`)
-              if (matches.length >= maxResults) {
-                stop = true
-                return true
+            stop = matches.length >= maxResults
+          }
+        }
+        if (!usedRipgrep)
+          await walk(
+            root,
+            async (filePath) => {
+              if (!matchesInclude(filePath, include)) return false
+              let text: string
+              try {
+                text = await readFileText(filePath)
+              } catch {
+                return false
               }
-            }
-            return false
-          },
-          0,
-          8
-        )
+              for (const [index, line] of text.split(/\r?\n/).entries()) {
+                if (!expression.test(line)) continue
+                matches.push(`${path.relative(base, filePath)}:${index + 1}: ${line}`)
+                if (matches.length >= maxResults) {
+                  stop = true
+                  return true
+                }
+              }
+              return false
+            },
+            0,
+            8
+          )
         const header = stop ? `[stopped at ${maxResults} matches]\n` : ''
         const matchesText = header + (matches.join('\n') || 'No matches')
         const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
@@ -635,6 +704,72 @@ export function createTools(context: ToolContext): ToolSet {
     }
   })
 
+  const lspHover = tool({
+    description:
+      'Get hover information such as types or documentation for a symbol at a 1-based line and character.',
+    inputSchema: z.object({
+      path: z.string().describe('File path relative to the workspace'),
+      line: z.number().int().min(1).describe('1-based line number'),
+      character: z.number().int().min(1).optional().describe('1-based character position')
+    }),
+    execute: async ({ path: inputPath, line, character = 1 }, options) => {
+      try {
+        if (!context.lspHover) return 'Error: LSP is not available.'
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'read', options.toolCallId))
+        ) {
+          return 'Permission denied; the query was not run.'
+        }
+        const allowed = await context.askPermission(
+          'read',
+          inputPath,
+          'lsp_hover',
+          options.toolCallId
+        )
+        if (!allowed) return 'Permission denied; the query was not run.'
+        const filePath = await resolvePath(context.workspace, inputPath, false, external)
+        return (await context.lspHover(filePath, line, character)) || 'No hover information.'
+      } catch (error) {
+        return safeError(error)
+      }
+    }
+  })
+
+  const lspDefinition = tool({
+    description:
+      'Find the definition of a symbol at a 1-based line and character and return its file position.',
+    inputSchema: z.object({
+      path: z.string().describe('File path relative to the workspace'),
+      line: z.number().int().min(1).describe('1-based line number'),
+      character: z.number().int().min(1).optional().describe('1-based character position')
+    }),
+    execute: async ({ path: inputPath, line, character = 1 }, options) => {
+      try {
+        if (!context.lspDefinition) return 'Error: LSP is not available.'
+        const external = escapesWorkspace(context.workspace, inputPath)
+        if (
+          external &&
+          !(await ensureExternalAccess(context, inputPath, 'read', options.toolCallId))
+        ) {
+          return 'Permission denied; the query was not run.'
+        }
+        const allowed = await context.askPermission(
+          'read',
+          inputPath,
+          'lsp_definition',
+          options.toolCallId
+        )
+        if (!allowed) return 'Permission denied; the query was not run.'
+        const filePath = await resolvePath(context.workspace, inputPath, false, external)
+        return (await context.lspDefinition(filePath, line, character)) || 'No definition found.'
+      } catch (error) {
+        return safeError(error)
+      }
+    }
+  })
+
   const glob = tool({
     description:
       'Find files in the workspace by glob pattern such as **/*.ts. Skips ignored directories by default.',
@@ -660,9 +795,16 @@ export function createTools(context: ToolContext): ToolSet {
         const matcher = globExpression(pattern)
         const matches: string[] = []
         let stopped = false
+        let timedOut = false
+        const deadline = Date.now() + (context.globTimeoutMs ?? GLOB_TIMEOUT_MS)
 
         const walk = async (directory: string, depth: number): Promise<void> => {
           if (depth > 12 || stopped) return
+          if (Date.now() >= deadline) {
+            timedOut = true
+            stopped = true
+            return
+          }
           const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => [])
           for (const entry of entries) {
             if (stopped) return
@@ -686,7 +828,11 @@ export function createTools(context: ToolContext): ToolSet {
 
         await walk(base, 0)
         matches.sort()
-        const header = stopped ? `[stopped at ${limit} results]\n` : ''
+        const header = timedOut
+          ? '[glob timed out]\n'
+          : stopped
+            ? `[stopped at ${limit} results]\n`
+            : ''
         const listed = header + (matches.join('\n') || 'No matches')
         const nested = (await context.loadNestedInstructions?.(inputPath)) ?? ''
         return truncate(`${listed}${nested ? `\n\n${nested}` : ''}`)
@@ -966,6 +1112,8 @@ export function createTools(context: ToolContext): ToolSet {
       todowrite,
       todoread,
       question,
+      lsp_hover: lspHover,
+      lsp_definition: lspDefinition,
       mcp_prompt: mcpPrompt,
       mcp_resource: mcpResource
     },
