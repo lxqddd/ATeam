@@ -72,6 +72,7 @@ async function main(): Promise<number> {
   }
 
   const server = new AcpServer({
+    version: process.env.npm_package_version,
     bus,
     input: process.stdin,
     output: process.stdout,
