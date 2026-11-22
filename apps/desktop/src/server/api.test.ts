@@ -1,6 +1,5 @@
 import type {
   AgentEvent,
-  MessageAttachment,
   MessagesSnapshot,
   ModelRef,
   PermissionDecision,
@@ -70,12 +69,7 @@ class FakeRuntime implements ApiRuntime {
     return this.snapshots.get(id) ?? { sessionId: id, seq: 0, messages: [], running: false }
   }
 
-  async sendChat(
-    id: string,
-    text: string,
-    model?: ModelRef | null,
-    _attachments?: MessageAttachment[]
-  ): Promise<void> {
+  async sendChat(id: string, text: string, model?: ModelRef | null): Promise<void> {
     this.get(id)
     if (this.sendError) throw this.sendError
     this.sent.push({ id, text, model })
@@ -156,6 +150,15 @@ describe('API server', () => {
     expect(await (await fetch(`${baseUrl}/health`)).json()).toMatchObject({ ok: true })
     expect((await fetch(`${baseUrl}/sessions`)).status).toBe(401)
     expect((await fetch(`${baseUrl}/sessions`, { headers: auth('secret') })).status).toBe(200)
+  })
+
+  it('does not grant cross-origin access by default', async () => {
+    const { baseUrl } = await start()
+    const response = await fetch(`${baseUrl}/health`)
+    expect(response.headers.get('access-control-allow-origin')).toBeNull()
+
+    const preflight = await fetch(`${baseUrl}/sessions`, { method: 'OPTIONS' })
+    expect(preflight.headers.get('access-control-allow-origin')).toBeNull()
   })
 
   it('creates sessions with settings and returns them', async () => {

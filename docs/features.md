@@ -293,7 +293,7 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 ## 20. Server API 与 SDK
 
 - 入口：`pnpm serve -- [server options] [model options]`，复用 Agent 运行时并在本机启动 HTTP 服务（默认 `127.0.0.1:4096`）。
-- 安全：默认仅监听回环地址；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权，非回环地址且无 token 时会打印警告；`/health` 无需鉴权。
+- 安全：默认仅监听回环地址；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权，非回环地址且无 token 时会打印警告；`/health` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
 - REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
 - SDK：`apps/desktop/src/sdk/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
@@ -395,4 +395,4 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 首次启动时若数据库尚未迁移，会在单个事务中导入旧的 `agent/sessions/*.json` 会话文件并记录迁移标记；导入成功后旧文件改名为 `.migrated` 保留备份。损坏的旧文件隔离为 `.corrupt-*`，不会阻塞其他会话；损坏的数据库行移入 `corrupt_sessions` / `corrupt_messages` 表而不是直接丢弃。
 - 数据库文件及 WAL/SHM 权限为 `0600`。存储层可切换：`new SessionsStore(path, { backend: 'json' | 'sqlite' | 'auto' })`，`auto`（默认）使用 SQLite；若 Node 不支持 `node:sqlite` 且已有数据库文件，会明确报错而不是静默回退导致会话“消失”，仅在尚未创建数据库时回退 JSON。
 - 兼容原有修复逻辑：启动时恢复 running/waiting-permission 状态、补齐缺失字段、重置中断的工具调用。
-- 限制：当前为 SQLite 状态存储而非完整事件溯源；每次持久化重写该会话的消息行，超大历史会话的写入成本随消息数增长（后续可改为增量消息写入）。
+- 限制：当前为 SQLite 状态存储而非完整事件溯源；每次持久化重写该会话的消息行，超大历史会话的写入成本随消息数增长（后续可改为增量消息写入）。导入后的 `.migrated` 备份不会被自动重新导入；如需恢复，应在数据库不存在时把备份改回 `.json`。

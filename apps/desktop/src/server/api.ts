@@ -47,6 +47,8 @@ export interface ApiServerOptions {
   version?: string
   host?: string
   port?: number
+  /** Only set when a browser client on another origin must be allowed. */
+  corsOrigin?: string | null
   defaults?: {
     permissionMode?: PermissionMode
     reasoningEffort?: ReasoningEffort | null
@@ -67,8 +69,7 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(payload),
-    'Access-Control-Allow-Origin': '*'
+    'Content-Length': Buffer.byteLength(payload)
   })
   res.end(payload)
 }
@@ -159,7 +160,15 @@ function sessionIdFrom(value: string): string {
 }
 
 export function createApiServer(options: ApiServerOptions): ApiServer {
-  const { runtime, bus, token = null, version = '0.1.0', port = 0, defaults = {} } = options
+  const {
+    runtime,
+    bus,
+    token = null,
+    version = '0.1.0',
+    port = 0,
+    defaults = {},
+    corsOrigin = null
+  } = options
   const sseClients = new Set<ServerResponse>()
   const host = options.host ?? '127.0.0.1'
   let actualPort = 0
@@ -178,9 +187,11 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${host}:${actualPort}`)
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+    if (corsOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', corsOrigin)
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+    }
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204)
@@ -204,7 +215,7 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
           'Content-Type': 'text/event-stream; charset=utf-8',
           'Cache-Control': 'no-cache, no-transform',
           Connection: 'keep-alive',
-          'Access-Control-Allow-Origin': '*'
+          ...(corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin } : {})
         })
         res.write(': connected\n\n')
         sseClients.add(res)
