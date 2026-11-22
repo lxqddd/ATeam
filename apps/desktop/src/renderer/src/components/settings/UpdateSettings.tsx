@@ -68,7 +68,9 @@ function UpdateSettings(): React.JSX.Element {
   async function check(): Promise<void> {
     setChecking(true)
     setError(null)
+    setInfo(null)
     setDownloaded(null)
+    setDownloadProgress(null)
     try {
       setInfo(await window.api.updates.check())
     } catch (caught) {

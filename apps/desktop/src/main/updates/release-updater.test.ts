@@ -181,6 +181,13 @@ describe('ReleaseUpdater', () => {
     await expect(updater(stale).download('0.1.0')).rejects.toThrow('UPDATE_VERSION_CHANGED')
   })
 
+  it('maps network failures to a stable error', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('fetch failed')
+    })
+    await expect(updater(fetchMock).check()).rejects.toThrow('UPDATE_CHECK_FAILED')
+  })
+
   it('maps GitHub rate limits to a stable error', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response('rate limited', { status: 403 }))
     await expect(updater(fetchMock).check()).rejects.toThrow('UPDATE_RATE_LIMITED')

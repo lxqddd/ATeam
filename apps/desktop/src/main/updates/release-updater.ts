@@ -15,7 +15,8 @@ const ALLOWED_DOWNLOAD_HOSTS = new Set([
   'github.com',
   'www.github.com',
   'objects.githubusercontent.com',
-  'release-assets.githubusercontent.com'
+  'release-assets.githubusercontent.com',
+  'github-releases.githubusercontent.com'
 ])
 
 const ReleaseSchema = z.object({
@@ -292,10 +293,17 @@ export class ReleaseUpdater {
   }
 
   private async fetchRelease(): Promise<GithubRelease> {
-    const response = await this.fetchImpl(`${this.apiBaseUrl}/repos/${this.repo}/releases/latest`, {
-      headers: this.headers(),
-      signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)
-    })
+    let response: Response
+    try {
+      response = await this.fetchImpl(`${this.apiBaseUrl}/repos/${this.repo}/releases/latest`, {
+        headers: this.headers(),
+        signal: AbortSignal.timeout(CHECK_TIMEOUT_MS)
+      })
+    } catch (error) {
+      throw new Error(
+        `UPDATE_CHECK_FAILED: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
     if (response.status === 404) throw new Error('UPDATE_NOT_FOUND')
     if (response.status === 403 || response.status === 429) throw new Error('UPDATE_RATE_LIMITED')
     if (!response.ok) throw new Error(`UPDATE_CHECK_FAILED: HTTP ${response.status}`)

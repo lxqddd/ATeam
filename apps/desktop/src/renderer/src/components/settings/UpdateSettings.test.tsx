@@ -104,6 +104,9 @@ describe('UpdateSettings', () => {
       })
     })
     await screen.findByText('Installer downloaded and opened: /tmp/ATeam-0.2.0.dmg')
+
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }))
+    await waitFor(() => expect(screen.queryByRole('progressbar')).not.toBeInTheDocument())
   })
 
   it('reports the latest version and rechecks', async () => {
