@@ -1,10 +1,10 @@
 # ATeam Agent 对齐 OpenCode TODO List
 
-> 对比基准：OpenCode `dev` 分支文档（2026-11-21）与 ATeam `master` 当前实现。
-> 范围：Agent 核心能力（会话、工具、权限、上下文、扩展），不包含主题、打包、TUI 等。
+> 对比基准：OpenCode `master`（2026-11-22 复审）与 ATeam `master` 当前实现；第一轮记录基于 2026-11-21 的 `dev` 文档。
+> 范围：Agent 核心能力（会话、工具、权限、上下文、扩展、运行时接口），不包含主题、打包等桌面外观；CLI/TUI/IDE 等接口差距在第二轮 P2 单列。
 > 标记：`[x]` 已完成，`[ ]` 待办。优先级：**P0** 必须、**P1** 重要、**P2** 后续。
 
-## 已对齐
+## 第一轮已对齐（2026-11-21）
 
 - [x] 会话创建、重命名、删除与持久化
 - [x] 流式 text / reasoning / tool 事件
@@ -19,7 +19,309 @@
 - [x] 文件快照与 undo / redo：文件与对话一起回滚，撤销的 prompt 回到输入框
 - [x] LSP 诊断与自动格式化：内置语言服务器、诊断注入、格式化器发现与执行
 
-## P0：可靠性、安全与编辑质量
+## 第二轮复审：与当前 OpenCode master 的差距（2026-11-22）
+
+> 第一轮的 P0/P1/P2 记录保留在下方。第一轮中的“剩余：无”表示当时的对齐范围内已完成，不代表与当前 OpenCode `master` 完全一致。第二轮条目是新增待办，第一轮的基础版实现仍然有效。
+
+### 第二轮 P0：核心运行时与兼容性
+
+#### R-P0-1 项目配置兼容层
+
+**现状**：ATeam 只读取 `userData/agent/config.json`（[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)），项目侧仅支持 `.opencode/agent|command|skill` 目录与 `references.json`；不读取 OpenCode 的 `opencode.json` / `opencode.jsonc`，也没有项目级 provider、MCP、LSP、formatter、permission、plugin 配置。
+
+**OpenCode 参考**：`packages/opencode/src/config/config.ts` 按“全局 → 项目 → `.opencode`”逐层发现并深合并配置，覆盖 agents、providers、mcp、lsp、plugins、permissions、formatters、instructions、references 等字段。
+
+**待办**：
+
+- [ ] 增加 `opencode.json` / `opencode.jsonc` 的全局、项目根、`.opencode` 三层发现与深合并
+- [ ] 覆盖 agents / providers / mcp / lsp / permissions / formatters / instructions / references / plugin 字段
+- [ ] 明确与现有 `agent/config.json`、设置页写入、组织策略的覆盖顺序
+- [ ] 对非法字段跳过并在设置页展示来源文件与错误，不让单个坏配置阻断启动
+- [ ] 测试发现顺序、深合并、项目覆盖全局、旧配置兼容、配置变更后的运行时刷新
+
+**验收**：把一个现有 OpenCode 项目直接交给 ATeam，项目级 agents / MCP / LSP / 权限 / 格式化配置无需手工迁移即可生效。
+
+#### R-P0-2 插件系统
+
+**现状**：ATeam 没有插件加载器或 hook 机制；扩展能力只能修改源码，或通过 MCP、Skills、Commands 间接实现。
+
+**OpenCode 参考**：`packages/opencode/src/plugin/index.ts` 与 `@opencode-ai/plugin` 支持外部 npm / 路径插件、版本兼容检查、内置供应商认证插件，以及 `tool`、`chat.message`、`chat.params`、`chat.headers`、`permission.ask`、`command.execute.before`、`tool.execute.before|after`、`shell.env`、`experimental.chat.system.transform`、`experimental.session.compacting`、`tool.definition` 等 hook。
+
+**待办**：
+
+- [ ] 定义 ATeam 插件接口与加载器（本地路径、npm 包、版本兼容检查）
+- [ ] 支持插件注册工具、修改聊天参数与请求头、拦截消息与命令
+- [ ] 支持权限决策 hook、工具执行前后 hook、shell 环境 hook
+- [ ] 支持 system prompt / compaction / tool definition 变换
+- [ ] 插件加载失败隔离、错误事件、启用/禁用与设置页展示
+- [ ] 测试插件发现、hook 顺序、工具注册、权限覆盖、失败隔离
+
+**验收**：第三方插件可以注册工具并参与权限、提示词与工具执行流程，且插件故障不影响主流程。
+
+#### R-P0-3 LLM 重试与错误状态
+
+**现状**：AI SDK 调用固定 `maxRetries: 1`（[defaults.ts](../apps/desktop/src/main/agent/runtime/defaults.ts)），没有可重试分类、退避策略、`Retry-After` 解析，也没有把重试状态推送到 UI。
+
+**OpenCode 参考**：`packages/opencode/src/session/retry.ts` 对 429/5xx/网络/超时做指数退避 + 抖动，解析 `retry-after` 与 `retry-after-ms`，最多 5 次，上下文溢出与用户取消不重试，并发布 retry 状态。
+
+**待办**：
+
+- [ ] 建立错误分类：可重试（429/5xx/网络/超时）与不可重试（上下文溢出/取消/鉴权失败）
+- [ ] 实现指数退避 + 抖动、最大重试次数与总时长上限
+- [ ] 解析 `Retry-After` 秒数与 HTTP 日期格式
+- [ ] 通过事件/状态把重试次数、等待时间、最终失败原因传给 UI
+- [ ] 与上下文压缩重试协调，避免同一错误重复压缩
+- [ ] 测试各错误码、重试上限、取消、Retry-After、状态事件
+
+**验收**：遇到 429/5xx/网络抖动时自动退避重试，UI 能看到等待与最终结果；上下文溢出不会被无意义重试。
+
+#### R-P0-4 系统提示词与上下文构建
+
+**现状**：system prompt 基本固定（[policy.ts](../apps/desktop/src/main/agent/runtime/policy.ts)），仅拼接 AGENTS.md、references、skills；不按模型选择提示词，不包含模型 ID、Git 仓库状态、日期、MCP server instructions。
+
+**OpenCode 参考**：`packages/opencode/src/session/system.ts` 按模型选择 Anthropic / GPT / Codex / Gemini / Kimi / Trinity 等提示词，并注入模型信息、工作目录、Git 状态、平台、日期、References 和 MCP instructions；`session/reminders.ts` 负责 plan/build 切换提醒。
+
+**待办**：
+
+- [ ] 按 provider/model 选择不同基础 system prompt，并允许项目覆盖
+- [ ] 注入模型 ID、工作区、Git 仓库标记、平台、日期等环境块
+- [ ] 将启用 MCP server 的 instructions 注入 system prompt，并按 agent 权限过滤
+- [ ] 保持 references / skills / instructions 的现有拼接顺序，补充去重与 token 预算
+- [ ] 为提示词快照增加测试，避免模型差异悄悄回退
+
+**验收**：不同模型获得适配的提示词；Agent 知道当前模型、仓库、日期与 MCP server 使用说明。
+
+#### R-P0-5 推理块与 prompt caching
+
+**现状**：持久化消息中的 reasoning 只有 `text`，[message-history.ts](../apps/desktop/src/main/agent/message-history.ts) 重建历史时直接丢弃 reasoning；未显式设置 Anthropic cache control / OpenAI cache key，也没有 provider transform 层。
+
+**OpenCode 参考**：同模型历史会保留 reasoning 的 `providerMetadata` 以支持推理连续性与 prompt caching；`provider/transform.ts` 和各 provider 插件处理缓存、请求头与供应商差异。
+
+**待办**：
+
+- [ ] 扩展 reasoning part，持久化 `providerMetadata` 与必要签名
+- [ ] 重建历史时仅在模型一致时回传 reasoning metadata，避免跨模型污染
+- [ ] 为 Anthropic 增加 cache_control 断点，为 OpenAI 增加 prompt cache key
+- [ ] 建立 provider transform 层，集中处理供应商请求差异
+- [ ] 测试 reasoning 回放、跨模型丢弃、缓存标记与多轮成本
+
+**验收**：多轮对话能命中供应商缓存，推理模型在后续轮次保持必要的推理上下文。
+
+#### R-P0-6 Shell 权限解析与 arity
+
+**现状**：`scanShellCommand` 用正则和分隔符拆分命令（[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)），权限资源是整条命令；“始终允许”对 shell 基本只匹配完全相同命令，外部目录识别也依赖 token 扫描。
+
+**OpenCode 参考**：`packages/opencode/src/tool/shell.ts` 用 tree-sitter 解析 bash / PowerShell，按命令 arity 生成 `git status *`、`npm run *` 等规则，并从参数中精确提取外部目录。
+
+**待办**：
+
+- [ ] 解析 bash / PowerShell 命令结构，识别命令、子命令、管道与重定向
+- [ ] 引入命令 arity 表或等价规则，生成可复用的 `命令前缀 *` 权限资源
+- [ ] 从文件类命令参数中提取真实路径，改进 external_directory 判定
+- [ ] 保留引号、转义、变量与动态路径的安全回退策略
+- [ ] 让“始终允许”写入的规则与 arity 结果一致，并处理 Windows 大小写
+- [ ] 测试常见命令、复合命令、引号路径、外部目录与危险命令
+
+**验收**：允许一次 `git status` 后可覆盖同类命令，而不是只允许完全相同的字符串；外部目录判断不依赖简单 token 前缀。
+
+#### R-P0-7 Plan 工作流
+
+**现状**：内置 plan agent 只有只读工具集（[agents.ts](../apps/desktop/src/main/agent/config/agents.ts)），没有计划文件、没有退出工具，也不会在计划完成后切换 build agent。
+
+**OpenCode 参考**：`packages/opencode/src/session/reminders.ts` 维护 plan 文件提示与 plan/build 切换提醒；`tool/plan.ts` 提供 `plan_exit`，确认后切换到 build agent 并注入执行指令（实验性）。
+
+**待办**：
+
+- [ ] 定义 plan 文件路径与写入策略，允许 plan agent 只写计划文件
+- [ ] 增加 `plan_exit` 工具：确认后切换 build agent 并注入执行提示
+- [ ] 在 plan/build 切换时注入提醒，说明计划文件位置与下一步
+- [ ] UI 展示计划文件、当前 agent 与切换结果
+- [ ] 测试 plan 文件创建、退出确认、拒绝退出、切换到 build 后的权限
+
+**验收**：plan agent 产出可执行计划文件，用户确认后平滑进入 build 阶段。
+
+### 第二轮 P1：Agent 能力补齐
+
+#### R-P1-1 运行中消息排队 / Steering
+
+**现状**：运行中 `sendDisabled` 直接禁止发送（[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)），只能停止或等待。
+
+**OpenCode 参考**：运行中允许记录 steer 消息并排队，在下一次模型步骤或当前轮结束后处理，支持打断当前生成。
+
+**待办**：
+
+- [ ] 运行中允许输入并发送，进入会话级待处理队列
+- [ ] 定义“立即打断”与“当前步骤后插入”两种策略
+- [ ] UI 展示排队消息，可编辑/取消
+- [ ] 与权限卡、Question、停止逻辑协调
+- [ ] 测试排队、打断、取消、运行结束后自动发送
+
+**验收**：长任务运行中用户可以补充要求，而不必停止后重新开始。
+
+#### R-P1-2 Max steps 收尾
+
+**现状**：达到步数上限后直接结束并提示用户继续（`chat.stepLimitHint`），没有强制模型总结。
+
+**OpenCode 参考**：最后一步禁用工具并注入 `MAX_STEPS_PROMPT`，要求模型总结已完成工作与下一步。
+
+**待办**：
+
+- [ ] 达到上限前禁用工具，注入总结指令
+- [ ] 区分“正常完成”与“步数耗尽”的 outcome
+- [ ] 输出中保留未完成事项与建议下一步
+- [ ] 测试边界步数、总结内容与 UI 提示
+
+**验收**：步数耗尽时得到可继续工作的结构化总结，而不是半截输出。
+
+#### R-P1-3 会话级回滚、unrevert 与 diff
+
+**现状**：已有 undo/redo 和最新轮文件级回滚（[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)），但没有 part 级回滚、unrevert 和会话级 diff 汇总。
+
+**OpenCode 参考**：`session/revert.ts` 支持 message/part 级 revert、快照恢复、diff 汇总与 unrevert；`session/summary.ts` 计算会话 diff。
+
+**待办**：
+
+- [ ] 评估在现有消息 part 模型上支持 part 级回滚
+- [ ] 增加 unrevert（撤销回滚）与对应的 UI 状态
+- [ ] 增加会话级 diff 汇总（文件数、增删行、按轮次）
+- [ ] 统一文件审查面板、undo/redo 与 revert 语义，避免两套状态冲突
+- [ ] 测试历史轮次、部分 part、回滚后继续对话、unrevert
+
+**验收**：用户可以回滚到消息或 part，并在回滚后恢复；审查面板能看到整个会话的改动汇总。
+
+#### R-P1-4 后台任务框架与结果注入
+
+**现状**：后台 shell 有完成通知，后台子代理通过 `subagent.finished` 发 UI 通知（[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)），结果不会回到父会话上下文。
+
+**OpenCode 参考**：`background/job.ts` 提供 list / get / wait / extend / promote / cancel 的统一任务注册表；`tool/task.ts` 在后台任务完成后把结果作为合成消息注入父会话。
+
+**待办**：
+
+- [ ] 建立统一后台任务注册表（类型、状态、输出、取消）
+- [ ] 暴露任务列表/等待/取消工具或 UI
+- [ ] 后台子代理完成后向父会话注入结构化 `task_result`
+- [ ] 处理父会话忙、已结束、被取消等边界
+- [ ] 测试任务生命周期、结果注入顺序、取消与失败
+
+**验收**：后台任务完成后 Agent 能继续基于结果工作，用户也能查看/取消任务。
+
+#### R-P1-5 工具输出截断策略
+
+**现状**：固定 30k 字符、只保留头部（[tool-output-store.ts](../apps/desktop/src/main/agent/sessions/tool-output-store.ts)），没有配置项、tail 模式、过期清理或子代理提示。
+
+**OpenCode 参考**：`tool/truncate.ts` 支持 `max_lines` / `max_bytes` 配置、head/tail、写盘预览、按子代理能力提示委派，并定期清理过期输出。
+
+**待办**：
+
+- [ ] 配置最大行数/字节数，支持 head 与 tail
+- [ ] 截断结果附带完整输出路径与按需读取提示
+- [ ] 定期清理过期输出文件
+- [ ] 有子代理能力时提示把大文件交给 explore 子代理
+- [ ] 测试边界、UTF-8 截断、清理与提示
+
+**验收**：不同工具可按配置截断，完整输出可追溯且不会无限增长。
+
+#### R-P1-6 LSP 工具与服务矩阵
+
+**现状**：仅 5 个内置服务器（[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)），只暴露 `lsp_hover` / `lsp_definition`，不能配置自定义 server，也不会自动安装。
+
+**OpenCode 参考**：`lsp/server.ts` 覆盖 20+ 语言服务器，支持 npm 自动安装、root marker、自定义配置；LSP 工具支持 references、implementation、documentSymbol、workspaceSymbol、callHierarchy 等操作。
+
+**待办**：
+
+- [ ] 扩展语言服务器矩阵与 root marker 检测
+- [ ] 支持项目级自定义 LSP server 配置与覆盖
+- [ ] 可选自动安装（npm）与安装失败回退
+- [ ] 扩展 LSP 工具操作：references / implementation / symbols / call hierarchy
+- [ ] 增加独立 `lsp` 权限 action，替代复用 `read`
+- [ ] 测试 server 选择、root 解析、操作结果与权限
+
+**验收**：多语言项目能自动使用合适 LSP，Agent 可查询引用、实现与符号。
+
+#### R-P1-7 MCP 细节
+
+**现状**：已实现 stdio / Streamable HTTP、OAuth、prompts/resources 与工具刷新（[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)）；缺少 server instructions 注入、resource templates、SSE transport fallback、per-server timeout/cwd 配置。
+
+**OpenCode 参考**：`mcp/index.ts` 注入 server instructions，支持 resources / resourceTemplates、StreamableHTTP 与 SSE 两种远程传输回退、per-server timeout/cwd/OAuth 配置，以及按 agent 权限过滤工具。
+
+**待办**：
+
+- [ ] 将 server instructions 注入 system prompt，并按 agent 工具权限过滤
+- [ ] 支持 resource templates 的列出与读取
+- [ ] 远程连接失败时回退到 SSE transport
+- [ ] 增加 per-server timeout、cwd、OAuth client 配置
+- [ ] 测试 instructions、templates、传输回退与超时
+
+**验收**：MCP server 的使用说明能被 Agent 看到，旧 SSE server 也能连接。
+
+#### R-P1-8 消息 part 模型
+
+**现状**：消息 part 只有 text / reasoning / attachment / tool；步骤、快照、patch、subtask 等信息放在消息字段或其他结构中。
+
+**OpenCode 参考**：`session/message-v2.ts` 的 part 覆盖 patch、snapshot、step-start/step-finish、subtask、retry、compaction 等，支撑更细的 UI 展示与回滚。
+
+**待办**：
+
+- [ ] 评估引入 step / patch / snapshot / subtask / retry part 的迁移成本
+- [ ] 优先补齐 step 与 patch/snapshot part，支撑审查面板与回滚
+- [ ] 保持旧消息向后兼容与迁移
+- [ ] 测试 part 序列化、历史回放、UI 渲染与回滚
+
+**验收**：消息历史能表达每一步的工具、改动与状态，审查与回滚不再依赖旁路字段。
+
+#### R-P1-9 Formatter / Commands / Subagent 细节
+
+**现状**：formatter 固定 5 个；命令已覆盖用户命令与 MCP prompts，但缺少内置 init/review、skills 作为命令与 subtask 命令；子代理硬性禁止嵌套，后台结果只通知。
+
+**OpenCode 参考**：formatter 矩阵更广并支持自定义命令；`command/index.ts` 提供内置 `init` / `review`，把 MCP prompts 与 skills 也作为命令；`tool/task.ts` 支持可配置嵌套深度、task_id 与后台结果注入。
+
+**待办**：
+
+- [ ] 扩展 formatter 矩阵与自定义 formatter 命令
+- [ ] 增加内置 `init` / `review` 命令
+- [ ] 让 MCP prompts 与 skills 进入统一命令面板
+- [ ] 支持命令的 subtask 模式
+- [ ] 支持可配置子代理深度与 `task_id` 语义（与 R-P1-4 一起）
+- [ ] 测试命令来源、优先级、subtask 执行与嵌套限制
+
+**验收**：命令面板覆盖内置、用户、MCP、Skill 来源；子代理嵌套可按配置放开。
+
+#### R-P1-10 VCS / Git 模块
+
+**现状**：只有 worktree 辅助（[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)）和 shell 里的 git；没有统一的 branch/status/diff/apply 服务，也没有会话级 Git diff。
+
+**OpenCode 参考**：`project/vcs.ts` 提供 branch、default branch、status、diff、diffRaw、apply，并与 session diff / TUI 侧栏集成。
+
+**待办**：
+
+- [ ] 增加 VCS 服务：branch、status、diff、patch apply
+- [ ] 处理非 Git 项目与未跟踪文件
+- [ ] 将会话 diff 与 Git diff 区分展示
+- [ ] 为审查面板增加“工作区 Git 改动”视图
+- [ ] 测试分支检测、未跟踪文件、patch 应用失败
+
+**验收**：Agent 和 UI 都能查询仓库状态与 diff，不再依赖临时 shell 解析。
+
+### 第二轮 P2：接口与生态
+
+- [ ] Session share / sync / export / import / stats：分享链接、同步、脱敏导出、导入与使用统计
+- [ ] HTTP API / SDK 广度：文件、find、agents、commands、config、providers、MCP、LSP、TUI 等路由与生成式 SDK/client 包
+- [ ] CLI / TUI：完整 TUI、attach、serve、web、mcp、providers、import/export、stats、agent create
+- [ ] IDE 集成：VS Code 扩展、IDE 上下文/选区、ACP 之外的编辑器能力
+- [ ] GitHub / Slack：issue/PR 集成、share URL 导入、Slack 集成；现有 Action 仅覆盖基础 CLI 调用
+- [ ] 远程 workspace / control plane：workspace adapter、远程 target；当前仅本地 worktree
+- [ ] ACP 细节：usage/report、config options/profile、Question 映射
+- [ ] Account / Console / Enterprise：OpenCode 商业生态，建议明确为 ATeam 非目标
+
+### 第二轮建议实施顺序
+
+1. **R-P0-1 配置兼容层**（中等）——收益最大，决定能否复用 OpenCode 项目生态。
+2. **R-P0-3 重试 + R-P0-5 推理/缓存 + R-P1-2 max steps + R-P1-1 steering**（小到中等）——直接改善长任务可靠性。
+3. **R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——补齐日常编码体验。
+4. **R-P0-2 插件系统**（大）——如果目标是 OpenCode 级扩展生态则必须做，否则明确列为非目标。
+5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
+
+## 第一轮 P0：可靠性、安全与编辑质量（已完成）
 
 ### P0-1 上下文窗口管理与自动压缩
 
@@ -47,7 +349,7 @@
 
 ### P0-2 项目规则 AGENTS.md
 
-**现状**：system prompt 完全硬编码（[runtime.ts:742](../apps/desktop/src/main/agent/runtime/agent-runtime.ts:742)），不读取仓库的构建命令、测试要求或代码约定。
+**现状**：system prompt 完全硬编码（[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)），不读取仓库的构建命令、测试要求或代码约定。
 
 **OpenCode 参考**：全局、项目根、当前目录向上的 `AGENTS.md` 自动合并，`CLAUDE.md` 作为回退，支持配置额外 instructions。
 
@@ -87,7 +389,7 @@
 
 ### P0-4 细粒度且可持久化的权限规则
 
-**现状**：会话级 mode + 内存中的 `allowed` 集合（[runtime.ts:145](../apps/desktop/src/main/agent/runtime/agent-runtime.ts:145)、[runtime.ts:432](../apps/desktop/src/main/agent/runtime/agent-runtime.ts:432)）；没有通配符、路径或命令级规则，重启后“始终允许”丢失。
+**现状**：会话级 mode + 内存中的 `allowed` 集合（[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)）；没有通配符、路径或命令级规则，重启后“始终允许”丢失。
 
 **OpenCode 参考**：有序的 allow / ask / deny 规则，支持通配符、持久化审批、按 agent 配置、shell 命令扫描和 external_directory 边界。
 
@@ -140,7 +442,7 @@
 
 **验收**：Agent 修改 TypeScript 文件后能看到类型错误；文件写入后按项目配置自动格式化。
 
-## P1：日常编码效率
+## 第一轮 P1：日常编码效率（已完成）
 
 ### P1-1 MCP（Model Context Protocol）
 
@@ -266,7 +568,7 @@
 - [x] 子代理提问上抛到父会话
 - [x] 测试单选、多选、自由输入、取消、超时
 
-## P2：平台与生态
+## 第一轮 P2：平台与生态（已完成）
 
 - [x] Code Mode / `execute`：用 JavaScript 批量编排工具调用，减少中间结果进入上下文
 - [x] 并行工具编排与结果聚合（同一步多个工具调用并发执行，结果按 toolCallId 聚合）
@@ -280,7 +582,7 @@
 - [x] References（命名外部资料：本地目录 / Git 仓库、描述注入、外部目录自动放行、设置页编辑）
 - [x] 组织级 Policies（`agent/policy.json` 或 `ATEAM_POLICY_FILE`，权限规则最后生效）
 
-## 建议实施顺序
+## 第一轮实施顺序（已完成）
 
 1. ~~P0-1 上下文压缩~~ → 已完成基础版；剩余模型能力元数据并入 P1-7，上下文占用条并入 P1-8
 2. ~~P0-2 项目规则~~、~~P0-4 权限规则~~ → 已完成
@@ -297,8 +599,14 @@
 - 权限规则系统是 MCP、子代理、Web 工具、Skills 等新工具统一审批的基础。
 - 文件快照是 undo / redo、回滚到消息、以及后续 worktree 场景的基础。
 - 工具输出落盘是后台 shell、MCP 大结果、Web 抓取大页面的共同基础设施。
+- 第二轮：配置兼容层是项目级 Agents / MCP / LSP / 权限 / 插件配置的共同入口。
+- 第二轮：重试与状态事件是 Steering、后台任务、UI 等待态的基础。
+- 第二轮：消息 part 模型是 part 级回滚、会话 diff、审查面板与统计的基础。
 
 ## 参考
 
-- ATeam：[runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)、[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)、[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
-- OpenCode 文档：Tools、Agents、Permissions、Instructions、Compaction、Snapshots、MCP Servers、Skills、Commands、Attachments、Formatters、LSP
+- OpenCode 源码（第二轮基准）：`packages/opencode/src/config/config.ts`、`plugin/index.ts`、`session/retry.ts`、`session/system.ts`、`session/reminders.ts`、`session/revert.ts`、`background/job.ts`、`tool/shell.ts`、`tool/task.ts`、`tool/truncate.ts`、`tool/lsp.ts`、`lsp/server.ts`、`mcp/index.ts`、`session/message-v2.ts`、`project/vcs.ts`。
+- ATeam：[runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)、[defaults.ts](../apps/desktop/src/main/agent/runtime/defaults.ts)、[policy.ts](../apps/desktop/src/main/agent/runtime/policy.ts)、[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)、[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)、[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
+- ATeam 集成：[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)、[tool-output-store.ts](../apps/desktop/src/main/agent/sessions/tool-output-store.ts)、[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)、[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)
+- ATeam 接口：[server/api.ts](../apps/desktop/src/server/api.ts)、[sdk/client.ts](../apps/desktop/src/sdk/client.ts)、[cli/main.ts](../apps/desktop/src/cli/main.ts)、[acp/server.ts](../apps/desktop/src/acp/server.ts)
+- OpenCode 文档：Tools、Agents、Permissions、Instructions、Compaction、Snapshots、MCP Servers、Skills、Commands、Attachments、Formatters、LSP、Plugins、Server、TUI。
