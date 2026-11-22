@@ -67,6 +67,11 @@ export type WorkerRequest =
       method: 'sessions.setAgent'
       params: { id: string; agent: string | null }
     }
+  | {
+      id: string
+      method: 'sessions.setDirectory'
+      params: { id: string; directory: string | null }
+    }
   | { id: string; method: 'sessions.compact'; params: { id: string; force?: boolean } }
   | { id: string; method: 'sessions.undo'; params: { id: string; messageId?: string } }
   | { id: string; method: 'sessions.redo'; params: { id: string } }

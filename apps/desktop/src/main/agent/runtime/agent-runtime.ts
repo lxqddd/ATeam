@@ -258,16 +258,31 @@ export class AgentRuntime {
     })
   }
 
+  private async resolveSessionDirectoryInput(directory?: string | null): Promise<string> {
+    if (!directory) return this.options.workspacePath
+    if (!path.isAbsolute(directory)) throw new Error('INVALID_SESSION_DIRECTORY')
+    const stat = await fs.stat(directory).catch(() => null)
+    if (!stat?.isDirectory()) throw new Error('INVALID_SESSION_DIRECTORY')
+    return fs.realpath(directory).catch(() => path.resolve(directory))
+  }
+
   async createSession(directory?: string | null): Promise<SessionMeta> {
-    let target = this.options.workspacePath
-    if (directory) {
-      if (!path.isAbsolute(directory)) throw new Error('INVALID_SESSION_DIRECTORY')
-      const stat = await fs.stat(directory).catch(() => null)
-      if (!stat?.isDirectory()) throw new Error('INVALID_SESSION_DIRECTORY')
-      target = await fs.realpath(directory).catch(() => path.resolve(directory))
-    }
+    const target = await this.resolveSessionDirectoryInput(directory)
     const session = await this.store.create({ directory: target })
     this.emit({ type: 'session.upsert', session })
+    return session
+  }
+
+  async setSessionDirectory(id: string, directory: string | null): Promise<SessionMeta> {
+    if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
+    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    const target = await this.resolveSessionDirectoryInput(directory)
+    if (this.runs.has(id)) throw new Error('SESSION_BUSY')
+    const previous = this.sessionWorkspace(id)
+    const session = await this.store.setDirectory(id, target)
+    if (!session) throw new Error('SESSION_NOT_FOUND')
+    this.emit({ type: 'session.upsert', session })
+    void this.releaseWorkspace(previous)
     return session
   }
 

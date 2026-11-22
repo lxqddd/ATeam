@@ -51,6 +51,7 @@ export interface AgentBridge {
     remove: (id: string) => Promise<void>
     setModel: (id: string, model: ModelRef | null) => Promise<SessionMeta>
     setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
+    setDirectory: (id: string, directory: string | null) => Promise<SessionMeta>
     setAgent: (id: string, agent: string | null) => Promise<SessionMeta>
     compact: (id: string) => Promise<SessionMeta>
     undo: (id: string, messageId?: string) => Promise<SessionUndoResult>

@@ -49,26 +49,9 @@ describe('SessionPanel', () => {
 
     expect(screen.getByText('No chats yet')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'New chat' }))
-    const menu = await screen.findByRole('menu')
-    await user.click(within(menu).getByText('Default'))
 
-    expect(chatMocks.createSession).toHaveBeenCalledWith('/tmp/workspace')
-  })
-
-  it('creates chats in recent or picked directories', async () => {
-    const user = userEvent.setup()
-    setSessions([makeSession({ id: 's1', directory: '/tmp/project-one' })], null)
-    render(<SessionPanel />)
-
-    await user.click(screen.getByLabelText('New chat'))
-    const menu = await screen.findByRole('menu')
-    await user.click(within(menu).getByTitle('/tmp/project-one'))
-    expect(chatMocks.createSession).toHaveBeenCalledWith('/tmp/project-one')
-
-    vi.mocked(api.api.workspace.pickDirectory).mockResolvedValueOnce('/tmp/picked')
-    await user.click(screen.getByLabelText('New chat'))
-    await user.click(await screen.findByText('Choose folder…'))
-    await waitFor(() => expect(chatMocks.createSession).toHaveBeenCalledWith('/tmp/picked'))
+    await waitFor(() => expect(chatMocks.createSession).toHaveBeenCalledTimes(1))
+    expect(chatMocks.createSession).toHaveBeenCalledWith()
   })
 
   it('lists sessions and selects one', async () => {
@@ -150,7 +133,6 @@ describe('SessionPanel', () => {
     render(<SessionPanel />)
 
     await user.click(screen.getByRole('button', { name: 'New chat' }))
-    await user.click(within(await screen.findByRole('menu')).getByText('Default'))
 
     expect(await screen.findByText('boom')).toBeInTheDocument()
   })

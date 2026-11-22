@@ -1183,6 +1183,44 @@ describe('AgentRuntime', () => {
     )
   })
 
+  it('switches an idle session to another directory', async () => {
+    const project = path.join(directory, 'project-two')
+    await fs.mkdir(project, { recursive: true })
+    const session = await runtime.createSession()
+
+    const updated = await runtime.setSessionDirectory(session.id, project)
+    expect(updated.directory).toBe(await fs.realpath(project))
+    expect(runtime.listSessions().find((entry) => entry.id === session.id)?.directory).toBe(
+      await fs.realpath(project)
+    )
+
+    const reset = await runtime.setSessionDirectory(session.id, null)
+    expect(reset.directory).toBe(path.join(directory, 'workspace'))
+
+    await expect(runtime.setSessionDirectory(session.id, 'relative/path')).rejects.toThrow(
+      'INVALID_SESSION_DIRECTORY'
+    )
+    await expect(
+      runtime.setSessionDirectory(session.id, path.join(directory, 'missing'))
+    ).rejects.toThrow('INVALID_SESSION_DIRECTORY')
+    await expect(runtime.setSessionDirectory('missing', project)).rejects.toThrow(
+      'SESSION_NOT_FOUND'
+    )
+  })
+
+  it('refuses to switch directories while a run is active', async () => {
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.started')
+
+    await expect(
+      runtime.setSessionDirectory(sessionId, path.join(directory, 'workspace'))
+    ).rejects.toThrow('SESSION_BUSY')
+
+    runtime.stopChat(sessionId)
+    await sink.next('run.finished')
+  })
+
   it('refuses to remove a worktree used by a session', async () => {
     const workspace = path.join(directory, 'workspace')
     await runGit('git', ['init', '-b', 'main'], { cwd: workspace })

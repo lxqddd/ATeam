@@ -35,6 +35,8 @@ const api: AteamApi = {
       list: () => ipcRenderer.invoke(AGENT_CHANNELS.sessionsList),
       create: (directory?: string | null) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionCreate, { directory }),
+      setDirectory: (id, directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionSetDirectory, { id, directory }),
       rename: (id, title) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRename, { id, title }),
       remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionDelete, { id }),
       setModel: (id, model) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetModel, { id, model }),

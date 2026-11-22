@@ -268,7 +268,7 @@ const zhCN = {
   },
   chat: {
     newChat: '新建会话',
-    newChatDirectory: '新会话工作目录',
+    sessionWorkspace: '工作目录',
     defaultWorkspace: '默认',
     chooseFolder: '选择文件夹…',
     sessions: '会话',

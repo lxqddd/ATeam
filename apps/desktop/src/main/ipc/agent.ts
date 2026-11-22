@@ -288,6 +288,13 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     return manager.request('sessions.setSettings', { id, settings })
   })
 
+  handle(AGENT_CHANNELS.sessionSetDirectory, (payload): Promise<SessionMeta> => {
+    const { id, directory } = z
+      .object({ id: idSchema, directory: z.string().max(2_000).nullable() })
+      .parse(payload)
+    return manager.request('sessions.setDirectory', { id, directory })
+  })
+
   handle(AGENT_CHANNELS.sessionSetAgent, (payload): Promise<SessionMeta> => {
     const { id, agent } = z
       .object({ id: idSchema, agent: z.string().min(1).max(100).nullable() })

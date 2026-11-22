@@ -291,6 +291,12 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
+  async setSessionDirectory(sessionId: string, directory: string | null): Promise<void> {
+    const session = await window.api.agent.sessions.setDirectory(sessionId, directory)
+    this.upsertSession(session)
+    void this.refreshCommands(directory ?? undefined)
+  }
+
   async setSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
     const session = await window.api.agent.sessions.setSettings(sessionId, settings)
     this.upsertSession(session)

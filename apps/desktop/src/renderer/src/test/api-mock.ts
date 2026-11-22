@@ -123,10 +123,18 @@ export function createApiMock(
       }),
       sessions: {
         list: vi.fn(async () => sessions.map((session) => ({ ...session }))),
-        create: vi.fn(async () => {
-          const session = makeSession({ id: `created-${sessions.length + 1}` })
+        create: vi.fn(async (directory?: string | null) => {
+          const session = makeSession({
+            id: `created-${sessions.length + 1}`,
+            directory: directory ?? null
+          })
           sessions.unshift(session)
           return session
+        }),
+        setDirectory: vi.fn(async (id: string, directory: string | null) => {
+          const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
+          session.directory = directory
+          return { ...session }
         }),
         rename: vi.fn(async (id: string, title: string) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })

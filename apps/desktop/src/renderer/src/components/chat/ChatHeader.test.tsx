@@ -10,7 +10,8 @@ const chatMocks = vi.hoisted(() => ({
   compactSession: vi.fn(async () => undefined),
   undoSession: vi.fn(async () => 'prompt'),
   redoSession: vi.fn(async () => undefined),
-  forkSession: vi.fn(async () => undefined)
+  forkSession: vi.fn(async () => undefined),
+  setSessionDirectory: vi.fn(async () => undefined)
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -85,6 +86,8 @@ beforeEach(() => {
   chatMocks.undoSession.mockResolvedValue('prompt')
   chatMocks.redoSession.mockClear()
   chatMocks.redoSession.mockResolvedValue(undefined)
+  chatMocks.setSessionDirectory.mockClear()
+  chatMocks.setSessionDirectory.mockResolvedValue(undefined)
   Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
 })
 
@@ -219,6 +222,76 @@ describe('ChatHeader', () => {
     render(<ChatHeader />)
 
     expect(screen.getByText('12.3k / 128.0k')).toBeInTheDocument()
+  })
+
+  it('switches the session working directory from the header', async () => {
+    const state = baseState()
+    state.info = {
+      workspacePath: '/tmp/workspace',
+      appVersion: '0.1.0',
+      encryptionAvailable: true,
+      instructionFiles: [],
+      lspServers: [],
+      formatters: []
+    }
+    state.sessions[0].directory = '/tmp/project'
+    state.sessions.push(makeSession({ id: 's2', title: 'Other', directory: '/tmp/other-project' }))
+    storeState.current = state
+    const user = userEvent.setup()
+    render(<ChatHeader />)
+
+    expect(screen.getByText('project')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Working directory' }))
+    await user.click(screen.getByTitle('/tmp/other-project'))
+
+    await waitFor(() =>
+      expect(chatMocks.setSessionDirectory).toHaveBeenCalledWith('s1', '/tmp/other-project')
+    )
+  })
+
+  it('picks a working directory with the native dialog', async () => {
+    const state = baseState()
+    state.info = {
+      workspacePath: '/tmp/workspace',
+      appVersion: '0.1.0',
+      encryptionAvailable: true,
+      instructionFiles: [],
+      lspServers: [],
+      formatters: []
+    }
+    state.sessions[0].directory = '/tmp/project'
+    storeState.current = state
+    const mock = createApiMock()
+    vi.mocked(mock.api.workspace.pickDirectory).mockResolvedValueOnce('/tmp/picked')
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    const user = userEvent.setup()
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'Working directory' }))
+    await user.click(screen.getByText('Choose folder…'))
+
+    await waitFor(() =>
+      expect(chatMocks.setSessionDirectory).toHaveBeenCalledWith('s1', '/tmp/picked')
+    )
+    expect(mock.api.workspace.pickDirectory).toHaveBeenCalledWith('/tmp/project')
+  })
+
+  it('disables workspace switching while the session is running', () => {
+    const state = baseState()
+    state.info = {
+      workspacePath: '/tmp/workspace',
+      appVersion: '0.1.0',
+      encryptionAvailable: true,
+      instructionFiles: [],
+      lspServers: [],
+      formatters: []
+    }
+    state.sessions[0].directory = '/tmp/project'
+    state.sessions[0].status = 'running'
+    storeState.current = state
+    render(<ChatHeader />)
+
+    expect(screen.getByRole('button', { name: 'Working directory' })).toBeDisabled()
   })
 
   it('opens the workspace from the header', async () => {

@@ -109,6 +109,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().setSessionSettings(request.params.id, request.params.settings)
     case 'sessions.setAgent':
       return requireRuntime().setSessionAgent(request.params.id, request.params.agent)
+    case 'sessions.setDirectory':
+      return requireRuntime().setSessionDirectory(request.params.id, request.params.directory)
     case 'sessions.compact':
       return requireRuntime().compactSession(request.params.id, { force: request.params.force })
     case 'sessions.undo':
