@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { safeStorage } from 'electron'
+import { WEB_SEARCH_PROVIDERS } from '@ateam/shared'
 import type {
   RuntimeWebSearchConfig,
   WebSearchInput,
@@ -9,7 +10,7 @@ import type {
 } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../agent/atomic-json'
 
-const PROVIDERS: readonly WebSearchProvider[] = ['tavily', 'exa', 'brave', 'serper']
+const PROVIDERS: readonly WebSearchProvider[] = WEB_SEARCH_PROVIDERS
 
 interface StoredWebSearch {
   version: 1

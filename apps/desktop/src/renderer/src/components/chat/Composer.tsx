@@ -266,7 +266,7 @@ function Composer(): React.JSX.Element {
   async function expandSlashCommand(
     value: string
   ): Promise<{ text: string; command: CommandDefinition | null }> {
-    const match = /^\/([A-Za-z0-9_-]+)(?:\s+([\s\S]*))?$/.exec(value)
+    const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(value)
     if (!match) return { text: value, command: null }
     const command = commands.find(
       (candidate) => candidate.name.toLowerCase() === match[1].toLowerCase()
@@ -291,13 +291,9 @@ function Composer(): React.JSX.Element {
       }
     }
     if (command.template.includes('!`')) {
-      try {
-        return {
-          text: await window.api.agent.commands.expand({ template: command.template, args }),
-          command
-        }
-      } catch {
-        /* fall back to local expansion */
+      return {
+        text: await window.api.agent.commands.expand({ template: command.template, args }),
+        command
       }
     }
     return { text: expandCommand(command.template, args), command }

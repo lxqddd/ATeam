@@ -70,6 +70,38 @@ describe('compactionKeepTokens', () => {
   })
 })
 
+describe('estimateMessagesTokens media', () => {
+  it('counts image attachments and tool images', () => {
+    const attachment = makeMessage({
+      role: 'user',
+      parts: [
+        {
+          type: 'attachment',
+          attachment: {
+            id: 'a1',
+            name: 'pixel.png',
+            mimeType: 'image/png',
+            size: 100,
+            kind: 'image',
+            path: '/tmp/pixel.png'
+          }
+        }
+      ]
+    })
+    const toolImage = makeMessage({
+      parts: [
+        makeToolPart({
+          state: 'completed',
+          images: [{ mimeType: 'image/png', data: 'AQID' }]
+        })
+      ]
+    })
+
+    expect(estimateMessagesTokens([attachment])).toBeGreaterThanOrEqual(1_500)
+    expect(estimateMessagesTokens([toolImage])).toBeGreaterThanOrEqual(1_500)
+  })
+})
+
 describe('estimateContextTokens', () => {
   const reported = makeMessage({
     id: 'a1',
@@ -87,6 +119,47 @@ describe('estimateContextTokens', () => {
 
     expect(estimateContextTokens([user('u1', 'x'.repeat(4_000)), reported, followUp])).toBe(
       5_200 + estimateMessagesTokens([followUp])
+    )
+  })
+
+  it('prefers last-step context usage over cumulative totals', () => {
+    const message = makeMessage({
+      id: 'a1',
+      role: 'assistant',
+      parts: [makeTextPart('done')],
+      usage: { inputTokens: 60, outputTokens: 15 },
+      contextUsage: { inputTokens: 20, outputTokens: 5 }
+    })
+
+    expect(estimateContextTokens([message])).toBe(25)
+  })
+
+  it('ignores usage from messages created before a compaction boundary', () => {
+    const message = makeMessage({
+      id: 'a1',
+      role: 'assistant',
+      parts: [makeTextPart('done')],
+      usage: { inputTokens: 70_000, outputTokens: 0 },
+      createdAt: '2026-01-01T00:00:00.000Z'
+    })
+    const messages = [user('u1', 'short'), message]
+
+    expect(estimateContextTokens(messages, { usageCreatedAfter: '2026-02-01T00:00:00.000Z' })).toBe(
+      estimateMessagesTokens(messages)
+    )
+  })
+
+  it('ignores usage from incomplete assistant messages', () => {
+    const message = makeMessage({
+      id: 'a1',
+      role: 'assistant',
+      status: 'interrupted',
+      parts: [makeTextPart('partial')],
+      usage: { inputTokens: 70_000, outputTokens: 0 }
+    })
+
+    expect(estimateContextTokens([user('u1', 'short'), message])).toBe(
+      estimateMessagesTokens([user('u1', 'short'), message])
     )
   })
 

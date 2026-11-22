@@ -5,6 +5,7 @@ export const COMPACTION_KEEP_TOKENS = 15_000
 export const MIN_CONTEXT_BUFFER = 16_000
 export const CONTEXT_BUFFER_RATIO = 0.15
 
+const IMAGE_TOKEN_ESTIMATE = 1_500
 const SUMMARY_INPUT_LIMIT = 60_000
 const SUMMARY_TOOL_OUTPUT_LIMIT = 4_000
 const SUMMARY_TEXT_LIMIT = 8_000
@@ -35,6 +36,12 @@ export function estimateMessageTokens(message: ChatMessage): number {
       tokens += estimateTextTokens(JSON.stringify(part.input ?? ''))
       tokens += estimateTextTokens(part.output ?? '')
       tokens += estimateTextTokens(part.error ?? '')
+      tokens += (part.images?.length ?? 0) * IMAGE_TOKEN_ESTIMATE
+    } else if (part.type === 'attachment') {
+      tokens +=
+        part.attachment.kind === 'image'
+          ? IMAGE_TOKEN_ESTIMATE
+          : Math.ceil(part.attachment.size / 4)
     }
   }
   return tokens
@@ -44,15 +51,25 @@ export function estimateMessagesTokens(messages: ChatMessage[]): number {
   return messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
 }
 
-function lastUsageTokens(messages: ChatMessage[]): { index: number; tokens: number } | null {
+function lastUsageTokens(
+  messages: ChatMessage[],
+  options: ContextEstimateOptions = {}
+): { index: number; tokens: number } | null {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (message.role !== 'assistant' || !message.usage) continue
-    const input = message.usage.inputTokens ?? 0
+    if (message.role !== 'assistant' || message.status !== 'complete') continue
+    if (options.usageCreatedAfter && message.createdAt <= options.usageCreatedAfter) continue
+    const usage = message.contextUsage ?? message.usage
+    const input = usage?.inputTokens ?? 0
     if (input <= 0) continue
-    return { index, tokens: input + (message.usage.outputTokens ?? 0) }
+    return { index, tokens: input + (usage?.outputTokens ?? 0) }
   }
   return null
+}
+
+export interface ContextEstimateOptions {
+  /** Ignore usage reported before this ISO timestamp (for example a compaction boundary). */
+  usageCreatedAfter?: string
 }
 
 /**
@@ -60,8 +77,11 @@ function lastUsageTokens(messages: ChatMessage[]): { index: number; tokens: numb
  * anchor on the last assistant message and estimate only what came after it;
  * otherwise fall back to the heuristic.
  */
-export function estimateContextTokens(messages: ChatMessage[]): number {
-  const usage = lastUsageTokens(messages)
+export function estimateContextTokens(
+  messages: ChatMessage[],
+  options: ContextEstimateOptions = {}
+): number {
+  const usage = lastUsageTokens(messages, options)
   if (!usage) return estimateMessagesTokens(messages)
   return usage.tokens + estimateMessagesTokens(messages.slice(usage.index + 1))
 }
@@ -78,8 +98,12 @@ export function compactionKeepTokens(contextWindow: number): number {
   )
 }
 
-export function shouldCompact(messages: ChatMessage[], contextWindow: number): boolean {
-  return estimateContextTokens(messages) > contextTokenLimit(contextWindow)
+export function shouldCompact(
+  messages: ChatMessage[],
+  contextWindow: number,
+  options: ContextEstimateOptions = {}
+): boolean {
+  return estimateContextTokens(messages, options) > contextTokenLimit(contextWindow)
 }
 
 export function planCompaction(

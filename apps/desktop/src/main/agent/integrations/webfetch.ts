@@ -254,7 +254,7 @@ export async function fetchWebContent(
     format: effectiveFormat,
     content
   }
-  if (useCache) {
+  if (useCache && result.content.length <= 1_000_000) {
     cache.set(cacheKey, { expires: Date.now() + CACHE_TTL_MS, result })
     while (cache.size > CACHE_LIMIT) {
       const oldest = cache.keys().next().value

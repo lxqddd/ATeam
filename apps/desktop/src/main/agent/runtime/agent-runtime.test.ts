@@ -358,6 +358,24 @@ function imageResultScript(): Script {
   }
 }
 
+function multiStepUsageScript(): Script {
+  return async function* () {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'step one' })
+    yield part({
+      type: 'finish-step',
+      usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 }
+    })
+    yield part({ type: 'text-delta', id: 't1', text: ' step two' })
+    yield part({ type: 'finish-step' })
+    yield part({
+      type: 'finish',
+      finishReason: 'stop',
+      totalUsage: { inputTokens: 60, outputTokens: 15, totalTokens: 75 }
+    })
+  }
+}
+
 function richStreamScript(): Script {
   return async function* () {
     yield part({ type: 'text-delta', id: 'missing', text: 'ignored' })
@@ -1325,6 +1343,15 @@ describe('AgentRuntime', () => {
     })
   })
 
+  it('uses the last step usage for the context size', async () => {
+    scripts.push(multiStepUsageScript())
+    await runtime.sendChat(sessionId, 'steps')
+    await sink.next('run.finished')
+
+    expect(assistantMessages().at(-1)?.usage).toMatchObject({ inputTokens: 60, outputTokens: 15 })
+    expect(runtime.listSessions()[0].contextTokens).toBe(25)
+  })
+
   it('reports provider usage as the context size', async () => {
     scripts.push(textScript('ok'))
     await runtime.sendChat(sessionId, 'hi')
@@ -1410,6 +1437,7 @@ describe('AgentRuntime', () => {
 
     expect(session.compaction).toMatchObject({ summary: 'SUMMARY' })
     expect(summaries).toHaveLength(1)
+    expect(session.contextTokens).toBeLessThan(20_000)
     expect(runtime.messages(sessionId).messages).toHaveLength(before)
   })
 
@@ -1645,6 +1673,12 @@ describe('agent tooling configuration', () => {
 })
 
 describe('MCP tool integration', () => {
+  it('surfaces MCP prompt errors to the caller', async () => {
+    vi.mocked(mcpManager.getPrompt).mockRejectedValueOnce(new Error('UNKNOWN_MCP_SERVER: missing'))
+
+    await expect(runtime.mcpPrompt('missing', 'greet')).rejects.toThrow('UNKNOWN_MCP_SERVER')
+  })
+
   it('merges MCP tools into the run tool set', async () => {
     mcpTools.mockResolvedValue({
       mcp_demo_echo: { description: 'Echo', execute: async () => 'ok' }
@@ -2237,6 +2271,34 @@ describe('session search and fork', () => {
     ).toBe(true)
   })
 
+  it('copies attachments and strips snapshot references when forking', async () => {
+    const attachment = await saveAttachment(directory, sessionId, {
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+      data: Buffer.from('attached text')
+    })
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'see attached', undefined, [attachment])
+    await sink.next('run.finished')
+
+    const forked = await runtime.forkSession(sessionId)
+    const messages = runtime.messages(forked.id).messages
+    const part = messages[0].parts.find((candidate) => candidate.type === 'attachment')
+    if (part?.type !== 'attachment') throw new Error('attachment missing')
+    expect(
+      part.attachment.path.startsWith(`${attachmentDirectory(directory, forked.id)}${path.sep}`)
+    ).toBe(true)
+    await expect(fs.stat(part.attachment.path)).resolves.toBeDefined()
+
+    await runtime.deleteSession(sessionId)
+    await expect(fs.stat(part.attachment.path)).resolves.toBeDefined()
+
+    const assistant = messages[1]
+    expect(assistant.snapshotBefore).toBeUndefined()
+    expect(assistant.snapshotAfter).toBeUndefined()
+    expect(assistant.snapshotSteps).toEqual([])
+  })
+
   it('rejects forking a running session', async () => {
     scripts.push(pausableTextScript())
     await runtime.sendChat(sessionId, 'hi')
@@ -2432,6 +2494,27 @@ describe('background subagents and sampling', () => {
     expect(turns[0].reasoning).toBe('high')
     expect(turns[0].temperature).toBe(0.2)
     expect(turns[0].maxOutputTokens).toBe(8192)
+  })
+
+  it('drops variants that disappear from the model configuration', async () => {
+    runtime.setModels({
+      ...MODELS,
+      models: [
+        {
+          ...MODELS.models[0],
+          variants: [{ id: 'high', name: 'High', settings: {} }]
+        }
+      ]
+    })
+    await runtime.setSessionModel(sessionId, {
+      providerId: 'provider-1',
+      modelId: 'model-1',
+      variant: 'high'
+    })
+
+    runtime.setModels(MODELS)
+
+    expect(runtime.listSessions()[0].model?.variant).toBeNull()
   })
 
   it('rejects unknown model variants', async () => {

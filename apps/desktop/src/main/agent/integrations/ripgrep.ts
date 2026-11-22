@@ -47,7 +47,7 @@ export function parseRipgrepJson(lines: string[]): RipgrepMatch[] {
  */
 export function ripgrepSearch(options: RipgrepOptions): Promise<RipgrepMatch[] | null> {
   return new Promise((resolve) => {
-    const args = ['--json', '--line-number', '--no-heading', '--color', 'never']
+    const args = ['--json', '--line-number', '--no-heading', '--color', 'never', '--no-config']
     args.push('--hidden', '--no-ignore')
     args.push('--glob', '!node_modules/**', '--glob', '!.git/**', '--glob', '!.DS_Store')
     if (options.literal) args.push('--fixed-strings')

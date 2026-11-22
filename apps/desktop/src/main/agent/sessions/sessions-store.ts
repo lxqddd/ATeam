@@ -325,7 +325,15 @@ export class SessionsStore {
   async fork(id: string, messageId?: string): Promise<SessionMeta | undefined> {
     const record = this.records.get(id)
     if (!record) return undefined
-    let messages = clone(record.messages).filter((message) => message.status !== 'streaming')
+    let messages = clone(record.messages)
+      .filter((message) => message.status !== 'streaming')
+      .map((message) => ({
+        ...message,
+        snapshotBefore: undefined,
+        snapshotAfter: undefined,
+        snapshotSteps: [],
+        changedFiles: undefined
+      }))
     if (messageId) {
       const index = messages.findIndex((message) => message.id === messageId)
       if (index === -1) return undefined
@@ -351,6 +359,22 @@ export class SessionsStore {
     this.records.set(session.id, { session, messages })
     await this.persist(session.id)
     return clone(session)
+  }
+
+  async rewriteAttachmentPaths(id: string, rewrite: (path: string) => string): Promise<void> {
+    const record = this.records.get(id)
+    if (!record) return
+    let changed = false
+    for (const message of record.messages) {
+      for (const part of message.parts) {
+        if (part.type !== 'attachment') continue
+        const next = rewrite(part.attachment.path)
+        if (next === part.attachment.path) continue
+        part.attachment.path = next
+        changed = true
+      }
+    }
+    if (changed) await this.persist(id)
   }
 
   async rename(id: string, title: string): Promise<SessionMeta | undefined> {

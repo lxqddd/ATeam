@@ -142,8 +142,8 @@ export class ChatStore {
 
     await this.refreshModels()
     await this.refreshAgents()
-    await this.refreshCommands()
     await this.loadSessions()
+    await this.refreshCommands()
 
     try {
       const permissions = await window.api.agent.permissions.list()

@@ -367,6 +367,7 @@ function ModelForm({
                       <Form.Item {...rest} name={[name, 'reasoningEffort']} className="mb-0">
                         <Select
                           aria-label={t('settings.variantReasoning')}
+                          virtual={false}
                           allowClear
                           placeholder={t('settings.variantReasoning')}
                           options={['minimal', 'low', 'medium', 'high'].map((effort) => ({

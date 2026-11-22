@@ -34,6 +34,7 @@ import {
 import { expandCommandTemplate, runWorkspaceShell } from '../agent/commands'
 import { modelRefSchema } from './model-schema'
 import { agentConfigPatchSchema } from './config-schema'
+import { webSearchUpdateSchema } from './websearch-schema'
 import { normalizeImageAttachment } from '../attachments/image'
 import { searchWorkspaceFiles } from '../files/search'
 import type { ModelsStore } from '../stores/models'
@@ -422,12 +423,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   handle(AGENT_CHANNELS.webSearchGet, (): WebSearchProviderPublic => webSearchStore.get())
 
   handle(AGENT_CHANNELS.webSearchUpdate, async (payload): Promise<WebSearchProviderPublic> => {
-    const input = z
-      .object({
-        provider: z.enum(['tavily', 'exa', 'brave']),
-        apiKey: z.string().max(500).optional()
-      })
-      .parse(payload)
+    const input = webSearchUpdateSchema.parse(payload)
     const result = await webSearchStore.update(input)
     await manager.setWebSearch(webSearchStore.runtimeConfig())
     return result

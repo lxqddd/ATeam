@@ -185,6 +185,16 @@ describe('fetchWebContent', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('does not cache very large responses', async () => {
+    const body = '<p>' + 'x'.repeat(1_100_000) + '</p>'
+    const fetchMock = vi.fn<typeof fetch>(async () => htmlResponse(body))
+
+    await fetchWebContent({ url: 'https://example.com/large' }, { fetch: fetchMock, cache: true })
+    await fetchWebContent({ url: 'https://example.com/large' }, { fetch: fetchMock, cache: true })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('caches identical requests', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => htmlResponse('<p>cached</p>'))
 

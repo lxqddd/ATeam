@@ -140,6 +140,8 @@ export interface ChatMessage {
   status: 'streaming' | 'complete' | 'interrupted' | 'error'
   error?: string
   usage?: TokenUsage
+  /** Provider usage for the final model step, used for context sizing. */
+  contextUsage?: TokenUsage
   durationMs?: number
   /** Estimated USD cost for this message when the model has pricing metadata. */
   costUsd?: number
@@ -305,7 +307,8 @@ export interface McpServerStatus {
 
 export type WebFetchFormat = 'markdown' | 'text' | 'html'
 
-export type WebSearchProvider = 'tavily' | 'exa' | 'brave' | 'serper'
+export const WEB_SEARCH_PROVIDERS = ['tavily', 'exa', 'brave', 'serper'] as const
+export type WebSearchProvider = (typeof WEB_SEARCH_PROVIDERS)[number]
 
 export interface WebSearchInput {
   provider: WebSearchProvider

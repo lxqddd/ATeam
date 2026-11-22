@@ -37,6 +37,8 @@ describe('builtin agents', () => {
       'list',
       'grep',
       'glob',
+      'lsp_hover',
+      'lsp_definition',
       'todowrite',
       'todoread',
       'question'
@@ -50,7 +52,7 @@ describe('builtin agents', () => {
 
     expect(general).toMatchObject({ mode: 'subagent', tools: null })
     expect(explore).toMatchObject({ mode: 'subagent' })
-    expect(explore?.tools).toEqual(['read', 'list', 'grep', 'glob'])
+    expect(explore?.tools).toEqual(['read', 'list', 'grep', 'glob', 'lsp_hover', 'lsp_definition'])
   })
 })
 
@@ -274,6 +276,28 @@ describe('filterToolsForAgent', () => {
       'write',
       'mcp_demo_echo'
     ])
+  })
+
+  it('lets read-only agents use LSP queries', () => {
+    const plan = BUILTIN_AGENTS.find((agent) => agent.id === 'plan') as AgentDefinition
+    const tools = {
+      read: 'read',
+      lsp_hover: 'hover',
+      lsp_definition: 'definition'
+    } as unknown as ToolSet
+
+    expect(Object.keys(filterToolsForAgent(tools, plan)).sort()).toEqual([
+      'lsp_definition',
+      'lsp_hover',
+      'read'
+    ])
+  })
+
+  it('treats patch as an alias for edit and write', () => {
+    const tools = { read: 'read', patch: 'patch' } as unknown as ToolSet
+    const editor = { ...BUILTIN_AGENTS[0], tools: ['read', 'edit'] } as AgentDefinition
+
+    expect(Object.keys(filterToolsForAgent(tools, editor)).sort()).toEqual(['patch', 'read'])
   })
 
   it('returns all tools without an agent', () => {

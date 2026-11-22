@@ -550,6 +550,31 @@ describe('Composer', () => {
     await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
   })
 
+  it('expands command names containing dots', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'deploy-prod',
+        name: 'deploy.prod',
+        description: 'Deploy',
+        template: 'Deploy $ARGUMENTS',
+        agent: null,
+        model: null,
+        source: 'project'
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/deploy.prod now')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Deploy now', []))
+  })
+
   it('applies the agent and model bound to a command', async () => {
     chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
     const state = baseState() as ChatStoreState
@@ -578,6 +603,33 @@ describe('Composer', () => {
       providerId: 'p1',
       modelId: 'claude-x'
     })
+  })
+
+  it('shows an error instead of sending an unexpanded shell snippet', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'recent',
+        name: 'recent',
+        description: 'Recent commits',
+        template: 'Recent:\n!`git log`',
+        agent: null,
+        model: null,
+        source: 'project'
+      }
+    ]
+    storeState.current = state
+    vi.mocked(api.api.agent.commands.expand).mockRejectedValueOnce(new Error('expand failed'))
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/recent')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(await screen.findByText('expand failed')).toBeInTheDocument()
+    expect(chatMocks.send).not.toHaveBeenCalled()
   })
 
   it('expands MCP prompt commands', async () => {

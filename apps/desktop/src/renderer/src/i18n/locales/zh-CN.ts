@@ -214,6 +214,7 @@ const zhCN = {
     modelExists: '这个模型 ID 已经存在。',
     providerNotFound: '供应商不存在。',
     modelNotFound: '模型不存在。',
+    invalidVariant: '变体名称需唯一，温度需在 0-2 之间且 token 上限有效。',
     nameRequired: '名称不能为空。',
     modelIdRequired: '请填写模型 ID。'
   },

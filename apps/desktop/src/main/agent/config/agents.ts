@@ -13,7 +13,7 @@ import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100
 const MODES: readonly AgentMode[] = ['primary', 'subagent', 'all']
-const READ_TOOLS = ['read', 'list', 'grep', 'glob']
+const READ_TOOLS = ['read', 'list', 'grep', 'glob', 'lsp_hover', 'lsp_definition']
 const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'read',
   'list',
@@ -364,7 +364,10 @@ export function filterToolsForAgent(tools: ToolSet, agent: AgentDefinition | nul
   const filtered: ToolSet = {}
   for (const [name, definition] of Object.entries(tools)) {
     if (agent.mode === 'subagent' && name === 'subagent') continue
-    if (allowed && !allowed.has(name)) continue
+    if (allowed && !allowed.has(name)) {
+      const patchAlias = name === 'patch' && (allowed.has('edit') || allowed.has('write'))
+      if (!patchAlias) continue
+    }
     filtered[name] = definition
   }
   return filtered

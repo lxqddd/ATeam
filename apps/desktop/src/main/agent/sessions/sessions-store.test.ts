@@ -529,6 +529,28 @@ describe('fork', () => {
     expect(store.getMessages(forked?.id as string)).toHaveLength(2)
   })
 
+  it('drops snapshot references in the fork', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({
+        parts: [makeTextPart('hello')],
+        snapshotBefore: 'snap-before',
+        snapshotAfter: 'snap-after',
+        snapshotSteps: [{ before: 'a', after: 'b', files: ['x.ts'] }],
+        changedFiles: ['x.ts']
+      })
+    )
+
+    const forked = await store.fork(session.id)
+    const [message] = store.getMessages(forked?.id as string) ?? []
+
+    expect(message).toMatchObject({ snapshotSteps: [] })
+    expect(message?.snapshotBefore).toBeUndefined()
+    expect(message?.snapshotAfter).toBeUndefined()
+    expect(message?.changedFiles).toBeUndefined()
+  })
+
   it('truncates the transcript at a message', async () => {
     const session = await store.create()
     const first = makeMessage({ role: 'user', parts: [makeTextPart('one')] })

@@ -222,6 +222,7 @@ const enUS = {
     modelExists: 'This model ID already exists.',
     providerNotFound: 'The provider no longer exists.',
     modelNotFound: 'The model no longer exists.',
+    invalidVariant: 'Variants need unique names; temperature must be 0-2 and limits valid.',
     nameRequired: 'Name is required.',
     modelIdRequired: 'Model ID is required.'
   },

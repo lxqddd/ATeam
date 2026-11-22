@@ -70,6 +70,7 @@ import { SnapshotStore } from '../sessions/snapshots'
 import { ToolOutputStore } from '../sessions/tool-output-store'
 import { buildModelMessages, type AttachmentPayload } from '../message-history'
 import {
+  attachmentDirectory,
   extractPdfText,
   readAttachment,
   readTextAttachment,
@@ -158,15 +159,28 @@ export class AgentRuntime {
       workspacePath: this.options.workspacePath
     })
     let prompts: Awaited<ReturnType<McpManagerLike['prompts']>> = []
+    let timer: NodeJS.Timeout | undefined
     try {
-      prompts = await this.mcp().prompts()
+      prompts = await Promise.race([
+        this.mcp().prompts(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('MCP prompt discovery timed out')), 3_000)
+        })
+      ])
     } catch {
       /* MCP prompts are best effort */
+    } finally {
+      if (timer) clearTimeout(timer)
     }
     const names = new Set(commands.map((command) => command.name.toLowerCase()))
     const mcpCommands: CommandDefinition[] = prompts.map((prompt) => {
       let name = prompt.name
-      if (names.has(name.toLowerCase())) name = `${prompt.name}-${prompt.server}`
+      if (names.has(name.toLowerCase())) {
+        const base = `${prompt.name}-${prompt.server}`
+        name = base
+        let attempt = 2
+        while (names.has(name.toLowerCase())) name = `${base}-${attempt++}`
+      }
       names.add(name.toLowerCase())
       return {
         id: `mcp:${prompt.server}:${prompt.name}`,
@@ -187,7 +201,7 @@ export class AgentRuntime {
   }
 
   async mcpPrompt(server: string, prompt: string, args?: Record<string, string>): Promise<string> {
-    return this.getMcpPrompt(server, prompt, args)
+    return this.mcp().getPrompt(server, prompt, args)
   }
 
   async setSessionAgent(id: string, agentId: string | null): Promise<SessionMeta> {
@@ -339,7 +353,7 @@ export class AgentRuntime {
     if (!staged) throw new Error('NOTHING_TO_UNDO')
     this.emit({ type: 'session.upsert', session: staged.session })
     await this.updateContextUsage(id)
-    return { session: staged.session, prompt }
+    return { session: this.store.getSession(id) ?? staged.session, prompt }
   }
 
   async redoSession(id: string): Promise<SessionMeta> {
@@ -364,15 +378,39 @@ export class AgentRuntime {
     if (!session) throw new Error('NOTHING_TO_REDO')
     this.emit({ type: 'session.upsert', session })
     await this.updateContextUsage(id)
-    return session
+    return this.store.getSession(id) ?? session
   }
 
   async forkSession(id: string, messageId?: string): Promise<SessionMeta> {
     if (this.runs.has(id)) throw new Error('SESSION_BUSY')
     const session = await this.store.fork(id, messageId)
     if (!session) throw new Error('SESSION_NOT_FOUND')
+    await this.copyForkAttachments(id, session.id)
     this.emit({ type: 'session.upsert', session })
     return session
+  }
+
+  private async copyForkAttachments(sourceId: string, targetId: string): Promise<void> {
+    const sourceDirectory = attachmentDirectory(this.options.userDataPath, sourceId)
+    const targetDirectory = attachmentDirectory(this.options.userDataPath, targetId)
+    const copied = new Map<string, string>()
+    for (const message of this.store.getMessages(targetId) ?? []) {
+      for (const part of message.parts) {
+        if (part.type !== 'attachment') continue
+        const source = part.attachment.path
+        if (!source.startsWith(`${sourceDirectory}${path.sep}`)) continue
+        const target = path.join(targetDirectory, path.basename(source))
+        try {
+          await fs.mkdir(targetDirectory, { recursive: true })
+          await fs.copyFile(source, target)
+          copied.set(source, target)
+        } catch {
+          /* missing attachment files keep their original path */
+        }
+      }
+    }
+    if (copied.size === 0) return
+    await this.store.rewriteAttachmentPaths(targetId, (oldPath) => copied.get(oldPath) ?? oldPath)
   }
 
   searchSessions(query: string): SessionSearchResult[] {
@@ -491,7 +529,16 @@ export class AgentRuntime {
     for (const session of this.store.list()) {
       if (!session.model) continue
       try {
-        resolveModelRef(models, session.model)
+        const resolved = resolveModelRef(models, session.model)
+        if (
+          session.model.variant &&
+          !(resolved.model.variants ?? []).some((variant) => variant.id === session.model?.variant)
+        ) {
+          const record = this.store.get(session.id)
+          const fallback = { ...session.model, variant: null }
+          if (record) record.session.model = fallback
+          void this.store.setModel(session.id, fallback)
+        }
       } catch {
         const record = this.store.get(session.id)
         if (!record) continue
@@ -1341,7 +1388,7 @@ export class AgentRuntime {
     if (!session) return null
     this.emit({ type: 'session.upsert', session })
     await this.updateContextUsage(sessionId)
-    return session
+    return this.store.getSession(sessionId) ?? session
   }
 
   private async compactForOverflow(run: Run): Promise<boolean> {
@@ -1364,6 +1411,7 @@ export class AgentRuntime {
     message.parts = []
     message.error = undefined
     message.usage = undefined
+    message.contextUsage = undefined
     message.durationMs = undefined
     message.snapshotAfter = undefined
     message.snapshotSteps = []
@@ -1392,8 +1440,9 @@ export class AgentRuntime {
         (message) => message.status !== 'streaming'
       )
       const tokens =
-        estimateContextTokens(history) +
-        estimateTextTokens(record.session.compaction?.summary ?? '')
+        estimateContextTokens(history, {
+          usageCreatedAfter: record.session.compaction?.createdAt
+        }) + estimateTextTokens(record.session.compaction?.summary ?? '')
       const session = await this.store.setContextUsage(sessionId, tokens, window)
       if (session) this.emit({ type: 'session.upsert', session })
     } catch {
@@ -1464,6 +1513,7 @@ export class AgentRuntime {
     const textParts = new Map<string, number>()
     const reasoningParts = new Map<string, number>()
     let usage: TokenUsage | undefined
+    let lastStepUsage: TokenUsage | undefined
     let runTarget: ModelRef | null = null
     let finishReason = ''
 
@@ -1493,7 +1543,12 @@ export class AgentRuntime {
       const nativeCompaction =
         targetInfo.compaction === true && resolvedTarget.provider.type === 'anthropic'
       const history = this.historyMessages(run, message.id)
-      if (!nativeCompaction && shouldCompact(history, contextWindow)) {
+      if (
+        !nativeCompaction &&
+        shouldCompact(history, contextWindow, {
+          usageCreatedAfter: record.session.compaction?.createdAt
+        })
+      ) {
         await this.compactMessages(run.sessionId, history, model, run.abort.signal)
       }
 
@@ -1575,9 +1630,9 @@ export class AgentRuntime {
       } catch {
         /* MCP servers are best effort */
       }
-      const tools = filterToolsForModel(
-        filterToolsForAgent({ ...mcpTools, ...baseTools }, agent),
-        targetInfo.applyPatch === true
+      const tools = filterToolsForAgent(
+        filterToolsForModel({ ...mcpTools, ...baseTools }, targetInfo.applyPatch === true),
+        agent
       )
 
       const systemSections = [
@@ -1744,6 +1799,7 @@ export class AgentRuntime {
           }
           case 'finish-step':
             run.steps += 1
+            if (part.usage) lastStepUsage = usageFrom(part.usage)
             await this.recordStepSnapshot(run, message)
             break
           case 'finish':
@@ -1763,6 +1819,7 @@ export class AgentRuntime {
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
+      message.contextUsage = lastStepUsage
       message.costUsd = this.messageCost(runTarget, usage)
       this.settleTools(message, 'Tool call did not finish')
       await this.recordAfterSnapshot(run, message)
@@ -1805,6 +1862,7 @@ export class AgentRuntime {
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
+      message.contextUsage = lastStepUsage
       message.costUsd = this.messageCost(runTarget, usage)
       this.settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
       await this.recordAfterSnapshot(run, message)
