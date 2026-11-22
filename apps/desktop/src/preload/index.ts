@@ -4,6 +4,7 @@ import {
   AGENT_EVENT_CHANNEL,
   MODEL_CHANNELS,
   THEME_CHANNEL,
+  UPDATE_CHANNELS,
   type AgentEventEnvelope,
   type AteamApi,
   type DesktopPlatform
@@ -16,6 +17,10 @@ const api: AteamApi = {
     set: (theme) => {
       ipcRenderer.send(THEME_CHANNEL, theme)
     }
+  },
+  updates: {
+    check: () => ipcRenderer.invoke(UPDATE_CHANNELS.check),
+    download: (version) => ipcRenderer.invoke(UPDATE_CHANNELS.download, { version })
   },
   agent: {
     status: () => ipcRenderer.invoke(AGENT_CHANNELS.status),

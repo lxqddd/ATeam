@@ -8,6 +8,7 @@ import PermissionRules from '../components/settings/PermissionRules'
 import WebSearchSettings from '../components/settings/WebSearchSettings'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
+import UpdateSettings from '../components/settings/UpdateSettings'
 
 const SETTINGS_SECTIONS = [
   {
@@ -39,6 +40,11 @@ const SETTINGS_SECTIONS = [
     id: 'agent',
     labelKey: 'settings.agent',
     descriptionKey: 'settings.agentDescription'
+  },
+  {
+    id: 'update',
+    labelKey: 'settings.update',
+    descriptionKey: 'settings.updateDescription'
   }
 ] as const
 
@@ -127,6 +133,14 @@ function SettingsPage(): React.JSX.Element {
                 description={t('settings.agentDescription')}
               >
                 <AgentSettings />
+              </SettingsGroup>
+            )}
+            {section === 'update' && (
+              <SettingsGroup
+                title={t('settings.update')}
+                description={t('settings.updateDescription')}
+              >
+                <UpdateSettings />
               </SettingsGroup>
             )}
           </div>

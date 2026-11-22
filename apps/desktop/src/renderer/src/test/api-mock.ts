@@ -105,6 +105,24 @@ export function createApiMock(
     platform: 'darwin',
     versions: { electron: '44.11.5' },
     theme: { set: vi.fn() },
+    updates: {
+      check: vi.fn(async () => ({
+        currentVersion: '0.1.0',
+        latestVersion: '0.1.0',
+        available: false,
+        releaseName: 'ATeam 0.1.0',
+        releaseNotes: '',
+        releaseUrl: 'https://github.com/lxqddd/ATeam/releases',
+        publishedAt: null,
+        asset: null
+      })),
+      download: vi.fn(async (version: string) => ({
+        version,
+        path: `/tmp/ATeam-${version}.dmg`,
+        assetName: `ATeam-${version}.dmg`,
+        opened: true
+      }))
+    },
     openExternal: vi.fn(async () => undefined),
     workspace: {
       open: vi.fn(async () => undefined),

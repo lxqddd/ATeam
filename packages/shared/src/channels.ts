@@ -57,6 +57,11 @@ export const AGENT_CHANNELS = {
   openExternal: 'ateam:shell:open-external'
 } as const
 
+export const UPDATE_CHANNELS = {
+  check: 'ateam:updates:check',
+  download: 'ateam:updates:download'
+} as const
+
 export const MODEL_CHANNELS = {
   get: 'ateam:models:get',
   providerAdd: 'ateam:models:providers:add',

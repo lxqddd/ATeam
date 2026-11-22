@@ -415,3 +415,14 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - `.github/workflows/package.yml` 在 macOS / Linux / Windows 上构建未打包应用、运行冒烟测试（Linux 使用 `xvfb-run`），并把 `.app` / `linux-unpacked` / `win-unpacked` 打包为 zip / tar.gz 上传；推送 `v*` 标签时额外构建 dmg / nsis exe / AppImage + deb 安装包。
 - 冒烟脚本只依赖 Node 内置模块与打包产物，不需要安装 Playwright 浏览器；Linux 需要 `xvfb`，脚本自动传入 `--no-sandbox --disable-gpu`。
 - 当前产包未签名、未公证；正式发布需配置 Apple Developer ID / Windows 代码签名，并为 macOS 增加公证步骤。
+- CI 产物架构跟随 runner（例如 macOS arm64 runner 只产出 arm64 包）；需要同时发布 x64/arm64 时应扩展构建矩阵。
+- 发布：更新 `apps/desktop/package.json` 版本并推送 `vX.Y.Z` 标签；工作流校验标签与版本一致后构建安装包，并创建/更新 GitHub Release。
+
+## 31. 应用更新检查
+
+- 设置 → 更新：显示当前版本，自动检查 GitHub `releases/latest`，展示新版本号、发布时间与 release notes；支持手动重新检查。
+- 版本比较使用语义化版本规则（支持 `v` 前缀与预发布标识）；只有远端版本高于当前版本时才提示更新。
+- 下载：按平台选择资产（macOS dmg/zip、Windows exe/msi、Linux AppImage/deb），优先匹配当前 CPU 架构；主进程下载到系统下载目录，校验 GitHub 提供的 sha256 digest 与文件大小，随后打开安装包。
+- 安全：下载地址必须来自 GitHub 允许的域名（`github.com` / GitHub release assets 域名），拒绝任意 URL；不会静默执行下载内容。
+- 仓库默认为 `lxqddd/ATeam`，可用 `ATEAM_GITHUB_REPO` 覆盖；`ATEAM_GITHUB_TOKEN` 可提高 GitHub API 限额，`ATEAM_GITHUB_API_URL` 用于测试或 GitHub Enterprise。
+- 当前不做应用内静默升级：更新由用户下载并运行安装包完成；未签名/未公证的安装包可能触发 Gatekeeper 或 SmartScreen 提示。

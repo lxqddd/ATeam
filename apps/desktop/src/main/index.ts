@@ -20,7 +20,9 @@ import { ProviderAuthStore } from './models/oauth-tokens'
 import { runtimeModelsWithOAuth } from './models/runtime'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
+import { registerUpdatesIpc } from './ipc/updates'
 import { createTrustedSender } from './ipc/trusted-sender'
+import { ReleaseUpdater } from './updates/release-updater'
 import icon from '../../resources/icon.png?asset'
 
 const TITLE_BAR_HEIGHT = 44
@@ -226,6 +228,17 @@ if (!hasSingleInstanceLock) {
       modelsStore,
       providerAuthStore,
       catalogStore,
+      isTrustedSender
+    })
+    registerUpdatesIpc({
+      updater: new ReleaseUpdater({
+        currentVersion: app.getVersion(),
+        downloadsPath: app.getPath('downloads'),
+        repo: process.env.ATEAM_GITHUB_REPO,
+        token: process.env.ATEAM_GITHUB_TOKEN,
+        apiBaseUrl: process.env.ATEAM_GITHUB_API_URL,
+        openInstaller: async (filePath) => (await shell.openPath(filePath)) === ''
+      }),
       isTrustedSender
     })
 

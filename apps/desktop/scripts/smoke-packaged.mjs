@@ -140,6 +140,31 @@ function startModelMock() {
   const server = http.createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
+    if (request.url === '/repos/lxqddd/ATeam/releases/latest') {
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          tag_name: 'v99.0.0',
+          name: 'ATeam 99.0.0',
+          body: 'Packaged update smoke.',
+          html_url: 'https://github.com/lxqddd/ATeam/releases/tag/v99.0.0',
+          published_at: '2026-11-22T00:00:00.000Z',
+          draft: false,
+          prerelease: false,
+          assets: [
+            {
+              name: 'ATeam-99.0.0.dmg',
+              browser_download_url:
+                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0.dmg',
+              size: 1024,
+              content_type: 'application/octet-stream',
+              digest: null
+            }
+          ]
+        })
+      )
+      return
+    }
     if (!request.url?.endsWith('/chat/completions')) {
       response.writeHead(404).end('{}')
       return
@@ -217,7 +242,10 @@ async function run() {
     ...(process.platform === 'linux' ? ['--no-sandbox', '--disable-gpu'] : [])
   ]
   console.error(`[smoke] launching ${executable}`)
-  const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(executable, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, ATEAM_GITHUB_API_URL: `http://127.0.0.1:${mock.port}` }
+  })
   child.stdout.on('data', (chunk) => logs.push(chunk.toString()))
   child.stderr.on('data', (chunk) => logs.push(chunk.toString()))
 
@@ -242,6 +270,21 @@ async function run() {
     })()`)
     if (health.status !== 'ready') fail(`Agent worker did not start: ${health.status}`)
     if (!health.text.includes('ATeam')) fail('App shell did not render')
+
+    const update = await cdp.evaluate('window.api.updates.check()')
+    if (!update.available || update.latestVersion !== '99.0.0' || !update.asset) {
+      fail(`Update check failed: ${JSON.stringify(update)}`)
+    }
+    const updateText = await cdp.evaluate(`(async () => {
+      location.hash = '#/settings?section=update'
+      const deadline = Date.now() + 5000
+      while (Date.now() < deadline) {
+        if (document.body.innerText.includes('99.0.0')) return document.body.innerText
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      }
+      return document.body.innerText
+    })()`)
+    if (!updateText.includes('99.0.0')) fail('Update settings section did not render the release')
 
     console.error('[smoke] configuring model')
     const setup = await cdp.evaluate(`(async () => {

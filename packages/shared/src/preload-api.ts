@@ -24,6 +24,7 @@ import type {
   WebSearchInput,
   WebSearchProviderPublic
 } from './agent-types'
+import type { UpdateDownloadResult, UpdateInfo } from './update-types'
 import type {
   ModelCatalogEntry,
   ModelCreateInput,
@@ -149,10 +150,16 @@ export interface ModelsBridge {
 
 export type DesktopPlatform = 'darwin' | 'win32' | 'linux'
 
+export interface UpdateBridge {
+  check: () => Promise<UpdateInfo>
+  download: (version: string) => Promise<UpdateDownloadResult>
+}
+
 export interface AteamApi {
   platform: DesktopPlatform
   versions: { electron: string }
   theme: { set: (theme: 'light' | 'dark') => void }
+  updates: UpdateBridge
   agent: AgentBridge
   models: ModelsBridge
   workspace: {
