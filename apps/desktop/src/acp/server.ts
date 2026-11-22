@@ -1,11 +1,21 @@
 import path from 'node:path'
 import { createInterface, type Interface } from 'node:readline'
-import type { AgentEventEnvelope, PermissionDecision, SessionMeta } from '@ateam/shared'
+import type {
+  AgentEventEnvelope,
+  ChatMessage,
+  MessageAttachment,
+  MessagesSnapshot,
+  PermissionDecision,
+  SessionMeta
+} from '@ateam/shared'
 import type { EventBus } from '../server/event-bus'
 
 export interface AcpRuntime {
   createSession(): Promise<SessionMeta>
-  sendChat(id: string, text: string): Promise<void>
+  listSessions(): SessionMeta[]
+  messages(id: string): MessagesSnapshot
+  attachImage(sessionId: string, mimeType: string, data: Uint8Array): Promise<MessageAttachment>
+  sendChat(id: string, text: string, model?: null, attachments?: MessageAttachment[]): Promise<void>
   stopChat(id: string): void
   replyPermission(id: string, decision: PermissionDecision): void
   replyQuestion(id: string, answer: import('@ateam/shared').QuestionAnswer): void
@@ -140,8 +150,8 @@ export class AcpServer {
         this.respond(message.id as number, {
           protocolVersion: PROTOCOL_VERSION,
           agentCapabilities: {
-            loadSession: false,
-            promptCapabilities: { image: false, audio: false, embeddedContext: false }
+            loadSession: true,
+            promptCapabilities: { image: true, audio: false, embeddedContext: true }
           },
           agentInfo: { name: 'ateam', title: 'ATeam', version: this.options.version ?? '0.1.0' }
         })
@@ -149,6 +159,10 @@ export class AcpServer {
       }
       if (message.method === 'session/new') {
         await this.createSession(message)
+        return
+      }
+      if (message.method === 'session/load') {
+        await this.loadSession(message)
         return
       }
       if (message.method === 'session/prompt') {
@@ -180,6 +194,61 @@ export class AcpServer {
     this.respond(message.id as number, { sessionId: session.id })
   }
 
+  private async loadSession(message: JsonRpcRequest): Promise<void> {
+    const cwd = message.params?.cwd
+    const sessionId = message.params?.sessionId
+    if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) {
+      this.fail(message.id, -32602, 'cwd must be an absolute path')
+      return
+    }
+    if (typeof sessionId !== 'string') {
+      this.fail(message.id, -32602, 'sessionId is required')
+      return
+    }
+    const runtime = await this.options.createRuntime(cwd)
+    if (!runtime.listSessions().some((session) => session.id === sessionId)) {
+      this.fail(message.id, -32602, 'Unknown session')
+      return
+    }
+    this.sessions.set(sessionId, { runtime, cwd })
+    this.replay(runtime.messages(sessionId).messages, sessionId)
+    this.respond(message.id as number, {})
+  }
+
+  private replay(messages: ChatMessage[], sessionId: string): void {
+    for (const message of messages) {
+      for (const part of message.parts) {
+        if (part.type === 'text') {
+          this.notify('session/update', {
+            sessionId,
+            update: {
+              sessionUpdate: message.role === 'user' ? 'user_message_chunk' : 'agent_message_chunk',
+              messageId: message.id,
+              content: { type: 'text', text: part.text }
+            }
+          })
+        } else if (part.type === 'tool' && message.role === 'assistant') {
+          this.notify('session/update', {
+            sessionId,
+            update: {
+              sessionUpdate: 'tool_call',
+              toolCallId: part.toolCallId,
+              title: part.toolName,
+              kind: toolKind(part.toolName),
+              status:
+                part.state === 'completed'
+                  ? 'completed'
+                  : part.state === 'failed' || part.state === 'denied'
+                    ? 'failed'
+                    : 'pending',
+              rawInput: part.input
+            }
+          })
+        }
+      }
+    }
+  }
+
   private async prompt(message: JsonRpcRequest): Promise<void> {
     const sessionId = message.params?.sessionId
     const entry = typeof sessionId === 'string' ? this.sessions.get(sessionId) : undefined
@@ -188,8 +257,23 @@ export class AcpServer {
       return
     }
     const text = textFromPrompt(message.params?.prompt)
-    if (!text) {
-      this.fail(message.id, -32602, 'Prompt contains no text content')
+    const images: MessageAttachment[] = []
+    for (const block of Array.isArray(message.params?.prompt) ? message.params.prompt : []) {
+      if (!block || typeof block !== 'object') continue
+      const raw = block as Record<string, unknown>
+      if (raw.type !== 'image' || typeof raw.data !== 'string') continue
+      const mimeType = typeof raw.mimeType === 'string' ? raw.mimeType : 'image/png'
+      try {
+        images.push(
+          await entry.runtime.attachImage(sessionId, mimeType, Buffer.from(raw.data, 'base64'))
+        )
+      } catch (error) {
+        this.fail(message.id, -32602, error instanceof Error ? error.message : String(error))
+        return
+      }
+    }
+    if (!text && images.length === 0) {
+      this.fail(message.id, -32602, 'Prompt contains no text or image content')
       return
     }
 
@@ -202,7 +286,7 @@ export class AcpServer {
       abort.signal
     )
     try {
-      await entry.runtime.sendChat(sessionId, text)
+      await entry.runtime.sendChat(sessionId, text, undefined, images)
     } catch (error) {
       abort.abort()
       await finished.catch(() => undefined)

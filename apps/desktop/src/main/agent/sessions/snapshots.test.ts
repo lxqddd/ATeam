@@ -174,6 +174,26 @@ describe('SnapshotStore', () => {
     })
   })
 
+  it('captures and restores files inside references', async () => {
+    const reference = path.join(directory, 'reference')
+    await fs.mkdir(reference, { recursive: true })
+    await fs.writeFile(path.join(reference, 'guide.md'), 'first')
+    await write('a.txt', 'one')
+
+    const snapshot = await store.create(workspace, 'session-1', [
+      { alias: 'docs', root: reference }
+    ])
+    expect(snapshot.files['refs/docs/guide.md']).toBeTruthy()
+
+    await fs.writeFile(path.join(reference, 'guide.md'), 'second')
+    const after = await store.create(workspace, 'session-1', [{ alias: 'docs', root: reference }])
+    const diff = await store.diff(snapshot.id, after.id)
+    expect(diff.modified).toContain('refs/docs/guide.md')
+
+    await store.restorePaths(workspace, snapshot.id, ['refs/docs/guide.md'])
+    await expect(fs.readFile(path.join(reference, 'guide.md'), 'utf8')).resolves.toBe('first')
+  })
+
   it('refuses to restore a snapshot into a different workspace', async () => {
     await write('a.txt', 'one')
     const snapshot = await store.create(workspace)

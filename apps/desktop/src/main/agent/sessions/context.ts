@@ -18,8 +18,11 @@ export interface CompactionPlan {
   keepTokens: number
 }
 
-export function estimateTextTokens(text: string): number {
+export type TokenEncoder = (text: string) => number
+
+export function estimateTextTokens(text: string, encode?: TokenEncoder): number {
   if (!text) return 0
+  if (encode) return encode(text)
   let tokens = 0
   for (const character of text) {
     tokens += (character.codePointAt(0) ?? 0) > 0x7f ? 1 : 0.25
@@ -27,15 +30,15 @@ export function estimateTextTokens(text: string): number {
   return Math.ceil(tokens)
 }
 
-export function estimateMessageTokens(message: ChatMessage): number {
+export function estimateMessageTokens(message: ChatMessage, encode?: TokenEncoder): number {
   let tokens = 4
   for (const part of message.parts) {
     if (part.type === 'text' || part.type === 'reasoning') {
-      tokens += estimateTextTokens(part.text)
+      tokens += estimateTextTokens(part.text, encode)
     } else if (part.type === 'tool') {
-      tokens += estimateTextTokens(JSON.stringify(part.input ?? ''))
-      tokens += estimateTextTokens(part.output ?? '')
-      tokens += estimateTextTokens(part.error ?? '')
+      tokens += estimateTextTokens(JSON.stringify(part.input ?? ''), encode)
+      tokens += estimateTextTokens(part.output ?? '', encode)
+      tokens += estimateTextTokens(part.error ?? '', encode)
       tokens += (part.images?.length ?? 0) * IMAGE_TOKEN_ESTIMATE
     } else if (part.type === 'attachment') {
       tokens +=
@@ -47,8 +50,8 @@ export function estimateMessageTokens(message: ChatMessage): number {
   return tokens
 }
 
-export function estimateMessagesTokens(messages: ChatMessage[]): number {
-  return messages.reduce((total, message) => total + estimateMessageTokens(message), 0)
+export function estimateMessagesTokens(messages: ChatMessage[], encode?: TokenEncoder): number {
+  return messages.reduce((total, message) => total + estimateMessageTokens(message, encode), 0)
 }
 
 function lastUsageTokens(
@@ -70,6 +73,7 @@ function lastUsageTokens(
 export interface ContextEstimateOptions {
   /** Ignore usage reported before this ISO timestamp (for example a compaction boundary). */
   usageCreatedAfter?: string
+  encode?: TokenEncoder
 }
 
 /**
@@ -82,8 +86,8 @@ export function estimateContextTokens(
   options: ContextEstimateOptions = {}
 ): number {
   const usage = lastUsageTokens(messages, options)
-  if (!usage) return estimateMessagesTokens(messages)
-  return usage.tokens + estimateMessagesTokens(messages.slice(usage.index + 1))
+  if (!usage) return estimateMessagesTokens(messages, options.encode)
+  return usage.tokens + estimateMessagesTokens(messages.slice(usage.index + 1), options.encode)
 }
 
 export function contextTokenLimit(contextWindow: number): number {
@@ -110,16 +114,17 @@ export function planCompaction(
   messages: ChatMessage[],
   contextWindow: number,
   keepTokens = COMPACTION_KEEP_TOKENS,
-  force = false
+  force = false,
+  encode?: TokenEncoder
 ): CompactionPlan | null {
-  const tokensBefore = estimateContextTokens(messages)
+  const tokensBefore = estimateContextTokens(messages, { encode })
   const limit = Math.min(keepTokens, compactionKeepTokens(contextWindow))
   if (!force && tokensBefore <= limit) return null
 
   let accumulated = 0
   let start = messages.length
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const tokens = estimateMessageTokens(messages[index])
+    const tokens = estimateMessageTokens(messages[index], encode)
     if (accumulated + tokens > (force ? 0 : limit)) break
     accumulated += tokens
     start = index
@@ -142,7 +147,7 @@ export function planCompaction(
     keep,
     throughMessageId: older[older.length - 1].id,
     tokensBefore,
-    keepTokens: estimateMessagesTokens(keep)
+    keepTokens: estimateMessagesTokens(keep, encode)
   }
 }
 

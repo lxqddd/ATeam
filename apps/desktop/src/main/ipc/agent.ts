@@ -42,7 +42,8 @@ import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../models/r
 import { agentConfigPatchSchema } from './config-schema'
 import { webSearchUpdateSchema } from './websearch-schema'
 import { normalizeImageAttachment } from '../attachments/image'
-import { searchWorkspaceFiles } from '../files/search'
+import { searchFilesWithReferences } from '../files/search'
+import { hasProjectReferences, resolveReferences } from '../agent/references'
 import type { ModelsStore } from '../stores/models'
 import type { WebSearchStore } from '../stores/websearch'
 import type { TrustedSender } from './trusted-sender'
@@ -352,7 +353,19 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
 
   handle(AGENT_CHANNELS.filesSearch, async (payload): Promise<string[]> => {
     const { query } = z.object({ query: z.string().max(200) }).parse(payload)
-    return searchWorkspaceFiles(workspacePath, query)
+    const config = configStore.get()
+    let references: Array<{ alias: string; root: string }> = []
+    if ((config.references?.length ?? 0) > 0 || hasProjectReferences(workspacePath)) {
+      references = await resolveReferences({
+        references: config.references ?? [],
+        workspacePath,
+        globalDirectory: path.join(app.getPath('userData'), 'agent'),
+        cacheDirectory: path.join(app.getPath('userData'), 'agent', 'references')
+      })
+        .then((items) => items.map((item) => ({ alias: item.alias, root: item.root })))
+        .catch(() => [])
+    }
+    return searchFilesWithReferences(workspacePath, query, references)
   })
 
   handle(AGENT_CHANNELS.chatStop, async (payload): Promise<void> => {

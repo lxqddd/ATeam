@@ -1,10 +1,16 @@
 import { exec } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { expandCommand, type CommandDefinition, type ModelRef } from '@ateam/shared'
+import {
+  COMMAND_SNIPPET_PATTERN,
+  expandCommand,
+  splitArguments,
+  type CommandDefinition,
+  type ModelRef
+} from '@ateam/shared'
 import { readJsonFile } from './atomic-json'
 
-export { expandCommand }
+export { expandCommand, splitArguments }
 
 function slugify(name: string): string {
   const slug = name
@@ -175,7 +181,6 @@ export type ShellSnippetRunner = (command: string) => Promise<ShellSnippetResult
 
 const MAX_SNIPPET_OUTPUT = 10_000
 const MAX_SNIPPETS = 5
-const SNIPPET_PATTERN = /!`([^`\n]+)`/g
 
 /** Expand placeholders, then replace !`command` snippets with their stdout. */
 export async function expandCommandTemplate(
@@ -189,7 +194,7 @@ export async function expandCommandTemplate(
   const parts: string[] = []
   let lastIndex = 0
   let executed = 0
-  for (const match of expanded.matchAll(SNIPPET_PATTERN)) {
+  for (const match of expanded.matchAll(COMMAND_SNIPPET_PATTERN)) {
     const index = match.index ?? 0
     parts.push(expanded.slice(lastIndex, index))
     if (executed >= MAX_SNIPPETS) {

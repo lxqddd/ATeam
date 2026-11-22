@@ -14,6 +14,8 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - 'resources/**'
+  - 'node_modules/@vscode/ripgrep/**'
+  - 'node_modules/@vscode/ripgrep-*/**'
 win:
   executableName: ateam
 nsis:

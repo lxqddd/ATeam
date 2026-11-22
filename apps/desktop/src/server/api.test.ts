@@ -148,7 +148,9 @@ describe('API server', () => {
     const { baseUrl } = await start('secret')
 
     expect(await (await fetch(`${baseUrl}/health`)).json()).toMatchObject({ ok: true })
+    expect(await (await fetch(`${baseUrl}/v1/health`)).json()).toMatchObject({ ok: true })
     expect((await fetch(`${baseUrl}/sessions`)).status).toBe(401)
+    expect((await fetch(`${baseUrl}/v1/sessions`)).status).toBe(401)
     expect((await fetch(`${baseUrl}/sessions`, { headers: auth('secret') })).status).toBe(200)
   })
 
@@ -159,6 +161,13 @@ describe('API server', () => {
 
     const preflight = await fetch(`${baseUrl}/sessions`, { method: 'OPTIONS' })
     expect(preflight.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it('refuses to bind a remote host without a token', async () => {
+    const bus = new EventBus()
+    const runtime = new FakeRuntime(bus)
+    const server = createApiServer({ runtime, bus, host: '0.0.0.0', port: 0 })
+    await expect(server.listen()).rejects.toThrow('AUTH_REQUIRED_FOR_REMOTE_BIND')
   })
 
   it('creates sessions with settings and returns them', async () => {

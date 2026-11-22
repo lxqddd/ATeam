@@ -11,10 +11,13 @@ import type { Run } from './types'
 export interface SubagentHost {
   store: SessionsStore
   agents(workspace: string): Promise<AgentDefinition[]>
+  createSnapshotId(
+    sessionId: string,
+    references: Array<{ alias: string; root: string }>
+  ): Promise<string | undefined>
   record(sessionId: string): SessionRecord
   hasRun(sessionId: string): boolean
   registerRun(sessionId: string, run: Run): void
-  createSnapshotId(sessionId: string): Promise<string | undefined>
   askPermission(
     parent: Run,
     action: PermissionAction,
@@ -81,7 +84,7 @@ export async function runSubagentTask(
   const user = makeUserMessage(sessionId, input.prompt)
   const assistant = makeAssistantMessage(sessionId)
   if (parent.config.snapshots) {
-    assistant.snapshotBefore = await host.createSnapshotId(sessionId)
+    assistant.snapshotBefore = await host.createSnapshotId(sessionId, parent.references ?? [])
   }
   await host.store.appendMessage(sessionId, user)
   await host.store.appendMessage(sessionId, assistant)

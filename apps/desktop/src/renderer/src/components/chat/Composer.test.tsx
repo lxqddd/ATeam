@@ -527,6 +527,19 @@ describe('Composer', () => {
     expect(api.api.agent.files.search).toHaveBeenCalledWith('src')
   })
 
+  it('offers reference aliases for an empty @ query', async () => {
+    vi.mocked(api.api.agent.files.search).mockResolvedValue(['docs/'])
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '@')
+    await user.click(await screen.findByRole('option', { name: 'docs/' }))
+
+    expect(textarea).toHaveValue('@docs/ ')
+    expect(api.api.agent.files.search).toHaveBeenCalledWith('')
+  })
+
   it('inserts commands from the slash menu', async () => {
     const user = userEvent.setup()
     renderComposer()
@@ -627,6 +640,7 @@ describe('Composer', () => {
     const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
     await user.type(textarea, '/recent')
     await user.click(screen.getByRole('button', { name: 'Send' }))
+    await user.click(await screen.findByRole('button', { name: 'Run command' }))
 
     expect(await screen.findByText('expand failed')).toBeInTheDocument()
     expect(chatMocks.send).not.toHaveBeenCalled()
@@ -662,6 +676,42 @@ describe('Composer', () => {
     expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith('docs', 'search', { query: 'electron' })
   })
 
+  it('passes quoted MCP prompt arguments intact', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'mcp:docs:search',
+        name: 'search',
+        description: 'MCP · docs · Search docs',
+        template: '',
+        agent: null,
+        model: null,
+        mcp: {
+          server: 'docs',
+          prompt: 'search',
+          arguments: ['query', 'scope']
+        },
+        source: 'mcp'
+      }
+    ]
+    storeState.current = state
+    vi.mocked(api.api.agent.mcp.prompt).mockResolvedValueOnce('Search results')
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/search "two words" src')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() =>
+      expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith('docs', 'search', {
+        query: 'two words',
+        scope: 'src'
+      })
+    )
+  })
+
   it('expands shell snippets through the agent process', async () => {
     chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
     const state = baseState() as ChatStoreState
@@ -685,11 +735,42 @@ describe('Composer', () => {
     await user.type(textarea, '/recent')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
+    expect(api.api.agent.commands.expand).not.toHaveBeenCalled()
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('git log --oneline -1')
+    await user.click(screen.getByRole('button', { name: 'Run command' }))
+
     await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Recent:\nabc123 commit', []))
     expect(api.api.agent.commands.expand).toHaveBeenCalledWith({
       template: 'Recent:\n!`git log --oneline -1`',
       args: ''
     })
+  })
+
+  it('cancels shell snippets without sending', async () => {
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'recent',
+        name: 'recent',
+        description: 'Recent commits',
+        template: 'Recent:\n!`git log --oneline -1`',
+        agent: null,
+        model: null,
+        source: 'project'
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/recent')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    expect(api.api.agent.commands.expand).not.toHaveBeenCalled()
+    expect(chatMocks.send).not.toHaveBeenCalled()
+    expect(textarea).toHaveValue('/recent')
   })
 })
 

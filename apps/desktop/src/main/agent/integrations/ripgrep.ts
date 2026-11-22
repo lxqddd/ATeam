@@ -45,7 +45,19 @@ export function parseRipgrepJson(lines: string[]): RipgrepMatch[] {
  * Search with ripgrep when it is installed. Resolves null when the binary is
  * missing or unusable so callers can fall back to the JavaScript walker.
  */
-export function ripgrepSearch(options: RipgrepOptions): Promise<RipgrepMatch[] | null> {
+let bundledBinary: Promise<string | null> | null = null
+
+function resolveBundledBinary(): Promise<string | null> {
+  bundledBinary ??= import('@vscode/ripgrep')
+    .then((module) =>
+      module.rgPath ? module.rgPath.replace('app.asar', 'app.asar.unpacked') : null
+    )
+    .catch(() => null)
+  return bundledBinary
+}
+
+export async function ripgrepSearch(options: RipgrepOptions): Promise<RipgrepMatch[] | null> {
+  const binary = options.binary ?? (await resolveBundledBinary()) ?? 'rg'
   return new Promise((resolve) => {
     const args = ['--json', '--line-number', '--no-heading', '--color', 'never', '--no-config']
     args.push('--hidden', '--no-ignore')
@@ -65,7 +77,7 @@ export function ripgrepSearch(options: RipgrepOptions): Promise<RipgrepMatch[] |
 
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(options.binary ?? 'rg', args, { cwd: options.cwd })
+      child = spawn(binary, args, { cwd: options.cwd })
     } catch {
       finish(null)
       return

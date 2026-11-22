@@ -52,3 +52,60 @@ export async function searchWorkspaceFiles(
     .slice(0, limit)
     .map((match) => match.path)
 }
+
+export interface ReferenceRoot {
+  alias: string
+  root: string
+}
+
+async function listFiles(root: string, limit: number): Promise<string[]> {
+  const files: string[] = []
+  const base = path.resolve(root)
+  const walk = async (directory: string, depth: number): Promise<void> => {
+    if (files.length >= limit || depth > MAX_DEPTH) return
+    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (files.length >= limit) return
+      if (entry.name.startsWith('.') || IGNORED_DIRS.has(entry.name)) continue
+      const absolute = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        await walk(absolute, depth + 1)
+      } else if (entry.isFile()) {
+        files.push(path.relative(base, absolute).split(path.sep).join('/'))
+      }
+    }
+  }
+  await walk(base, 0)
+  return files
+}
+
+export async function searchFilesWithReferences(
+  workspacePath: string,
+  query: string,
+  references: ReferenceRoot[],
+  limit = 20
+): Promise<string[]> {
+  const needle = query.trim()
+  const separator = needle.indexOf('/')
+  if (separator >= 0) {
+    const alias = needle.slice(0, separator)
+    const rest = needle.slice(separator + 1)
+    const reference = references.find(
+      (candidate) => candidate.alias.toLowerCase() === alias.toLowerCase()
+    )
+    if (reference) {
+      const files = rest
+        ? await searchWorkspaceFiles(reference.root, rest, limit)
+        : await listFiles(reference.root, limit)
+      return files.map((file) => `${reference.alias}/${file}`)
+    }
+  }
+
+  const prefix = needle.toLowerCase()
+  const aliases = references
+    .filter((reference) => !prefix || reference.alias.toLowerCase().includes(prefix))
+    .slice(0, limit)
+    .map((reference) => `${reference.alias}/`)
+  const files = await searchWorkspaceFiles(workspacePath, needle, limit)
+  return [...new Set([...aliases, ...files])].slice(0, limit)
+}

@@ -87,10 +87,12 @@ import {
   hasProjectReferences,
   isInsideReferences,
   referencesPrompt,
-  resolveReferences
+  resolveReferences,
+  type ResolvedReference
 } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
 import { computeMessageCost } from '../cost'
+import { tokenCounterFor, type TokenCounter } from '../tokenizer'
 import {
   discoverFormatters,
   formatFile,
@@ -478,7 +480,9 @@ export class AgentRuntime {
       const plan = planCompaction(
         record.messages,
         contextWindow,
-        compactionKeepTokens(contextWindow)
+        compactionKeepTokens(contextWindow),
+        false,
+        this.tokenEncoder(target)
       )
       if (!plan) return false
       const existing = this.store.getPreparedCompaction(id)
@@ -605,7 +609,11 @@ export class AgentRuntime {
     const assistant = makeAssistantMessage(sessionId)
     const config = await readAgentConfig(this.options.userDataPath)
     if (config.snapshots) {
-      assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+      assistant.snapshotBefore = await this.createSnapshotId(
+        sessionId,
+        this.sessionWorkspace(sessionId),
+        await this.resolveRunReferences(config)
+      )
     }
     await this.store.appendMessage(sessionId, user)
     await this.store.appendMessage(sessionId, assistant)
@@ -673,7 +681,11 @@ export class AgentRuntime {
     const assistant = makeAssistantMessage(sessionId)
     const config = await readAgentConfig(this.options.userDataPath)
     if (config.snapshots) {
-      assistant.snapshotBefore = await this.createSnapshotId(sessionId)
+      assistant.snapshotBefore = await this.createSnapshotId(
+        sessionId,
+        this.sessionWorkspace(sessionId),
+        await this.resolveRunReferences(config)
+      )
     }
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
@@ -1132,12 +1144,13 @@ export class AgentRuntime {
       {
         store: this.store,
         agents: (workspace) => this.agents(workspace),
+        createSnapshotId: (sessionId, references) =>
+          this.createSnapshotId(sessionId, this.sessionWorkspace(sessionId), references),
         record: (sessionId) => this.record(sessionId),
         hasRun: (sessionId) => this.runs.has(sessionId),
         registerRun: (sessionId, run) => {
           this.runs.set(sessionId, run)
         },
-        createSnapshotId: (sessionId) => this.createSnapshotId(sessionId),
         askPermission: (target, action, resource, toolName, callId, rules) =>
           this.askPermission(target, action, resource, toolName, callId, rules),
         runAgent: (run) => this.runAgent(run),
@@ -1455,7 +1468,14 @@ export class AgentRuntime {
     const target = record.session.model ?? this.models.defaultModel
     const contextWindow =
       resolveModelRef(this.models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
-    const plan = planCompaction(messages, contextWindow, compactionKeepTokens(contextWindow), force)
+    const encode = this.tokenEncoder(target)
+    const plan = planCompaction(
+      messages,
+      contextWindow,
+      compactionKeepTokens(contextWindow),
+      force,
+      encode
+    )
     if (!plan) return null
 
     const prepared = this.store.getPreparedCompaction(sessionId)
@@ -1479,7 +1499,7 @@ export class AgentRuntime {
       throughMessageId: plan.throughMessageId,
       createdAt: nowIso(),
       tokensBefore: plan.tokensBefore,
-      tokensAfter: estimateMessagesTokens(plan.keep) + estimateTextTokens(summary)
+      tokensAfter: estimateMessagesTokens(plan.keep, encode) + estimateTextTokens(summary, encode)
     })
     if (!session) return null
     this.emit({ type: 'session.upsert', session })
@@ -1535,10 +1555,12 @@ export class AgentRuntime {
       const history = messagesAfterCompaction(record.messages, record.session.compaction).filter(
         (message) => message.status !== 'streaming'
       )
+      const encode = this.tokenEncoder(target)
       const tokens =
         estimateContextTokens(history, {
-          usageCreatedAfter: record.session.compaction?.createdAt
-        }) + estimateTextTokens(record.session.compaction?.summary ?? '')
+          usageCreatedAfter: record.session.compaction?.createdAt,
+          encode
+        }) + estimateTextTokens(record.session.compaction?.summary ?? '', encode)
       const session = await this.store.setContextUsage(sessionId, tokens, window)
       if (session) this.emit({ type: 'session.upsert', session })
     } catch {
@@ -1550,12 +1572,35 @@ export class AgentRuntime {
     return this.store.getSession(sessionId)?.directory ?? this.options.workspacePath
   }
 
+  private tokenEncoder(target: ModelRef | null): TokenCounter | undefined {
+    try {
+      const resolved = resolveModelRef(this.models, target)
+      return tokenCounterFor(resolved.provider.type, resolved.model.modelId)
+    } catch {
+      return undefined
+    }
+  }
+
+  private async resolveRunReferences(
+    config: AgentConfig,
+    workspace = this.options.workspacePath
+  ): Promise<ResolvedReference[]> {
+    if ((config.references?.length ?? 0) === 0 && !hasProjectReferences(workspace)) return []
+    return resolveReferences({
+      references: config.references ?? [],
+      workspacePath: workspace,
+      globalDirectory: path.join(this.options.userDataPath, 'agent'),
+      cacheDirectory: path.join(this.options.userDataPath, 'agent', 'references')
+    }).catch(() => [])
+  }
+
   private async createSnapshotId(
     sessionId: string,
-    workspace = this.sessionWorkspace(sessionId)
+    workspace = this.sessionWorkspace(sessionId),
+    references: Array<{ alias: string; root: string }> = []
   ): Promise<string | undefined> {
     try {
-      const snapshot = await this.snapshots.create(workspace, sessionId)
+      const snapshot = await this.snapshots.create(workspace, sessionId, references)
       return snapshot.id
     } catch {
       return undefined
@@ -1567,7 +1612,7 @@ export class AgentRuntime {
     const before = steps[steps.length - 1]?.after ?? message.snapshotBefore
     if (!before) return
     try {
-      const snapshot = await this.snapshots.create(run.workspace, run.sessionId)
+      const snapshot = await this.snapshots.create(run.workspace, run.sessionId, run.references)
       const diff = await this.snapshots.diff(before, snapshot.id)
       const files = [...diff.added, ...diff.modified, ...diff.deleted]
       message.snapshotSteps = [...steps, { before, after: snapshot.id, files }]
@@ -1588,7 +1633,7 @@ export class AgentRuntime {
       return
     }
     try {
-      const snapshot = await this.snapshots.create(run.workspace, run.sessionId)
+      const snapshot = await this.snapshots.create(run.workspace, run.sessionId, run.references)
       const diff = await this.snapshots.diff(message.snapshotBefore, snapshot.id)
       message.snapshotAfter = snapshot.id
       message.changedFiles = [...diff.added, ...diff.modified, ...diff.deleted]
@@ -1782,12 +1827,14 @@ export class AgentRuntime {
       const variantSettings = variant?.settings ?? {}
       const contextWindow = targetInfo.contextWindow ?? DEFAULT_CONTEXT_WINDOW
       const nativeCompaction =
-        targetInfo.compaction === true && resolvedTarget.provider.type === 'anthropic'
+        targetInfo.compaction === true &&
+        (resolvedTarget.provider.type === 'anthropic' || resolvedTarget.provider.type === 'openai')
       const history = this.historyMessages(run, message.id)
       if (
         !nativeCompaction &&
         shouldCompact(history, contextWindow, {
-          usageCreatedAfter: record.session.compaction?.createdAt
+          usageCreatedAfter: record.session.compaction?.createdAt,
+          encode: this.tokenEncoder(target)
         })
       ) {
         await this.compactMessages(run.sessionId, history, model, run.abort.signal)
@@ -1805,16 +1852,7 @@ export class AgentRuntime {
       ]
       const loadedInstructionPaths = new Set(instructions.map((file) => file.path))
       const skills = await this.skillsFor(run.workspace)
-      const hasReferences =
-        (run.config.references?.length ?? 0) > 0 || hasProjectReferences(run.workspace)
-      const references = hasReferences
-        ? await resolveReferences({
-            references: run.config.references ?? [],
-            workspacePath: run.workspace,
-            globalDirectory: path.join(this.options.userDataPath, 'agent'),
-            cacheDirectory: path.join(this.options.userDataPath, 'agent', 'references')
-          }).catch(() => [])
-        : []
+      const references = await this.resolveRunReferences(run.config, run.workspace)
       run.references = references
       const toolContext: ToolContext = {
         workspace: run.workspace,
@@ -1929,18 +1967,26 @@ export class AgentRuntime {
         maxOutputTokens: variantSettings.maxOutputTokens ?? targetInfo.maxOutputTokens,
         temperature: agent?.temperature ?? variantSettings.temperature ?? undefined,
         providerOptions: nativeCompaction
-          ? {
-              anthropic: {
-                contextManagement: {
-                  edits: [
-                    {
-                      type: 'compact_20260112',
-                      trigger: { type: 'input_tokens', value: contextTokenLimit(contextWindow) }
-                    }
+          ? resolvedTarget.provider.type === 'anthropic'
+            ? {
+                anthropic: {
+                  contextManagement: {
+                    edits: [
+                      {
+                        type: 'compact_20260112',
+                        trigger: { type: 'input_tokens', value: contextTokenLimit(contextWindow) }
+                      }
+                    ]
+                  }
+                }
+              }
+            : {
+                openai: {
+                  contextManagement: [
+                    { type: 'compaction', compactThreshold: contextTokenLimit(contextWindow) }
                   ]
                 }
               }
-            }
           : undefined
       })
 

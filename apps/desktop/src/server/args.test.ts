@@ -32,6 +32,11 @@ describe('parseServerArgs', () => {
     expect(options).toMatchObject({ host: '0.0.0.0', port: 8080, token: 'secret' })
   })
 
+  it('parses the unauthenticated remote override', () => {
+    const options = parseServerArgs(['--allow-unauthenticated-remote'], {})
+    expect(options.allowUnauthenticatedRemote).toBe(true)
+  })
+
   it('reads the token from the environment and supports help', () => {
     const options = parseServerArgs(['--help'], { ATEAM_SERVER_TOKEN: 'env-token' })
     expect(options).toMatchObject({ help: true, token: 'env-token' })

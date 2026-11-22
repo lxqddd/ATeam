@@ -49,7 +49,7 @@
 ### 2.2 模型元数据
 
 - 上下文窗口、最大输出 token、是否支持推理、是否支持附件、输入 / 输出价格（USD / 百万 token）。
-- 工具与压缩能力：`applyPatch`（用多文件 patch 替代 edit / write）与 `compaction`（供应商侧压缩，当前支持 Anthropic）。
+- 工具与压缩能力：`applyPatch`（用多文件 patch 替代 edit / write）与 `compaction`（供应商侧压缩，支持 Anthropic 与 OpenAI Responses）。
 - 运行时使用上下文窗口做压缩判断、最大输出限制单次生成；推理与附件控件按能力显隐。
 - 每条消息按实际用量与模型价格计算成本。
 - 模型变体（variants）：每个模型可定义命名预设（推理强度、温度、最大输出），在输入框选择；选择结果保存为 `provider/model#variant`，运行时按“Agent 设置 > 变体 > 模型默认”应用。
@@ -143,9 +143,9 @@
 
 ## 7. 上下文压缩
 
-- 发送前估算上下文：优先使用最近一条完成 assistant 消息在**最后一步**的供应商 usage（避免多步工具循环的累计值高估），只估算其后的新消息；无 usage 时回退中英文启发式估算，图片附件与工具图片按固定 token 估算。超过“窗口 − 15%（最少 16k）”时自动压缩。
+- 发送前估算上下文：优先使用最近一条完成 assistant 消息在**最后一步**的供应商 usage（避免多步工具循环的累计值高估），只估算其后的新消息；无 usage 时按模型选择 tokenizer（OpenAI o200k/cl100k、Claude tokenizer），未知模型回退中英文启发式估算，图片附件与工具图片按固定 token 估算。超过“窗口 − 15%（最少 16k）”时自动压缩。
 - 压缩后忽略压缩边界之前的旧 usage，避免刚压缩完又因历史用量触发重复压缩。
-- 模型开启 `compaction` 且供应商为 Anthropic 时不进行本地预压缩，改为请求 Anthropic 的 `compact_20260112` 服务端压缩；供应商报告 context overflow 时仍强制本地压缩并重试一次。
+- 模型开启 `compaction` 且供应商为 Anthropic 或 OpenAI 时不进行本地预压缩：Anthropic 使用 `compact_20260112`，OpenAI Responses 使用 `context_management: compaction`；供应商报告 context overflow 时仍强制本地压缩并重试一次。
 - 保留最近约 15k token，其余替换为一条摘要消息（原始消息仍保留，仅影响发给模型的历史）；可在消息列表展开查看摘要。
 - 支持手动压缩（头部按钮）与“强制压缩短历史”；达到 60% 占用时后台预生成摘要，压缩时复用。
 - 供应商返回 context-length 类错误时自动压缩并重试一次，第二次失败如实报错。
@@ -191,7 +191,7 @@
 - 文本文件在发送时以 `File: name` + 代码块注入；PDF 优先用 unpdf 抽取文本注入，抽取失败时回退为原生文件输入；图片作为多模态输入；只有附件没有文字也可以发送。
 - 历史消息中的图片附件显示缩略图（按会话目录校验路径后经 IPC 读取）。
 - 附件保存在 `agent/attachments/<session>/`，消息持久化引用；删除会话时清理。
-- `@` 触发工作区文件搜索（忽略依赖与构建目录、按匹配度排序），点击或回车插入 `@相对路径`。
+- `@` 触发文件搜索：空查询列出外部引用别名（插入 `@alias/`），输入 `alias/` 后搜索该引用目录；工作区文件继续按匹配度排序并插入 `@相对路径`。
 
 ## 13. 自定义命令与 Skills
 
@@ -199,7 +199,7 @@
 
 - 发现位置：用户 `agent/commands/*.md`、`agent/commands.json`；项目 `.opencode/command(s)`、`.claude/commands`。
 - 支持 name / description / agent / model frontmatter；model 支持 `provider/model#variant`。
-- 模板支持 `$ARGUMENTS`、`$1`–`$9`，无占位符时在末尾追加参数；`!` 包裹的 shell 片段会在工作区执行并把 stdout 注入提示词（最多 5 段、每段 10 秒超时）。
+- 模板支持 `$ARGUMENTS`、`$1`–`$9`，无占位符时在末尾追加参数；参数支持单/双引号与反斜杠转义（MCP prompt 参数同样适用）。`!` 包裹的 shell 片段会在工作区执行并把 stdout 注入提示词（最多 5 段、每段 10 秒超时）；发送前会展示确认面板，列出将执行的片段，确认后才运行。
 - 输入框输入 `/` 弹出命令菜单（含 MCP prompts），插入 `/命令 `；发送时识别 `/命令 参数` 并展开为最终提示词，同时应用命令绑定的 Agent 与模型。
 
 ### Skills
@@ -261,13 +261,8 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 
 ## 17. 已知限制与后续方向
 
-- 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible），未内置 ChatGPT、GitHub Copilot 等供应商专属 OAuth 流程；模型一键导入与 MCP prompts 命令已完成。
-- 外部引用尚未接入 `@别名` 自动补全；对引用目录的写入不在会话快照 / undo 范围内。
-- 上下文估算使用真实 usage + 启发式回退；尚未按模型接入独立 tokenizer。
-- 供应商侧压缩目前仅接入 Anthropic；其他供应商仍使用本地摘要压缩。
-- ripgrep 未安装时 grep 回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
-- 命令模板中的 shell 片段会在发送时直接执行（与 OpenCode 一致），只应信任来自可信来源的命令文件。
-- MCP prompt 参数按声明的参数顺序以空格分词传入，暂不支持带空格的单个参数。
+- 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 不实现这类非公开认证。
+- ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 
 ## 18. 关键文件索引
@@ -297,14 +292,16 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
 - SDK：`apps/desktop/src/sdk/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
-- 限制：未实现 API 版本前缀与远程部署加固；SDK 目前以源码形式提供，尚未发布独立 npm 包。
+- 版本与安全：所有路由同时接受 `/` 与 `/v1` 前缀；绑定非回环地址且未设置 token 时默认拒绝启动（可用 `--allow-unauthenticated-remote` 显式放宽），默认不发送 CORS 头。
+- 限制：SDK 目前以源码形式提供，尚未发布独立 npm 包。
 
 ## 21. 外部引用（References）
 
 - 配置：用户级 `agent/config.json` 的 `references`（数组或对象形式），或项目级 `.opencode/references.json`；项目别名覆盖用户别名。
 - 支持本地目录（`path`，绝对 / 相对 / `~`）与 Git 仓库（`repository` + 可选 `branch`，GitHub `owner/repo` 简写自动展开）；Git 仓库按分支缓存到 `agent/references/`。
-- `description` 与引用路径会注入 system prompt，Agent 可直接用绝对路径和常规工具读取；引用目录自动通过 `external_directory` 边界，但读 / 写 / shell 等工具权限仍然生效。
+- `description` 与引用路径会注入 system prompt，Agent 可直接用绝对路径和常规工具读取；输入框可用 `@alias/路径` 补全并引用外部文件，引用目录自动通过 `external_directory` 边界，但读 / 写 / shell 等工具权限仍然生效。
 - 设置页“外部引用”按行编辑：`alias=path`、`alias=owner/repo#branch`，可在 `|` 后填写描述；`hidden` 仅支持配置文件。
+- 会话快照同时捕获引用目录的文件（键前缀 `refs/<alias>/`），对引用目录的写入可随 undo / redo 恢复；快照根目录不匹配时仍会拒绝跨目录恢复。
 
 ## 22. 组织级策略（Organization Policy）
 
@@ -351,7 +348,8 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
     }
   }
   ```
-- 限制：仅实现核心 ACP 子集，不支持 `session/load`、客户端提供的 MCP server 配置、图片 / 音频 prompt；`question` 工具会自动取消。
+- 支持 `session/load` 历史回放与图片 prompt（转为附件）；初始化声明 `loadSession: true`、`promptCapabilities.image/embeddedContext: true`。
+- 限制：客户端提供的 MCP server 配置尚未接入；`question` 工具会自动取消。
 
 ## 25. Code Mode（`execute` 工具）
 

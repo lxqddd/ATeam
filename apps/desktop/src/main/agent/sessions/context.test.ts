@@ -30,6 +30,12 @@ describe('estimateTextTokens', () => {
     expect(estimateTextTokens('x'.repeat(4_000))).toBe(1_000)
   })
 
+  it('uses a model tokenizer when provided', () => {
+    const encode = (text: string): number => text.length
+    expect(estimateTextTokens('abcd', encode)).toBe(4)
+    expect(estimateMessagesTokens([user('u1', 'abcd')], encode)).toBe(8)
+  })
+
   it('counts non-ASCII characters more heavily', () => {
     expect(estimateTextTokens('你好世界')).toBe(4)
     expect(estimateTextTokens('hello 世界')).toBe(4)

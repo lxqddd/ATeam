@@ -24,7 +24,10 @@
     "build:linux": "pnpm run build && electron-builder --linux"
   },
   "dependencies": {
+    "@anthropic-ai/tokenizer": "^0.0.4",
     "@electron-toolkit/utils": "^4.0.0",
+    "@vscode/ripgrep": "^1.18.0",
+    "gpt-tokenizer": "^4.1.2",
     "turndown": "^7.2.5",
     "unpdf": "^2.2.1"
   },

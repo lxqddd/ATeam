@@ -49,6 +49,7 @@ export interface ApiServerOptions {
   port?: number
   /** Only set when a browser client on another origin must be allowed. */
   corsOrigin?: string | null
+  allowUnauthenticatedRemote?: boolean
   defaults?: {
     permissionMode?: PermissionMode
     reasoningEffort?: ReasoningEffort | null
@@ -167,16 +168,17 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
     version = '0.1.0',
     port = 0,
     defaults = {},
-    corsOrigin = null
+    corsOrigin = null,
+    allowUnauthenticatedRemote = false
   } = options
   const sseClients = new Set<ServerResponse>()
   const host = options.host ?? '127.0.0.1'
   let actualPort = 0
 
-  const authorized = (req: IncomingMessage, url: URL): boolean => {
+  const authorized = (req: IncomingMessage, pathname: string, url: URL): boolean => {
     if (!token) return true
     if (req.headers.authorization === `Bearer ${token}`) return true
-    return url.pathname === '/events' && url.searchParams.get('token') === token
+    return pathname === '/events' && url.searchParams.get('token') === token
   }
 
   const withSession = (id: string): SessionMeta => {
@@ -187,6 +189,7 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${host}:${actualPort}`)
+    const pathname = url.pathname.replace(/^\/v1(?=\/|$)/, '') || '/'
     if (corsOrigin) {
       res.setHeader('Access-Control-Allow-Origin', corsOrigin)
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
@@ -199,17 +202,17 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
       return
     }
 
-    if (url.pathname === '/health') {
+    if (pathname === '/health') {
       json(res, 200, { ok: true, version })
       return
     }
-    if (!authorized(req, url)) {
+    if (!authorized(req, pathname, url)) {
       json(res, 401, { error: 'Unauthorized' })
       return
     }
 
     try {
-      if (url.pathname === '/events' && req.method === 'GET') {
+      if (pathname === '/events' && req.method === 'GET') {
         const filter = url.searchParams.get('sessionId')
         res.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -234,12 +237,12 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         return
       }
 
-      if (url.pathname === '/sessions' && req.method === 'GET') {
+      if (pathname === '/sessions' && req.method === 'GET') {
         json(res, 200, runtime.listSessions())
         return
       }
 
-      if (url.pathname === '/sessions' && req.method === 'POST') {
+      if (pathname === '/sessions' && req.method === 'POST') {
         const body = await readJson(req)
         let session = await runtime.createSession()
         if (body.title !== undefined) {
@@ -277,7 +280,7 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         return
       }
 
-      const sessionMatch = /^\/sessions\/([^/]+)(?:\/([^/]+))?$/.exec(url.pathname)
+      const sessionMatch = /^\/sessions\/([^/]+)(?:\/([^/]+))?$/.exec(pathname)
       if (sessionMatch) {
         const id = sessionIdFrom(sessionMatch[1])
         const action = sessionMatch[2]
@@ -342,11 +345,11 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         }
       }
 
-      if (url.pathname === '/permissions' && req.method === 'GET') {
+      if (pathname === '/permissions' && req.method === 'GET') {
         json(res, 200, runtime.permissions())
         return
       }
-      const permissionMatch = /^\/permissions\/([^/]+)$/.exec(url.pathname)
+      const permissionMatch = /^\/permissions\/([^/]+)$/.exec(pathname)
       if (permissionMatch && req.method === 'POST') {
         const body = await readJson(req)
         const decision = body.decision
@@ -358,11 +361,11 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         return
       }
 
-      if (url.pathname === '/questions' && req.method === 'GET') {
+      if (pathname === '/questions' && req.method === 'GET') {
         json(res, 200, runtime.questions())
         return
       }
-      const questionMatch = /^\/questions\/([^/]+)$/.exec(url.pathname)
+      const questionMatch = /^\/questions\/([^/]+)$/.exec(pathname)
       if (questionMatch && req.method === 'POST') {
         const body = await readJson(req)
         const answer = body.answer
@@ -393,8 +396,12 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
   })
 
   return {
-    listen: () =>
-      new Promise((resolve, reject) => {
+    listen: () => {
+      const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1'
+      if (!loopback && !token && !allowUnauthenticatedRemote) {
+        return Promise.reject(new Error('AUTH_REQUIRED_FOR_REMOTE_BIND'))
+      }
+      return new Promise((resolve, reject) => {
         server.once('error', reject)
         server.listen(port, host, () => {
           server.removeListener('error', reject)
@@ -402,7 +409,8 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
           actualPort = typeof address === 'object' && address ? address.port : 0
           resolve({ host, port: actualPort })
         })
-      }),
+      })
+    },
     close: async () => {
       for (const client of sseClients) client.end()
       sseClients.clear()

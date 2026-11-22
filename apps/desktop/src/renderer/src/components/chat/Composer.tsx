@@ -10,7 +10,7 @@ import type {
   ReasoningEffort,
   SessionSettings
 } from '@ateam/shared'
-import { expandCommand } from '@ateam/shared'
+import { commandShellSnippets, expandCommand, splitArguments } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
 import ComposerChoiceChip from './ComposerChoiceChip'
@@ -123,8 +123,14 @@ function Composer(): React.JSX.Element {
     items: string[]
   } | null>(null)
   const [commandQuery, setCommandQuery] = useState<string | null>(null)
+  const [pendingShell, setPendingShell] = useState<{
+    command: CommandDefinition
+    args: string
+    snippets: string[]
+  } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const mentionSeq = useRef(0)
 
   const hasModels = (models?.models.length ?? 0) > 0
   const effectiveModel = session?.model ?? models?.defaultModel ?? null
@@ -243,7 +249,8 @@ function Composer(): React.JSX.Element {
     const slash = /^\/([^\s]*)$/.exec(value.slice(0, cursor))
     setCommandQuery(slash ? slash[1] : null)
     const match = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, cursor))
-    if (!match || match[2].length === 0) {
+    const sequence = ++mentionSeq.current
+    if (!match) {
       setMention(null)
       return
     }
@@ -252,9 +259,12 @@ function Composer(): React.JSX.Element {
     window.api.agent.files
       .search(query)
       .then((items) => {
+        if (sequence !== mentionSeq.current) return
         setMention(items.length > 0 ? { query, start, items } : null)
       })
-      .catch(() => setMention(null))
+      .catch(() => {
+        if (sequence === mentionSeq.current) setMention(null)
+      })
   }
 
   function applyCommand(command: CommandDefinition): void {
@@ -263,9 +273,11 @@ function Composer(): React.JSX.Element {
     textareaRef.current?.focus()
   }
 
-  async function expandSlashCommand(
-    value: string
-  ): Promise<{ text: string; command: CommandDefinition | null }> {
+  async function expandSlashCommand(value: string): Promise<{
+    text: string
+    command: CommandDefinition | null
+    shell?: { command: CommandDefinition; args: string; snippets: string[] }
+  }> {
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(value)
     if (!match) return { text: value, command: null }
     const command = commands.find(
@@ -274,7 +286,7 @@ function Composer(): React.JSX.Element {
     if (!command) return { text: value, command: null }
     const args = match[2] ?? ''
     if (command.source === 'mcp' && command.mcp) {
-      const tokens = args.trim() ? args.trim().split(/\s+/) : []
+      const tokens = splitArguments(args)
       const argumentNames = command.mcp.arguments ?? []
       const promptArgs: Record<string, string> = {}
       if (argumentNames.length > 0) {
@@ -292,8 +304,13 @@ function Composer(): React.JSX.Element {
     }
     if (command.template.includes('!`')) {
       return {
-        text: await window.api.agent.commands.expand({ template: command.template, args }),
-        command
+        text: value,
+        command,
+        shell: {
+          command,
+          args,
+          snippets: commandShellSnippets(command.template)
+        }
       }
     }
     return { text: expandCommand(command.template, args), command }
@@ -345,8 +362,44 @@ function Composer(): React.JSX.Element {
     setError(null)
     try {
       const expanded = await expandSlashCommand(content)
+      if (expanded.shell) {
+        setPendingShell(expanded.shell)
+        return
+      }
       if (expanded.command) await applyCommandBindings(expanded.command)
       await chatStore.send(expanded.text, attachments)
+      setText('')
+      setAttachments([])
+      setMention(null)
+      setCommandQuery(null)
+    } catch (caught) {
+      const message = errorMessage(caught)
+      setError(
+        message === 'AGENT_NOT_READY'
+          ? t('chat.agentStoppedHint')
+          : message === 'SESSION_BUSY'
+            ? t('chat.sessionBusy')
+            : message
+      )
+    } finally {
+      setSending(false)
+      textareaRef.current?.focus()
+    }
+  }
+
+  async function runPendingShell(): Promise<void> {
+    const pending = pendingShell
+    if (!pending) return
+    setPendingShell(null)
+    setSending(true)
+    setError(null)
+    try {
+      const text = await window.api.agent.commands.expand({
+        template: pending.command.template,
+        args: pending.args
+      })
+      await applyCommandBindings(pending.command)
+      await chatStore.send(text, attachments)
       setText('')
       setAttachments([])
       setMention(null)
@@ -473,6 +526,43 @@ function Composer(): React.JSX.Element {
                 )}
               </button>
             ))}
+          </div>
+        )}
+
+        {pendingShell && (
+          <div
+            role="alertdialog"
+            aria-label={t('chat.commandShellTitle')}
+            className="mb-2 rounded-md border border-warning/40 bg-warning/10 p-3"
+          >
+            <p className="m-0 text-label font-medium text-foreground">
+              {t('chat.commandShellTitle')}
+            </p>
+            <p className="mb-2 mt-1 text-caption text-muted">{t('chat.commandShellHint')}</p>
+            <ul className="mb-2 max-h-32 list-none overflow-y-auto p-0 font-mono text-caption text-foreground">
+              {pendingShell.snippets.map((snippet, index) => (
+                <li key={`${index}-${snippet}`} className="truncate">
+                  {snippet}
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void runPendingShell()}
+                disabled={sending}
+                className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-50"
+              >
+                {t('chat.commandShellRun')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingShell(null)}
+                className="h-8 rounded-md border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:bg-hover"
+              >
+                {t('chat.commandShellCancel')}
+              </button>
+            </div>
           </div>
         )}
 

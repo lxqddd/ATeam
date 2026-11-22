@@ -39,6 +39,7 @@ async function main(): Promise<number> {
     bus,
     token: options.token,
     host: options.host,
+    allowUnauthenticatedRemote: options.allowUnauthenticatedRemote,
     port: options.port,
     defaults: {
       permissionMode: options.cli.permissionMode,

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { searchWorkspaceFiles } from './search'
+import { searchFilesWithReferences, searchWorkspaceFiles } from './search'
 
 let workspace: string
 
@@ -57,5 +57,35 @@ describe('searchWorkspaceFiles', () => {
 
     const [result] = await searchWorkspaceFiles(workspace, 'main')
     expect(result).toBe('src/main/index.ts')
+  })
+})
+
+describe('searchFilesWithReferences', () => {
+  it('suggests aliases and searches inside a referenced directory', async () => {
+    const reference = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-reference-'))
+    )
+    try {
+      await fs.mkdir(path.join(reference, 'api'), { recursive: true })
+      await fs.writeFile(path.join(reference, 'guide.md'), '# guide')
+      await fs.writeFile(path.join(reference, 'api', 'ref.md'), '# ref')
+      await write('src/app.ts')
+      const references = [{ alias: 'docs', root: reference }]
+
+      await expect(searchFilesWithReferences(workspace, 'doc', references)).resolves.toContain(
+        'docs/'
+      )
+      await expect(searchFilesWithReferences(workspace, 'docs/gu', references)).resolves.toEqual([
+        'docs/guide.md'
+      ])
+      const listed = await searchFilesWithReferences(workspace, 'docs/', references)
+      expect(listed).toContain('docs/guide.md')
+      expect(listed).toContain('docs/api/ref.md')
+      await expect(searchFilesWithReferences(workspace, 'app', references)).resolves.toEqual([
+        'src/app.ts'
+      ])
+    } finally {
+      await fs.rm(reference, { recursive: true, force: true })
+    }
   })
 })

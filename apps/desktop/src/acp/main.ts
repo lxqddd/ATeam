@@ -1,4 +1,5 @@
 import { AgentRuntime } from '../main/agent/runtime'
+import { saveAttachment } from '../main/agent/attachments'
 import { buildCliModels, CLI_HELP, parseCliArgs } from '../cli/args'
 import { EventBus } from '../server/event-bus'
 import { AcpServer } from './server'
@@ -48,7 +49,16 @@ async function main(): Promise<number> {
           send: bus.publish
         })
         await instance.init()
-        return instance
+        return Object.assign(instance, {
+          attachImage: (sessionId: string, mimeType: string, data: Uint8Array) => {
+            const extension = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+            return saveAttachment(options.dataDir, sessionId, {
+              name: `image-${Date.now()}.${extension}`,
+              mimeType,
+              data
+            })
+          }
+        })
       })().catch((error) => {
         runtimes.delete(cwd)
         throw error

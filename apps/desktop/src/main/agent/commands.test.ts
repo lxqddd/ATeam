@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   expandCommand,
   expandCommandTemplate,
+  splitArguments,
   loadCommands,
   parseCommandJson,
   parseCommandMarkdown
@@ -123,6 +124,17 @@ describe('expandCommand', () => {
     expect(expandCommand('Run the checks.', 'now')).toBe('Run the checks.\n\nnow')
     expect(expandCommand('Run the checks.', '')).toBe('Run the checks.')
   })
+})
+
+it('splits quoted command arguments', () => {
+  expect(splitArguments('one "two words" \'three words\' four\\ five')).toEqual([
+    'one',
+    'two words',
+    'three words',
+    'four five'
+  ])
+  expect(expandCommand('Run $1', '"two words"')).toBe('Run two words')
+  expect(expandCommand('Run $1', 'one "two words"')).toBe('Run one')
 })
 
 describe('expandCommandTemplate', () => {

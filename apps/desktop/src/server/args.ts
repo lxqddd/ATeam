@@ -6,6 +6,7 @@ export interface ServerOptions {
   host: string
   port: number
   token: string | null
+  allowUnauthenticatedRemote: boolean
   help: boolean
 }
 
@@ -15,6 +16,7 @@ Server options:
   --host <host>            Bind host (default: 127.0.0.1)
   --port <port>            Bind port (default: 4096)
   --token <token>          Require Authorization: Bearer <token> (or ATEAM_SERVER_TOKEN)
+  --allow-unauthenticated-remote  Allow binding a non-loopback host without a token
   --help                   Show this help
 
 Model options are the same as the headless CLI:
@@ -40,6 +42,7 @@ export function parseServerArgs(
   let host = '127.0.0.1'
   let port = 4096
   let token: string | null = env.ATEAM_SERVER_TOKEN || null
+  let allowUnauthenticatedRemote = false
   let help = false
   const remaining: string[] = []
 
@@ -65,6 +68,8 @@ export function parseServerArgs(
       port = parsed
     } else if (flag === '--token') {
       token = value().trim() || null
+    } else if (flag === '--allow-unauthenticated-remote') {
+      allowUnauthenticatedRemote = true
     } else if (flag === '--help' || flag === '-h') {
       help = true
     } else {
@@ -72,5 +77,12 @@ export function parseServerArgs(
     }
   }
 
-  return { cli: parseCliArgs(remaining, env, cwd), host, port, token, help }
+  return {
+    cli: parseCliArgs(remaining, env, cwd),
+    host,
+    port,
+    token,
+    allowUnauthenticatedRemote,
+    help
+  }
 }

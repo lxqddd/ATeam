@@ -1,14 +1,26 @@
 import { PassThrough } from 'node:stream'
 import { createInterface } from 'node:readline'
-import type { AgentEvent, AgentEventEnvelope, PermissionDecision, SessionMeta } from '@ateam/shared'
+import type {
+  AgentEvent,
+  AgentEventEnvelope,
+  ChatMessage,
+  MessageAttachment,
+  MessagesSnapshot,
+  PermissionDecision,
+  SessionMeta
+} from '@ateam/shared'
 import { afterEach, describe, expect, it } from 'vitest'
-import { makeSession } from '../main/agent/test/factories'
+import { makeMessage, makeSession, makeTextPart } from '../main/agent/test/factories'
 import { EventBus } from '../server/event-bus'
 import { AcpServer, type AcpRuntime } from './server'
 
 class FakeRuntime implements AcpRuntime {
   session: SessionMeta = makeSession({ id: 'sess-1' })
+  sessions: SessionMeta[] = [this.session]
+  messagesById = new Map<string, ChatMessage[]>()
   sent: string[] = []
+  sentAttachments: Array<MessageAttachment[] | undefined> = []
+  attachments: MessageAttachment[] = []
   stopped: string[] = []
   decisions: Array<{ id: string; decision: PermissionDecision }> = []
   onChat: ((id: string) => Promise<void>) | null = null
@@ -19,8 +31,39 @@ class FakeRuntime implements AcpRuntime {
     return { ...this.session }
   }
 
-  async sendChat(id: string, text: string): Promise<void> {
+  listSessions(): SessionMeta[] {
+    return [...this.sessions]
+  }
+
+  messages(id: string): MessagesSnapshot {
+    return { sessionId: id, seq: 0, messages: this.messagesById.get(id) ?? [], running: false }
+  }
+
+  async attachImage(
+    sessionId: string,
+    mimeType: string,
+    data: Uint8Array
+  ): Promise<MessageAttachment> {
+    const attachment: MessageAttachment = {
+      id: `att-${this.attachments.length + 1}`,
+      name: 'image.png',
+      mimeType,
+      size: data.byteLength,
+      kind: 'image',
+      path: `/tmp/${sessionId}/image.png`
+    }
+    this.attachments.push(attachment)
+    return attachment
+  }
+
+  async sendChat(
+    id: string,
+    text: string,
+    _model?: null,
+    attachments?: MessageAttachment[]
+  ): Promise<void> {
     this.sent.push(text)
+    this.sentAttachments.push(attachments)
     if (this.onChat) await this.onChat(id)
   }
 
@@ -116,9 +159,80 @@ describe('AcpServer', () => {
 
     expect(response.result).toMatchObject({
       protocolVersion: 1,
-      agentCapabilities: { loadSession: false },
+      agentCapabilities: {
+        loadSession: true,
+        promptCapabilities: { image: true, embeddedContext: true }
+      },
       agentInfo: { name: 'ateam' }
     })
+  })
+
+  it('loads a session and replays its conversation', async () => {
+    harness = createHarness()
+    const h = harness
+    h.runtime.sessions = [makeSession({ id: 'old-session', title: 'Old' })]
+    h.runtime.messagesById.set('old-session', [
+      makeMessage({ id: 'm1', role: 'user', parts: [makeTextPart('hello')] }),
+      makeMessage({ id: 'm2', role: 'assistant', parts: [makeTextPart('hi there')] })
+    ])
+    h.send(INITIALIZE)
+    await h.next((message) => message.id === 1)
+    h.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/load',
+      params: { sessionId: 'old-session', cwd: '/tmp/project', mcpServers: [] }
+    })
+
+    const userChunk = await h.next(
+      (message) =>
+        message.method === 'session/update' &&
+        message.params.update.sessionUpdate === 'user_message_chunk'
+    )
+    expect(userChunk.params).toMatchObject({
+      sessionId: 'old-session',
+      update: { messageId: 'm1', content: { type: 'text', text: 'hello' } }
+    })
+    const agentChunk = await h.next(
+      (message) =>
+        message.method === 'session/update' &&
+        message.params.update.sessionUpdate === 'agent_message_chunk'
+    )
+    expect(agentChunk.params.update).toMatchObject({
+      messageId: 'm2',
+      content: { type: 'text', text: 'hi there' }
+    })
+    expect(await h.next((message) => message.id === 2)).toMatchObject({ result: {} })
+  })
+
+  it('accepts image prompt blocks as attachments', async () => {
+    harness = createHarness()
+    const h = harness
+    const sessionId = await openSession(h)
+    h.runtime.onChat = async (id) => {
+      h.bus.publish(
+        envelope({ type: 'run.finished', sessionId: id, messageId: 'm1', status: 'completed' }, 1)
+      )
+    }
+
+    h.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: {
+        sessionId,
+        prompt: [
+          { type: 'text', text: 'what is this?' },
+          { type: 'image', mimeType: 'image/png', data: 'AQID' }
+        ]
+      }
+    })
+
+    expect(await h.next((message) => message.id === 3)).toMatchObject({
+      result: { stopReason: 'end_turn' }
+    })
+    expect(h.runtime.attachments).toHaveLength(1)
+    expect(h.runtime.sentAttachments[0]).toEqual(h.runtime.attachments)
   })
 
   it('creates sessions and streams prompt output', async () => {
