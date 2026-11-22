@@ -103,6 +103,9 @@ export class ChatStore {
   private loadingSessions: Promise<void> | null = null
   private reloadPromise: Promise<void> | null = null
   private commandsDirectory: string | null = null
+  private commandsRequest = 0
+  private agentsDirectory: string | null = null
+  private agentsRequest = 0
   private snapshotting = new Set<string>()
   private buffered = new Map<string, AgentEventEnvelope[]>()
   private unsubscribe: (() => void) | null = null
@@ -142,11 +145,11 @@ export class ChatStore {
     }
 
     await this.refreshModels()
-    await this.refreshAgents()
     await this.loadSessions()
     const selected = this.state.sessions.find(
       (session) => session.id === this.state.selectedSessionId
     )
+    await this.refreshAgents(selected?.directory ?? undefined)
     await this.refreshCommands(selected?.directory ?? undefined)
 
     try {
@@ -176,9 +179,14 @@ export class ChatStore {
     }
   }
 
-  async refreshAgents(): Promise<void> {
+  async refreshAgents(directory?: string | null, force = false): Promise<void> {
+    const key = directory ?? ''
+    if (!force && this.agentsDirectory === key && this.state.agents.length > 0) return
+    this.agentsDirectory = key
+    const request = ++this.agentsRequest
     try {
-      this.setState({ agents: await window.api.agent.agents() })
+      const agents = await window.api.agent.agents(directory ?? undefined)
+      if (request === this.agentsRequest) this.setState({ agents })
     } catch {
       /* agent discovery is best effort */
     }
@@ -188,10 +196,12 @@ export class ChatStore {
     const key = directory ?? ''
     if (!force && this.commandsDirectory === key && this.state.commands.length > 0) return
     this.commandsDirectory = key
+    const request = ++this.commandsRequest
     try {
-      this.setState({ commands: await window.api.agent.commands.list(directory ?? undefined) })
+      const commands = await window.api.agent.commands.list(directory ?? undefined)
+      if (request === this.commandsRequest) this.setState({ commands })
     } catch {
-      /* command discovery is best effort */
+      if (request === this.commandsRequest) this.setState({ commands: [] })
     }
   }
 
@@ -212,6 +222,11 @@ export class ChatStore {
       const stillExists = Boolean(current && sessions.some((session) => session.id === current))
       const selected = stillExists ? current : (sessions[0]?.id ?? null)
       this.setState({ sessions, selectedSessionId: selected })
+      if (selected && selected !== current) {
+        const session = sessions.find((candidate) => candidate.id === selected)
+        void this.refreshAgents(session?.directory ?? undefined)
+        void this.refreshCommands(session?.directory ?? undefined)
+      }
       if (selected && !this.state.loadedBySession[selected]) {
         await this.loadMessages(selected)
       }
@@ -249,6 +264,7 @@ export class ChatStore {
   selectSession(sessionId: string): void {
     this.setState({ selectedSessionId: sessionId })
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
+    void this.refreshAgents(session?.directory ?? undefined)
     void this.refreshCommands(session?.directory ?? undefined)
     if (!this.state.loadedBySession[sessionId]) {
       void this.loadMessages(sessionId)
@@ -264,6 +280,7 @@ export class ChatStore {
       loadedBySession: { ...this.state.loadedBySession, [session.id]: true },
       actionError: null
     })
+    void this.refreshAgents(session.directory ?? undefined)
     void this.refreshCommands(session.directory ?? undefined)
     return session
   }
@@ -294,7 +311,6 @@ export class ChatStore {
   async setSessionDirectory(sessionId: string, directory: string | null): Promise<void> {
     const session = await window.api.agent.sessions.setDirectory(sessionId, directory)
     this.upsertSession(session)
-    void this.refreshCommands(directory ?? undefined)
   }
 
   async setSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
@@ -450,8 +466,11 @@ export class ChatStore {
         /* questions are unavailable until the agent is ready */
       }
       await this.refreshModels()
-      await this.refreshAgents()
-      await this.refreshCommands(this.commandsDirectory || undefined, true)
+      const selected = this.state.sessions.find(
+        (session) => session.id === this.state.selectedSessionId
+      )
+      await this.refreshAgents(selected?.directory ?? undefined, true)
+      await this.refreshCommands(selected?.directory ?? undefined, true)
     })()
     try {
       await this.reloadPromise
@@ -649,11 +668,20 @@ export class ChatStore {
   }
 
   private upsertSession(session: SessionMeta): void {
+    const previous = this.state.sessions.find((candidate) => candidate.id === session.id)
     const sessions = sortSessions([
       session,
       ...this.state.sessions.filter((candidate) => candidate.id !== session.id)
     ])
     this.setState({ sessions })
+    if (
+      previous &&
+      previous.directory !== session.directory &&
+      session.id === this.state.selectedSessionId
+    ) {
+      void this.refreshAgents(session.directory ?? undefined)
+      void this.refreshCommands(session.directory ?? undefined)
+    }
   }
 
   private applySessionDeleted(sessionId: string): void {
@@ -666,8 +694,11 @@ export class ChatStore {
     delete messagesBySession[sessionId]
     delete loadedBySession[sessionId]
     this.setState({ sessions, selectedSessionId: selected, messagesBySession, loadedBySession })
-    if (selected && selected !== previousSelected && !loadedBySession[selected]) {
-      void this.loadMessages(selected)
+    if (selected && selected !== previousSelected) {
+      const fallback = sessions.find((session) => session.id === selected)
+      void this.refreshAgents(fallback?.directory ?? undefined)
+      void this.refreshCommands(fallback?.directory ?? undefined)
+      if (!loadedBySession[selected]) void this.loadMessages(selected)
     }
   }
 

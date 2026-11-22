@@ -9,7 +9,7 @@
 ### 1.1 会话管理
 
 - 创建、重命名、删除会话；删除会话时同时清理权限规则、文件快照、附件与子会话。
-- 在会话页选择工作目录：标题栏显示当前目录，可切换到默认工作区、最近使用过的会话目录，或通过原生“选择文件夹”指定任意目录；运行中的会话不能切换，新会话默认使用默认工作区。目录随会话持久化，工具、提示词、快照、Skills、LSP、MCP、`@` 文件搜索、项目命令发现与命令 shell 片段都使用该目录。
+- 在会话页选择工作目录：标题栏显示当前目录，可切换到默认工作区、最近使用过的会话目录，或通过原生“选择文件夹”指定任意目录；运行中的会话不能切换，新会话默认使用默认工作区。目录随会话持久化，工具、提示词、快照、Skills、项目 Agent、LSP、MCP、`@` 文件搜索、项目命令发现与命令 shell 片段都使用该目录。
 - 默认持久化到 SQLite（可切换 JSON 后端），按更新时间排序；应用重启时修复中断状态（运行中 → 空闲、流式消息 → interrupted、未结算工具 → failed）。
 - 会话元数据：模型、推理强度、权限模式、当前 Agent、工作目录、压缩摘要、上下文占用、任务列表、隐藏标记与父会话。
 
@@ -77,6 +77,7 @@
 - 位置：用户目录 `agent/agents/*.md` 与 `agent/agents.json`，项目 `.opencode/agent(s)/*.md`；项目覆盖用户、用户覆盖内置。
 - 字段：description（必填）、mode（primary / subagent / all）、model（支持 `provider/model#variant`）、tools、permission、steps、temperature（0–2）、prompt（正文）。
 - Markdown 的 `permission` 使用 `action|resource|effect` 列表（逗号分隔），例如 `permission: edit|*|deny, shell|git *|ask`；JSON Agent 使用对象数组 `{ action, resource, effect }`。agent 权限在全局规则之后、会话规则之前生效，可收紧或放宽全局策略。
+- 项目 Agent 按会话的当前工作目录发现；在会话页切换工作目录后，Agent 选择器与项目命令会同步刷新。
 - 会话头部（输入框上方）可选择主 Agent；选择结果持久化到会话。
 - 温度按 Agent 覆盖模型默认值；未配置时沿用模型 / 变体设置。
 
@@ -166,7 +167,7 @@
 - 连接后读取 tools / prompts / resources；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
 - 工具列表变更自动刷新；单个服务器失败不影响其他服务器，下次运行或状态探测时重连。
 - OAuth：远程服务器支持授权发现（`WWW-Authenticate` / well-known）、动态客户端注册、PKCE S256、本地浏览器回调与 token 自动刷新；token 使用 Electron `safeStorage` 加密保存，设置页可授权 / 重新授权 / 退出登录，并可为需要预注册的服务器填写 OAuth Client ID、Scope 与回调地址。
-- prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），按声明的参数顺序展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
+- prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），在会话工作目录对应的 MCP 连接上展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
 - 状态为“需要授权”时，设置页提供 OAuth 授权入口；token 过期会在下次连接时自动刷新并持久化。
 
 ## 10. LSP 诊断与自动格式化

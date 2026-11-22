@@ -302,7 +302,12 @@ function Composer(): React.JSX.Element {
         promptArgs.input = tokens.join(' ')
       }
       return {
-        text: await window.api.agent.mcp.prompt(command.mcp.server, command.mcp.prompt, promptArgs),
+        text: await window.api.agent.mcp.prompt(
+          command.mcp.server,
+          command.mcp.prompt,
+          promptArgs,
+          session?.directory ?? undefined
+        ),
         command
       }
     }

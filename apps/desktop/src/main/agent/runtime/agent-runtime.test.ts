@@ -179,7 +179,10 @@ let subagentExecutor:
 let baseTools: ToolSet
 let languageModelRefs: Array<ModelRef | null>
 let mcpManager: McpManagerLike
-let mcpManagerInput: { mcpAuth?: import('@ateam/shared').McpAuthRecord[] } | null
+let mcpManagerInput: {
+  workspacePath: string
+  mcpAuth?: import('@ateam/shared').McpAuthRecord[]
+} | null
 let mcpTools: ReturnType<typeof vi.fn>
 let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
@@ -1695,6 +1698,33 @@ describe('AgentRuntime', () => {
     expect(assistant?.changedFiles).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
   })
 
+  it('captures project references from the session workspace', async () => {
+    const project = path.join(directory, 'project-refs')
+    const docs = path.join(directory, 'project-docs')
+    await fs.mkdir(path.join(project, '.opencode'), { recursive: true })
+    await fs.mkdir(docs, { recursive: true })
+    await fs.writeFile(path.join(docs, 'guide.md'), 'guide')
+    await fs.writeFile(path.join(project, '.opencode', 'references.json'), JSON.stringify({ docs }))
+    const session = await runtime.createSession(project)
+
+    scripts.push(textScript('one'))
+    await runtime.sendChat(session.id, 'hello')
+    await sink.next('run.finished')
+
+    const snapshotsDirectory = path.join(directory, 'agent', 'snapshots')
+    const manifests = await Promise.all(
+      (await fs.readdir(snapshotsDirectory))
+        .filter((name) => name.endsWith('.json'))
+        .map(async (name) =>
+          JSON.parse(await fs.readFile(path.join(snapshotsDirectory, name), 'utf8'))
+        )
+    )
+    const snapshot = manifests.find((entry) => entry.sessionId === session.id)
+
+    expect(snapshot?.references).toEqual([{ alias: 'docs', root: await fs.realpath(docs) }])
+    expect(Object.keys(snapshot?.files ?? {})).toContain('\u0000refs/docs/guide.md')
+  })
+
   it('records a snapshot for each model step', async () => {
     scripts.push(twoStepMutatingScript())
 
@@ -1943,6 +1973,15 @@ describe('MCP tool integration', () => {
     await expect(runtime.mcpPrompt('missing', 'greet')).rejects.toThrow('UNKNOWN_MCP_SERVER')
   })
 
+  it('runs MCP prompts in the requested workspace', async () => {
+    const project = path.join(directory, 'project-mcp')
+    await fs.mkdir(project, { recursive: true })
+
+    await runtime.mcpPrompt('docs', 'search', undefined, project)
+
+    expect(mcpManagerInput?.workspacePath).toBe(project)
+  })
+
   it('merges MCP tools into the run tool set', async () => {
     mcpTools.mockResolvedValue({
       mcp_demo_echo: { description: 'Echo', execute: async () => 'ok' }
@@ -2035,6 +2074,21 @@ describe('agent selection', () => {
 
     expect(agents.map((agent) => agent.id)).toContain('custom')
     expect(agents.map((agent) => agent.id)).toContain('build')
+  })
+
+  it('loads project agents from the requested workspace', async () => {
+    const project = path.join(directory, 'project-agents')
+    await fs.mkdir(path.join(project, '.opencode', 'agent'), { recursive: true })
+    await fs.writeFile(
+      path.join(project, '.opencode', 'agent', 'reviewer.md'),
+      ['---', 'description: Project reviewer', 'mode: primary', '---', 'Review code.'].join('\n')
+    )
+
+    const projectAgents = await runtime.listAgents(project)
+    const defaultAgents = await runtime.listAgents()
+
+    expect(projectAgents.map((agent) => agent.id)).toContain('reviewer')
+    expect(defaultAgents.map((agent) => agent.id)).not.toContain('reviewer')
   })
 
   it('persists the selected primary agent', async () => {

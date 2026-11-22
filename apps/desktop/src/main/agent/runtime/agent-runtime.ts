@@ -178,8 +178,8 @@ export class AgentRuntime {
     return this.store.list().filter((session) => !session.hidden)
   }
 
-  listAgents(): Promise<AgentDefinition[]> {
-    return this.agents()
+  listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {
+    return this.agents(workspace)
   }
 
   async listCommands(workspace = this.options.workspacePath): Promise<CommandDefinition[]> {
@@ -229,8 +229,13 @@ export class AgentRuntime {
     return [...commands, ...mcpCommands]
   }
 
-  async mcpPrompt(server: string, prompt: string, args?: Record<string, string>): Promise<string> {
-    return this.mcp().getPrompt(server, prompt, args)
+  async mcpPrompt(
+    server: string,
+    prompt: string,
+    args?: Record<string, string>,
+    workspace = this.options.workspacePath
+  ): Promise<string> {
+    return this.mcp(workspace).getPrompt(server, prompt, args)
   }
 
   async setSessionAgent(id: string, agentId: string | null): Promise<SessionMeta> {
@@ -627,10 +632,11 @@ export class AgentRuntime {
     const assistant = makeAssistantMessage(sessionId)
     const config = await readAgentConfig(this.options.userDataPath)
     if (config.snapshots) {
+      const workspace = this.sessionWorkspace(sessionId)
       assistant.snapshotBefore = await this.createSnapshotId(
         sessionId,
-        this.sessionWorkspace(sessionId),
-        await this.resolveRunReferences(config)
+        workspace,
+        await this.resolveRunReferences(config, workspace)
       )
     }
     await this.store.appendMessage(sessionId, user)
@@ -699,10 +705,11 @@ export class AgentRuntime {
     const assistant = makeAssistantMessage(sessionId)
     const config = await readAgentConfig(this.options.userDataPath)
     if (config.snapshots) {
+      const workspace = this.sessionWorkspace(sessionId)
       assistant.snapshotBefore = await this.createSnapshotId(
         sessionId,
-        this.sessionWorkspace(sessionId),
-        await this.resolveRunReferences(config)
+        workspace,
+        await this.resolveRunReferences(config, workspace)
       )
     }
     await this.store.appendMessage(sessionId, assistant)

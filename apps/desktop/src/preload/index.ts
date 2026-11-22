@@ -21,7 +21,8 @@ const api: AteamApi = {
     status: () => ipcRenderer.invoke(AGENT_CHANNELS.status),
     restart: () => ipcRenderer.invoke(AGENT_CHANNELS.restart),
     info: () => ipcRenderer.invoke(AGENT_CHANNELS.info),
-    agents: () => ipcRenderer.invoke(AGENT_CHANNELS.agentsList),
+    agents: (directory?: string | null) =>
+      ipcRenderer.invoke(AGENT_CHANNELS.agentsList, { directory }),
     onEvent: (callback) => {
       const listener = (_event: IpcRendererEvent, envelope: AgentEventEnvelope): void => {
         callback(envelope)
@@ -80,8 +81,13 @@ const api: AteamApi = {
       add: (input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAdd, input),
       update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpUpdate, { id, input }),
       remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id }),
-      prompt: (server, prompt, args) =>
-        ipcRenderer.invoke(AGENT_CHANNELS.mcpPrompt, { server, prompt, arguments: args }),
+      prompt: (server, prompt, args, directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpPrompt, {
+          server,
+          prompt,
+          arguments: args,
+          directory
+        }),
       authStatuses: () => ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthStatuses),
       authorize: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthorize, { id }),
       logout: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpLogout, { id })

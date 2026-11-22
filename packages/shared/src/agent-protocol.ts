@@ -42,7 +42,7 @@ export type WorkerRequest =
       method: 'setWebSearch'
       params: { config: RuntimeWebSearchConfig | null }
     }
-  | { id: string; method: 'agents.list'; params?: undefined }
+  | { id: string; method: 'agents.list'; params?: { workspace?: string } }
   | { id: string; method: 'commands.list'; params?: { workspace?: string } }
   | { id: string; method: 'sessions.list'; params?: undefined }
   | {
@@ -121,7 +121,12 @@ export type WorkerRequest =
   | {
       id: string
       method: 'mcp.prompt'
-      params: { server: string; prompt: string; arguments?: Record<string, string> }
+      params: {
+        server: string
+        prompt: string
+        arguments?: Record<string, string>
+        workspace?: string
+      }
     }
   | {
       id: string

@@ -228,14 +228,17 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     }
   })
 
-  handle(AGENT_CHANNELS.agentsList, (): Promise<AgentDefinition[]> =>
-    manager.request('agents.list')
-  )
-
   const requestedDirectory = (value: unknown): string | undefined => {
     if (typeof value !== 'string' || !value.trim()) return undefined
     return path.isAbsolute(value) ? path.resolve(value) : undefined
   }
+
+  handle(AGENT_CHANNELS.agentsList, (payload): Promise<AgentDefinition[]> => {
+    const { directory } = z
+      .object({ directory: z.string().max(2_000).nullable().optional() })
+      .parse(payload ?? {})
+    return manager.request('agents.list', { workspace: requestedDirectory(directory) })
+  })
 
   handle(AGENT_CHANNELS.commandsList, (payload): Promise<CommandDefinition[]> => {
     const { directory } = z
@@ -516,15 +519,22 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
     const {
       server,
       prompt,
-      arguments: args
+      arguments: args,
+      directory
     } = z
       .object({
         server: z.string().min(1).max(200),
         prompt: z.string().min(1).max(500),
-        arguments: z.record(z.string(), z.string()).optional()
+        arguments: z.record(z.string(), z.string()).optional(),
+        directory: z.string().max(2_000).nullable().optional()
       })
       .parse(payload)
-    return manager.request('mcp.prompt', { server, prompt, arguments: args })
+    return manager.request('mcp.prompt', {
+      server,
+      prompt,
+      arguments: args,
+      workspace: requestedDirectory(directory)
+    })
   })
 
   handle(AGENT_CHANNELS.mcpRemove, async (payload): Promise<boolean> => {

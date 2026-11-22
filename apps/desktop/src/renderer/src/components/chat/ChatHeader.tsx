@@ -17,14 +17,14 @@ function statusColor(sessionStatus: string | undefined): string {
 
 function baseName(directory: string): string {
   const trimmed = directory.replace(/[\\/]+$/, '')
-  return trimmed.split(/[\\/]/).pop() || trimmed
+  return trimmed.split(/[\\/]/).pop() || trimmed || directory
 }
 
 function formatTokens(value: number): string {
   return value >= 1_000 ? `${(value / 1_000).toFixed(1)}k` : String(value)
 }
 
-function ChatHeader(): React.JSX.Element {
+function ChatHeaderContent(): React.JSX.Element {
   const { t } = useTranslation()
   const { sessions, selectedSessionId, messagesBySession, info } = useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
@@ -461,6 +461,12 @@ function ChatHeader(): React.JSX.Element {
       </button>
     </header>
   )
+}
+
+// Remount per session so header-local menu and error state does not leak.
+function ChatHeader(): React.JSX.Element {
+  const { selectedSessionId } = useChatStore()
+  return <ChatHeaderContent key={selectedSessionId ?? 'none'} />
 }
 
 export default ChatHeader

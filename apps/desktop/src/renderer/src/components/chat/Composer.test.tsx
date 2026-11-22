@@ -649,6 +649,7 @@ describe('Composer', () => {
   it('expands MCP prompt commands', async () => {
     chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
     const state = baseState() as ChatStoreState
+    state.sessions[0].directory = '/tmp/project'
     state.commands = [
       {
         id: 'mcp:docs:search',
@@ -673,7 +674,12 @@ describe('Composer', () => {
     await waitFor(() =>
       expect(chatMocks.send).toHaveBeenCalledWith('Search results for electron', [])
     )
-    expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith('docs', 'search', { query: 'electron' })
+    expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith(
+      'docs',
+      'search',
+      { query: 'electron' },
+      '/tmp/project'
+    )
   })
 
   it('passes quoted MCP prompt arguments intact', async () => {
@@ -705,10 +711,12 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() =>
-      expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith('docs', 'search', {
-        query: 'two words',
-        scope: 'src'
-      })
+      expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith(
+        'docs',
+        'search',
+        { query: 'two words', scope: 'src' },
+        undefined
+      )
     )
   })
 

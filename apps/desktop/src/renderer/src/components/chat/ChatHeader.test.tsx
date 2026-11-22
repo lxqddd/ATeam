@@ -294,6 +294,55 @@ describe('ChatHeader', () => {
     expect(screen.getByRole('button', { name: 'Working directory' })).toBeDisabled()
   })
 
+  it('closes the workspace menu when the selected session changes', async () => {
+    const state = baseState()
+    state.info = {
+      workspacePath: '/tmp/workspace',
+      appVersion: '0.1.0',
+      encryptionAvailable: true,
+      instructionFiles: [],
+      lspServers: [],
+      formatters: []
+    }
+    state.sessions[0].directory = '/tmp/project'
+    storeState.current = state
+    const user = userEvent.setup()
+    const { rerender } = render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'Working directory' }))
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+
+    const next = baseState()
+    next.info = state.info
+    next.sessions = [makeSession({ id: 's2', title: 'Other', directory: '/tmp/other' })]
+    next.selectedSessionId = 's2'
+    storeState.current = next
+    rerender(<ChatHeader />)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    storeState.current = state
+    rerender(<ChatHeader />)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('labels a root workspace directory', () => {
+    const state = baseState()
+    state.info = {
+      workspacePath: '/tmp/workspace',
+      appVersion: '0.1.0',
+      encryptionAvailable: true,
+      instructionFiles: [],
+      lspServers: [],
+      formatters: []
+    }
+    state.sessions[0].directory = '/'
+    storeState.current = state
+
+    render(<ChatHeader />)
+
+    expect(screen.getByRole('button', { name: 'Working directory' })).toHaveTextContent('/')
+  })
+
   it('opens the workspace from the header', async () => {
     const mock = createApiMock()
     Object.defineProperty(window, 'api', { value: mock.api, configurable: true })

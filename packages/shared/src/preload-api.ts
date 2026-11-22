@@ -42,7 +42,7 @@ export interface AgentBridge {
   status: () => Promise<AgentStatus>
   restart: () => Promise<AgentStatus>
   info: () => Promise<AgentInfo>
-  agents: () => Promise<AgentDefinition[]>
+  agents: (directory?: string | null) => Promise<AgentDefinition[]>
   onEvent: (callback: (envelope: AgentEventEnvelope) => void) => () => void
   sessions: {
     list: () => Promise<SessionMeta[]>
@@ -93,7 +93,12 @@ export interface AgentBridge {
     add: (input: McpServerInput) => Promise<McpServerConfig>
     update: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>
     remove: (id: string) => Promise<boolean>
-    prompt: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
+    prompt: (
+      server: string,
+      prompt: string,
+      args?: Record<string, string>,
+      directory?: string | null
+    ) => Promise<string>
     authStatuses: () => Promise<McpAuthStatus[]>
     authorize: (id: string) => Promise<McpAuthStatus[]>
     logout: (id: string) => Promise<McpAuthStatus[]>

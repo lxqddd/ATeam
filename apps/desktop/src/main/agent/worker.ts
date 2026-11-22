@@ -91,7 +91,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       requireRuntime().setWebSearch(request.params.config)
       return null
     case 'agents.list':
-      return requireRuntime().listAgents()
+      return requireRuntime().listAgents(request.params?.workspace)
     case 'commands.list':
       return requireRuntime().listCommands(request.params?.workspace)
     case 'sessions.list':
@@ -172,7 +172,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().mcpPrompt(
         request.params.server,
         request.params.prompt,
-        request.params.arguments
+        request.params.arguments,
+        request.params.workspace
       )
     case 'mcp.setAuth':
       await requireRuntime().setMcpAuth(request.params.auths)

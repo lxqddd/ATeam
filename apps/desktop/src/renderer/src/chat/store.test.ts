@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MessagesSnapshot } from '@ateam/shared'
+import type {
+  AgentDefinition,
+  CommandDefinition,
+  MessagesSnapshot,
+  SessionMeta
+} from '@ateam/shared'
 import { ChatStore } from './store'
 import { createApiMock, type ApiMock } from '../test/api-mock'
 import {
@@ -272,6 +277,120 @@ describe('ChatStore sessions', () => {
     expect(mock.api.agent.sessions.remove).toHaveBeenCalledWith('s1')
     expect(store.getSnapshot().sessions).toEqual([])
     expect(store.getSnapshot().selectedSessionId).toBeNull()
+  })
+})
+
+describe('ChatStore workspace discovery', () => {
+  const projectAgent: AgentDefinition = {
+    id: 'reviewer',
+    name: 'reviewer',
+    description: 'Project reviewer',
+    mode: 'primary',
+    model: null,
+    tools: null,
+    permissions: [],
+    temperature: null,
+    maxSteps: null,
+    prompt: 'Review code.',
+    source: 'project'
+  }
+
+  const command = (name: string): CommandDefinition => ({
+    id: name,
+    name,
+    description: '',
+    template: name,
+    agent: null,
+    model: null,
+    source: 'project'
+  })
+
+  it('loads agents for the selected session directory', async () => {
+    mock.sessions.push(makeSession({ id: 's1', directory: '/tmp/project' }))
+    vi.mocked(mock.api.agent.agents).mockResolvedValue([projectAgent])
+
+    await store.init()
+
+    expect(mock.api.agent.agents).toHaveBeenCalledWith('/tmp/project')
+    expect(store.getSnapshot().agents).toEqual([projectAgent])
+  })
+
+  it('refreshes discovery for the fallback session after deletion', async () => {
+    mock.sessions.push(
+      makeSession({ id: 'a', directory: '/tmp/a', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      makeSession({ id: 'b', directory: '/tmp/b', updatedAt: '2026-01-02T00:00:00.000Z' })
+    )
+    await store.init()
+
+    mock.emit({ type: 'session.deleted', sessionId: 'b' })
+
+    expect(store.getSnapshot().selectedSessionId).toBe('a')
+    await vi.waitFor(() =>
+      expect(vi.mocked(mock.api.agent.agents).mock.calls.at(-1)?.[0]).toBe('/tmp/a')
+    )
+    expect(vi.mocked(mock.api.agent.commands.list).mock.calls.at(-1)?.[0]).toBe('/tmp/a')
+  })
+
+  it('refreshes discovery when the selected session directory changes', async () => {
+    mock.sessions.push(makeSession({ id: 's1', directory: '/tmp/a' }))
+    await store.init()
+
+    mock.emit({
+      type: 'session.upsert',
+      session: makeSession({ id: 's1', directory: '/tmp/b' })
+    })
+
+    await vi.waitFor(() =>
+      expect(vi.mocked(mock.api.agent.agents).mock.calls.at(-1)?.[0]).toBe('/tmp/b')
+    )
+    expect(vi.mocked(mock.api.agent.commands.list).mock.calls.at(-1)?.[0]).toBe('/tmp/b')
+  })
+
+  it('refreshes discovery for the selected session when a directory change finishes late', async () => {
+    mock.sessions.push(
+      makeSession({ id: 'a', directory: '/tmp/a', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      makeSession({ id: 'b', directory: '/tmp/b', updatedAt: '2026-01-02T00:00:00.000Z' })
+    )
+    await store.init()
+    let resolveChange: (session: SessionMeta) => void = () => undefined
+    const pending = new Promise<SessionMeta>((resolve) => {
+      resolveChange = resolve
+    })
+    vi.mocked(mock.api.agent.sessions.setDirectory).mockReturnValueOnce(pending)
+
+    const change = store.setSessionDirectory('a', '/tmp/c')
+    store.selectSession('b')
+    resolveChange(makeSession({ id: 'a', directory: '/tmp/c' }))
+    await change
+
+    expect(vi.mocked(mock.api.agent.agents).mock.calls.at(-1)?.[0]).toBe('/tmp/b')
+    expect(vi.mocked(mock.api.agent.commands.list).mock.calls.at(-1)?.[0]).toBe('/tmp/b')
+  })
+
+  it('keeps commands for the latest directory when responses arrive out of order', async () => {
+    let resolveSlow: (commands: CommandDefinition[]) => void = () => undefined
+    const slow = new Promise<CommandDefinition[]>((resolve) => {
+      resolveSlow = resolve
+    })
+    mock.sessions.push(
+      makeSession({ id: 'a', directory: '/tmp/a', updatedAt: '2026-01-01T00:00:00.000Z' }),
+      makeSession({ id: 'b', directory: '/tmp/b', updatedAt: '2026-01-02T00:00:00.000Z' })
+    )
+    vi.mocked(mock.api.agent.commands.list).mockImplementation(async (directory?: string | null) =>
+      directory === '/tmp/a' ? slow : [command('b')]
+    )
+
+    await store.init()
+    store.selectSession('a')
+    store.selectSession('b')
+    await vi.waitFor(() =>
+      expect(store.getSnapshot().commands.map((entry) => entry.name)).toEqual(['b'])
+    )
+
+    resolveSlow([command('a')])
+    await vi.waitFor(() =>
+      expect(store.getSnapshot().commands.map((entry) => entry.name)).toEqual(['b'])
+    )
   })
 })
 
