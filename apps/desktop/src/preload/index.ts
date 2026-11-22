@@ -33,7 +33,8 @@ const api: AteamApi = {
     },
     sessions: {
       list: () => ipcRenderer.invoke(AGENT_CHANNELS.sessionsList),
-      create: () => ipcRenderer.invoke(AGENT_CHANNELS.sessionCreate),
+      create: (directory?: string | null) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionCreate, { directory }),
       rename: (id, title) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRename, { id, title }),
       remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionDelete, { id }),
       setModel: (id, model) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetModel, { id, model }),
@@ -96,7 +97,8 @@ const api: AteamApi = {
         ipcRenderer.invoke(AGENT_CHANNELS.attachmentPreview, { sessionId, path })
     },
     files: {
-      search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.filesSearch, { query })
+      search: (query: string, directory?: string | null) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.filesSearch, { query, directory })
     },
     commands: {
       list: (directory?: string | null) =>
