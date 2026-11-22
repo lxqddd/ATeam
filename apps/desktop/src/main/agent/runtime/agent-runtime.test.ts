@@ -347,6 +347,35 @@ function parallelToolScript(values: string[]): Script {
   }
 }
 
+function mixedParallelToolScript(): Script {
+  return async function* () {
+    yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
+    yield part({ type: 'tool-call', toolCallId: 'call-1', toolName: 'task', input: { value: 'a' } })
+    yield part({ type: 'tool-input-start', id: 'call-2', toolName: 'task' })
+    yield part({ type: 'tool-call', toolCallId: 'call-2', toolName: 'task', input: { value: 'b' } })
+    if (!toolExecutor) throw new Error('Tool executor not initialized')
+    const [first] = await Promise.allSettled([
+      toolExecutor('a', 'call-1'),
+      Promise.reject(new Error('boom'))
+    ])
+    yield part({
+      type: 'tool-result',
+      toolCallId: 'call-1',
+      toolName: 'task',
+      input: { value: 'a' },
+      output: first.status === 'fulfilled' ? first.value : 'failed'
+    })
+    yield part({
+      type: 'tool-error',
+      toolCallId: 'call-2',
+      toolName: 'task',
+      input: { value: 'b' },
+      error: new Error('boom')
+    })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function imageResultScript(): Script {
   return async function* () {
     const input = { path: 'a.png' }
@@ -1100,6 +1129,19 @@ describe('AgentRuntime', () => {
     expect(runtime.permissions()).toEqual([])
     expect(toolPart('call-1')).toMatchObject({ state: 'completed', output: 'done:a.txt' })
     expect(toolPart('call-2')).toMatchObject({ state: 'completed', output: 'done:b.txt' })
+  })
+
+  it('aggregates mixed outcomes from parallel tool calls', async () => {
+    scripts.push(mixedParallelToolScript())
+
+    await runtime.sendChat(sessionId, 'write')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(asked.event.permission.id, 'once')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({ state: 'completed', output: 'done:a' })
+    expect(toolPart('call-2')).toMatchObject({ state: 'failed', error: 'boom' })
   })
 
   it('leaves permissions of other runs pending when one is stopped', async () => {
