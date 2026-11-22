@@ -275,3 +275,12 @@ models/                  # 供应商 / 模型配置、加密密钥与 OAuth toke
 - 集成：[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[webfetch.ts](../apps/desktop/src/main/agent/integrations/webfetch.ts)、[websearch.ts](../apps/desktop/src/main/agent/integrations/websearch.ts)
 - 工具与能力：[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[attachments.ts](../apps/desktop/src/main/agent/attachments.ts)、[commands.ts](../apps/desktop/src/main/agent/commands.ts)、[skills.ts](../apps/desktop/src/main/agent/skills.ts)、[todos.ts](../apps/desktop/src/main/agent/todos.ts)、[cost.ts](../apps/desktop/src/main/agent/cost.ts)
 - 主进程存储：[stores/models.ts](../apps/desktop/src/main/stores/models.ts)、[stores/websearch.ts](../apps/desktop/src/main/stores/websearch.ts)、[models/catalog.ts](../apps/desktop/src/main/models/catalog.ts)
+
+## 19. Headless CLI
+
+- 入口：`pnpm cli -- [options] [prompt]`，直接复用 Agent 运行时，无需启动 Electron 窗口。
+- 模型：`--provider anthropic|openai|google|openai-compatible`、`--model`、`--api-key`（或 `ATEAM_API_KEY`）、`--base-url`、`--context-window`、`--max-output`、`--reasoning`。
+- 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话。
+- 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
+- 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
+- 限制：凭据通过命令行或环境变量以明文传入，不能解密桌面端 `safeStorage` 配置；尚未提供独立打包的二进制。
