@@ -10,10 +10,41 @@ permissions:
   contents: read
 
 jobs:
+  prepare-release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; reusing it."
+            exit 0
+          fi
+          prerelease=""
+          case "$GITHUB_REF_NAME" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "ATeam $GITHUB_REF_NAME" \
+            --generate-notes \
+            $prerelease
+
   package:
     name: Package (${{ matrix.os }})
+    needs: prepare-release
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -93,51 +124,42 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Linux'
         run: pnpm --filter @ateam/desktop exec electron-builder --linux AppImage deb
 
-      - name: Upload package artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ateam-${{ matrix.os }}
-          path: |
-            apps/desktop/dist/*.zip
-            apps/desktop/dist/*.tar.gz
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*.exe
-            apps/desktop/dist/*.AppImage
-            apps/desktop/dist/*.deb
-          if-no-files-found: warn
-
-  release:
-    name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - name: Download package artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ateam-*
-          merge-multiple: true
-          path: release-assets
-
-      - name: Create or update release
+      - name: Upload packages to draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: apps/desktop
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
-          else
-            prerelease=""
-            case "$GITHUB_REF_NAME" in
-              *-*) prerelease="--prerelease" ;;
-            esac
-            gh release create "$GITHUB_REF_NAME" release-assets/* \
-              --title "ATeam $GITHUB_REF_NAME" \
-              --generate-notes \
-              $prerelease
+          files=()
+          for pattern in 'dist/*.dmg' 'dist/*.zip' 'dist/*.tar.gz' 'dist/*.exe' 'dist/*.AppImage' 'dist/*.deb'; do
+            for file in $pattern; do
+              if [ -f "$file" ]; then files+=("$file"); fi
+            done
+          done
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No release files were produced." >&2
+            exit 1
           fi
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+
+  finalize-release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            *-*) gh release edit "$GITHUB_REF_NAME" --draft=false ;;
+            *) gh release edit "$GITHUB_REF_NAME" --draft=false --latest ;;
+          esac

@@ -96,7 +96,7 @@ pnpm dev
 
 本地可用 `CSC_IDENTITY_AUTO_DISCOVERY=false pnpm --filter @ateam/desktop build:unpack` 生成当前平台的未打包应用；随后运行 `pnpm --filter @ateam/desktop smoke:packaged`，脚本会以临时用户数据目录启动打包产物，验证窗口、Agent worker、会话持久化，并通过本地 mock 模型完成一次带 `grep` 工具调用的对话。
 
-仓库的 `Package` 工作流在 macOS / Linux / Windows 上构建未打包应用并执行同一冒烟测试，Linux 使用 `xvfb-run`；产物会打包为 zip / tar.gz 上传。更新 `apps/desktop/package.json` 的版本并推送 `vX.Y.Z` 标签后，工作流会校验标签与版本一致，构建 dmg / nsis exe / AppImage + deb，并创建或更新对应的 GitHub Release。应用内“设置 → 更新”会检查 `releases/latest`，下载当前平台的安装包到下载目录并打开。当前产物未做代码签名或公证，正式分发需要另外配置证书与公证凭据。
+仓库的 `Package` 工作流在 macOS / Linux / Windows 上构建未打包应用并执行同一冒烟测试，Linux 使用 `xvfb-run`；产物会打包为 zip / tar.gz，并直接上传到 GitHub Release 草稿，不使用 Actions Artifacts。更新 `apps/desktop/package.json` 的版本并推送 `vX.Y.Z` 标签后，工作流会校验标签与版本一致，构建 dmg / nsis exe / AppImage + deb，全部平台成功后再发布 Release。应用内“设置 → 更新”会检查 `releases/latest`，下载当前平台的安装包到下载目录并打开。当前产物未做代码签名或公证，正式分发需要另外配置证书与公证凭据。
 
 ## 功能范围
 
