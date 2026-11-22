@@ -340,7 +340,8 @@ function Composer(): React.JSX.Element {
   function applyMention(filePath: string): void {
     if (!mention) return
     const after = text.slice(mention.start + mention.query.length + 1)
-    const next = `${text.slice(0, mention.start)}@${filePath} ${after.replace(/^\s*/, '')}`
+    const spacer = filePath.endsWith('/') ? '' : ' '
+    const next = `${text.slice(0, mention.start)}@${filePath}${spacer}${after.replace(/^\s*/, '')}`
     setText(next)
     setMention(null)
     textareaRef.current?.focus()

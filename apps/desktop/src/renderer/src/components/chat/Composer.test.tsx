@@ -536,7 +536,7 @@ describe('Composer', () => {
     await user.type(textarea, '@')
     await user.click(await screen.findByRole('option', { name: 'docs/' }))
 
-    expect(textarea).toHaveValue('@docs/ ')
+    expect(textarea).toHaveValue('@docs/')
     expect(api.api.agent.files.search).toHaveBeenCalledWith('')
   })
 
