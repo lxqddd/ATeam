@@ -300,6 +300,34 @@ describe('SnapshotStore changes', () => {
     expect(reverted.files).toEqual([])
   })
 
+  it('ignores files the turn did not change when comparing with the current workspace', async () => {
+    await write('agent.txt', 'before')
+    await write('manual.txt', 'same')
+    const before = await store.create(workspace)
+    await write('agent.txt', 'agent')
+    const after = await store.create(workspace)
+    await write('manual.txt', 'edited outside the turn')
+
+    const live = await store.changes(before.id, after.id, { current: true })
+
+    expect(live.files.map((file) => file.path)).toEqual(['agent.txt'])
+  })
+
+  it('does not let unchanged files crowd out changed files', async () => {
+    for (let index = 0; index < 205; index += 1) {
+      await write(`bulk/${String(index).padStart(3, '0')}.txt`, 'same')
+    }
+    await write('z-last.txt', 'before')
+    const before = await store.create(workspace)
+    await write('z-last.txt', 'after')
+    const after = await store.create(workspace)
+
+    const result = await store.changes(before.id, after.id)
+
+    expect(result.files.map((file) => file.path)).toEqual(['z-last.txt'])
+    expect(result.truncated).toBe(false)
+  })
+
   it('marks binary files without generating a text diff', async () => {
     await write('image.bin', Buffer.from([0, 1, 2]))
     const before = await store.create(workspace)

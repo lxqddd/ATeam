@@ -85,7 +85,7 @@ export type WorkerRequest =
   | {
       id: string
       method: 'sessions.revertFiles'
-      params: { sessionId: string; messageId: string; paths: string[] }
+      params: { sessionId: string; messageId: string; paths?: string[] }
     }
   | { id: string; method: 'messages.list'; params: { sessionId: string } }
   | {

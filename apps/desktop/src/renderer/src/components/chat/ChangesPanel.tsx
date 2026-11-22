@@ -32,7 +32,7 @@ function ChangesPanel({ sessionId, messageId, onClose }: ChangesPanelProps): Rea
   const [turn, setTurn] = useState<TurnChanges | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [busyPath, setBusyPath] = useState<string | null>(null)
   const [revertError, setRevertError] = useState<string | null>(null)
   const [confirmAll, setConfirmAll] = useState(false)
@@ -44,7 +44,7 @@ function ChangesPanel({ sessionId, messageId, onClose }: ChangesPanelProps): Rea
       .then((result) => {
         if (cancelled) return
         setTurn(result)
-        setSelectedPath(result.files[0]?.path ?? null)
+        setSelectedKey(result.files[0]?.snapshotPath ?? null)
       })
       .catch((caught: unknown) => {
         if (!cancelled) setError(caught instanceof Error ? caught.message : String(caught))
@@ -66,8 +66,8 @@ function ChangesPanel({ sessionId, messageId, onClose }: ChangesPanelProps): Rea
   }, [onClose])
 
   const selected = useMemo(
-    () => turn?.files.find((file) => file.path === selectedPath) ?? null,
-    [turn, selectedPath]
+    () => turn?.files.find((file) => file.snapshotPath === selectedKey) ?? null,
+    [turn, selectedKey]
   )
   const totals = useMemo(() => {
     const files = turn?.files ?? []
@@ -81,16 +81,30 @@ function ChangesPanel({ sessionId, messageId, onClose }: ChangesPanelProps): Rea
     setBusyPath(paths.length === 1 ? paths[0] : 'all')
     setRevertError(null)
     try {
-      const result = await window.api.agent.sessions.revertFiles(sessionId, messageId, paths)
+      const result =
+        paths.length > 0
+          ? await window.api.agent.sessions.revertFiles(sessionId, messageId, paths)
+          : await window.api.agent.sessions.revertFiles(sessionId, messageId)
       setTurn(result)
       setConfirmAll(false)
-      setSelectedPath((current) =>
-        result.files.some((file) => file.path === current)
+      setSelectedKey((current) =>
+        result.files.some((file) => file.snapshotPath === current)
           ? current
-          : (result.files[0]?.path ?? null)
+          : (result.files[0]?.snapshotPath ?? null)
       )
     } catch (caught) {
-      setRevertError(caught instanceof Error ? caught.message : String(caught))
+      const raw = caught instanceof Error ? caught.message : String(caught)
+      setRevertError(
+        raw.includes('TURN_NOT_LATEST')
+          ? t('chat.changesNotLatest')
+          : raw.includes('SESSION_BUSY')
+            ? t('chat.changesBusy')
+            : raw.includes('INVALID_CHANGE_PATH')
+              ? t('chat.changesInvalidPath')
+              : raw.includes('NO_SNAPSHOT')
+                ? t('chat.changesNoSnapshot')
+                : raw
+      )
     } finally {
       setBusyPath(null)
     }
@@ -153,7 +167,7 @@ function ChangesPanel({ sessionId, messageId, onClose }: ChangesPanelProps): Rea
               type="button"
               disabled={revertingAll}
               onClick={() => {
-                void revert((turn?.files ?? []).map((file) => file.snapshotPath))
+                void revert([])
               }}
               className="h-7 rounded-md bg-danger px-3 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
@@ -212,13 +226,13 @@ function ChangesPanel({ sessionId, messageId, onClose }: ChangesPanelProps): Rea
           <div className="flex min-h-0 flex-1">
             <ul className="m-0 flex w-[260px] flex-none list-none flex-col gap-0.5 overflow-y-auto border-r border-border-subtle p-2">
               {turn.files.map((file) => (
-                <li key={file.path} className="flex items-center gap-1">
+                <li key={file.snapshotPath} className="flex items-center gap-1">
                   <button
                     type="button"
-                    onClick={() => setSelectedPath(file.path)}
+                    onClick={() => setSelectedKey(file.snapshotPath)}
                     title={file.path}
                     className={`flex min-w-0 flex-1 flex-col gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors ${
-                      file.path === selectedPath ? 'bg-hover' : 'hover:bg-hover'
+                      file.snapshotPath === selectedKey ? 'bg-hover' : 'hover:bg-hover'
                     }`}
                   >
                     <span className="flex min-w-0 items-center gap-1.5">

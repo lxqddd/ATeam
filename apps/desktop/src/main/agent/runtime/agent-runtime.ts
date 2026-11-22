@@ -465,7 +465,7 @@ export class AgentRuntime {
     if (!record) throw new Error('SESSION_NOT_FOUND')
     const message = messageId
       ? record.messages.find((entry) => entry.id === messageId && entry.role === 'assistant')
-      : this.latestChangeMessage(record.messages)
+      : this.latestSnapshotMessage(record.messages)
     if (!message) throw new Error(messageId ? 'MESSAGE_NOT_FOUND' : 'NO_CHANGES')
     return this.buildTurnChanges(record, message)
   }
@@ -473,7 +473,7 @@ export class AgentRuntime {
   async revertChangedFiles(
     sessionId: string,
     messageId: string,
-    paths: string[]
+    paths: string[] = []
   ): Promise<TurnChanges> {
     const record = this.store.get(sessionId)
     if (!record) throw new Error('SESSION_NOT_FOUND')
@@ -482,17 +482,17 @@ export class AgentRuntime {
       (entry) => entry.id === messageId && entry.role === 'assistant'
     )
     if (!message) throw new Error('MESSAGE_NOT_FOUND')
-    const latest = this.latestChangeMessage(record.messages)
+    const latest = this.latestSnapshotMessage(record.messages)
     if (latest?.id !== message.id) throw new Error('TURN_NOT_LATEST')
     if (message.status === 'streaming') throw new Error('SESSION_BUSY')
     if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
 
-    const targets = [...new Set(paths)]
+    const allowed = await this.allowedChangePaths(message)
+    const targets = paths.length > 0 ? [...new Set(paths)] : [...allowed]
+    for (const target of targets) {
+      if (!allowed.has(target)) throw new Error('INVALID_CHANGE_PATH')
+    }
     if (targets.length > 0) {
-      const allowed = await this.allowedChangePaths(message)
-      for (const target of targets) {
-        if (!allowed.has(target)) throw new Error('INVALID_CHANGE_PATH')
-      }
       this.reserveSession(sessionId)
       try {
         await this.snapshots.restorePaths(message.snapshotBefore, targets)
@@ -508,17 +508,9 @@ export class AgentRuntime {
     return changes
   }
 
-  private latestChangeMessage(messages: ChatMessage[]): ChatMessage | undefined {
-    return [...messages]
-      .reverse()
-      .find(
-        (message) =>
-          message.role === 'assistant' &&
-          Boolean(message.snapshotBefore) &&
-          (Boolean(message.snapshotAfter) ||
-            (message.snapshotSteps?.length ?? 0) > 0 ||
-            (message.changedFiles?.length ?? 0) > 0)
-      )
+  private latestSnapshotMessage(messages: ChatMessage[]): ChatMessage | undefined {
+    const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
+    return lastAssistant?.snapshotBefore ? lastAssistant : undefined
   }
 
   private async buildTurnChanges(
@@ -526,7 +518,7 @@ export class AgentRuntime {
     message: ChatMessage
   ): Promise<TurnChanges> {
     if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
-    const latest = this.latestChangeMessage(record.messages)?.id === message.id
+    const latest = this.latestSnapshotMessage(record.messages)?.id === message.id
     const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
     const fallbackPaths = [
       ...(message.changedFiles ?? []),

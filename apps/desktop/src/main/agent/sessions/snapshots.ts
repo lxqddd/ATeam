@@ -360,14 +360,19 @@ export class SnapshotStore {
     const toFiles = to?.files ?? {}
     const providedPaths = options.paths ?? []
     if (!to && providedPaths.length === 0) return { files: [], truncated: false }
-    const keys = (
-      to
-        ? [...new Set([...Object.keys(fromFiles), ...Object.keys(toFiles), ...providedPaths])]
-        : [...new Set(providedPaths)]
-    ).sort()
+    const changedKeys = new Set(providedPaths)
+    if (to) {
+      for (const key of Object.keys(toFiles)) {
+        if (fromFiles[key] !== toFiles[key]) changedKeys.add(key)
+      }
+      for (const key of Object.keys(fromFiles)) {
+        if (!Object.prototype.hasOwnProperty.call(toFiles, key)) changedKeys.add(key)
+      }
+    }
+    const keys = [...changedKeys].sort()
     const files: FileChange[] = []
     for (const key of keys.slice(0, MAX_DIFF_FILES)) {
-      const beforeExists = key in fromFiles
+      const beforeExists = Object.prototype.hasOwnProperty.call(fromFiles, key)
       const afterBlob = options.current
         ? null
         : Object.prototype.hasOwnProperty.call(toFiles, key)

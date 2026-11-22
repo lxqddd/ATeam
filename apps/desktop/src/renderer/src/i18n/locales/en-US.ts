@@ -334,6 +334,10 @@ const enUS = {
     changesCancel: 'Cancel',
     changesReadOnly: 'This turn is read-only. Only the latest turn can be reverted.',
     changesBusy: 'The chat is running. Stop it before reverting changes.',
+    changesNotLatest:
+      'This turn is no longer the latest. Reopen the panel to review the current changes.',
+    changesInvalidPath: 'That file is not part of this turn’s changes.',
+    changesNoSnapshot: 'No file snapshot is available for this turn.',
     changesListTruncated: 'Only the first 200 changed files are shown.',
     changesLoading: 'Loading file changes…',
     changesLoadFailed: 'Could not load file changes.',

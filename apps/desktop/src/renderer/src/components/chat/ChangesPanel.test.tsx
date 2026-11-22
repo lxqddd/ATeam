@@ -112,10 +112,7 @@ describe('ChangesPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => {
-      expect(api.api.agent.sessions.revertFiles).toHaveBeenCalledWith('s1', 'm1', [
-        'src/a.ts',
-        'src/b.ts'
-      ])
+      expect(api.api.agent.sessions.revertFiles).toHaveBeenCalledWith('s1', 'm1')
     })
     expect(await screen.findByText('No file changes in this turn.')).toBeInTheDocument()
   })
@@ -124,8 +121,22 @@ describe('ChangesPanel', () => {
     api.api.agent.sessions.changes = vi.fn(async () =>
       makeTurn({
         files: [
-          makeFile({ path: 'img.png', binary: true, hunks: [], additions: 0, deletions: 0 }),
-          makeFile({ path: 'huge.ts', truncated: true, hunks: [], additions: 0, deletions: 0 })
+          makeFile({
+            path: 'img.png',
+            snapshotPath: 'img.png',
+            binary: true,
+            hunks: [],
+            additions: 0,
+            deletions: 0
+          }),
+          makeFile({
+            path: 'huge.ts',
+            snapshotPath: 'huge.ts',
+            truncated: true,
+            hunks: [],
+            additions: 0,
+            deletions: 0
+          })
         ]
       })
     )
@@ -158,6 +169,55 @@ describe('ChangesPanel', () => {
     renderPanel()
 
     expect(await screen.findByText('No file changes in this turn.')).toBeInTheDocument()
+  })
+
+  it('explains when a turn is no longer the latest', async () => {
+    api.api.agent.sessions.changes = vi.fn(async () => makeTurn())
+    api.api.agent.sessions.revertFiles = vi.fn(async () => {
+      throw new Error('TURN_NOT_LATEST')
+    })
+
+    renderPanel()
+    await screen.findAllByText('src/a.ts')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Revert src/a.ts' }))
+
+    expect(
+      await screen.findByText(
+        'This turn is no longer the latest. Reopen the panel to review the current changes.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('keeps file identity by snapshot path', async () => {
+    api.api.agent.sessions.changes = vi.fn(async () =>
+      makeTurn({
+        files: [
+          makeFile({ path: '@docs/guide.md', snapshotPath: 'guide.md' }),
+          makeFile({
+            path: '@docs/guide.md',
+            snapshotPath: '\u0000refs/docs/guide.md',
+            hunks: [
+              {
+                oldStart: 1,
+                oldLines: 1,
+                newStart: 1,
+                newLines: 1,
+                lines: ['-old ref', '+new ref']
+              }
+            ]
+          })
+        ]
+      })
+    )
+
+    renderPanel()
+    await screen.findAllByText('@docs/guide.md')
+
+    await userEvent.click(screen.getAllByTitle('@docs/guide.md')[1])
+
+    expect(screen.getByText('-old ref')).toBeInTheDocument()
+    expect(screen.getByText('+new ref')).toBeInTheDocument()
   })
 
   it('closes from the header button', async () => {

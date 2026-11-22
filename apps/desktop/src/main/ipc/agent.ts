@@ -349,7 +349,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
       .object({
         sessionId: idSchema,
         messageId: idSchema,
-        paths: z.array(z.string().min(1).max(2_000)).min(1).max(200)
+        paths: z.array(z.string().min(1).max(2_000)).min(1).max(200).optional()
       })
       .parse(payload)
     return manager.request('sessions.revertFiles', { sessionId, messageId, paths })
