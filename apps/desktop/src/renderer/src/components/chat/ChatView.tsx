@@ -96,7 +96,7 @@ function ChatView(): React.JSX.Element {
         emptyState
       ) : (
         <MessageList
-          key={selectedSessionId ?? 'empty'}
+          key={`messages-${selectedSessionId ?? 'empty'}`}
           sessionId={selectedSessionId ?? undefined}
           messages={messages}
           permissions={sessionPermissions}
@@ -115,7 +115,7 @@ function ChatView(): React.JSX.Element {
         <QuestionCard key={question.id} question={question} />
       ))}
 
-      <Composer key={selectedSessionId ?? 'none'} />
+      <Composer key={`composer-${selectedSessionId ?? 'none'}`} />
     </div>
   )
 }
