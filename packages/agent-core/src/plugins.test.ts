@@ -96,6 +96,41 @@ describe('PluginRegistry', () => {
     ])
   })
 
+  it('keeps running tools when a tool hook fails', async () => {
+    const registry = new PluginRegistry([
+      {
+        name: 'bad',
+        toolBefore: () => {
+          throw new Error('before failed')
+        },
+        toolAfter: () => {
+          throw new Error('after failed')
+        }
+      },
+      {
+        name: 'good',
+        toolAfter: (_input, output) => {
+          output.output = `${String(output.output)}!`
+        }
+      }
+    ])
+    const tools = {
+      echo: tool({
+        description: 'echo',
+        inputSchema: z.object({ value: z.string() }),
+        execute: async ({ value }) => `echo:${value}`
+      })
+    }
+    const wrapped = registry.wrapTools(tools, 'session-1')
+    const execute = (
+      wrapped.echo as unknown as {
+        execute: (input: { value: string }, options: { toolCallId: string }) => Promise<string>
+      }
+    ).execute
+
+    await expect(execute({ value: 'hi' }, { toolCallId: 'call-1' })).resolves.toBe('echo:hi!')
+  })
+
   it('transforms command templates before execution', async () => {
     const registry = new PluginRegistry([
       {
@@ -513,6 +548,85 @@ describe('PluginRegistry', () => {
     expect(system.system).toContain('plugin')
     expect(permission.status).toBe('deny')
     await expect(registry.shellEnv(directory, 's')).resolves.toEqual({ PLUGIN: '1' })
+  })
+
+  it('isolates failing hooks and keeps later plugins running', async () => {
+    const registry = new PluginRegistry([
+      {
+        name: 'bad',
+        system: () => {
+          throw new Error('boom')
+        }
+      },
+      {
+        name: 'good',
+        system: (_input, output) => {
+          output.system += ':good'
+        }
+      }
+    ])
+    const system = { system: 'base' }
+
+    await expect(
+      registry.transformSystem({ sessionId: 's', model: 'm' }, system)
+    ).resolves.toBeUndefined()
+    expect(system.system).toBe('base:good')
+  })
+
+  it('loads plugins in spec order and deduplicates specs', async () => {
+    await fs.writeFile(
+      path.join(directory, 'one.mjs'),
+      `export default () => ({ system: (_i, out) => { out.system += ':one' } })`
+    )
+    await fs.writeFile(
+      path.join(directory, 'two.mjs'),
+      `export default () => ({ system: (_i, out) => { out.system += ':two' } })`
+    )
+
+    const registry = await loadPlugins(['./one.mjs', './two.mjs', './one.mjs'], {
+      workspace: directory,
+      config: {
+        snapshots: true,
+        instructions: [],
+        lsp: true,
+        formatters: true,
+        formatterOverrides: {}
+      }
+    })
+    const system = { system: 'base' }
+    await registry.transformSystem({ sessionId: 's', model: 'm' }, system)
+
+    expect(system.system).toBe('base:one:two')
+    expect(registry.errors).toEqual([])
+  })
+
+  it('isolates plugin load failures from later plugins', async () => {
+    await fs.writeFile(
+      path.join(directory, 'bad.mjs'),
+      `export default () => { throw new Error('factory failed') }`
+    )
+    await fs.writeFile(
+      path.join(directory, 'good.mjs'),
+      `export default () => ({ system: (_i, out) => { out.system += ':good' } })`
+    )
+
+    const registry = await loadPlugins(['./bad.mjs', './good.mjs'], {
+      workspace: directory,
+      config: {
+        snapshots: true,
+        instructions: [],
+        lsp: true,
+        formatters: true,
+        formatterOverrides: {}
+      }
+    })
+    const system = { system: 'base' }
+    await registry.transformSystem({ sessionId: 's', model: 'm' }, system)
+
+    expect(system.system).toBe('base:good')
+    expect(registry.errors).toEqual([
+      expect.objectContaining({ spec: './bad.mjs', message: 'factory failed' })
+    ])
   })
 
   it('loads a local plugin directory through package.json', async () => {

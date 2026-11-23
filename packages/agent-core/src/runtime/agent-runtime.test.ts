@@ -3194,6 +3194,54 @@ describe('project provider and MCP configuration', () => {
     })
   })
 
+  it('applies shell env in plugin order and isolates failing hooks', async () => {
+    const badPlugin = path.join(directory, 'bad-hooks-plugin.mjs')
+    await fs.writeFile(
+      badPlugin,
+      `export default () => ({
+        name: 'bad-hooks',
+        system: () => { throw new Error('boom') },
+        shellEnv: (_input, output) => {
+          output.env.FROM_BAD = '1'
+          output.env.SHARED = 'bad'
+        }
+      })`
+    )
+    const goodPlugin = path.join(directory, 'good-hooks-plugin.mjs')
+    await fs.writeFile(
+      goodPlugin,
+      `export default () => ({
+        name: 'good-hooks',
+        system: (_input, output) => { output.system += '\\n:good' },
+        shellEnv: (_input, output) => {
+          output.env.FROM_GOOD = '2'
+          output.env.SHARED = 'good'
+        }
+      })`
+    )
+    const configDirectory = path.join(directory, 'agent')
+    await fs.mkdir(configDirectory, { recursive: true })
+    await fs.writeFile(
+      path.join(configDirectory, 'config.json'),
+      JSON.stringify({
+        snapshots: true,
+        instructions: [],
+        plugins: [badPlugin, goodPlugin]
+      })
+    )
+    scripts.push(textScript('Hello'))
+
+    await runtime.sendChat(sessionId, 'run')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain(':good')
+    await expect(toolContext?.shellEnv?.()).resolves.toEqual({
+      FROM_BAD: '1',
+      SHARED: 'good',
+      FROM_GOOD: '2'
+    })
+  })
+
   it('loads declarative plugin auth methods on demand', async () => {
     const pluginPath = path.join(directory, 'auth-plugin.mjs')
     await fs.writeFile(

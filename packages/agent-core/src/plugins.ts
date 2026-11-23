@@ -137,6 +137,15 @@ export class PluginRegistry {
     this.hooks = hooks
   }
 
+  private async safeHook(index: number, hookName: string, action: () => unknown): Promise<void> {
+    try {
+      await action()
+    } catch (error) {
+      const label = this.hooks[index]?.name ?? `plugin-${index + 1}`
+      console.warn(`[plugins] ${hookName} hook failed in ${label}`, error)
+    }
+  }
+
   authMethods(): PluginAuthMethodInfo[] {
     return this.authEntries().map((entry) => entry.info)
   }
@@ -270,10 +279,16 @@ export class PluginRegistry {
     } = {}
   ): Promise<ToolSet> {
     const result: ToolSet = {}
-    for (const hook of this.hooks) {
+    for (const [index, hook] of this.hooks.entries()) {
       if (!hook.tool) continue
-      const pluginName = hook.name ?? 'plugin'
-      const tools = typeof hook.tool === 'function' ? await hook.tool(context) : hook.tool
+      const pluginName = hook.name ?? `plugin-${index + 1}`
+      let tools: ToolSet
+      try {
+        tools = typeof hook.tool === 'function' ? await hook.tool(context) : hook.tool
+      } catch (error) {
+        console.warn(`[plugins] tool hook failed in ${pluginName}`, error)
+        continue
+      }
       for (const [name, definition] of Object.entries(tools)) {
         if (!options.askPermission) {
           result[name] = definition
@@ -304,8 +319,10 @@ export class PluginRegistry {
     input: { sessionId: string; model: string },
     output: { system: string }
   ): Promise<void> {
-    for (const hook of this.hooks) {
-      await hook.system?.(input, output)
+    for (const [index, hook] of this.hooks.entries()) {
+      const system = hook.system
+      if (!system) continue
+      await this.safeHook(index, 'system', () => system(input, output))
     }
   }
 
@@ -313,8 +330,10 @@ export class PluginRegistry {
     input: { sessionId: string; agent: string | null; model: string },
     output: PluginParams
   ): Promise<void> {
-    for (const hook of this.hooks) {
-      await hook.chatParams?.(input, output)
+    for (const [index, hook] of this.hooks.entries()) {
+      const chatParams = hook.chatParams
+      if (!chatParams) continue
+      await this.safeHook(index, 'chatParams', () => chatParams(input, output))
     }
   }
 
@@ -322,8 +341,10 @@ export class PluginRegistry {
     input: { command: string; args: string; sessionId: string | null },
     output: { template: string; args: string }
   ): Promise<void> {
-    for (const hook of this.hooks) {
-      await hook.commandExecuteBefore?.(input, output)
+    for (const [index, hook] of this.hooks.entries()) {
+      const transform = hook.commandExecuteBefore
+      if (!transform) continue
+      await this.safeHook(index, 'commandExecuteBefore', () => transform(input, output))
     }
   }
 
@@ -331,21 +352,26 @@ export class PluginRegistry {
     input: { workspace: string; models: RuntimeModelsConfig },
     output: { models: RuntimeModelsConfig }
   ): Promise<void> {
-    for (const hook of this.hooks) {
-      await hook.provider?.(input, output)
+    for (const [index, hook] of this.hooks.entries()) {
+      const transform = hook.provider
+      if (!transform) continue
+      await this.safeHook(index, 'provider', () => transform(input, output))
     }
   }
 
   async applyAuth(workspace: string, providers: RuntimeProvider[]): Promise<RuntimeProvider[]> {
     const result = providers.map((provider) => ({ ...provider }))
-    for (const hook of this.hooks) {
-      if (!hook.auth || typeof hook.auth !== 'function') continue
+    for (const [index, hook] of this.hooks.entries()) {
+      const auth = hook.auth
+      if (!auth || typeof auth !== 'function') continue
       for (const provider of result) {
         const output: { apiKey?: string; baseURL?: string } = {
           ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
           ...(provider.baseURL ? { baseURL: provider.baseURL } : {})
         }
-        await hook.auth({ workspace, provider: { ...provider } }, output)
+        await this.safeHook(index, 'auth', () =>
+          auth({ workspace, provider: { ...provider } }, output)
+        )
         if (output.apiKey) provider.apiKey = output.apiKey
         if (output.baseURL) provider.baseURL = output.baseURL
       }
@@ -406,15 +432,19 @@ export class PluginRegistry {
     input: { action: PermissionAction; resource: string; toolName: string },
     output: { status: 'allow' | 'ask' | 'deny' }
   ): Promise<void> {
-    for (const hook of this.hooks) {
-      await hook.permissionAsk?.(input, output)
+    for (const [index, hook] of this.hooks.entries()) {
+      const permissionAsk = hook.permissionAsk
+      if (!permissionAsk) continue
+      await this.safeHook(index, 'permissionAsk', () => permissionAsk(input, output))
     }
   }
 
   async shellEnv(cwd: string, sessionId: string): Promise<Record<string, string>> {
     const output = { env: {} as Record<string, string> }
-    for (const hook of this.hooks) {
-      await hook.shellEnv?.({ cwd, sessionId }, output)
+    for (const [index, hook] of this.hooks.entries()) {
+      const shellEnv = hook.shellEnv
+      if (!shellEnv) continue
+      await this.safeHook(index, 'shellEnv', () => shellEnv({ cwd, sessionId }, output))
     }
     return output.env
   }
@@ -449,10 +479,14 @@ export class PluginRegistry {
         ...(definition as object),
         execute: async (input: never, options: { toolCallId: string }) => {
           const before = { args: input as unknown }
-          for (const hook of this.hooks) {
-            await hook.toolBefore?.(
-              { tool: name, sessionId, callId: options.toolCallId, args: before.args },
-              before
+          for (const [index, hook] of this.hooks.entries()) {
+            const toolBefore = hook.toolBefore
+            if (!toolBefore) continue
+            await this.safeHook(index, 'toolBefore', () =>
+              toolBefore(
+                { tool: name, sessionId, callId: options.toolCallId, args: before.args },
+                before
+              )
             )
           }
           if (hasBefore) {
@@ -468,10 +502,14 @@ export class PluginRegistry {
           }
           let output: unknown = await execute(before.args as never, options)
           const after = { output }
-          for (const hook of this.hooks) {
-            await hook.toolAfter?.(
-              { tool: name, sessionId, callId: options.toolCallId, args: before.args },
-              after
+          for (const [index, hook] of this.hooks.entries()) {
+            const toolAfter = hook.toolAfter
+            if (!toolAfter) continue
+            await this.safeHook(index, 'toolAfter', () =>
+              toolAfter(
+                { tool: name, sessionId, callId: options.toolCallId, args: before.args },
+                after
+              )
             )
           }
           output = after.output
