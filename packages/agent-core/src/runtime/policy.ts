@@ -28,8 +28,7 @@ export function modePermissionRules(
     base('webfetch', 'allow'),
     base('websearch', 'allow'),
     base('skill', 'allow'),
-    base('subagent', 'allow'),
-    base('plugin', 'ask')
+    base('subagent', 'allow')
   ]
   switch (mode) {
     case 'plan':

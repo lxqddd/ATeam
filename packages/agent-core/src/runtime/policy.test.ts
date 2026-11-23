@@ -70,4 +70,11 @@ describe('buildSystemPrompt', () => {
       })
     ).toBe('deny')
   })
+
+  it('denies plugin tools in plan mode and allows them in auto mode', () => {
+    const request = { action: 'plugin' as const, resources: ['@acme/tools/run'], sessionId: null }
+    expect(evaluatePermissionRules(modePermissionRules('plan'), request)).toBe('deny')
+    expect(evaluatePermissionRules(modePermissionRules('ask'), request)).toBe('ask')
+    expect(evaluatePermissionRules(modePermissionRules('auto'), request)).toBe('allow')
+  })
 })
