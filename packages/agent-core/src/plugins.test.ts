@@ -121,6 +121,49 @@ describe('PluginRegistry', () => {
     await expect(allowedExecute({}, { toolCallId: 'call-2' })).resolves.toBe('ran')
   })
 
+  it('registers and runs workspace adapters', async () => {
+    const create = vi.fn(async () => ({ directory: directory, details: 'remote' }))
+    const remove = vi.fn(async () => undefined)
+    const registry = new PluginRegistry([
+      {
+        workspaceAdapter: {
+          name: 'remote',
+          description: 'Remote workspace',
+          create,
+          remove
+        }
+      }
+    ])
+
+    expect(registry.workspaceAdapters()).toEqual([
+      { name: 'remote', description: 'Remote workspace' }
+    ])
+    await expect(
+      registry.createWorkspace('remote', { name: 'demo', workspace: directory })
+    ).resolves.toEqual({ directory, details: 'remote' })
+    await registry.removeWorkspace('remote', { directory, workspace: directory })
+    expect(create).toHaveBeenCalled()
+    expect(remove).toHaveBeenCalled()
+    await expect(
+      registry.createWorkspace('missing', { name: 'demo', workspace: directory })
+    ).rejects.toThrow('WORKSPACE_ADAPTER_NOT_FOUND')
+  })
+
+  it('rejects relative adapter paths', async () => {
+    const registry = new PluginRegistry([
+      {
+        workspaceAdapter: {
+          name: 'bad',
+          create: async () => ({ directory: 'relative/path' })
+        }
+      }
+    ])
+
+    await expect(
+      registry.createWorkspace('bad', { name: 'demo', workspace: directory })
+    ).rejects.toThrow('WORKSPACE_ADAPTER_INVALID_PATH')
+  })
+
   it('applies provider and auth hooks', async () => {
     const registry = new PluginRegistry([
       {

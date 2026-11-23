@@ -67,6 +67,16 @@ export interface PluginHooks {
     input: { workspace: string; provider: RuntimeProvider },
     output: { apiKey?: string; baseURL?: string }
   ) => void | Promise<void>
+  workspaceAdapter?: {
+    name: string
+    description?: string
+    create: (input: {
+      name: string
+      base?: string | null
+      workspace: string
+    }) => Promise<{ directory: string; details?: string }>
+    remove?: (input: { directory: string; force?: boolean; workspace: string }) => Promise<void>
+  }
   dispose?: () => void | Promise<void>
 }
 
@@ -168,6 +178,45 @@ export class PluginRegistry {
       }
     }
     return result
+  }
+
+  workspaceAdapters(): Array<{ name: string; description: string | null }> {
+    return this.hooks
+      .map((hook) => hook.workspaceAdapter)
+      .filter((adapter): adapter is NonNullable<PluginHooks['workspaceAdapter']> =>
+        Boolean(adapter)
+      )
+      .map((adapter) => ({
+        name: adapter.name,
+        description: adapter.description ?? null
+      }))
+  }
+
+  async createWorkspace(
+    adapterName: string,
+    input: { name: string; base?: string | null; workspace: string }
+  ): Promise<{ directory: string; details?: string }> {
+    const adapter = this.hooks
+      .map((hook) => hook.workspaceAdapter)
+      .find((candidate) => candidate?.name === adapterName)
+    if (!adapter) throw new Error(`WORKSPACE_ADAPTER_NOT_FOUND: ${adapterName}`)
+    const result = await adapter.create(input)
+    if (!path.isAbsolute(result.directory)) {
+      throw new Error(`WORKSPACE_ADAPTER_INVALID_PATH: ${result.directory}`)
+    }
+    return result
+  }
+
+  async removeWorkspace(
+    adapterName: string,
+    input: { directory: string; force?: boolean; workspace: string }
+  ): Promise<void> {
+    const adapter = this.hooks
+      .map((hook) => hook.workspaceAdapter)
+      .find((candidate) => candidate?.name === adapterName)
+    if (!adapter) throw new Error(`WORKSPACE_ADAPTER_NOT_FOUND: ${adapterName}`)
+    if (!adapter.remove) throw new Error(`WORKSPACE_ADAPTER_REMOVE_UNSUPPORTED: ${adapterName}`)
+    await adapter.remove(input)
   }
 
   async emitEvent(event: AgentEvent): Promise<void> {

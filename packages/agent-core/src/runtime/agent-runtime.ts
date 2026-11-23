@@ -1354,6 +1354,33 @@ export class AgentRuntime {
       listSessionWorktrees: (run) => this.listSessionWorktrees(run),
       removeSessionWorktree: (run, target, force) => this.removeSessionWorktree(run, target, force),
       moveSession: (run, directory) => this.moveSession(run, directory),
+      listWorkspaceAdapters: async (run) => {
+        const adapters = run.plugins?.workspaceAdapters() ?? []
+        if (adapters.length === 0) return 'No plugin workspace adapters are available.'
+        return adapters
+          .map(
+            (adapter) => `- ${adapter.name}${adapter.description ? `: ${adapter.description}` : ''}`
+          )
+          .join('\n')
+      },
+      createPluginWorkspace: async (run, adapter, name, base) => {
+        if (!run.plugins) throw new Error('WORKSPACE_ADAPTER_NOT_AVAILABLE')
+        const result = await run.plugins.createWorkspace(adapter, {
+          name,
+          base: base ?? null,
+          workspace: run.workspace
+        })
+        return `Created workspace at ${result.directory}${result.details ? `\n${result.details}` : ''}\nUse session_move with this directory to continue there.`
+      },
+      removePluginWorkspace: async (run, adapter, directory, force) => {
+        if (!run.plugins) throw new Error('WORKSPACE_ADAPTER_NOT_AVAILABLE')
+        await run.plugins.removeWorkspace(adapter, {
+          directory,
+          force,
+          workspace: run.workspace
+        })
+        return `Removed workspace ${directory}.`
+      },
       browserAction: (run, method, params) => this.browserAction(run, method, params),
       browserCapture: (run, tabId) => this.browserCapture(run, tabId)
     }

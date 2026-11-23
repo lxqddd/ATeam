@@ -59,6 +59,19 @@ export interface ToolContextHost {
   listSessionWorktrees(run: Run): Promise<string>
   removeSessionWorktree(run: Run, target: string, force: boolean): Promise<string>
   moveSession(run: Run, directory: string): Promise<string>
+  listWorkspaceAdapters(run: Run): Promise<string>
+  createPluginWorkspace(
+    run: Run,
+    adapter: string,
+    name: string,
+    base?: string | null
+  ): Promise<string>
+  removePluginWorkspace(
+    run: Run,
+    adapter: string,
+    directory: string,
+    force: boolean
+  ): Promise<string>
   browserAction(run: Run, method: string, params?: Record<string, unknown>): Promise<string>
   browserCapture(
     run: Run,
@@ -129,6 +142,10 @@ export function buildToolContext(host: ToolContextHost, input: ToolContextInput)
     worktreeList: () => host.listSessionWorktrees(run),
     worktreeRemove: (target, force) => host.removeSessionWorktree(run, target, force),
     moveSession: (directory) => host.moveSession(run, directory),
+    workspaceAdapters: () => host.listWorkspaceAdapters(run),
+    createWorkspace: (adapter, name, base) => host.createPluginWorkspace(run, adapter, name, base),
+    removeWorkspace: (adapter, directory, force) =>
+      host.removePluginWorkspace(run, adapter, directory, force),
     browserOpen: (url) => host.browserAction(run, 'open', { url }),
     browserSnapshot: () => host.browserAction(run, 'snapshot'),
     browserClick: (ref) => host.browserAction(run, 'click', { ref }),

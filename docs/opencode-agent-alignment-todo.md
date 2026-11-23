@@ -36,15 +36,15 @@
 
 ### 第二轮 P0 实现进度（2026-11-22）
 
-| 项目                  | 状态     | 已实现                                                                                                                                                | 仍待补齐                                                                                            |
-| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| R-P0-1 分层配置       | 部分完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins，项目权限与 MCP 已接入运行时 | 设置页来源展示与项目级编辑、项目 providers、自定义 LSP server、项目 commands/skills、配置热更新     |
-| R-P0-2 插件系统       | 基础完成 | 本地/包加载、完整基础 hook、plugins.json 安装注册、启用/禁用/移除 UI、本地版本兼容检查、dispose                                                       | npm 自动安装与真实包版本检查、command/event/auth/provider/workspace hook、加载错误 UI、插件工具权限 |
-| R-P0-3 LLM 重试       | 基础完成 | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态                                                                       | 流已开始后的中断重试、可配置重试策略、重试指标                                                      |
-| R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                   | 完整模型专用 prompt 文件、MCP instructions 权限过滤的细化、XML 转义                                 |
-| R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、Anthropic cache control、OpenAI promptCacheKey                                                                | provider transform 层、system/tool 结果缓存断点、缓存命中指标、跨供应商 reasoning 降级              |
-| R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配                                                                                    | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略                        |
-| R-P0-7 Plan 工作流    | 基础完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示                                                                     | 当前轮内切换工具集、计划文件 UI/查看入口、build 切换提醒、自动化测试覆盖                            |
+| 项目                  | 状态     | 已实现                                                                                                                                                         | 仍待补齐                                                                                        |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| R-P0-1 分层配置       | 部分完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins，项目权限与 MCP 已接入运行时          | 设置页来源展示与项目级编辑、项目 providers、自定义 LSP server、项目 commands/skills、配置热更新 |
+| R-P0-2 插件系统       | 基础完成 | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose | 声明式 auth 方法 UI、工具详情同步、运行时 hook 测试                                             |
+| R-P0-3 LLM 重试       | 基础完成 | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态                                                                                | 流已开始后的中断重试、可配置重试策略、重试指标                                                  |
+| R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                            | 完整模型专用 prompt 文件、MCP instructions 权限过滤的细化、XML 转义                             |
+| R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、Anthropic cache control、OpenAI promptCacheKey                                                                         | provider transform 层、system/tool 结果缓存断点、缓存命中指标、跨供应商 reasoning 降级          |
+| R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配                                                                                             | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略                    |
+| R-P0-7 Plan 工作流    | 基础完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示                                                                              | 当前轮内切换工具集、计划文件 UI/查看入口、build 切换提醒、自动化测试覆盖                        |
 
 ### 第二轮 P0 审计遗留（2026-11-23）
 
@@ -69,7 +69,7 @@
 - [x] `command.execute.before` 与 `event` hook
 - [x] `provider` hook：在模型解析前修改 provider/model 列表
 - [x] `auth` hook：插件为 provider 注入凭据（声明式 auth 方法 UI 待补）
-- [ ] workspace adapter hook
+- [x] workspace adapter hook（workspace_adapter_list / workspace_create / workspace_remove）
 - [x] 插件管理 UI：启用/禁用、来源、版本与加载错误
 - [x] 插件 `dispose` 生命周期与配置变更缓存失效
 - [x] 插件工具纳入 `plugin` 权限 action，执行前统一审批
@@ -414,7 +414,7 @@
 - [ ] CLI / TUI：完整 TUI、attach、serve、web、mcp、providers、import/export、stats、agent create
 - [ ] IDE 集成：VS Code 扩展、IDE 上下文/选区、ACP 之外的编辑器能力
 - [ ] GitHub / Slack：issue/PR 集成、share URL 导入、Slack 集成；现有 Action 仅覆盖基础 CLI 调用
-- [ ] 远程 workspace / control plane：workspace adapter、远程 target；当前仅本地 worktree
+- [ ] 远程 workspace / control plane：插件 workspace adapter 已提供，远程 target / control-plane 尚未实现
 - [ ] ACP 细节：usage/report、config options/profile、Question 映射
 - [ ] Account / Console / Enterprise：OpenCode 商业生态，建议明确为 ATeam 非目标
 

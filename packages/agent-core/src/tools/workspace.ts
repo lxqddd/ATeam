@@ -77,3 +77,71 @@ export function createSessionMoveTool(context: ToolContext): Tool {
     }
   })
 }
+
+export function createWorkspaceAdapterListTool(context: ToolContext): Tool {
+  return tool({
+    description: 'List workspace adapters provided by plugins.',
+    inputSchema: z.object({}),
+    execute: async () => {
+      if (!context.workspaceAdapters) return 'Error: workspace adapters are not available.'
+      return context.workspaceAdapters()
+    }
+  })
+}
+
+export function createWorkspaceCreateTool(context: ToolContext): Tool {
+  return tool({
+    description:
+      'Create a workspace through a plugin workspace adapter, such as a remote or container workspace. The returned directory can be used with session_move.',
+    inputSchema: z.object({
+      adapter: z.string().min(1).max(100).describe('Workspace adapter name'),
+      name: z.string().min(1).max(200).describe('Workspace name'),
+      base: z.string().max(200).optional().describe('Optional base reference for the adapter')
+    }),
+    execute: async (
+      input: { adapter: string; name: string; base?: string },
+      options: { toolCallId: string }
+    ) => {
+      const { adapter, name, base } = input
+      if (!context.createWorkspace) return 'Error: workspace adapters are not available.'
+      const allowed = await context.askPermission(
+        'plugin',
+        `${adapter}/workspace_create`,
+        'workspace_create',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the workspace was not created.'
+      return context.createWorkspace(adapter, name, base)
+    }
+  }) as Tool
+}
+
+export function createWorkspaceRemoveTool(context: ToolContext): Tool {
+  return tool({
+    description: 'Remove a workspace created through a plugin workspace adapter.',
+    inputSchema: z.object({
+      adapter: z.string().min(1).max(100).describe('Workspace adapter name'),
+      directory: z
+        .string()
+        .min(1)
+        .max(1_000)
+        .describe('Workspace directory returned by the adapter'),
+      force: z.boolean().optional().describe('Discard uncommitted state')
+    }),
+    execute: async (
+      input: { adapter: string; directory: string; force?: boolean },
+      options: { toolCallId: string }
+    ) => {
+      const { adapter, directory, force = false } = input
+      if (!context.removeWorkspace) return 'Error: workspace adapters are not available.'
+      const allowed = await context.askPermission(
+        'plugin',
+        `${adapter}/workspace_remove`,
+        'workspace_remove',
+        options.toolCallId
+      )
+      if (!allowed) return 'Permission denied; the workspace was not removed.'
+      return context.removeWorkspace(adapter, directory, force)
+    }
+  }) as Tool
+}

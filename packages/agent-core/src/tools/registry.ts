@@ -30,6 +30,9 @@ import type { ToolContext } from './types'
 import { createWebFetchTool, createWebSearchTool } from './web'
 import {
   createSessionMoveTool,
+  createWorkspaceAdapterListTool,
+  createWorkspaceCreateTool,
+  createWorkspaceRemoveTool,
   createWorktreeCreateTool,
   createWorktreeListTool,
   createWorktreeRemoveTool
@@ -72,6 +75,9 @@ export function createTools(context: ToolContext): ToolSet {
     worktree_list: createWorktreeListTool(context),
     worktree_remove: createWorktreeRemoveTool(context),
     session_move: createSessionMoveTool(context),
+    workspace_adapter_list: createWorkspaceAdapterListTool(context),
+    workspace_create: createWorkspaceCreateTool(context),
+    workspace_remove: createWorkspaceRemoveTool(context),
     ...(context.browserOpen ? browserTools : {}),
     mcp_prompt: createMcpPromptTool(context),
     mcp_resource: createMcpResourceTool(context)

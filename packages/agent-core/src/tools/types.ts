@@ -65,6 +65,9 @@ export interface ToolContext {
   worktreeList?: () => Promise<string>
   worktreeRemove?: (path: string, force: boolean) => Promise<string>
   moveSession?: (directory: string) => Promise<string>
+  workspaceAdapters?: () => Promise<string>
+  createWorkspace?: (adapter: string, name: string, base?: string | null) => Promise<string>
+  removeWorkspace?: (adapter: string, directory: string, force: boolean) => Promise<string>
   browserOpen?: (url: string, newTab?: boolean) => Promise<string>
   browserTabs?: () => Promise<string>
   browserSnapshot?: (tabId?: string) => Promise<string>
