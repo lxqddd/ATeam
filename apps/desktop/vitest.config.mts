@@ -39,6 +39,8 @@ export default defineConfig({
         'src/renderer/src/hooks/useElapsed.ts',
         'src/renderer/src/components/chat/PermissionCard.tsx',
         'src/renderer/src/components/chat/Composer.tsx',
+        'src/renderer/src/components/chat/composer/**/*.ts',
+        'src/renderer/src/components/chat/composer/**/*.tsx',
         'src/renderer/src/components/chat/SessionPanel.tsx',
         'src/renderer/src/components/chat/MessageList.tsx',
         'src/renderer/src/components/chat/ChatHeader.tsx',

@@ -15,6 +15,7 @@ export default defineConfig({
         'src/sessions/**/*.ts',
         'src/config/**/*.ts',
         'src/integrations/**/*.ts',
+        'src/providers.ts',
         'src/errors.ts',
         'src/message-history.ts',
         'src/atomic-json.ts'
