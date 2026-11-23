@@ -253,6 +253,7 @@ agent/
 ├── references/          # Git 引用的本地缓存
 ├── websearch.json       # 搜索服务商与 API Key（明文，0600）
 ├── model-catalog.json   # models.dev 目录缓存
+├── plugins.json         # 已安装插件、启用状态与版本兼容信息
 ├── commands.json        # JSON 自定义命令
 ├── commands/            # Markdown 自定义命令
 ├── agents/              # 用户级 Markdown Agent

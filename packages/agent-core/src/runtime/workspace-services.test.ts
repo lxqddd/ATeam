@@ -52,6 +52,7 @@ beforeEach(async () => {
   services = new WorkspaceServices({
     userDataPath: path.join(directory, 'user-data'),
     defaultWorkspacePath: workspace,
+    appVersion: '0.1.1',
     createMcpManager: vi.fn(() => ({
       tools: async () => ({}),
       servers: async () => [],

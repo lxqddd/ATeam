@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tool } from 'ai'
 import { z } from 'zod'
 import { loadPlugins, PluginRegistry } from './plugins'
@@ -53,6 +53,15 @@ describe('PluginRegistry', () => {
     ).execute
 
     await expect(execute({ value: 'hi' }, { toolCallId: 'call-1' })).resolves.toBe('plugin:hi!?')
+  })
+
+  it('disposes plugin hooks', async () => {
+    const dispose = vi.fn(async () => undefined)
+    const registry = new PluginRegistry([{ dispose }])
+
+    await registry.dispose()
+
+    expect(dispose).toHaveBeenCalledTimes(1)
   })
 
   it('transforms params, system, permission and shell env', async () => {

@@ -3,6 +3,7 @@ import fsSync from 'node:fs'
 import path from 'node:path'
 import type { AgentManager } from '../../agent-host/agent-manager'
 import { AgentConfigStore } from '@ateam/agent-core/config'
+import { PluginStore } from '@ateam/agent-core'
 import { hasProjectReferences, resolveReferences } from '@ateam/agent-core/references'
 import type { McpAuthStore } from '../../credentials/mcp-auth-store'
 import type { ProviderAuthStore } from '../../providers/provider-auth-store'
@@ -37,6 +38,7 @@ export interface AgentIpcContext extends AgentIpcOptions {
   handle: AgentIpcHandle
   refreshProviderTokens: () => Promise<void>
   configStore: AgentConfigStore
+  pluginStore: PluginStore
   configReady: Promise<void>
   requestedDirectory: (value: unknown) => string | undefined
   searchReferences: (searchRoot: string) => Promise<AgentReferenceRoot[]>
@@ -52,6 +54,7 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
   }
 
   const configStore = new AgentConfigStore(app.getPath('userData'))
+  const pluginStore = new PluginStore(app.getPath('userData'))
   const configReady = configStore.init()
   let referenceSearchCache: {
     key: string
@@ -110,6 +113,7 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
     handle,
     refreshProviderTokens,
     configStore,
+    pluginStore,
     configReady,
     requestedDirectory,
     searchReferences

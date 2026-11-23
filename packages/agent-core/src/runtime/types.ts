@@ -71,6 +71,7 @@ export interface PendingQuestion {
 export interface AgentRuntimeOptions {
   userDataPath: string
   workspacePath: string
+  appVersion?: string
   models: RuntimeModelsConfig
   webSearch?: RuntimeWebSearchConfig | null
   mcpAuth?: McpAuthRecord[]

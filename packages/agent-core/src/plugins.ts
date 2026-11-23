@@ -44,6 +44,7 @@ export interface PluginHooks {
     input: { cwd: string; sessionId: string },
     output: { env: Record<string, string> }
   ) => void | Promise<void>
+  dispose?: () => void | Promise<void>
 }
 
 export type PluginFactory = (context: PluginContext) => PluginHooks | Promise<PluginHooks>
@@ -99,6 +100,16 @@ export class PluginRegistry {
       await hook.shellEnv?.({ cwd, sessionId }, output)
     }
     return output.env
+  }
+
+  async dispose(): Promise<void> {
+    for (const hook of this.hooks) {
+      try {
+        await hook.dispose?.()
+      } catch {
+        /* plugin cleanup is best effort */
+      }
+    }
   }
 
   wrapTools(tools: ToolSet, sessionId: string): ToolSet {

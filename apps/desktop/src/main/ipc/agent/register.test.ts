@@ -119,8 +119,8 @@ describe('registerAgentIpc', () => {
     const channels = registeredChannels()
     const expected = Object.values(AGENT_CHANNELS)
 
-    expect(channels).toHaveLength(55)
-    expect(expected).toHaveLength(55)
+    expect(channels).toHaveLength(expected.length)
+    expect(expected.length).toBeGreaterThan(0)
     expect(channels).toContain(AGENT_CHANNELS.mcpList)
     expect(new Set(channels).size).toBe(channels.length)
     expect([...channels].sort()).toEqual([...expected].sort())
@@ -130,7 +130,7 @@ describe('registerAgentIpc', () => {
     registerAgentIpc(createOptions(false))
 
     const listeners = ipcHandle.mock.calls.map(([, listener]) => listener)
-    expect(listeners).toHaveLength(55)
+    expect(listeners).toHaveLength(Object.keys(AGENT_CHANNELS).length)
     for (const listener of listeners) {
       const invoke = listener as (event: unknown, payload: unknown) => unknown
       expect(() => invoke({}, undefined)).toThrow('UNTRUSTED_SENDER')

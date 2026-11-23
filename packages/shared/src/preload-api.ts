@@ -2,6 +2,9 @@ import type {
   AgentConfig,
   AgentDefinition,
   EffectiveAgentConfig,
+  PluginEntry,
+  PluginInstallInput,
+  PluginUpdateInput,
   ProjectConfigFile,
   AgentEventEnvelope,
   AgentInfo,
@@ -97,6 +100,12 @@ export interface AgentBridge {
       get: (directory?: string | null) => Promise<ProjectConfigFile>
       update: (input: { directory?: string | null; content: string }) => Promise<ProjectConfigFile>
     }
+  }
+  plugins: {
+    list: () => Promise<PluginEntry[]>
+    install: (input: PluginInstallInput) => Promise<PluginEntry[]>
+    update: (id: string, input: PluginUpdateInput) => Promise<PluginEntry[]>
+    remove: (id: string) => Promise<PluginEntry[]>
   }
   mcp: {
     list: (directory?: string | null) => Promise<{

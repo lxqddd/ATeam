@@ -110,6 +110,12 @@ const api: AteamApi = {
           })
       }
     },
+    plugins: {
+      list: () => ipcRenderer.invoke(AGENT_CHANNELS.pluginsList),
+      install: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsInstall, input),
+      update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsUpdate, { id, input }),
+      remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsRemove, { id })
+    },
     mcp: {
       list: (directory) =>
         ipcRenderer.invoke(AGENT_CHANNELS.mcpList, { directory: directory ?? undefined }),

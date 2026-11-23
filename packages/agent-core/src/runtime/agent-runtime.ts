@@ -141,6 +141,7 @@ export class AgentRuntime {
       {
         userDataPath: options.userDataPath,
         defaultWorkspacePath: options.workspacePath,
+        appVersion: options.appVersion ?? '0.0.0',
         createMcpManager: this.deps.createMcpManager,
         fetchWeb: this.deps.fetchWeb,
         searchWeb: this.deps.searchWeb,

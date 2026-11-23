@@ -6,6 +6,7 @@ import type {
   AgentInfo,
   AgentStatus,
   EffectiveAgentConfig,
+  PluginEntry,
   ProjectConfigFile,
   AteamApi,
   CommandDefinition,
@@ -310,6 +311,12 @@ export function createApiMock(
             skills: 'default'
           }
         }))
+      },
+      plugins: {
+        list: vi.fn(async () => [] as PluginEntry[]),
+        install: vi.fn(async () => [] as PluginEntry[]),
+        update: vi.fn(async () => [] as PluginEntry[]),
+        remove: vi.fn(async () => [] as PluginEntry[])
       },
       mcp: {
         list: vi.fn(async () => ({

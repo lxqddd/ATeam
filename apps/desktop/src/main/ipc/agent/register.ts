@@ -5,6 +5,7 @@ import { createAgentIpcContext, type AgentIpcOptions } from './context'
 import { registerInfoHandlers } from './info'
 import { registerMcpHandlers } from './mcp'
 import { registerPermissionHandlers } from './permissions'
+import { registerPluginHandlers } from './plugins'
 import { registerSessionHandlers } from './sessions'
 import { registerWebSearchHandlers } from './websearch'
 import { registerWorkspaceHandlers } from './workspace'
@@ -24,6 +25,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   registerAttachmentHandlers(ctx)
   registerPermissionHandlers(ctx)
   registerConfigHandlers(ctx)
+  registerPluginHandlers(ctx)
   registerMcpHandlers(ctx)
   registerWebSearchHandlers(ctx)
   registerWorkspaceHandlers(ctx)

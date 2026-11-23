@@ -433,6 +433,32 @@ export interface ProjectConfigFile {
   diagnostics: ConfigDiagnostic[]
 }
 
+export type PluginSource = 'local' | 'npm'
+export type PluginCompatibility = 'compatible' | 'incompatible' | 'unknown'
+
+export interface PluginEntry {
+  id: string
+  spec: string
+  name: string
+  version: string | null
+  source: PluginSource
+  enabled: boolean
+  compatibility: PluginCompatibility
+  requiredVersion: string | null
+  error: string | null
+  installedAt: string
+  updatedAt: string
+}
+
+export interface PluginInstallInput {
+  spec: string
+  directory?: string | null
+}
+
+export interface PluginUpdateInput {
+  enabled: boolean
+}
+
 export interface ConfigSources {
   globalConfigPath: string
   projectConfigPath: string | null

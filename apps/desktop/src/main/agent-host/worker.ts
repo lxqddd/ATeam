@@ -73,6 +73,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       runtime = new AgentRuntime({
         userDataPath: request.params.userDataPath,
         workspacePath: request.params.workspacePath,
+        appVersion: request.params.appVersion,
         models: request.params.models,
         webSearch: request.params.webSearch ?? null,
         mcpAuth: request.params.mcpAuth ?? [],

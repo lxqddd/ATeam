@@ -20,6 +20,7 @@ import type { McpManagerLike } from '../integrations/mcp'
 import { formatWebFetchResult } from '../integrations/webfetch'
 import { formatSearchResults } from '../integrations/websearch'
 import { loadPlugins, PluginRegistry } from '../plugins'
+import { PluginStore } from '../plugin-store'
 import { loadSkills } from '../skills'
 import { errorMessage } from './messages'
 import type { AgentRuntimeDependencies } from './types'
@@ -27,6 +28,7 @@ import type { AgentRuntimeDependencies } from './types'
 export interface WorkspaceServicesHost {
   readonly userDataPath: string
   readonly defaultWorkspacePath: string
+  readonly appVersion: string
   readonly createMcpManager: AgentRuntimeDependencies['createMcpManager']
   readonly fetchWeb: AgentRuntimeDependencies['fetchWeb']
   readonly searchWeb: AgentRuntimeDependencies['searchWeb']
@@ -44,6 +46,7 @@ export class WorkspaceServices {
   private readonly formatterCaches = new Map<string, Promise<FormatterDefinition[]>>()
   private readonly skillCaches = new Map<string, Promise<SkillDefinition[]>>()
   private readonly pluginCaches = new Map<string, Promise<PluginRegistry>>()
+  private readonly pluginStore: PluginStore
   private readonly mcpManagers = new Map<string, McpManagerLike>()
   private readonly configs = new Map<string, EffectiveAgentConfig>()
   private readonly fingerprints = new Map<string, string>()
@@ -56,6 +59,7 @@ export class WorkspaceServices {
   ) {
     this.mcpAuth = state.mcpAuth ?? []
     this.webSearchConfig = state.webSearch ?? null
+    this.pluginStore = new PluginStore(host.userDataPath)
   }
 
   async applyConfig(workspace: string, effective: EffectiveAgentConfig): Promise<void> {
@@ -71,7 +75,10 @@ export class WorkspaceServices {
     this.skillCaches.delete(workspace)
     this.formatterCaches.delete(workspace)
     for (const key of this.pluginCaches.keys()) {
-      if (key.startsWith(`${workspace}\u0000`)) this.pluginCaches.delete(key)
+      if (!key.startsWith(`${workspace}\u0000`)) continue
+      const registry = this.pluginCaches.get(key)
+      this.pluginCaches.delete(key)
+      void registry?.then((value) => value.dispose()).catch(() => undefined)
     }
     const lsp = this.lspManagers.get(workspace)
     this.lspManagers.delete(workspace)
@@ -95,6 +102,11 @@ export class WorkspaceServices {
     for (const manager of mcpManagers) {
       await manager.dispose()
     }
+    const pluginRegistries = [...new Set(this.pluginCaches.values())]
+    this.pluginCaches.clear()
+    for (const registry of pluginRegistries) {
+      await registry.then((value) => value.dispose()).catch(() => undefined)
+    }
   }
 
   skillsFor(workspace: string): Promise<SkillDefinition[]> {
@@ -110,9 +122,10 @@ export class WorkspaceServices {
     return cached
   }
 
-  plugins(config: AgentConfig, workspace: string): Promise<PluginRegistry> {
-    const specs = config.plugins ?? []
-    if (specs.length === 0) return Promise.resolve(new PluginRegistry())
+  async plugins(config: AgentConfig, workspace: string): Promise<PluginRegistry> {
+    const installed = await this.pluginStore.enabledSpecs()
+    const specs = [...new Set([...(config.plugins ?? []), ...installed])]
+    if (specs.length === 0) return new PluginRegistry()
     const key = `${workspace}\u0000${specs.join('\u0000')}`
     let cached = this.pluginCaches.get(key)
     if (!cached) {

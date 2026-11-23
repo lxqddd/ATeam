@@ -7,5 +7,7 @@ export type {
 } from './runtime'
 export { normalizeError } from './errors'
 export { readJsonFile, writeJsonAtomic } from './atomic-json'
+export { PluginStore, isPluginCompatible } from './plugin-store'
+export { PluginRegistry, loadPlugins } from './plugins'
 export { SessionsStore } from './sessions/sessions-store'
 export { restoreLegacySessionBackups } from './sessions/session-storage'
