@@ -50,7 +50,7 @@ import {
   removeSessionAttachments
 } from '../attachments'
 import { mergeRuntimeProviders, resolveModelRef } from '../providers'
-import { loadCommands } from '../commands'
+import { expandCommandTemplate, loadCommands, runWorkspaceShell } from '../commands'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
 import { computeMessageCost } from '../cost'
@@ -123,7 +123,8 @@ export class AgentRuntime {
     this.events = new RuntimeEvents({
       session: (sessionId) => this.store.getSession(sessionId) ?? null,
       isHidden: (sessionId) => this.store.get(sessionId)?.session.hidden ?? false,
-      send: options.send
+      send: options.send,
+      pluginsForSession: (sessionId) => this.runs.get(sessionId)?.plugins
     })
     this.compaction = new CompactionService({
       store: this.store,
@@ -276,6 +277,20 @@ export class AgentRuntime {
       }
     })
     return [...commands, ...mcpCommands]
+  }
+
+  async expandCommand(
+    template: string,
+    args: string,
+    workspace = this.options.workspacePath
+  ): Promise<string> {
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const plugins = await this.workspaceServices.plugins(effective.config, workspace)
+    const output = { template, args }
+    await plugins.transformCommand({ command: template, args, sessionId: null }, output)
+    return expandCommandTemplate(output.template, output.args, (command) =>
+      runWorkspaceShell(command, workspace)
+    )
   }
 
   async mcpPrompt(

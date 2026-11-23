@@ -8,7 +8,6 @@ import {
 } from '@ateam/shared'
 import { discoverInstructionFiles, loadOrgPolicy } from '@ateam/agent-core/config'
 import { availableLspServers, discoverFormatters } from '@ateam/agent-core/integrations'
-import { expandCommandTemplate, runWorkspaceShell } from '@ateam/agent-core/commands'
 import { runtimeModelsWithOAuth } from '../../providers/runtime-config'
 import type { AgentIpcContext } from './context'
 import { commandExpandSchema, directoryPayloadSchema } from './schemas'
@@ -75,10 +74,12 @@ export function registerInfoHandlers(ctx: AgentIpcContext): void {
     return manager.request('commands.list', { workspace: requestedDirectory(directory) })
   })
 
-  handle(AGENT_CHANNELS.commandExpand, async (payload): Promise<string> => {
+  handle(AGENT_CHANNELS.commandExpand, (payload): Promise<string> => {
     const { template, args, directory } = commandExpandSchema.parse(payload)
-    return expandCommandTemplate(template, args, (command) =>
-      runWorkspaceShell(command, requestedDirectory(directory) ?? workspacePath)
-    )
+    return manager.request('commands.expand', {
+      template,
+      args,
+      workspace: requestedDirectory(directory) ?? workspacePath
+    })
   })
 }

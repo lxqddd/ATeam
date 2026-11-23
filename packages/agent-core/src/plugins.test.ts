@@ -55,6 +55,37 @@ describe('PluginRegistry', () => {
     await expect(execute({ value: 'hi' }, { toolCallId: 'call-1' })).resolves.toBe('plugin:hi!?')
   })
 
+  it('transforms command templates before execution', async () => {
+    const registry = new PluginRegistry([
+      {
+        commandExecuteBefore: (_input, output) => {
+          output.template = `${output.template}\nextra`
+          output.args = `${output.args}!`
+        }
+      }
+    ])
+    const output = { template: 'review', args: 'src' }
+
+    await registry.transformCommand({ command: 'review', args: 'src', sessionId: null }, output)
+
+    expect(output).toEqual({ template: 'review\nextra', args: 'src!' })
+  })
+
+  it('forwards runtime events to plugin hooks', async () => {
+    const handler = vi.fn()
+    const registry = new PluginRegistry([{ event: handler }])
+    const event = {
+      type: 'run.started' as const,
+      sessionId: 's1',
+      messageId: 'm1',
+      startedAt: '2026-01-01T00:00:00.000Z'
+    }
+
+    await registry.emitEvent(event)
+
+    expect(handler).toHaveBeenCalledWith({ event })
+  })
+
   it('disposes plugin hooks', async () => {
     const dispose = vi.fn(async () => undefined)
     const registry = new PluginRegistry([{ dispose }])
@@ -93,6 +124,34 @@ describe('PluginRegistry', () => {
     expect(system.system).toContain('plugin')
     expect(permission.status).toBe('deny')
     await expect(registry.shellEnv(directory, 's')).resolves.toEqual({ PLUGIN: '1' })
+  })
+
+  it('loads a local plugin directory through package.json', async () => {
+    const root = path.join(directory, 'pkg-plugin')
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({ name: '@acme/pkg', version: '1.0.0', main: 'entry.mjs' })
+    )
+    await fs.writeFile(
+      path.join(root, 'entry.mjs'),
+      `export default () => ({ system: (_i, out) => { out.system += ':pkg' } })`
+    )
+
+    const registry = await loadPlugins(['./pkg-plugin'], {
+      workspace: directory,
+      config: {
+        snapshots: true,
+        instructions: [],
+        lsp: true,
+        formatters: true,
+        formatterOverrides: {}
+      }
+    })
+    const system = { system: 'base' }
+    await registry.transformSystem({ sessionId: 's', model: 'm' }, system)
+
+    expect(system.system).toBe('base:pkg')
   })
 
   it('loads a local plugin module and reports broken specs', async () => {

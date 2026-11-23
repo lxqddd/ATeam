@@ -1,8 +1,10 @@
+import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ToolSet } from 'ai'
-import type { AgentConfig, PermissionAction } from '@ateam/shared'
+import type { AgentConfig, AgentEvent, PermissionAction } from '@ateam/shared'
+import { readJsonFile } from './atomic-json'
 
 export interface PluginContext {
   workspace: string
@@ -24,6 +26,11 @@ export interface PluginHooks {
     input: { sessionId: string; agent: string | null; model: string },
     output: PluginParams
   ) => void | Promise<void>
+  commandExecuteBefore?: (
+    input: { command: string; args: string; sessionId: string | null },
+    output: { template: string; args: string }
+  ) => void | Promise<void>
+  event?: (input: { event: AgentEvent }) => void | Promise<void>
   system?: (
     input: { sessionId: string; model: string },
     output: { system: string }
@@ -82,6 +89,25 @@ export class PluginRegistry {
   ): Promise<void> {
     for (const hook of this.hooks) {
       await hook.chatParams?.(input, output)
+    }
+  }
+
+  async transformCommand(
+    input: { command: string; args: string; sessionId: string | null },
+    output: { template: string; args: string }
+  ): Promise<void> {
+    for (const hook of this.hooks) {
+      await hook.commandExecuteBefore?.(input, output)
+    }
+  }
+
+  async emitEvent(event: AgentEvent): Promise<void> {
+    for (const hook of this.hooks) {
+      try {
+        await hook.event?.({ event })
+      } catch {
+        /* plugin event handlers must not break the run */
+      }
     }
   }
 
@@ -151,13 +177,41 @@ export class PluginRegistry {
   }
 }
 
-function resolveSpec(spec: string, workspace: string): string {
+function packageEntry(pkg: Record<string, unknown> | null): string {
+  if (!pkg) return 'index.mjs'
+  const exports = pkg.exports
+  if (typeof exports === 'string') return exports
+  if (exports && typeof exports === 'object') {
+    const root = (exports as Record<string, unknown>)['.']
+    if (typeof root === 'string') return root
+    if (root && typeof root === 'object') {
+      const value = root as Record<string, unknown>
+      for (const key of ['import', 'default', 'require']) {
+        if (typeof value[key] === 'string') return value[key] as string
+      }
+    }
+  }
+  for (const key of ['module', 'main']) {
+    if (typeof pkg[key] === 'string') return pkg[key] as string
+  }
+  return 'index.mjs'
+}
+
+async function resolveSpec(spec: string, workspace: string): Promise<string> {
   if (spec === '~') return pathToFileURL(os.homedir()).href
   if (spec.startsWith('~/')) return pathToFileURL(path.join(os.homedir(), spec.slice(2))).href
-  if (spec.startsWith('.') || path.isAbsolute(spec)) {
-    return pathToFileURL(path.resolve(workspace, spec)).href
+  if (!spec.startsWith('.') && !path.isAbsolute(spec)) return spec
+  const resolved = path.resolve(workspace, spec)
+  try {
+    const stat = await fs.stat(resolved)
+    if (stat.isDirectory()) {
+      const pkg = await readJsonFile<Record<string, unknown>>(path.join(resolved, 'package.json'))
+      return pathToFileURL(path.join(resolved, packageEntry(pkg))).href
+    }
+  } catch {
+    /* let the import report the missing file */
   }
-  return spec
+  return pathToFileURL(resolved).href
 }
 
 export async function loadPlugins(
@@ -169,7 +223,10 @@ export async function loadPlugins(
   const errors: Array<{ spec: string; message: string }> = []
   for (const spec of [...new Set(specs)]) {
     try {
-      const module = (await import(resolveSpec(spec, context.workspace))) as Record<string, unknown>
+      const module = (await import(await resolveSpec(spec, context.workspace))) as Record<
+        string,
+        unknown
+      >
       const factory = module.default ?? module.plugin ?? module.server
       if (typeof factory !== 'function') {
         throw new Error('plugin does not export a default function')

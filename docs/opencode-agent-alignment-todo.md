@@ -66,7 +66,8 @@
 #### R-P0-2 插件系统
 
 - [ ] npm 插件自动安装与真实包版本检查
-- [ ] `command.execute.before`、`event`、`auth`、`provider`、workspace adapter hook
+- [x] `command.execute.before` 与 `event` hook
+- [ ] `auth`、`provider`、workspace adapter hook
 - [x] 插件管理 UI：启用/禁用、来源与版本（加载错误展示待补）
 - [x] 插件 `dispose` 生命周期与配置变更缓存失效
 - [ ] 插件工具纳入权限规则，或明确只允许可信本地插件

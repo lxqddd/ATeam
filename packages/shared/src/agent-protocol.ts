@@ -44,6 +44,11 @@ export type WorkerRequest =
     }
   | { id: string; method: 'agents.list'; params?: { workspace?: string } }
   | { id: string; method: 'commands.list'; params?: { workspace?: string } }
+  | {
+      id: string
+      method: 'commands.expand'
+      params: { template: string; args: string; workspace?: string }
+    }
   | { id: string; method: 'sessions.list'; params?: undefined }
   | {
       id: string

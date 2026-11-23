@@ -95,6 +95,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().listAgents(request.params?.workspace)
     case 'commands.list':
       return requireRuntime().listCommands(request.params?.workspace)
+    case 'commands.expand':
+      return requireRuntime().expandCommand(
+        request.params.template,
+        request.params.args,
+        request.params.workspace
+      )
     case 'sessions.list':
       return requireRuntime().listSessions()
     case 'sessions.create':

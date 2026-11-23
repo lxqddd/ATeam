@@ -1,10 +1,12 @@
 import type { AgentEvent, AgentEventEnvelope, SessionMeta } from '@ateam/shared'
+import type { PluginRegistry } from '../plugins'
 import { nowIso } from './messages'
 
 export interface RuntimeEventsHost {
   session(sessionId: string): SessionMeta | null
   isHidden(sessionId: string): boolean
   send: (envelope: AgentEventEnvelope) => void
+  pluginsForSession?: (sessionId: string) => PluginRegistry | undefined
 }
 
 export interface EventSink {
@@ -30,5 +32,9 @@ export class RuntimeEvents implements EventSink {
     if (sessionId && this.host.isHidden(sessionId) && event.type !== 'subagent.finished') return
     this.seq += 1
     this.host.send({ seq: this.seq, at: nowIso(), event })
+    if (sessionId) {
+      const plugins = this.host.pluginsForSession?.(sessionId)
+      if (plugins) void plugins.emitEvent(event).catch(() => undefined)
+    }
   }
 }
