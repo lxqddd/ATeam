@@ -1,11 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PluginAuthMethodInfo } from '@ateam/shared'
+import type { PluginAuthMethodState } from '@ateam/shared'
 import PluginAuthSettings from './PluginAuthSettings'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
 
-function method(overrides: Partial<PluginAuthMethodInfo> = {}): PluginAuthMethodInfo {
+function method(overrides: Partial<PluginAuthMethodState> = {}): PluginAuthMethodState {
   return {
     id: '0:0',
     plugin: '@acme/auth',
@@ -34,6 +34,7 @@ function method(overrides: Partial<PluginAuthMethodInfo> = {}): PluginAuthMethod
         ]
       }
     ],
+    status: { connected: false, type: null, expiresAt: null },
     ...overrides
   }
 }
@@ -142,6 +143,28 @@ describe('PluginAuthSettings', () => {
     render(<PluginAuthSettings />)
 
     expect(await screen.findByText('No plugin sign-in methods available.')).toBeInTheDocument()
+  })
+
+  it('shows connected state and signs out', async () => {
+    const user = userEvent.setup()
+    const connected = method({
+      status: { connected: true, type: 'api', expiresAt: null }
+    })
+    const disconnected = method()
+    api.api.agent.plugins.authMethods = vi.fn(async () => [connected])
+    api.api.agent.plugins.logoutAuth = vi.fn(async () => [disconnected])
+    render(<PluginAuthSettings />)
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Sign out: API key' }))
+
+    await waitFor(() => {
+      expect(api.api.agent.plugins.logoutAuth).toHaveBeenCalledWith('acme', null)
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('Connected')).not.toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: 'Sign out: API key' })).not.toBeInTheDocument()
   })
 
   it('disables authorization when a required prompt is empty', async () => {

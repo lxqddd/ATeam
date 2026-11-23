@@ -493,6 +493,18 @@ export interface PluginAuthMethodInfo {
   prompts: PluginAuthPrompt[]
 }
 
+export interface PluginAuthStatus {
+  connected: boolean
+  type: PluginAuthMethodType | null
+  /** ISO timestamp for OAuth credentials that expire. */
+  expiresAt: string | null
+}
+
+/** Auth method with credential state filled by the desktop main process. */
+export interface PluginAuthMethodState extends PluginAuthMethodInfo {
+  status: PluginAuthStatus
+}
+
 export type PluginAuthCredentials =
   | { type: 'api'; key: string }
   | {

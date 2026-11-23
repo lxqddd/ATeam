@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   AGENT_CHANNELS,
   type PluginAuthMethodInfo,
+  type PluginAuthMethodState,
   type PluginAuthResult,
   type PluginEntry
 } from '@ateam/shared'
@@ -31,19 +32,38 @@ const completeAuthSchema = z.object({
   code: z.string().max(10_000).optional(),
   directory: z.string().max(2_000).nullable().optional()
 })
+const logoutAuthSchema = z.object({
+  provider: z.string().min(1).max(200),
+  directory: z.string().max(2_000).nullable().optional()
+})
 
 /** Registers plugin management channels. */
 export function registerPluginHandlers(ctx: AgentIpcContext): void {
   const { handle, pluginStore, requestedDirectory, workspacePath, manager } = ctx
 
-  const persistAuth = async (result: PluginAuthResult): Promise<PluginAuthResult> => {
-    if (result.status !== 'success') return result
-    await ctx.providerAuthStore.setPluginCredentials(result.provider, result.credentials)
+  const syncProviderAuth = async (): Promise<void> => {
     await manager.setProviderAuth(ctx.providerAuthStore.runtimeAuth())
     await manager.setModels(
       runtimeModelsWithOAuth(ctx.modelsStore.runtimeConfig(), ctx.providerAuthStore)
     )
+  }
+
+  const persistAuth = async (result: PluginAuthResult): Promise<PluginAuthResult> => {
+    if (result.status !== 'success') return result
+    await ctx.providerAuthStore.setPluginCredentials(result.provider, result.credentials)
+    await syncProviderAuth()
     return result
+  }
+
+  const loadAuthMethods = async (directory?: string | null): Promise<PluginAuthMethodState[]> => {
+    const workspace = requestedDirectory(directory) ?? workspacePath
+    const methods = await manager.request<PluginAuthMethodInfo[]>('plugins.authMethods', {
+      workspace
+    })
+    return methods.map((method) => ({
+      ...method,
+      status: ctx.providerAuthStore.credentialStatus(method.provider)
+    }))
   }
 
   handle(AGENT_CHANNELS.pluginsList, (): Promise<PluginEntry[]> => pluginStore.list())
@@ -68,10 +88,9 @@ export function registerPluginHandlers(ctx: AgentIpcContext): void {
     return pluginStore.remove(id)
   })
 
-  handle(AGENT_CHANNELS.pluginsAuthMethods, (payload): Promise<PluginAuthMethodInfo[]> => {
+  handle(AGENT_CHANNELS.pluginsAuthMethods, (payload): Promise<PluginAuthMethodState[]> => {
     const input = authMethodsSchema.parse(payload ?? {})
-    const workspace = requestedDirectory(input.directory) ?? workspacePath
-    return manager.request('plugins.authMethods', { workspace })
+    return loadAuthMethods(input.directory)
   })
 
   handle(AGENT_CHANNELS.pluginsAuthorizeAuth, async (payload): Promise<PluginAuthResult> => {
@@ -97,5 +116,12 @@ export function registerPluginHandlers(ctx: AgentIpcContext): void {
       code: input.code
     })
     return persistAuth(result)
+  })
+
+  handle(AGENT_CHANNELS.pluginsAuthLogout, async (payload): Promise<PluginAuthMethodState[]> => {
+    const input = logoutAuthSchema.parse(payload)
+    await ctx.providerAuthStore.clearCredentials(input.provider)
+    await syncProviderAuth()
+    return loadAuthMethods(input.directory)
   })
 }

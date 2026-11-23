@@ -47,6 +47,7 @@ export const AGENT_CHANNELS = {
   pluginsAuthMethods: 'ateam:agent:plugins:auth-methods',
   pluginsAuthorizeAuth: 'ateam:agent:plugins:authorize-auth',
   pluginsCompleteAuth: 'ateam:agent:plugins:complete-auth',
+  pluginsAuthLogout: 'ateam:agent:plugins:auth-logout',
   mcpList: 'ateam:agent:mcp:list',
   mcpStatuses: 'ateam:agent:mcp:statuses',
   mcpAdd: 'ateam:agent:mcp:add',

@@ -6,7 +6,7 @@ import type {
   AgentInfo,
   AgentStatus,
   EffectiveAgentConfig,
-  PluginAuthMethodInfo,
+  PluginAuthMethodState,
   PluginAuthResult,
   PluginEntry,
   ProjectConfigFile,
@@ -319,7 +319,7 @@ export function createApiMock(
         install: vi.fn(async () => [] as PluginEntry[]),
         update: vi.fn(async () => [] as PluginEntry[]),
         remove: vi.fn(async () => [] as PluginEntry[]),
-        authMethods: vi.fn(async () => [] as PluginAuthMethodInfo[]),
+        authMethods: vi.fn(async () => [] as PluginAuthMethodState[]),
         authorizeAuth: vi.fn(async (): Promise<PluginAuthResult> => ({
           status: 'failed',
           message: 'Authorization unavailable in tests.'
@@ -327,7 +327,8 @@ export function createApiMock(
         completeAuth: vi.fn(async (): Promise<PluginAuthResult> => ({
           status: 'failed',
           message: 'Authorization unavailable in tests.'
-        }))
+        })),
+        logoutAuth: vi.fn(async () => [] as PluginAuthMethodState[])
       },
       mcp: {
         list: vi.fn(async () => ({

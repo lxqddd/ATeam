@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Modal } from 'antd'
 import { useTranslation } from 'react-i18next'
-import type { PluginAuthMethodInfo, PluginAuthResult } from '@ateam/shared'
+import type { PluginAuthMethodState, PluginAuthResult } from '@ateam/shared'
 import { errorMessage } from '../../lib/errors'
 
 interface PluginAuthSettingsProps {
@@ -12,12 +12,14 @@ type PendingAuth = Extract<PluginAuthResult, { status: 'pending' }>
 
 function PluginAuthSettings({ defaultDirectory }: PluginAuthSettingsProps): React.JSX.Element {
   const { t } = useTranslation()
-  const [methods, setMethods] = useState<PluginAuthMethodInfo[] | null>(null)
-  const [selected, setSelected] = useState<PluginAuthMethodInfo | null>(null)
+  const [methods, setMethods] = useState<PluginAuthMethodState[] | null>(null)
+  const [selected, setSelected] = useState<PluginAuthMethodState | null>(null)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [pending, setPending] = useState<PendingAuth | null>(null)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [signingOut, setSigningOut] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
@@ -36,9 +38,9 @@ function PluginAuthSettings({ defaultDirectory }: PluginAuthSettingsProps): Reac
     return () => {
       active = false
     }
-  }, [defaultDirectory])
+  }, [defaultDirectory, refreshKey])
 
-  function open(method: PluginAuthMethodInfo): void {
+  function open(method: PluginAuthMethodState): void {
     setSelected(method)
     setAnswers({})
     setPending(null)
@@ -69,6 +71,7 @@ function PluginAuthSettings({ defaultDirectory }: PluginAuthSettingsProps): Reac
     setSelected(null)
     setPending(null)
     setError(null)
+    setRefreshKey((value) => value + 1)
   }
 
   async function authorize(): Promise<void> {
@@ -104,6 +107,20 @@ function PluginAuthSettings({ defaultDirectory }: PluginAuthSettingsProps): Reac
       setError(errorMessage(caught))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function signOut(method: PluginAuthMethodState): Promise<void> {
+    setSigningOut(method.provider)
+    setError(null)
+    try {
+      setMethods(
+        await window.api.agent.plugins.logoutAuth(method.provider, defaultDirectory ?? null)
+      )
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setSigningOut(null)
     }
   }
 
@@ -148,6 +165,11 @@ function PluginAuthSettings({ defaultDirectory }: PluginAuthSettingsProps): Reac
                   ? t('settings.pluginAuthTypeApi')
                   : t('settings.pluginAuthTypeOAuth')}
               </span>
+              {method.status.connected && (
+                <span className="inline-flex h-[18px] items-center rounded-full bg-success-soft px-1.5 text-[12px] leading-none font-medium text-success">
+                  {t('settings.pluginAuthConnectedBadge')}
+                </span>
+              )}
               {method.description && (
                 <span className="basis-full text-caption text-muted">{method.description}</span>
               )}
@@ -157,6 +179,19 @@ function PluginAuthSettings({ defaultDirectory }: PluginAuthSettingsProps): Reac
               >
                 {method.plugin}
               </code>
+              {method.status.connected && (
+                <button
+                  type="button"
+                  aria-label={`${t('settings.pluginAuthSignOut')}: ${method.label}`}
+                  disabled={signingOut === method.provider}
+                  onClick={() => {
+                    void signOut(method)
+                  }}
+                  className="h-7 flex-none rounded-md px-2 text-caption font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+                >
+                  {t('settings.pluginAuthSignOut')}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label={`${t('settings.pluginAuthSignIn')}: ${method.label}`}

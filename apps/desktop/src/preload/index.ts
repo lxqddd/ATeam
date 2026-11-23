@@ -120,7 +120,12 @@ const api: AteamApi = {
           directory: directory ?? undefined
         }),
       authorizeAuth: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsAuthorizeAuth, input),
-      completeAuth: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsCompleteAuth, input)
+      completeAuth: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsCompleteAuth, input),
+      logoutAuth: (provider, directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.pluginsAuthLogout, {
+          provider,
+          directory: directory ?? undefined
+        })
     },
     mcp: {
       list: (directory) =>

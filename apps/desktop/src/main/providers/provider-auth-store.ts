@@ -2,6 +2,7 @@ import path from 'node:path'
 import { safeStorage } from 'electron'
 import type {
   PluginAuthCredentials,
+  PluginAuthStatus,
   ProviderAuthRecord,
   ProviderOAuthStatus,
   ProviderPublic,
@@ -270,6 +271,42 @@ export class ProviderAuthStore implements ProviderAuthStoreLike {
   async clearTokens(providerId: string): Promise<void> {
     const entry = this.entries[providerId]
     if (entry?.type !== 'oauth') return
+    delete entry.access
+    delete entry.refresh
+    delete entry.expires
+    delete entry.scope
+    if (!entry.clientSecret && !entry.tokenEndpoint && !entry.clientId) {
+      delete this.entries[providerId]
+    }
+    await this.persist()
+  }
+
+  credentialStatus(providerId: string): PluginAuthStatus {
+    const entry = this.entries[providerId]
+    if (entry?.type === 'api') {
+      return { connected: true, type: 'api', expiresAt: null }
+    }
+    if (entry?.type === 'oauth' && entry.access) {
+      return {
+        connected: true,
+        type: 'oauth',
+        expiresAt:
+          entry.expires !== undefined && Number.isFinite(entry.expires)
+            ? new Date(entry.expires).toISOString()
+            : null
+      }
+    }
+    return { connected: false, type: null, expiresAt: null }
+  }
+
+  async clearCredentials(providerId: string): Promise<void> {
+    const entry = this.entries[providerId]
+    if (!entry) return
+    if (entry.type === 'api') {
+      delete this.entries[providerId]
+      await this.persist()
+      return
+    }
     delete entry.access
     delete entry.refresh
     delete entry.expires

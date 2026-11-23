@@ -340,6 +340,8 @@ const enUS = {
     pluginAuthOpenUrl: 'Open sign-in page',
     pluginAuthBrowserHint: 'Finish signing in through the browser, then continue here.',
     pluginAuthConnected: '{{provider}} is connected.',
+    pluginAuthConnectedBadge: 'Connected',
+    pluginAuthSignOut: 'Sign out',
     editProjectConfig: 'Edit project config',
     createProjectConfig: 'Create project config',
     saveProjectConfig: 'Save project config',

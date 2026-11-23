@@ -121,6 +121,44 @@ describe('ProviderAuthStore', () => {
     ])
   })
 
+  it('reports credential status and clears credentials without dropping oauth config', async () => {
+    await store.setApiKey('api-provider', 'sk-plugin')
+    await store.setClientSecret('oauth-provider', 'client-secret')
+    await store.set({
+      providerId: 'oauth-provider',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      expiresAt: 1_900_000_000_000,
+      tokenEndpoint: 'https://auth.example.com/token',
+      clientId: 'client-1'
+    })
+
+    expect(store.credentialStatus('api-provider')).toEqual({
+      connected: true,
+      type: 'api',
+      expiresAt: null
+    })
+    expect(store.credentialStatus('oauth-provider')).toEqual({
+      connected: true,
+      type: 'oauth',
+      expiresAt: new Date(1_900_000_000_000).toISOString()
+    })
+    expect(store.credentialStatus('missing')).toEqual({
+      connected: false,
+      type: null,
+      expiresAt: null
+    })
+
+    await store.clearCredentials('api-provider')
+    expect(store.getApiKey('api-provider')).toBeNull()
+    expect(store.credentialStatus('api-provider').connected).toBe(false)
+
+    await store.clearCredentials('oauth-provider')
+    expect(store.get('oauth-provider')).toBeNull()
+    expect(store.getClientSecret('oauth-provider')).toBe('client-secret')
+    expect(store.credentialStatus('oauth-provider').connected).toBe(false)
+  })
+
   it('replaces OAuth credentials when an API key is saved', async () => {
     await store.setClientSecret('provider-1', 'client-secret')
     await store.set({

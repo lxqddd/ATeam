@@ -329,6 +329,8 @@ const zhCN = {
     pluginAuthOpenUrl: '打开登录页面',
     pluginAuthBrowserHint: '请先在浏览器中完成登录，然后回到这里继续。',
     pluginAuthConnected: '{{provider}} 已连接。',
+    pluginAuthConnectedBadge: '已连接',
+    pluginAuthSignOut: '退出登录',
     editProjectConfig: '编辑项目配置',
     createProjectConfig: '创建项目配置',
     saveProjectConfig: '保存项目配置',
