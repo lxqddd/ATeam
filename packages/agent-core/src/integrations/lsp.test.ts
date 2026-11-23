@@ -5,6 +5,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentConfig } from '@ateam/shared'
 import {
   LspClient,
   LspManager,
@@ -15,6 +16,7 @@ import {
   formatDiagnosticReport,
   languageIdForFile,
   lspServerForFile,
+  resolveLspServers,
   type LspChildProcess,
   type LspDiagnostic,
   type LspServerDefinition,
@@ -454,5 +456,32 @@ describe('formatDiagnosticReport', () => {
     const report = formatDiagnosticReport(new Map([['/work/a.ts', many]]), '/work')
     expect(report.split('\n')).toHaveLength(22)
     expect(report).toContain('[+5 more diagnostics]')
+  })
+})
+
+describe('resolveLspServers', () => {
+  const config = {
+    snapshots: true,
+    instructions: [],
+    lsp: true,
+    formatters: true,
+    formatterOverrides: {},
+    lspServers: {
+      typescript: { command: ['custom-ts', '--stdio'], extensions: ['.ts'] },
+      clangd: { disabled: true },
+      deno: { command: ['deno', 'lsp'], extensions: ['.tsx'] }
+    }
+  } satisfies AgentConfig
+
+  it('overrides, disables and adds servers', () => {
+    const servers = resolveLspServers(config)
+    expect(servers.find((server) => server.id === 'typescript')?.command).toEqual([
+      'custom-ts',
+      '--stdio'
+    ])
+    expect(servers.some((server) => server.id === 'clangd')).toBe(false)
+    expect(servers.find((server) => server.id === 'deno')?.extensions).toEqual(['.tsx'])
+    expect(lspServerForFile('index.ts', servers)?.id).toBe('typescript')
+    expect(lspServerForFile('index.tsx', servers)?.id).toBe('deno')
   })
 })

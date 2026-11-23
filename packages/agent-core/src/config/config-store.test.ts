@@ -106,3 +106,31 @@ describe('AgentConfigStore', () => {
     })
   })
 })
+
+it('preserves layered document fields when updating global switches', async () => {
+  const file = path.join(directory, 'agent', 'config.json')
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.writeFile(
+    file,
+    JSON.stringify({
+      lsp: { custom: { command: ['custom-lsp'], extensions: ['.ts'] } },
+      providers: { 'provider-1': { type: 'openai', models: { 'model-1': {} } } },
+      commands: { review: { template: 'Review' } },
+      skills: ['skills']
+    })
+  )
+  const reloaded = new AgentConfigStore(directory)
+  await reloaded.init()
+  const updated = await reloaded.update({ snapshots: false })
+  const again = new AgentConfigStore(directory)
+  await again.init()
+
+  expect(updated.snapshots).toBe(false)
+  expect(updated.lspServers).toMatchObject({ custom: { command: ['custom-lsp'] } })
+  expect(updated.providers).toMatchObject({ 'provider-1': { type: 'openai' } })
+  expect(updated.commands).toEqual(
+    expect.arrayContaining([expect.objectContaining({ name: 'review', template: 'Review' })])
+  )
+  expect(updated.skills).toEqual([path.join(directory, 'agent', 'skills')])
+  expect(again.get()).toEqual(updated)
+})

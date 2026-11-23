@@ -183,3 +183,37 @@ describe('skillsPrompt', () => {
     expect(skillsPrompt([])).toBe('')
   })
 })
+
+describe('configured skills', () => {
+  it('loads configured skill directories and .ateam skills', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-skill-config-'))
+    const workspace = path.join(directory, 'workspace')
+    const userData = path.join(directory, 'user-data')
+    const configured = path.join(directory, 'configured-skills')
+    await fs.mkdir(path.join(workspace, '.ateam', 'skills', 'local'), { recursive: true })
+    await fs.writeFile(
+      path.join(workspace, '.ateam', 'skills', 'local', 'SKILL.md'),
+      ['---', 'name: local', 'description: Local skill', '---', 'Local body.'].join('\n')
+    )
+    await fs.mkdir(path.join(configured, 'configured'), { recursive: true })
+    await fs.writeFile(
+      path.join(configured, 'configured', 'SKILL.md'),
+      ['---', 'name: configured', 'description: Configured skill', '---', 'Configured body.'].join(
+        '\n'
+      )
+    )
+    const config = {
+      snapshots: true,
+      instructions: [],
+      lsp: true,
+      formatters: true,
+      formatterOverrides: {},
+      skills: [configured]
+    }
+    const skills = await loadSkills({ userDataPath: userData, workspacePath: workspace, config })
+
+    expect(skills.find((skill) => skill.name === 'local')?.source).toBe('project')
+    expect(skills.find((skill) => skill.name === 'configured')?.source).toBe('project')
+    await fs.rm(directory, { recursive: true, force: true })
+  })
+})

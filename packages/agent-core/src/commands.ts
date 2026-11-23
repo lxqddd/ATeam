@@ -9,6 +9,7 @@ import {
   type ModelRef
 } from '@ateam/shared'
 import { readJsonFile } from './atomic-json'
+import { findProjectRoot } from './config/project-root'
 
 export { expandCommand, splitArguments }
 
@@ -148,6 +149,7 @@ async function readJsonCommands(userDataPath: string): Promise<CommandDefinition
 export async function loadCommands(input: {
   userDataPath: string
   workspacePath: string
+  config?: import('@ateam/shared').AgentConfig
 }): Promise<CommandDefinition[]> {
   const byName = new Map<string, CommandDefinition>()
   const add = (command: CommandDefinition): void => {
@@ -161,12 +163,23 @@ export async function loadCommands(input: {
     add(command)
   }
   for (const command of await readJsonCommands(input.userDataPath)) add(command)
-  for (const directory of [
-    path.join(input.workspacePath, '.opencode', 'command'),
-    path.join(input.workspacePath, '.opencode', 'commands'),
-    path.join(input.workspacePath, '.claude', 'commands')
-  ]) {
+  for (const command of input.config?.commands ?? []) {
+    if (command.source === 'user') byName.set(command.name.toLowerCase(), command)
+  }
+  const root = await findProjectRoot(input.workspacePath)
+  const directories = new Set<string>()
+  for (const base of [root, input.workspacePath]) {
+    for (const directory of ['command', 'commands']) {
+      directories.add(path.join(base, '.opencode', directory))
+      directories.add(path.join(base, '.ateam', directory))
+    }
+    directories.add(path.join(base, '.claude', 'commands'))
+  }
+  for (const directory of directories) {
     for (const command of await readMarkdownCommands(directory, 'project')) add(command)
+  }
+  for (const command of input.config?.commands ?? []) {
+    if (command.source === 'project') byName.set(command.name.toLowerCase(), command)
   }
 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))

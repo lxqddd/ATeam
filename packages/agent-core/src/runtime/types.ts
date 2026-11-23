@@ -2,6 +2,7 @@ import type { LanguageModel, ModelMessage, TextStreamPart, ToolSet } from 'ai'
 import type {
   AgentConfig,
   McpAuthRecord,
+  McpServerInput,
   AgentDefinition,
   AgentEventEnvelope,
   AgentPermissionRule,
@@ -36,6 +37,7 @@ export interface Run {
   startedAt: number
   steps: number
   config: AgentConfig
+  models: RuntimeModelsConfig
   skipHistoryIds?: Set<string>
   retried?: boolean
   agent: AgentDefinition | null
@@ -125,6 +127,7 @@ export interface AgentRuntimeDependencies {
     workspacePath: string
     mcpAuth?: McpAuthRecord[]
     onMcpAuth?: (auth: McpAuthRecord) => void
+    projectServers?: McpServerInput[]
   }) => McpManagerLike
   fetchWeb: (input: {
     url: string

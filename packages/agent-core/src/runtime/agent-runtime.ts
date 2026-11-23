@@ -8,6 +8,7 @@ import type {
   AgentDefinition,
   ChatMessage,
   CommandDefinition,
+  EffectiveAgentConfig,
   MessagesSnapshot,
   McpServerConfig,
   McpServerInput,
@@ -33,7 +34,7 @@ import type {
   TurnChanges
 } from '@ateam/shared'
 import { DEFAULT_CONTEXT_WINDOW, messagesAfterCompaction, shouldCompact } from '../sessions/context'
-import { readAgentConfig } from '../config/config-store'
+import { readEffectiveAgentConfig } from '../config/config-store'
 import { loadOrgPolicy } from '../config/org-policy'
 import { PermissionsStore } from '../config/permissions-store'
 import { SessionsStore, type SessionRecord, makeTitle } from '../sessions/sessions-store'
@@ -48,7 +49,7 @@ import {
   readTextAttachment,
   removeSessionAttachments
 } from '../attachments'
-import { resolveModelRef } from '../providers'
+import { mergeRuntimeProviders, resolveModelRef } from '../providers'
 import { loadCommands } from '../commands'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
@@ -102,6 +103,7 @@ export class AgentRuntime {
   private readonly runs = new Map<string, Run>()
   private readonly starting = new Set<string>()
   private models: RuntimeModelsConfig
+  private readonly effectiveModels: Map<string, RuntimeModelsConfig>
   private readonly deps: AgentRuntimeDependencies
   private readonly events: RuntimeEvents
   private readonly compaction: CompactionService
@@ -115,6 +117,7 @@ export class AgentRuntime {
     this.snapshots = new SnapshotStore(options.userDataPath)
     this.toolOutputs = new ToolOutputStore(options.userDataPath)
     this.models = options.models
+    this.effectiveModels = new Map()
     this.deps = { ...DEFAULT_DEPENDENCIES, ...options.dependencies }
     this.events = new RuntimeEvents({
       session: (sessionId) => this.store.getSession(sessionId) ?? null,
@@ -123,13 +126,15 @@ export class AgentRuntime {
     })
     this.compaction = new CompactionService({
       store: this.store,
-      models: () => this.models,
+      modelsFor: (sessionId) =>
+        this.effectiveModels.get(this.sessionWorkspace(sessionId)) ?? this.models,
       deps: this.deps,
       emit: (event) => this.events.emit(event),
       sessionBusy: (sessionId) => this.sessionBusy(sessionId),
       record: (sessionId) => this.record(sessionId),
       historyMessages: (run, assistantMessageId) => this.historyMessages(run, assistantMessageId),
-      resolveAgentTarget: (agent, sessionModel) => this.resolveAgentTarget(agent, sessionModel)
+      resolveAgentTarget: (agent, sessionModel, models) =>
+        this.resolveAgentTarget(agent, sessionModel, models)
     })
     this.workspaceServices = new WorkspaceServices(
       {
@@ -174,7 +179,20 @@ export class AgentRuntime {
     await this.store.init()
     await this.permissionRules.init()
     await this.snapshots.init()
+    await this.applyWorkspaceConfig(this.options.workspacePath)
     await this.workspaceServices.skillsFor(this.options.workspacePath)
+  }
+
+  private async applyWorkspaceConfig(workspace: string): Promise<EffectiveAgentConfig> {
+    const effective = await readEffectiveAgentConfig(this.options.userDataPath, workspace)
+    await this.workspaceServices.applyConfig(workspace, effective)
+    return effective
+  }
+
+  private modelsForConfig(workspace: string, config: AgentConfig): RuntimeModelsConfig {
+    const models = mergeRuntimeProviders(this.models, config.providers, process.env)
+    this.effectiveModels.set(workspace, models)
+    return models
   }
 
   listSessions(): SessionMeta[] {
@@ -186,9 +204,11 @@ export class AgentRuntime {
   }
 
   async listCommands(workspace = this.options.workspacePath): Promise<CommandDefinition[]> {
+    const effective = await this.applyWorkspaceConfig(workspace)
     const commands = await loadCommands({
       userDataPath: this.options.userDataPath,
-      workspacePath: workspace
+      workspacePath: workspace,
+      config: effective.config
     })
     let prompts: Awaited<ReturnType<McpManagerLike['prompts']>> = []
     let timer: NodeJS.Timeout | undefined
@@ -238,6 +258,7 @@ export class AgentRuntime {
     args?: Record<string, string>,
     workspace = this.options.workspacePath
   ): Promise<string> {
+    await this.applyWorkspaceConfig(workspace)
     return this.workspaceServices.mcp(workspace).getPrompt(server, prompt, args)
   }
 
@@ -271,9 +292,11 @@ export class AgentRuntime {
     this.reserveSession(id)
 
     try {
+      const effective = await this.applyWorkspaceConfig(this.sessionWorkspace(id))
+      const models = this.modelsForConfig(this.options.workspacePath, effective.config)
       const model = this.deps.createLanguageModel(
-        this.models,
-        record.session.model ?? this.models.defaultModel,
+        models,
+        record.session.model ?? models.defaultModel,
         { sessionId: id }
       )
       const compacted = await this.compaction.compactMessages(
@@ -499,6 +522,7 @@ export class AgentRuntime {
 
   setModels(models: RuntimeModelsConfig): void {
     this.models = models
+    this.effectiveModels.clear()
     this.sessionService.setModels(models)
   }
 
@@ -526,8 +550,12 @@ export class AgentRuntime {
     this.reserveSession(sessionId)
 
     try {
-      const target = requestedModel ?? record.session.model ?? this.models.defaultModel
-      resolveModelRef(this.models, target)
+      const workspace = this.sessionWorkspace(sessionId)
+      const effective = await this.applyWorkspaceConfig(workspace)
+      const config = effective.config
+      const models = this.modelsForConfig(workspace, config)
+      const target = requestedModel ?? record.session.model ?? models.defaultModel
+      resolveModelRef(models, target)
 
       if (requestedModel) {
         record.session.model = requestedModel
@@ -535,8 +563,6 @@ export class AgentRuntime {
 
       const user = makeUserMessage(sessionId, content, attachments)
       const assistant = makeAssistantMessage(sessionId)
-      const workspace = this.sessionWorkspace(sessionId)
-      const config = await readAgentConfig(this.options.userDataPath, workspace)
       if (config.snapshots) {
         assistant.snapshotBefore = await this.createSnapshotId(
           sessionId,
@@ -550,7 +576,7 @@ export class AgentRuntime {
       await this.store.setStatus(sessionId, 'running')
 
       this.events.emit({ type: 'message.upsert', message: structuredClone(user) })
-      this.beginRun(sessionId, assistant, undefined, config)
+      this.beginRun(sessionId, assistant, undefined, config, models)
     } finally {
       this.starting.delete(sessionId)
     }
@@ -560,7 +586,8 @@ export class AgentRuntime {
     sessionId: string,
     assistant: ChatMessage,
     skipHistoryIds: Set<string> | undefined,
-    config: AgentConfig
+    config: AgentConfig,
+    models: RuntimeModelsConfig
   ): void {
     this.events.emit({ type: 'message.upsert', message: structuredClone(assistant) })
     this.events.emitSession(sessionId)
@@ -579,6 +606,7 @@ export class AgentRuntime {
       startedAt: Date.now(),
       steps: 0,
       config,
+      models,
       skipHistoryIds,
       agent: null,
       depth: 0
@@ -624,10 +652,12 @@ export class AgentRuntime {
       }
       const lastUser = [...record.messages].reverse().find((message) => message.role === 'user')
       if (!lastUser) throw new Error('NOTHING_TO_RETRY')
-      resolveModelRef(this.models, record.session.model ?? this.models.defaultModel)
-      const assistant = makeAssistantMessage(sessionId)
       const workspace = this.sessionWorkspace(sessionId)
-      const config = await readAgentConfig(this.options.userDataPath, workspace)
+      const effective = await this.applyWorkspaceConfig(workspace)
+      const config = effective.config
+      const models = this.modelsForConfig(workspace, config)
+      resolveModelRef(models, record.session.model ?? models.defaultModel)
+      const assistant = makeAssistantMessage(sessionId)
       if (config.snapshots) {
         assistant.snapshotBefore = await this.createSnapshotId(
           sessionId,
@@ -638,7 +668,7 @@ export class AgentRuntime {
       if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
       await this.store.appendMessage(sessionId, assistant)
       await this.store.setStatus(sessionId, 'running')
-      this.beginRun(sessionId, assistant, new Set([last.id]), config)
+      this.beginRun(sessionId, assistant, new Set([last.id]), config, models)
     } finally {
       this.starting.delete(sessionId)
     }
@@ -666,8 +696,10 @@ export class AgentRuntime {
   ): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
     const start = Date.now()
     try {
+      const effective = await this.applyWorkspaceConfig(this.options.workspacePath)
+      const models = this.modelsForConfig(this.options.workspacePath, effective.config)
       const model = this.deps.createLanguageModel(
-        this.models,
+        models,
         { providerId, modelId },
         {
           sessionId: randomUUID()
@@ -706,6 +738,7 @@ export class AgentRuntime {
     servers: import('@ateam/shared').McpServerInput[],
     workspace = this.options.workspacePath
   ): Promise<void> {
+    await this.applyWorkspaceConfig(workspace)
     await this.workspaceServices.setTransientMcpServers(servers, workspace)
   }
 
@@ -713,23 +746,28 @@ export class AgentRuntime {
     await this.workspaceServices.setMcpAuth(auths)
   }
 
-  listMcpServers(): Promise<McpServerConfig[]> {
+  async listMcpServers(): Promise<McpServerConfig[]> {
+    await this.applyWorkspaceConfig(this.options.workspacePath)
     return this.workspaceServices.listMcpServers()
   }
 
-  mcpStatuses(options?: { probe?: boolean }): Promise<McpServerStatus[]> {
+  async mcpStatuses(options?: { probe?: boolean }): Promise<McpServerStatus[]> {
+    await this.applyWorkspaceConfig(this.options.workspacePath)
     return this.workspaceServices.mcpStatuses(options)
   }
 
   async addMcpServer(input: McpServerInput): Promise<McpServerConfig> {
+    await this.applyWorkspaceConfig(this.options.workspacePath)
     return this.workspaceServices.addMcpServer(input)
   }
 
   async updateMcpServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig> {
+    await this.applyWorkspaceConfig(this.options.workspacePath)
     return this.workspaceServices.updateMcpServer(id, input)
   }
 
   async removeMcpServer(id: string): Promise<boolean> {
+    await this.applyWorkspaceConfig(this.options.workspacePath)
     return this.workspaceServices.removeMcpServer(id)
   }
 
@@ -800,11 +838,13 @@ export class AgentRuntime {
       })
   }
 
-  private messageCost(target: ModelRef | null, usage?: TokenUsage): number | undefined {
+  private messageCost(
+    target: ModelRef | null,
+    usage?: TokenUsage,
+    models: RuntimeModelsConfig = this.models
+  ): number | undefined {
     try {
-      return (
-        computeMessageCost(usage ?? {}, resolveModelRef(this.models, target).model) ?? undefined
-      )
+      return computeMessageCost(usage ?? {}, resolveModelRef(models, target).model) ?? undefined
     } catch {
       return undefined
     }
@@ -853,12 +893,13 @@ export class AgentRuntime {
 
   private resolveAgentTarget(
     agent: AgentDefinition | null,
-    sessionModel: ModelRef | null
+    sessionModel: ModelRef | null,
+    models: RuntimeModelsConfig = this.models
   ): ModelRef | null {
-    const fallback = sessionModel ?? this.models.defaultModel
+    const fallback = sessionModel ?? models.defaultModel
     if (!agent?.model) return fallback
     try {
-      resolveModelRef(this.models, agent.model)
+      resolveModelRef(models, agent.model)
       return agent.model
     } catch {
       return fallback
@@ -1315,11 +1356,11 @@ export class AgentRuntime {
             ) ?? null)
           : null)
       run.agent = agent
-      const target = this.resolveAgentTarget(agent, record.session.model)
+      const target = this.resolveAgentTarget(agent, record.session.model, run.models)
       runTarget = target
       if (target) message.model = { ...target }
       schedulePersist()
-      const model = this.deps.createLanguageModel(this.models, target, {
+      const model = this.deps.createLanguageModel(run.models, target, {
         sessionId: run.sessionId,
         onRetry: (info) => {
           if (info) message.retry = info
@@ -1328,7 +1369,7 @@ export class AgentRuntime {
           this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
         }
       })
-      const resolvedTarget = resolveModelRef(this.models, target)
+      const resolvedTarget = resolveModelRef(run.models, target)
       const targetInfo = resolvedTarget.model
       const variantId = target?.variant
       const variant = variantId
@@ -1343,7 +1384,7 @@ export class AgentRuntime {
         !nativeCompaction &&
         shouldCompact(history, contextWindow, {
           usageCreatedAfter: record.session.compaction?.createdAt,
-          encode: await this.compaction.tokenEncoder(target)
+          encode: await this.compaction.tokenEncoder(target, run.models)
         })
       ) {
         await this.compaction.compactMessages(
@@ -1539,7 +1580,7 @@ export class AgentRuntime {
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
       message.contextUsage = lastStepUsage
-      message.costUsd = this.messageCost(runTarget, usage)
+      message.costUsd = this.messageCost(runTarget, usage, run.models)
       settleTools(message, 'Tool call did not finish')
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
@@ -1583,7 +1624,7 @@ export class AgentRuntime {
       message.durationMs = Date.now() - run.startedAt
       message.usage = usage
       message.contextUsage = lastStepUsage
-      message.costUsd = this.messageCost(runTarget, usage)
+      message.costUsd = this.messageCost(runTarget, usage, run.models)
       settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)

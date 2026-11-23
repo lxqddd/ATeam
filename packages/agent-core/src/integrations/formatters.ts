@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import type { AgentConfig } from '@ateam/shared'
 import { resolveExecutable } from './executables'
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -10,6 +11,7 @@ export interface FormatterDefinition {
   extensions: readonly string[]
   configFiles: readonly string[]
   command: (file: string) => string[]
+  environment?: Record<string, string>
 }
 
 export interface FormatterSpawnChild {
@@ -22,7 +24,7 @@ export interface FormatterSpawnChild {
 export type FormatterSpawn = (
   command: string,
   args: string[],
-  options: { cwd: string }
+  options: { cwd: string; env?: NodeJS.ProcessEnv }
 ) => FormatterSpawnChild
 
 export interface FormatResult {
@@ -119,7 +121,25 @@ function hasDependency(packageJson: Record<string, unknown> | null, name: string
   return false
 }
 
-export async function discoverFormatters(workspace: string): Promise<FormatterDefinition[]> {
+function commandFromConfig(command: string[]): (file: string) => string[] {
+  return (file) => {
+    let used = false
+    const args = command.map((arg) => {
+      if (arg.includes('$FILE')) {
+        used = true
+        return arg.replace(/\$FILE/g, file)
+      }
+      return arg
+    })
+    return used ? args : [...args, file]
+  }
+}
+
+export async function discoverFormatters(
+  workspace: string,
+  config?: AgentConfig
+): Promise<FormatterDefinition[]> {
+  if (config?.formatters === false) return []
   let packageJson: Record<string, unknown> | null = null
   try {
     packageJson = JSON.parse(
@@ -154,7 +174,32 @@ export async function discoverFormatters(workspace: string): Promise<FormatterDe
     }
     if (enabled) discovered.push(formatter)
   }
-  return discovered
+  const configured = config?.formatterServers
+  if (!configured) return discovered
+  const byId = new Map(discovered.map((formatter) => [formatter.id, formatter]))
+  const explicit: FormatterDefinition[] = []
+  for (const [id, input] of Object.entries(configured)) {
+    const existing = byId.get(id)
+    if (input.disabled) {
+      byId.delete(id)
+      continue
+    }
+    if (!input.command && !existing) continue
+    const command = input.command ? commandFromConfig(input.command) : existing?.command
+    if (!command) continue
+    const definition: FormatterDefinition = {
+      id,
+      command,
+      extensions: input.extensions ?? existing?.extensions ?? [],
+      configFiles: input.configFiles ?? existing?.configFiles ?? [],
+      ...((input.environment ?? existing?.environment)
+        ? { environment: { ...(existing?.environment ?? {}), ...(input.environment ?? {}) } }
+        : {})
+    }
+    explicit.push(definition)
+    byId.delete(id)
+  }
+  return [...explicit, ...byId.values()]
 }
 
 export function selectFormatter(
@@ -182,6 +227,7 @@ export async function formatFile(
     resolveExecutable?: (bin: string) => Promise<string | null>
     timeoutMs?: number
     overrides?: Record<string, string>
+    env?: NodeJS.ProcessEnv
   } = {}
 ): Promise<FormatResult> {
   const formatter = selectFormatter(filePath, formatters, options.overrides)
@@ -198,7 +244,10 @@ export async function formatFile(
     return await new Promise<FormatResult>((resolveResult) => {
       let settled = false
       let stderr = ''
-      const child = spawn(executable, args, { cwd: workspace })
+      const child = spawn(executable, args, {
+        cwd: workspace,
+        env: { ...options.env, ...formatter.environment }
+      })
       const finish = (result: FormatResult): void => {
         if (settled) return
         settled = true

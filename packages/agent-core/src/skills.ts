@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { SkillDefinition } from '@ateam/shared'
+import type { AgentConfig, SkillDefinition } from '@ateam/shared'
+import { findProjectRoot } from './config/project-root'
 
 function slugify(name: string): string {
   const slug = name
@@ -100,6 +101,7 @@ async function readSkillDirectory(
 export async function loadSkills(input: {
   userDataPath: string
   workspacePath: string
+  config?: AgentConfig
 }): Promise<SkillDefinition[]> {
   const byName = new Map<string, SkillDefinition>()
   const add = (skill: SkillDefinition): void => {
@@ -112,12 +114,31 @@ export async function loadSkills(input: {
   )) {
     add(skill)
   }
-  for (const directory of [
-    path.join(input.workspacePath, '.opencode', 'skill'),
-    path.join(input.workspacePath, '.opencode', 'skills'),
-    path.join(input.workspacePath, '.claude', 'skills')
-  ]) {
+  const root = await findProjectRoot(input.workspacePath)
+  const directories = new Set<string>()
+  for (const base of [root, input.workspacePath]) {
+    for (const directory of ['skill', 'skills']) {
+      directories.add(path.join(base, '.opencode', directory))
+      directories.add(path.join(base, '.ateam', directory))
+    }
+    directories.add(path.join(base, '.claude', 'skills'))
+  }
+  for (const directory of directories) {
     for (const skill of await readSkillDirectory(directory, 'project')) add(skill)
+  }
+  for (const target of input.config?.skills ?? []) {
+    const stat = await fs.stat(target).catch(() => null)
+    if (stat?.isDirectory()) {
+      for (const skill of await readSkillDirectory(target, 'project')) add(skill)
+    } else if (stat?.isFile() && path.basename(target).toLowerCase() === 'skill.md') {
+      const content = await fs.readFile(target, 'utf8').catch(() => null)
+      if (content === null) continue
+      const skill = parseSkillMarkdown(target, content, 'project')
+      if (skill) {
+        skill.resources = await listSkillResources(path.dirname(target))
+        add(skill)
+      }
+    }
   }
 
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))

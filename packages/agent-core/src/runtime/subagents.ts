@@ -102,6 +102,7 @@ export async function runSubagentTask(
     startedAt: Date.now(),
     steps: 0,
     config: parent.config,
+    models: parent.models,
     agent,
     depth: parent.depth + 1,
     parentSessionId: parent.sessionId,

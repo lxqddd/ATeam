@@ -178,10 +178,12 @@ let subagentExecutor:
   | null
 let baseTools: ToolSet
 let languageModelRefs: Array<ModelRef | null>
+let languageModelModels: RuntimeModelsConfig[]
 let mcpManager: McpManagerLike
 let mcpManagerInput: {
   workspacePath: string
   mcpAuth?: import('@ateam/shared').McpAuthRecord[]
+  projectServers?: import('@ateam/shared').McpServerInput[]
 } | null
 let mcpTools: ReturnType<typeof vi.fn>
 let mcpDispose: ReturnType<typeof vi.fn>
@@ -219,7 +221,8 @@ function createRuntime(): AgentRuntime {
     send: sink.send,
     browserRequest,
     dependencies: {
-      createLanguageModel: (_models, ref) => {
+      createLanguageModel: (models, ref) => {
+        languageModelModels.push(models)
         languageModelRefs.push(ref)
         return {} as unknown as LanguageModel
       },
@@ -588,6 +591,7 @@ beforeEach(async () => {
   questionExecutor = null
   baseTools = {}
   languageModelRefs = []
+  languageModelModels = []
   mcpTools = vi.fn(async () => ({}))
   mcpDispose = vi.fn(async () => undefined)
   mcpManagerInput = null
@@ -3117,5 +3121,70 @@ describe('background subagents and sampling', () => {
     })
     expect(finished.event.result).toContain('background result')
     expect(runtime.listSessions()).toHaveLength(1)
+  })
+})
+
+describe('project provider and MCP configuration', () => {
+  it('resolves project provider models for a run', async () => {
+    await fs.writeFile(
+      path.join(directory, 'workspace', 'ateam.json'),
+      JSON.stringify({
+        providers: {
+          'provider-1': {
+            baseURL: 'https://project.example.com',
+            models: { 'project-model': { name: 'Project Model', contextWindow: 4096 } }
+          }
+        }
+      })
+    )
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi', { providerId: 'provider-1', modelId: 'project-model' })
+    await sink.next('run.finished')
+
+    expect(languageModelRefs.at(-1)).toEqual({
+      providerId: 'provider-1',
+      modelId: 'project-model'
+    })
+    expect(languageModelModels.at(-1)?.models).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ providerId: 'provider-1', modelId: 'project-model' })
+      ])
+    )
+  })
+
+  it('passes project MCP servers to the workspace manager', async () => {
+    await fs.writeFile(
+      path.join(directory, 'workspace', 'ateam.json'),
+      JSON.stringify({
+        mcp: [{ name: 'project-docs', type: 'local', command: 'node' }]
+      })
+    )
+
+    await runtime.listMcpServers()
+
+    expect(mcpManagerInput?.projectServers).toEqual([
+      { name: 'project-docs', type: 'local', command: 'node' }
+    ])
+  })
+
+  it('loads project instructions and commands through the effective config', async () => {
+    await fs.mkdir(path.join(directory, 'workspace', 'docs'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'workspace', 'docs', 'rules.md'), 'PROJECT_RULE_MARKER')
+    await fs.writeFile(
+      path.join(directory, 'workspace', 'ateam.json'),
+      JSON.stringify({
+        instructions: ['docs/rules.md'],
+        commands: { review: { template: 'Review the change' } }
+      })
+    )
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+    const commands = await runtime.listCommands()
+
+    expect(turns[0].system).toContain('PROJECT_RULE_MARKER')
+    expect(commands.find((command) => command.name === 'review')?.source).toBe('project')
   })
 })

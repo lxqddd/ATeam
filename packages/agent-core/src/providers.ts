@@ -4,8 +4,130 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { randomUUID } from 'node:crypto'
 import type { LanguageModel } from 'ai'
-import type { ChatRetryStatus, ModelRef, RuntimeModelsConfig } from '@ateam/shared'
+import type {
+  ChatRetryStatus,
+  ModelPublic,
+  ModelRef,
+  ModelVariant,
+  ModelVariantInput,
+  ProviderConfigInput,
+  RuntimeModelsConfig
+} from '@ateam/shared'
 import { createRetryFetch } from './retry-fetch'
+
+function projectVariants(variants: ModelVariantInput[] | undefined): ModelVariant[] | undefined {
+  if (!variants) return undefined
+  const result: ModelVariant[] = []
+  const seen = new Set<string>()
+  for (const variant of variants) {
+    const name = typeof variant?.name === 'string' ? variant.name.trim() : ''
+    const id = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+    if (!name || !id || seen.has(id)) continue
+    seen.add(id)
+    result.push({ id, name, settings: variant.settings ?? {} })
+  }
+  return result.length > 0 ? result : undefined
+}
+
+const PROJECT_MODEL_CREATED_AT = '1970-01-01T00:00:00.000Z'
+
+/** Merge project provider overlays into the desktop-owned runtime model config. */
+export function mergeRuntimeProviders(
+  base: RuntimeModelsConfig,
+  configured: Record<string, ProviderConfigInput> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  onWarning?: (message: string) => void
+): RuntimeModelsConfig {
+  if (!configured || Object.keys(configured).length === 0) return base
+  const providers = [...base.providers]
+  const models = [...base.models]
+
+  for (const [id, input] of Object.entries(configured)) {
+    const existing = providers.find((provider) => provider.id === id)
+    const type = input.type ?? existing?.type
+    if (!type) {
+      onWarning?.(`provider ${id} has no type and no global provider to inherit from`)
+      continue
+    }
+    if (type === 'openai-compatible' && !input.baseURL && !existing?.baseURL) {
+      onWarning?.(`provider ${id} requires baseURL for openai-compatible`)
+      continue
+    }
+    const apiKey =
+      existing?.apiKey ?? (input.apiKeyEnv ? env[input.apiKeyEnv] : undefined) ?? undefined
+    if (!existing && !apiKey) {
+      onWarning?.(`provider ${id} has no credential (apiKeyEnv=${input.apiKeyEnv ?? 'unset'})`)
+    }
+    const merged = {
+      ...(existing ?? { id, name: input.name ?? id, type }),
+      ...(input.name ? { name: input.name } : {}),
+      ...(input.type ? { type: input.type } : {}),
+      ...(input.baseURL ? { baseURL: input.baseURL } : {}),
+      ...(apiKey ? { apiKey } : {})
+    }
+    if (existing) {
+      const index = providers.findIndex((provider) => provider.id === id)
+      providers[index] = merged
+    } else {
+      providers.push(merged)
+    }
+
+    for (const [modelId, modelInput] of Object.entries(input.models ?? {})) {
+      const current = models.find((model) => model.providerId === id && model.modelId === modelId)
+      if (current) {
+        const index = models.indexOf(current)
+        models[index] = {
+          ...current,
+          ...(modelInput.name ? { name: modelInput.name } : {}),
+          ...(modelInput.contextWindow !== undefined
+            ? { contextWindow: modelInput.contextWindow }
+            : {}),
+          ...(modelInput.maxOutputTokens !== undefined
+            ? { maxOutputTokens: modelInput.maxOutputTokens }
+            : {}),
+          ...(modelInput.reasoning !== undefined ? { reasoning: modelInput.reasoning } : {}),
+          ...(modelInput.attachment !== undefined ? { attachment: modelInput.attachment } : {}),
+          ...(modelInput.costInput !== undefined ? { costInput: modelInput.costInput } : {}),
+          ...(modelInput.costOutput !== undefined ? { costOutput: modelInput.costOutput } : {}),
+          ...(modelInput.applyPatch !== undefined ? { applyPatch: modelInput.applyPatch } : {}),
+          ...(modelInput.compaction !== undefined ? { compaction: modelInput.compaction } : {}),
+          ...(projectVariants(modelInput.variants)
+            ? { variants: projectVariants(modelInput.variants) }
+            : {})
+        }
+        continue
+      }
+      const model: ModelPublic = {
+        id: `config:${id}:${modelId}`,
+        providerId: id,
+        modelId,
+        name: modelInput.name ?? modelId,
+        createdAt: PROJECT_MODEL_CREATED_AT,
+        ...(modelInput.contextWindow !== undefined
+          ? { contextWindow: modelInput.contextWindow }
+          : {}),
+        ...(modelInput.maxOutputTokens !== undefined
+          ? { maxOutputTokens: modelInput.maxOutputTokens }
+          : {}),
+        ...(modelInput.reasoning !== undefined ? { reasoning: modelInput.reasoning } : {}),
+        ...(modelInput.attachment !== undefined ? { attachment: modelInput.attachment } : {}),
+        ...(modelInput.costInput !== undefined ? { costInput: modelInput.costInput } : {}),
+        ...(modelInput.costOutput !== undefined ? { costOutput: modelInput.costOutput } : {}),
+        ...(modelInput.applyPatch !== undefined ? { applyPatch: modelInput.applyPatch } : {}),
+        ...(modelInput.compaction !== undefined ? { compaction: modelInput.compaction } : {}),
+        ...(projectVariants(modelInput.variants)
+          ? { variants: projectVariants(modelInput.variants) }
+          : {})
+      }
+      models.push(model)
+    }
+  }
+
+  return { providers, models, defaultModel: base.defaultModel }
+}
 
 export function resolveModelRef(
   config: RuntimeModelsConfig,

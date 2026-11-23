@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentConfig, CommandDefinition } from '@ateam/shared'
 import {
   expandCommand,
   expandCommandTemplate,
@@ -243,5 +244,40 @@ describe('loadCommands', () => {
     await expect(
       loadCommands({ userDataPath: directory, workspacePath: workspace })
     ).resolves.toEqual([])
+  })
+})
+
+describe('configured commands', () => {
+  it('loads config commands and .ateam command files with project precedence', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-command-config-'))
+    const workspace = path.join(directory, 'workspace')
+    const userData = path.join(directory, 'user-data')
+    await fs.mkdir(path.join(workspace, '.ateam', 'commands'), { recursive: true })
+    await fs.writeFile(path.join(workspace, '.ateam', 'commands', 'extra.md'), 'Extra command.')
+    const base = {
+      snapshots: true,
+      instructions: [],
+      lsp: true,
+      formatters: true,
+      formatterOverrides: {}
+    } satisfies AgentConfig
+    const global = parseCommandJson(
+      { name: 'global', template: 'Global' },
+      'user'
+    ) as CommandDefinition
+    const project = parseCommandJson(
+      { name: 'project', template: 'Project' },
+      'project'
+    ) as CommandDefinition
+    const commands = await loadCommands({
+      userDataPath: userData,
+      workspacePath: workspace,
+      config: { ...base, commands: [global, project] }
+    })
+
+    expect(commands.find((command) => command.name === 'global')?.source).toBe('user')
+    expect(commands.find((command) => command.name === 'project')?.source).toBe('project')
+    expect(commands.find((command) => command.name === 'extra')?.template).toBe('Extra command.')
+    await fs.rm(directory, { recursive: true, force: true })
   })
 })

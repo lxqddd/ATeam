@@ -37,6 +37,7 @@
     "ai": "7.0.177",
     "diff": "8.0.4",
     "gpt-tokenizer": "^4.1.2",
+    "jsonc-parser": "3.3.1",
     "turndown": "^7.2.5",
     "unpdf": "^2.2.1",
     "zod": "4.6.7"
@@ -46,11 +47,11 @@
     "@ateam/shared": "workspace:*",
     "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "5.1.1",
+    "esbuild": "^0.28.0",
     "tsup": "^8.5.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vite": "^8.3.4",
-    "vitest": "5.1.1",
-    "esbuild": "^0.28.0"
+    "vitest": "5.1.1"
   }
 }

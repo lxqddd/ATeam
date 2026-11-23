@@ -16,7 +16,6 @@ import {
 } from './mcp-client'
 import { McpStore } from './mcp-store'
 import { refreshMcpAuthRecord } from './mcp-oauth'
-import { readProjectConfig } from '../config/project-config'
 
 const MAX_OUTPUT = 200_000
 const MAX_TOOL_NAME = 64
@@ -45,6 +44,7 @@ export interface McpManagerLike {
   removeServer(id: string): Promise<boolean>
   setMcpAuth(auths: import('@ateam/shared').McpAuthRecord[]): Promise<void>
   setTransientServers(servers: McpServerInput[]): Promise<void>
+  setProjectServers?(servers: McpServerInput[]): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -69,11 +69,31 @@ interface McpManagerOptions {
   auth?: McpAuthRecord[]
   onAuthUpdated?: (auth: McpAuthRecord) => void
   fetch?: typeof fetch
+  projectServers?: McpServerInput[]
 }
 
 interface Connection {
   client: McpClientLike
   tools: McpToolDefinition[] | null
+}
+
+const PROJECT_SERVER_TIMESTAMP = '1970-01-01T00:00:00.000Z'
+
+function projectConfigs(inputs: McpServerInput[]): McpServerConfig[] {
+  return inputs.map((server) => ({
+    id: `project-${createHash('sha1').update(server.name).digest('hex').slice(0, 8)}`,
+    name: server.name,
+    type: server.type,
+    command: server.command ?? null,
+    args: server.args ?? [],
+    url: server.url ?? null,
+    headers: server.headers ?? {},
+    env: server.env ?? {},
+    enabled: server.enabled !== false,
+    createdAt: PROJECT_SERVER_TIMESTAMP,
+    updatedAt: PROJECT_SERVER_TIMESTAMP,
+    source: 'project'
+  }))
 }
 
 function idleStatus(config: McpServerConfig): McpServerStatus {
@@ -140,23 +160,9 @@ export class McpManager implements McpManagerLike {
     const store = new McpStore(options.userDataPath)
     this.store = store
     this.authByServer = new Map((options.auth ?? []).map((auth) => [auth.serverId, auth]))
+    this.project = projectConfigs(options.projectServers ?? [])
     this.ready = (async () => {
       await store.init()
-      const config = await readProjectConfig(options.workspace)
-      const now = new Date().toISOString()
-      this.project = (config.mcp ?? []).map((server) => ({
-        id: `project-${createHash('sha1').update(server.name).digest('hex').slice(0, 8)}`,
-        name: server.name,
-        type: server.type,
-        command: server.command ?? null,
-        args: server.args ?? [],
-        url: server.url ?? null,
-        headers: server.headers ?? {},
-        env: server.env ?? {},
-        enabled: server.enabled !== false,
-        createdAt: now,
-        updatedAt: now
-      }))
     })()
   }
 
@@ -196,7 +202,29 @@ export class McpManager implements McpManagerLike {
 
   async servers(): Promise<McpServerConfig[]> {
     await this.ready
-    return [...this.store.list(), ...this.transient]
+    return [
+      ...this.store.list().map((server) => ({ ...server, source: 'user' as const })),
+      ...this.project.map((server) => ({ ...server, source: 'project' as const })),
+      ...this.transient.map((server) => ({ ...server, source: 'transient' as const }))
+    ]
+  }
+
+  async setProjectServers(inputs: McpServerInput[]): Promise<void> {
+    await this.ready
+    const next = projectConfigs(inputs)
+    const previous = new Map(this.project.map((server) => [server.id, server]))
+    for (const server of next) {
+      const old = previous.get(server.id)
+      if (old && JSON.stringify(old) === JSON.stringify(server)) continue
+      await this.closeConnection(server.id)
+      this.statusesById.delete(server.id)
+    }
+    for (const id of previous.keys()) {
+      if (next.some((server) => server.id === id)) continue
+      await this.closeConnection(id)
+      this.statusesById.delete(id)
+    }
+    this.project = next
   }
 
   async statuses(options: { probe?: boolean } = {}): Promise<McpServerStatus[]> {
@@ -268,6 +296,9 @@ export class McpManager implements McpManagerLike {
 
   async addServer(input: McpServerInput): Promise<McpServerConfig> {
     await this.ready
+    if (this.project.some((server) => server.name.toLowerCase() === input.name.toLowerCase())) {
+      throw new Error('MCP_SERVER_MANAGED_BY_CONFIG')
+    }
     return this.store.add(input)
   }
 
@@ -352,6 +383,9 @@ export class McpManager implements McpManagerLike {
 
   async updateServer(id: string, input: Partial<McpServerInput>): Promise<McpServerConfig> {
     await this.ready
+    if (this.project.some((server) => server.id === id)) {
+      throw new Error('MCP_SERVER_MANAGED_BY_CONFIG')
+    }
     const updated = await this.store.update(id, input)
     await this.closeConnection(id)
     this.statusesById.delete(id)
@@ -360,6 +394,9 @@ export class McpManager implements McpManagerLike {
 
   async removeServer(id: string): Promise<boolean> {
     await this.ready
+    if (this.project.some((server) => server.id === id)) {
+      throw new Error('MCP_SERVER_MANAGED_BY_CONFIG')
+    }
     await this.closeConnection(id)
     this.statusesById.delete(id)
     return this.store.remove(id)

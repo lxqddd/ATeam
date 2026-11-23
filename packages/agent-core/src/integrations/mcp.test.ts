@@ -578,3 +578,32 @@ describe('McpManager OAuth', () => {
     await manager.dispose()
   })
 })
+
+describe('project MCP servers', () => {
+  it('lists project servers, marks their source and guards mutations', async () => {
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      projectServers: [{ name: 'project-docs', type: 'local', command: 'node' }]
+    })
+    const servers = await manager.servers()
+    const project = servers.find((server) => server.name === 'project-docs')
+
+    expect(project).toMatchObject({ source: 'project' })
+    expect(project?.id).toMatch(/^project-/)
+    await expect(manager.updateServer(project?.id ?? '', { command: 'other' })).rejects.toThrow(
+      'MCP_SERVER_MANAGED_BY_CONFIG'
+    )
+    await expect(manager.removeServer(project?.id ?? '')).rejects.toThrow(
+      'MCP_SERVER_MANAGED_BY_CONFIG'
+    )
+    await expect(
+      manager.addServer({ name: 'project-docs', type: 'local', command: 'node' })
+    ).rejects.toThrow('MCP_SERVER_MANAGED_BY_CONFIG')
+    await manager.setProjectServers([{ name: 'project-next', type: 'local', command: 'node' }])
+    const next = await manager.servers()
+    expect(next.some((server) => server.name === 'project-docs')).toBe(false)
+    expect(next.some((server) => server.name === 'project-next')).toBe(true)
+    await manager.dispose()
+  })
+})

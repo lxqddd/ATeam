@@ -6,6 +6,7 @@ import type {
   McpServerInput,
   McpServerStatus,
   RuntimeWebSearchConfig,
+  EffectiveAgentConfig,
   SkillDefinition,
   WebFetchFormat
 } from '@ateam/shared'
@@ -14,7 +15,7 @@ import {
   formatFile,
   type FormatterDefinition
 } from '../integrations/formatters'
-import { formatDiagnosticReport, LspManager } from '../integrations/lsp'
+import { formatDiagnosticReport, LspManager, resolveLspServers } from '../integrations/lsp'
 import type { McpManagerLike } from '../integrations/mcp'
 import { formatWebFetchResult } from '../integrations/webfetch'
 import { formatSearchResults } from '../integrations/websearch'
@@ -44,6 +45,8 @@ export class WorkspaceServices {
   private readonly skillCaches = new Map<string, Promise<SkillDefinition[]>>()
   private readonly pluginCaches = new Map<string, Promise<PluginRegistry>>()
   private readonly mcpManagers = new Map<string, McpManagerLike>()
+  private readonly configs = new Map<string, EffectiveAgentConfig>()
+  private readonly fingerprints = new Map<string, string>()
   private mcpAuth: McpAuthRecord[]
   private webSearchConfig: RuntimeWebSearchConfig | null
 
@@ -55,6 +58,30 @@ export class WorkspaceServices {
     this.webSearchConfig = state.webSearch ?? null
   }
 
+  async applyConfig(workspace: string, effective: EffectiveAgentConfig): Promise<void> {
+    const fingerprint = JSON.stringify(effective.config)
+    const previous = this.fingerprints.get(workspace)
+    this.configs.set(workspace, effective)
+    this.fingerprints.set(workspace, fingerprint)
+    if (previous === fingerprint) {
+      const manager = this.mcpManagers.get(workspace)
+      await manager?.setProjectServers?.(effective.config.mcpServers ?? [])
+      return
+    }
+    this.skillCaches.delete(workspace)
+    this.formatterCaches.delete(workspace)
+    for (const key of this.pluginCaches.keys()) {
+      if (key.startsWith(`${workspace}\u0000`)) this.pluginCaches.delete(key)
+    }
+    const lsp = this.lspManagers.get(workspace)
+    this.lspManagers.delete(workspace)
+    await lsp?.dispose().catch(() => undefined)
+    const servers = effective.config.mcpServers ?? []
+    const manager = this.mcpManagers.get(workspace)
+    if (manager) await manager.setProjectServers?.(servers)
+    else if (servers.length > 0) await this.mcp(workspace).setProjectServers?.(servers)
+  }
+
   async dispose(): Promise<void> {
     const lspManagers = [...this.lspManagers.values()]
     this.lspManagers.clear()
@@ -63,6 +90,8 @@ export class WorkspaceServices {
     }
     const mcpManagers = [...new Set(this.mcpManagers.values())]
     this.mcpManagers.clear()
+    this.configs.clear()
+    this.fingerprints.clear()
     for (const manager of mcpManagers) {
       await manager.dispose()
     }
@@ -73,7 +102,8 @@ export class WorkspaceServices {
     if (!cached) {
       cached = loadSkills({
         userDataPath: this.host.userDataPath,
-        workspacePath: workspace
+        workspacePath: workspace,
+        config: this.configs.get(workspace)?.config
       }).catch(() => [])
       this.skillCaches.set(workspace, cached)
     }
@@ -100,7 +130,8 @@ export class WorkspaceServices {
         userDataPath: this.host.userDataPath,
         workspacePath: target,
         mcpAuth: this.mcpAuth,
-        onMcpAuth: (auth) => this.host.onMcpAuth?.(auth)
+        onMcpAuth: (auth) => this.host.onMcpAuth?.(auth),
+        projectServers: this.configs.get(target)?.config.mcpServers ?? []
       })
       this.mcpManagers.set(target, manager)
     }
@@ -161,6 +192,8 @@ export class WorkspaceServices {
     await manager?.dispose().catch(() => undefined)
     const mcp = this.mcpManagers.get(workspace)
     this.mcpManagers.delete(workspace)
+    this.configs.delete(workspace)
+    this.fingerprints.delete(workspace)
     await mcp?.dispose().catch(() => undefined)
   }
 
@@ -295,7 +328,10 @@ export class WorkspaceServices {
   private lsp(workspace: string): LspManager {
     let manager = this.lspManagers.get(workspace)
     if (!manager) {
-      manager = new LspManager({ workspace })
+      manager = new LspManager({
+        workspace,
+        servers: resolveLspServers(this.configs.get(workspace)?.config)
+      })
       this.lspManagers.set(workspace, manager)
     }
     return manager
@@ -304,7 +340,7 @@ export class WorkspaceServices {
   private formatters(workspace: string): Promise<FormatterDefinition[]> {
     let cached = this.formatterCaches.get(workspace)
     if (!cached) {
-      cached = discoverFormatters(workspace).catch(() => [])
+      cached = discoverFormatters(workspace, this.configs.get(workspace)?.config).catch(() => [])
       this.formatterCaches.set(workspace, cached)
     }
     return cached

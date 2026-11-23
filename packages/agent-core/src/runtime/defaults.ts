@@ -65,7 +65,8 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       userDataPath: input.userDataPath,
       workspace: input.workspacePath,
       auth: input.mcpAuth,
-      onAuthUpdated: input.onMcpAuth
+      onAuthUpdated: input.onMcpAuth,
+      projectServers: input.projectServers
     }),
   fetchWeb: fetchWebContent,
   searchWeb

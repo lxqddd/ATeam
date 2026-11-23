@@ -9,7 +9,8 @@ import type {
   PermissionRuleAction
 } from '@ateam/shared'
 import { readJsonFile } from '../atomic-json'
-import { readProjectConfig } from './project-config'
+import { readAgentConfig } from './config-store'
+import { findProjectRoot } from './project-root'
 import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100
@@ -361,15 +362,18 @@ export async function loadAgents(input: {
   for (const agent of await readJsonAgents(path.join(input.userDataPath, 'agent', 'agents.json'))) {
     add(agent)
   }
-  for (const directory of ['agent', 'agents']) {
-    for (const agent of await readMarkdownAgents(
-      path.join(input.workspacePath, '.opencode', directory),
-      'project'
-    )) {
-      add(agent)
+  const root = await findProjectRoot(input.workspacePath)
+  const directories = new Set<string>()
+  for (const base of [root, input.workspacePath]) {
+    for (const directory of ['agent', 'agents']) {
+      directories.add(path.join(base, '.opencode', directory))
+      directories.add(path.join(base, '.ateam', directory))
     }
   }
-  const projectConfig = await readProjectConfig(input.workspacePath)
+  for (const directory of directories) {
+    for (const agent of await readMarkdownAgents(directory, 'project')) add(agent)
+  }
+  const projectConfig = await readAgentConfig(input.userDataPath, input.workspacePath)
   for (const entry of projectConfig.agents ?? []) {
     const agent = parseAgentJson(entry, 'project')
     if (agent) add(agent)

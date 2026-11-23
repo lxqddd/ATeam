@@ -1,197 +1,33 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { parse as parseJsonc, printParseErrorCode, type ParseError } from 'jsonc-parser'
 import type {
   AgentConfig,
+  AgentConfigDocument,
   AgentReference,
+  CommandDefinition,
+  ConfigDiagnostic,
+  FormatterConfigInput,
+  LspServerConfigInput,
   McpServerInput,
-  PermissionEffect,
-  PermissionRuleAction,
-  PermissionRuleInput
+  ProviderConfigInput
 } from '@ateam/shared'
+import { parseCommandJson } from '../commands'
+import { normalizeAgentConfigDocument, type ParsedConfigDocument } from './normalize'
+import { findProjectRoot } from './project-root'
 
-export interface ProjectConfig {
-  snapshots?: boolean
-  lsp?: boolean
-  formatters?: boolean
-  instructions?: string[]
-  references?: AgentReference[]
-  formatterOverrides?: Record<string, string>
-  permissions?: PermissionRuleInput[]
-  mcp?: McpServerInput[]
-  agents?: unknown[]
-  providers?: unknown[]
-  plugins?: string[]
-}
+export { findProjectRoot } from './project-root'
+
+export type ProjectConfig = AgentConfigDocument
 
 const CONFIG_NAMES = ['ateam.json', 'ateam.jsonc'] as const
-const RULE_ACTIONS: readonly PermissionRuleAction[] = [
-  'read',
-  'list',
-  'glob',
-  'grep',
-  'write',
-  'edit',
-  'shell',
-  'external_directory',
-  'mcp',
-  'webfetch',
-  'websearch',
-  'skill',
-  'subagent',
-  '*'
-]
-const RULE_EFFECTS: readonly PermissionEffect[] = ['allow', 'ask', 'deny']
 
-function stripJsonComments(input: string): string {
-  let result = ''
-  let inString = false
-  let escaped = false
-  for (let index = 0; index < input.length; index += 1) {
-    const character = input[index]
-    const next = input[index + 1]
-    if (inString) {
-      result += character
-      if (escaped) escaped = false
-      else if (character === '\\') escaped = true
-      else if (character === '"') inString = false
-      continue
-    }
-    if (character === '"') {
-      inString = true
-      result += character
-      continue
-    }
-    if (character === '/' && next === '/') {
-      while (index < input.length && input[index] !== '\n') index += 1
-      result += '\n'
-      continue
-    }
-    if (character === '/' && next === '*') {
-      index += 2
-      while (index < input.length && !(input[index] === '*' && input[index + 1] === '/')) index += 1
-      index += 1
-      continue
-    }
-    result += character
-  }
-  return result.replace(/,\s*([}\]])/g, '$1')
-}
-
-export function parseProjectConfigContent(content: string): ProjectConfig {
-  let raw: unknown
-  try {
-    raw = JSON.parse(stripJsonComments(content))
-  } catch {
-    return {}
-  }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  const value = raw as Record<string, unknown>
-  const config: ProjectConfig = {}
-  if (typeof value.snapshots === 'boolean') config.snapshots = value.snapshots
-  if (typeof value.lsp === 'boolean') config.lsp = value.lsp
-  if (typeof value.formatters === 'boolean') config.formatters = value.formatters
-  if (Array.isArray(value.instructions)) {
-    const instructions = [
-      ...new Set(
-        value.instructions
-          .filter((entry): entry is string => typeof entry === 'string')
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-      )
-    ]
-    if (instructions.length > 0) config.instructions = instructions
-  }
-  if (value.formatterOverrides && typeof value.formatterOverrides === 'object') {
-    const overrides: Record<string, string> = {}
-    for (const [key, entry] of Object.entries(
-      value.formatterOverrides as Record<string, unknown>
-    )) {
-      if (typeof entry !== 'string') continue
-      const extension = key.startsWith('.') ? key.toLowerCase() : `.${key.toLowerCase()}`
-      if (!/^\.[a-z0-9+]{1,15}$/.test(extension)) continue
-      const formatter = entry.trim().toLowerCase()
-      if (formatter !== 'none' && !/^[a-z0-9_-]{1,40}$/.test(formatter)) continue
-      overrides[extension] = formatter
-    }
-    if (Object.keys(overrides).length > 0) config.formatterOverrides = overrides
-  }
-  if (Array.isArray(value.references)) {
-    const references = value.references.filter(
-      (entry): entry is AgentReference =>
-        Boolean(entry) &&
-        typeof entry === 'object' &&
-        typeof (entry as AgentReference).alias === 'string' &&
-        (typeof (entry as AgentReference).path === 'string') !==
-          (typeof (entry as AgentReference).repository === 'string')
-    )
-    if (references.length > 0) config.references = references
-  }
-  if (Array.isArray(value.permissions)) {
-    const permissions: PermissionRuleInput[] = []
-    for (const entry of value.permissions) {
-      if (!entry || typeof entry !== 'object') continue
-      const rule = entry as Record<string, unknown>
-      if (
-        typeof rule.action !== 'string' ||
-        !RULE_ACTIONS.includes(rule.action as PermissionRuleAction) ||
-        typeof rule.resource !== 'string' ||
-        !rule.resource.trim() ||
-        typeof rule.effect !== 'string' ||
-        !RULE_EFFECTS.includes(rule.effect as PermissionEffect)
-      ) {
-        continue
-      }
-      permissions.push({
-        action: rule.action as PermissionRuleAction,
-        resource: rule.resource.trim(),
-        effect: rule.effect as PermissionEffect,
-        sessionId: null
-      })
-    }
-    if (permissions.length > 0) config.permissions = permissions
-  }
-  if (Array.isArray(value.mcp)) {
-    const servers: McpServerInput[] = []
-    for (const entry of value.mcp) {
-      if (!entry || typeof entry !== 'object') continue
-      const server = entry as Record<string, unknown>
-      if (typeof server.name !== 'string' || !server.name.trim()) continue
-      const type = server.type === 'remote' ? 'remote' : server.type === 'local' ? 'local' : null
-      if (!type) continue
-      if (type === 'local' && typeof server.command !== 'string') continue
-      if (type === 'remote' && typeof server.url !== 'string') continue
-      const strings = (input: unknown): string[] =>
-        Array.isArray(input) ? input.filter((item): item is string => typeof item === 'string') : []
-      const record = (input: unknown): Record<string, string> => {
-        if (!input || typeof input !== 'object') return {}
-        return Object.fromEntries(
-          Object.entries(input as Record<string, unknown>).filter(
-            (item): item is [string, string] => typeof item[1] === 'string'
-          )
-        )
-      }
-      servers.push({
-        name: server.name.trim(),
-        type,
-        ...(typeof server.command === 'string' ? { command: server.command } : {}),
-        ...(strings(server.args).length > 0 ? { args: strings(server.args) } : {}),
-        ...(typeof server.url === 'string' ? { url: server.url } : {}),
-        ...(Object.keys(record(server.headers)).length > 0
-          ? { headers: record(server.headers) }
-          : {}),
-        ...(Object.keys(record(server.env)).length > 0 ? { env: record(server.env) } : {}),
-        ...(typeof server.enabled === 'boolean' ? { enabled: server.enabled } : {})
-      })
-    }
-    if (servers.length > 0) config.mcp = servers
-  }
-  if (Array.isArray(value.agents)) config.agents = value.agents
-  if (Array.isArray(value.providers)) config.providers = value.providers
-  if (Array.isArray(value.plugins)) {
-    const plugins = value.plugins.filter((entry): entry is string => typeof entry === 'string')
-    if (plugins.length > 0) config.plugins = plugins
-  }
-  return config
+export interface ProjectConfigDetails {
+  document: AgentConfigDocument
+  path: string | null
+  directory: string | null
+  root: string
+  diagnostics: ConfigDiagnostic[]
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -202,23 +38,8 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-async function projectRoot(workspacePath: string): Promise<string> {
-  let directory = path.resolve(workspacePath)
-  for (;;) {
-    try {
-      const stat = await fs.stat(path.join(directory, '.git'))
-      if (stat.isDirectory() || stat.isFile()) return directory
-    } catch {
-      /* keep walking up */
-    }
-    const parent = path.dirname(directory)
-    if (parent === directory) return path.resolve(workspacePath)
-    directory = parent
-  }
-}
-
 export async function findProjectConfig(workspacePath: string): Promise<string | null> {
-  const root = await projectRoot(workspacePath)
+  const root = await findProjectRoot(workspacePath)
   for (const name of CONFIG_NAMES) {
     const file = path.join(root, name)
     if (await fileExists(file)) return file
@@ -226,42 +47,258 @@ export async function findProjectConfig(workspacePath: string): Promise<string |
   return null
 }
 
-export async function readProjectConfig(workspacePath: string): Promise<ProjectConfig> {
-  const file = await findProjectConfig(workspacePath)
-  if (!file) return {}
+export function parseProjectConfigDocument(content: string, source: string): ParsedConfigDocument {
+  const errors: ParseError[] = []
+  const raw = parseJsonc(content, errors, { allowTrailingComma: true })
+  if (errors.length > 0) {
+    const messages = errors
+      .slice(0, 10)
+      .map((error) => `${printParseErrorCode(error.error)} at offset ${error.offset}`)
+    return {
+      document: {},
+      diagnostics: [
+        {
+          source,
+          path: '$',
+          severity: 'error',
+          message: `invalid JSONC: ${messages.join('; ')}`
+        }
+      ]
+    }
+  }
+  return normalizeAgentConfigDocument(raw, source)
+}
+
+export function parseProjectConfigContent(content: string): ProjectConfig {
+  return parseProjectConfigDocument(content, '<project-config>').document
+}
+
+export async function readProjectConfigDetails(
+  workspacePath: string
+): Promise<ProjectConfigDetails> {
+  const root = await findProjectRoot(workspacePath)
+  let file: string | null = null
+  for (const name of CONFIG_NAMES) {
+    const candidate = path.join(root, name)
+    if (await fileExists(candidate)) {
+      file = candidate
+      break
+    }
+  }
+  if (!file) {
+    return { document: {}, path: null, directory: null, root, diagnostics: [] }
+  }
   try {
-    return parseProjectConfigContent(await fs.readFile(file, 'utf8'))
-  } catch {
-    return {}
+    const content = await fs.readFile(file, 'utf8')
+    const parsed = parseProjectConfigDocument(content, file)
+    return {
+      document: parsed.document,
+      path: file,
+      directory: path.dirname(file),
+      root,
+      diagnostics: parsed.diagnostics
+    }
+  } catch (error) {
+    return {
+      document: {},
+      path: file,
+      directory: path.dirname(file),
+      root,
+      diagnostics: [
+        {
+          source: file,
+          path: '$',
+          severity: 'error',
+          message: `unable to read config: ${error instanceof Error ? error.message : 'unknown error'}`
+        }
+      ]
+    }
   }
 }
 
-export function mergeAgentConfig(base: AgentConfig, project: ProjectConfig): AgentConfig {
-  const instructions = [...new Set([...base.instructions, ...(project.instructions ?? [])])]
-  const references = new Map<string, AgentReference>()
-  for (const reference of base.references ?? []) references.set(reference.alias, reference)
-  for (const reference of project.references ?? []) references.set(reference.alias, reference)
+export async function readProjectConfig(workspacePath: string): Promise<ProjectConfig> {
+  return (await readProjectConfigDetails(workspacePath)).document
+}
+
+function anchorPath(value: string, directory: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return trimmed
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || trimmed.startsWith('~')) return trimmed
+  if (path.isAbsolute(trimmed)) return trimmed
+  return path.resolve(directory, trimmed)
+}
+
+function anchorPlugin(spec: string, directory: string): string {
+  const trimmed = spec.trim()
+  if (!trimmed) return trimmed
+  if (trimmed.startsWith('.') || trimmed.startsWith('/')) return path.resolve(directory, trimmed)
+  return trimmed
+}
+
+/** Resolve project-relative paths before merging. Global entries are left untouched. */
+export function anchorProjectDocument(
+  document: AgentConfigDocument,
+  directory: string
+): AgentConfigDocument {
+  const anchored: AgentConfigDocument = { ...document }
+  if (document.instructions) {
+    anchored.instructions = document.instructions.map((entry) => anchorPath(entry, directory))
+  }
+  if (document.references) {
+    if (Array.isArray(document.references)) {
+      anchored.references = document.references.map((reference) => ({
+        ...reference,
+        ...(reference.path ? { path: anchorPath(reference.path, directory) } : {})
+      }))
+    }
+  }
+  if (document.plugins) {
+    anchored.plugins = document.plugins.map((entry) => anchorPlugin(entry, directory))
+  }
+  if (document.skills) {
+    anchored.skills = document.skills.map((entry) => anchorPath(entry, directory))
+  }
+  return anchored
+}
+
+function mergeReferences(
+  base: AgentReference[] | undefined,
+  project: AgentReference[] | undefined
+): AgentReference[] | undefined {
+  if (!base && !project) return undefined
+  const byAlias = new Map<string, AgentReference>()
+  for (const reference of base ?? []) byAlias.set(reference.alias, reference)
+  for (const reference of project ?? []) byAlias.set(reference.alias, reference)
+  return byAlias.size > 0 ? [...byAlias.values()] : undefined
+}
+
+function mergeMcpServers(
+  base: McpServerInput[] | undefined,
+  project: McpServerInput[] | undefined
+): McpServerInput[] | undefined {
+  if (!base && !project) return undefined
+  const byName = new Map<string, McpServerInput>()
+  for (const server of base ?? []) byName.set(server.name, server)
+  for (const server of project ?? []) byName.set(server.name, server)
+  return byName.size > 0 ? [...byName.values()] : undefined
+}
+
+function mergeServerConfigs<T extends { disabled?: boolean }>(
+  base: Record<string, T> | undefined,
+  project: Record<string, T> | undefined
+): Record<string, T> | undefined {
+  if (!base && !project) return undefined
+  return { ...(base ?? {}), ...(project ?? {}) }
+}
+
+function mergeProviderConfigs(
+  base: Record<string, ProviderConfigInput> | undefined,
+  project: Record<string, ProviderConfigInput> | undefined
+): Record<string, ProviderConfigInput> | undefined {
+  if (!base && !project) return undefined
+  const merged: Record<string, ProviderConfigInput> = { ...(base ?? {}) }
+  for (const [id, provider] of Object.entries(project ?? {})) {
+    const previous = merged[id]
+    merged[id] = {
+      ...(previous ?? {}),
+      ...provider,
+      ...(previous?.models || provider.models
+        ? { models: { ...(previous?.models ?? {}), ...(provider.models ?? {}) } }
+        : {})
+    }
+  }
+  return merged
+}
+
+function mergeCommands(
+  base: CommandDefinition[] | undefined,
+  project: Record<string, import('@ateam/shared').CommandConfigInput> | undefined,
+  source: 'user' | 'project'
+): CommandDefinition[] | undefined {
+  if (!base && !project) return undefined
+  const byName = new Map<string, CommandDefinition>()
+  for (const command of base ?? []) byName.set(command.name.toLowerCase(), command)
+  for (const [name, input] of Object.entries(project ?? {})) {
+    const parsed = parseCommandJson({ name, ...input }, source)
+    if (parsed) byName.set(parsed.name.toLowerCase(), parsed)
+  }
+  return byName.size > 0 ? [...byName.values()] : undefined
+}
+
+function mergeStrings(
+  base: string[] | undefined,
+  project: string[] | undefined
+): string[] | undefined {
+  if (!base && !project) return undefined
+  const values = [...new Set([...(base ?? []), ...(project ?? [])])]
+  return values.length > 0 ? values : undefined
+}
+
+/**
+ * Merge a project document over an already-effective global config.
+ * Project path anchoring is performed by `anchorProjectDocument` before this call.
+ */
+export function mergeAgentConfig(
+  base: AgentConfig,
+  project: ProjectConfig,
+  commandSource: 'user' | 'project' = 'project'
+): AgentConfig {
+  const instructions = mergeStrings(base.instructions, project.instructions) ?? []
   const permissionRules = [...(base.permissionRules ?? []), ...(project.permissions ?? [])]
-  const mcpServers = [...(base.mcpServers ?? []), ...(project.mcp ?? [])]
+  let lsp = base.lsp
+  let lspServers: Record<string, LspServerConfigInput> | undefined = base.lspServers
+  if (project.lsp === false) {
+    lsp = false
+  } else if (project.lsp === true) {
+    lsp = true
+    lspServers = undefined
+  } else if (project.lsp) {
+    lsp = true
+    lspServers = mergeServerConfigs(base.lspServers, project.lsp)
+  }
+  let formatters = base.formatters
+  let formatterServers: Record<string, FormatterConfigInput> | undefined = base.formatterServers
+  if (project.formatters === false) {
+    formatters = false
+  } else if (project.formatters === true) {
+    formatters = true
+    formatterServers = undefined
+  } else if (project.formatters) {
+    formatters = true
+    formatterServers = mergeServerConfigs(base.formatterServers, project.formatters)
+  }
+  const references = mergeReferences(
+    base.references,
+    Array.isArray(project.references) ? project.references : undefined
+  )
+  const mcpServers = mergeMcpServers(base.mcpServers, project.mcp)
+  const projectProviders =
+    project.providers && !Array.isArray(project.providers) ? project.providers : undefined
+  const providers = mergeProviderConfigs(base.providers, projectProviders)
+  const projectCommands =
+    project.commands && !Array.isArray(project.commands) ? project.commands : undefined
+  const commands = mergeCommands(base.commands, projectCommands, commandSource)
+  const skills = mergeStrings(base.skills, project.skills)
+  const plugins = mergeStrings(base.plugins, project.plugins)
+  const agents = [...(base.agents ?? []), ...(project.agents ?? [])]
   return {
     snapshots: project.snapshots ?? base.snapshots,
-    lsp: project.lsp ?? base.lsp,
-    formatters: project.formatters ?? base.formatters,
+    lsp,
+    formatters,
     instructions,
-    formatterOverrides: { ...base.formatterOverrides, ...(project.formatterOverrides ?? {}) },
-    ...(references.size > 0 ? { references: [...references.values()] } : {}),
+    formatterOverrides: {
+      ...base.formatterOverrides,
+      ...(project.formatterOverrides ?? {})
+    },
+    ...(lspServers ? { lspServers } : {}),
+    ...(formatterServers ? { formatterServers } : {}),
+    ...(references ? { references } : {}),
     ...(permissionRules.length > 0 ? { permissionRules } : {}),
-    ...(mcpServers.length > 0 ? { mcpServers } : {}),
-    ...(project.agents ? { agents: project.agents } : base.agents ? { agents: base.agents } : {}),
-    ...(project.providers
-      ? { providers: project.providers }
-      : base.providers
-        ? { providers: base.providers }
-        : {}),
-    ...(project.plugins
-      ? { plugins: project.plugins }
-      : base.plugins
-        ? { plugins: base.plugins }
-        : {})
+    ...(mcpServers ? { mcpServers } : {}),
+    ...(agents.length > 0 ? { agents } : {}),
+    ...(providers ? { providers } : {}),
+    ...(plugins ? { plugins } : {}),
+    ...(commands ? { commands } : {}),
+    ...(skills ? { skills } : {})
   }
 }

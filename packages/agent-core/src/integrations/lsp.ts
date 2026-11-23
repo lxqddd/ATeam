@@ -2,6 +2,7 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { AgentConfig } from '@ateam/shared'
 import { resolveExecutable } from './executables'
 
 const MAX_DIAGNOSTIC_FILESIZE = 1_000_000
@@ -22,6 +23,8 @@ export interface LspServerDefinition {
   id: string
   extensions: readonly string[]
   command: readonly string[]
+  env?: Record<string, string>
+  initialization?: Record<string, unknown>
 }
 
 export interface LspChildProcess {
@@ -71,6 +74,27 @@ const LANGUAGE_IDS: Record<string, string> = {
   '.hpp': 'cpp'
 }
 
+export function resolveLspServers(config?: AgentConfig): readonly LspServerDefinition[] {
+  const servers = new Map(LSP_SERVERS.map((server) => [server.id, { ...server }]))
+  for (const [id, input] of Object.entries(config?.lspServers ?? {})) {
+    if (input.disabled) {
+      servers.delete(id)
+      continue
+    }
+    const existing = servers.get(id)
+    const command = input.command && input.command.length > 0 ? input.command : existing?.command
+    if (!command || command.length === 0) continue
+    servers.set(id, {
+      id,
+      command,
+      extensions: input.extensions ?? existing?.extensions ?? [],
+      ...(input.env ? { env: input.env } : {}),
+      ...(input.initialization ? { initialization: input.initialization } : {})
+    })
+  }
+  return [...servers.values()]
+}
+
 export const LSP_SERVERS: readonly LspServerDefinition[] = [
   {
     id: 'typescript',
@@ -87,9 +111,12 @@ export const LSP_SERVERS: readonly LspServerDefinition[] = [
   }
 ]
 
-export function lspServerForFile(filePath: string): LspServerDefinition | null {
+export function lspServerForFile(
+  filePath: string,
+  servers: readonly LspServerDefinition[] = LSP_SERVERS
+): LspServerDefinition | null {
   const extension = path.extname(filePath).toLowerCase()
-  return LSP_SERVERS.find((server) => server.extensions.includes(extension)) ?? null
+  return servers.find((server) => server.extensions.includes(extension)) ?? null
 }
 
 export function languageIdForFile(filePath: string): string {
@@ -202,6 +229,7 @@ export class LspClient {
     child.on('error', () => this.handleExit())
 
     await this.request('initialize', {
+      ...(this.options.server.initialization ?? {}),
       processId: process.pid,
       clientInfo: { name: 'ATeam' },
       rootUri: fileUri(this.options.workspace),
@@ -413,6 +441,7 @@ interface LspManagerOptions {
   resolveExecutable?: (bin: string) => Promise<string | null>
   requestTimeoutMs?: number
   diagnosticsTimeoutMs?: number
+  servers?: readonly LspServerDefinition[]
 }
 
 export class LspManager {
@@ -426,7 +455,7 @@ export class LspManager {
   async diagnostics(files: string[]): Promise<Map<string, LspDiagnostic[]>> {
     const results = new Map<string, LspDiagnostic[]>()
     for (const file of new Set(files)) {
-      const server = lspServerForFile(file)
+      const server = lspServerForFile(file, this.options.servers)
       if (!server) continue
       const client = await this.clientFor(server)
       if (!client) continue
@@ -469,7 +498,7 @@ export class LspManager {
 
   async availableServers(): Promise<string[]> {
     const available: string[] = []
-    for (const server of LSP_SERVERS) {
+    for (const server of this.options.servers ?? LSP_SERVERS) {
       if (await this.executableFor(server)) available.push(server.id)
     }
     return available
@@ -512,7 +541,7 @@ export class LspManager {
       server,
       command: executable,
       spawn: this.options.spawn,
-      env: this.options.env,
+      env: { ...this.options.env, ...server.env },
       requestTimeoutMs: this.options.requestTimeoutMs,
       diagnosticsTimeoutMs: this.options.diagnosticsTimeoutMs
     })

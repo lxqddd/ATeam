@@ -1,4 +1,4 @@
-import type { ModelRef } from './model-types'
+import type { ModelRef, ModelVariantInput, ProviderType } from './model-types'
 
 export type SessionRuntimeStatus = 'idle' | 'running' | 'waiting-permission' | 'error'
 
@@ -330,6 +330,70 @@ export interface AgentReference {
   hidden?: boolean
 }
 
+export interface LspServerConfigInput {
+  command?: string[]
+  extensions?: string[]
+  disabled?: boolean
+  env?: Record<string, string>
+  initialization?: Record<string, unknown>
+}
+
+export interface FormatterConfigInput {
+  command?: string[]
+  extensions?: string[]
+  configFiles?: string[]
+  disabled?: boolean
+  environment?: Record<string, string>
+}
+
+export interface ProviderModelConfigInput {
+  name?: string
+  contextWindow?: number
+  maxOutputTokens?: number
+  reasoning?: boolean
+  attachment?: boolean
+  costInput?: number
+  costOutput?: number
+  applyPatch?: boolean
+  compaction?: boolean
+  variants?: ModelVariantInput[]
+}
+
+export interface ProviderConfigInput {
+  name?: string
+  type?: ProviderType
+  baseURL?: string
+  /** Environment variable containing the API key. Literal credentials are not accepted in config files. */
+  apiKeyEnv?: string
+  models?: Record<string, ProviderModelConfigInput>
+}
+
+export interface CommandConfigInput {
+  template: string
+  description?: string
+  agent?: string
+  model?: string
+}
+
+/** On-disk configuration document shared by global config.json and project ateam.json(c). */
+export interface AgentConfigDocument {
+  snapshots?: boolean
+  instructions?: string[]
+  lsp?: boolean | Record<string, LspServerConfigInput>
+  formatters?: boolean | Record<string, FormatterConfigInput>
+  formatterOverrides?: Record<string, string>
+  references?: AgentReference[] | Record<string, string | AgentReference>
+  permissions?: PermissionRuleInput[]
+  permissionRules?: PermissionRuleInput[]
+  mcp?: McpServerInput[]
+  mcpServers?: McpServerInput[]
+  agents?: unknown[]
+  providers?: Record<string, ProviderConfigInput> | unknown[]
+  plugins?: string[]
+  commands?: Record<string, CommandConfigInput> | CommandConfigInput[]
+  skills?: string[]
+}
+
 export interface AgentConfig {
   snapshots: boolean
   instructions: string[]
@@ -344,10 +408,39 @@ export interface AgentConfig {
   mcpServers?: McpServerInput[]
   /** Raw project-level agent definitions, parsed by the agent loader. */
   agents?: unknown[]
-  /** Raw project-level provider definitions reserved for future use. */
-  providers?: unknown[]
+  /** Effective provider overlays; credentials are resolved at runtime, never stored here. */
+  providers?: Record<string, ProviderConfigInput>
   /** Project-level plugin specs reserved for the plugin loader. */
   plugins?: string[]
+  /** Custom/overridden LSP server definitions keyed by server id. */
+  lspServers?: Record<string, LspServerConfigInput>
+  /** Custom/overridden formatter definitions keyed by formatter id. */
+  formatterServers?: Record<string, FormatterConfigInput>
+  /** Inline command definitions parsed from configuration. */
+  commands?: CommandDefinition[]
+  /** Additional skill directories after path anchoring. */
+  skills?: string[]
+}
+
+export interface ConfigSources {
+  globalConfigPath: string
+  projectConfigPath: string | null
+  projectConfigDir: string | null
+  projectRoot: string
+}
+
+export interface ConfigDiagnostic {
+  source: string
+  path: string
+  severity: 'warning' | 'error'
+  /** Human-readable message that never contains provider/MCP credential values. */
+  message: string
+}
+
+export interface EffectiveAgentConfig {
+  config: AgentConfig
+  sources: ConfigSources
+  diagnostics: ConfigDiagnostic[]
 }
 
 export type McpServerType = 'local' | 'remote'
@@ -367,6 +460,8 @@ export interface McpServerConfig {
   oauthRedirectUri?: string | null
   createdAt: string
   updatedAt: string
+  /** Origin of the server when returned by the runtime; absent for stored user servers. */
+  source?: 'user' | 'project' | 'transient'
 }
 
 export interface McpServerInput {

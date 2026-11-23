@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentConfig } from '@ateam/shared'
 import {
   FORMATTERS,
   discoverFormatters,
@@ -200,5 +201,41 @@ describe('formatFile', () => {
       error: 'Formatter timed out'
     })
     expect(child.killed).toBe(true)
+  })
+})
+
+describe('configured formatters', () => {
+  const config = {
+    snapshots: true,
+    instructions: [],
+    lsp: true,
+    formatters: true,
+    formatterOverrides: {},
+    formatterServers: {
+      prettier: { command: ['custom-prettier', '$FILE'] },
+      custom: {
+        command: ['myfmt', '$FILE'],
+        extensions: ['.foo'],
+        environment: { FOO: 'bar' }
+      }
+    }
+  } satisfies AgentConfig
+
+  it('overrides built-ins and adds custom commands with env', async () => {
+    const formatters = await discoverFormatters(workspace, config)
+    const prettier = formatters.find((formatter) => formatter.id === 'prettier')
+    const custom = formatters.find((formatter) => formatter.id === 'custom')
+
+    expect(prettier?.command('index.ts')).toEqual(['custom-prettier', 'index.ts'])
+    expect(custom?.command('file.foo')).toEqual(['myfmt', 'file.foo'])
+    expect(custom?.environment).toEqual({ FOO: 'bar' })
+    expect(formatters[0]?.id).toBe('prettier')
+    expect(selectFormatter('file.foo', formatters)?.id).toBe('custom')
+  })
+
+  it('returns no formatters when the feature is disabled', async () => {
+    await expect(discoverFormatters(workspace, { ...config, formatters: false })).resolves.toEqual(
+      []
+    )
   })
 })

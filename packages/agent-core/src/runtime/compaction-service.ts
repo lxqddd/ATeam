@@ -26,13 +26,17 @@ import type { AgentRuntimeDependencies, Run } from './types'
 
 export interface CompactionHost {
   readonly store: SessionsStore
-  models(): RuntimeModelsConfig
+  modelsFor(sessionId: string): RuntimeModelsConfig
   readonly deps: Pick<AgentRuntimeDependencies, 'createLanguageModel' | 'generateSummary'>
   emit(event: AgentEvent): void
   sessionBusy(sessionId: string): boolean
   record(sessionId: string): SessionRecord
   historyMessages(run: Run, assistantMessageId: string): ChatMessage[]
-  resolveAgentTarget(agent: AgentDefinition | null, sessionModel: ModelRef | null): ModelRef | null
+  resolveAgentTarget(
+    agent: AgentDefinition | null,
+    sessionModel: ModelRef | null,
+    models: RuntimeModelsConfig
+  ): ModelRef | null
 }
 
 export class CompactionService {
@@ -41,22 +45,23 @@ export class CompactionService {
   async prepareCompaction(id: string): Promise<boolean> {
     const record = this.host.store.get(id)
     if (!record || this.host.sessionBusy(id)) return false
-    const target = record.session.model ?? this.host.models().defaultModel
+    const models = this.host.modelsFor(id)
+    const target = record.session.model ?? models.defaultModel
     try {
       const contextWindow =
-        resolveModelRef(this.host.models(), target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+        resolveModelRef(models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
       const plan = planCompaction(
         record.messages,
         contextWindow,
         compactionKeepTokens(contextWindow),
         false,
-        await this.tokenEncoder(target)
+        await this.tokenEncoder(target, models)
       )
       if (!plan) return false
       const existing = this.host.store.getPreparedCompaction(id)
       if (existing?.throughMessageId === plan.throughMessageId) return true
 
-      const model = this.host.deps.createLanguageModel(this.host.models(), target, {
+      const model = this.host.deps.createLanguageModel(models, target, {
         sessionId: id
       })
       const summary = (
@@ -86,10 +91,11 @@ export class CompactionService {
     requestedTarget?: ModelRef | null
   ): Promise<SessionMeta | null> {
     const record = this.host.record(sessionId)
-    const target = requestedTarget ?? record.session.model ?? this.host.models().defaultModel
+    const models = this.host.modelsFor(sessionId)
+    const target = requestedTarget ?? record.session.model ?? models.defaultModel
     const contextWindow =
-      resolveModelRef(this.host.models(), target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
-    const encode = await this.tokenEncoder(target)
+      resolveModelRef(models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+    const encode = await this.tokenEncoder(target, models)
     const plan = planCompaction(
       messages,
       contextWindow,
@@ -130,8 +136,9 @@ export class CompactionService {
 
   async compactForOverflow(run: Run): Promise<boolean> {
     const record = this.host.record(run.sessionId)
-    const target = this.host.resolveAgentTarget(run.agent, record.session.model)
-    const model = this.host.deps.createLanguageModel(this.host.models(), target, {
+    const models = run.models
+    const target = this.host.resolveAgentTarget(run.agent, record.session.model, models)
+    const model = this.host.deps.createLanguageModel(models, target, {
       sessionId: run.sessionId
     })
     const session = await this.compactMessages(
@@ -156,13 +163,13 @@ export class CompactionService {
     const record = this.host.store.get(sessionId)
     if (!record) return
     try {
-      const target = record.session.model ?? this.host.models().defaultModel
-      const window =
-        resolveModelRef(this.host.models(), target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
+      const models = this.host.modelsFor(sessionId)
+      const target = record.session.model ?? models.defaultModel
+      const window = resolveModelRef(models, target).model.contextWindow ?? DEFAULT_CONTEXT_WINDOW
       const history = messagesAfterCompaction(record.messages, record.session.compaction).filter(
         (message) => message.status !== 'streaming'
       )
-      const encode = await this.tokenEncoder(target)
+      const encode = await this.tokenEncoder(target, models)
       const tokens =
         estimateContextTokens(history, {
           usageCreatedAfter: record.session.compaction?.createdAt,
@@ -175,9 +182,15 @@ export class CompactionService {
     }
   }
 
-  async tokenEncoder(target: ModelRef | null): Promise<TokenCounter | undefined> {
+  async tokenEncoder(
+    target: ModelRef | null,
+    models?: RuntimeModelsConfig
+  ): Promise<TokenCounter | undefined> {
     try {
-      const resolved = resolveModelRef(this.host.models(), target)
+      const resolved = resolveModelRef(
+        models ?? this.host.modelsFor(target?.providerId ?? ''),
+        target
+      )
       return await tokenCounterFor(resolved.provider.type, resolved.model.modelId)
     } catch {
       return undefined
