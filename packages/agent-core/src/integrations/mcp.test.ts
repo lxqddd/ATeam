@@ -629,4 +629,17 @@ describe('project MCP servers', () => {
     })
     await manager.dispose()
   })
+  it('deduplicates same-name user and project servers by project precedence', async () => {
+    const manager = new McpManager({ userDataPath: directory, workspace: directory })
+    await manager.addServer({ name: 'shared', type: 'local', command: 'user' })
+    await manager.setProjectServers([{ name: 'shared', type: 'local', command: 'project' }])
+    const servers = await manager.servers()
+
+    expect(servers.filter((server) => server.name === 'shared')).toHaveLength(1)
+    expect(servers.find((server) => server.name === 'shared')).toMatchObject({
+      command: 'project',
+      source: 'project'
+    })
+    await manager.dispose()
+  })
 })

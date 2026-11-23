@@ -288,9 +288,34 @@ const enUS = {
     oauthNotConfigured: 'Configure OAuth for this provider before authorizing.',
     invalidVariant: 'Variants need unique names; temperature must be 0-2 and limits valid.',
     nameRequired: 'Name is required.',
-    modelIdRequired: 'Model ID is required.'
+    modelIdRequired: 'Model ID is required.',
+    projectConfiguration: 'Project configuration',
+    projectConfigurationDescription:
+      'Read-only effective configuration for the selected chat workspace.',
+    projectConfigMissing: 'No ateam.json / ateam.jsonc found',
+    projectConfigRoot: 'Project root',
+    projectConfigErrors: 'Configuration diagnostics',
+    configField: 'Field',
+    configSource: 'Source',
+    sourceGlobal: 'Global',
+    sourceProject: 'Project',
+    sourceMerged: 'Merged',
+    sourceDefault: 'Default',
+    effectiveConfig: 'Effective value',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    agents: 'Agents',
+    plugins: 'Plugins',
+    configuredProviders: 'Providers',
+    configuredCommands: 'Commands',
+    configuredSkills: 'Skills'
   },
   modelsPage: {
+    projectProviders: 'Project providers',
+    projectProvidersDescription:
+      'Read-only provider/model overlays from the selected workspace ateam.json. Project providers cannot be edited here.',
+    projectProviderOverride: 'Overrides global',
+    projectModels: 'Models',
     setDefault: 'Set as default',
     clearDefault: 'Clear default',
     defaultChip: 'Default',
@@ -462,7 +487,32 @@ const enUS = {
     retrying: 'Retrying…',
     retryStatus: 'attempt {{attempt}}/{{max}}, retrying in {{seconds}}s',
     stepLimitHint: 'This run reached the tool-call limit. Send another message to continue.',
-    agentStoppedHint: 'The agent is not running. Past messages are still available.'
+    agentStoppedHint: 'The agent is not running. Past messages are still available.',
+    projectConfiguration: 'Project configuration',
+    projectProviders: 'Project providers',
+    projectProvidersDescription:
+      'Read-only provider/model overlays from the selected workspace ateam.json. Project providers cannot be edited here.',
+    projectProviderOverride: 'Overrides global',
+    projectModels: 'Models',
+    projectConfigurationDescription:
+      'Read-only effective configuration for the selected chat workspace.',
+    projectConfigMissing: 'No ateam.json / ateam.jsonc found',
+    projectConfigRoot: 'Project root',
+    projectConfigErrors: 'Configuration diagnostics',
+    configField: 'Field',
+    configSource: 'Source',
+    sourceGlobal: 'Global',
+    sourceProject: 'Project',
+    sourceMerged: 'Merged',
+    sourceDefault: 'Default',
+    effectiveConfig: 'Effective value',
+    enabled: 'Enabled',
+    disabled: 'Disabled',
+    agents: 'Agents',
+    plugins: 'Plugins',
+    configuredProviders: 'Providers',
+    configuredCommands: 'Commands',
+    configuredSkills: 'Skills'
   }
 } satisfies Translation
 

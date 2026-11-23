@@ -1,5 +1,6 @@
 import { errorMessage } from '../../lib/errors'
 import SettingsLoadError from './SettingsLoadError'
+import ProjectConfigCard from './ProjectConfigCard'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AgentConfig, AgentInfo } from '@ateam/shared'
@@ -190,6 +191,8 @@ function AgentSettings(): React.JSX.Element {
           {error}
         </p>
       )}
+
+      <ProjectConfigCard defaultDirectory={info?.workspacePath} />
 
       <ToggleRow
         label={t('settings.snapshots')}

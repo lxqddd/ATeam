@@ -1,10 +1,13 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import type {
   AgentConfig,
   AgentConfigDocument,
   ConfigDiagnostic,
   ConfigSources,
+  ConfigFieldSource,
+  ConfigProvenance,
   EffectiveAgentConfig
 } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
@@ -72,11 +75,85 @@ async function readGlobalDocument(userDataPath: string): Promise<{
   const parsed = normalizeAgentConfigDocument(raw, file)
   const directory = path.dirname(file)
   if (parsed.document.skills) {
-    parsed.document.skills = parsed.document.skills.map((entry) =>
-      path.isAbsolute(entry) || entry.startsWith('~') ? entry : path.resolve(directory, entry)
-    )
+    parsed.document.skills = parsed.document.skills.map((entry) => {
+      if (entry === '~') return os.homedir()
+      if (entry.startsWith('~/')) return path.join(os.homedir(), entry.slice(2))
+      return path.isAbsolute(entry) ? entry : path.resolve(directory, entry)
+    })
   }
   return { document: parsed.document, diagnostics: parsed.diagnostics }
+}
+
+function fieldSource(
+  globalPresent: boolean,
+  projectPresent: boolean,
+  merged = false
+): ConfigFieldSource {
+  if (projectPresent) return merged && globalPresent ? 'merged' : 'project'
+  return globalPresent ? 'global' : 'default'
+}
+
+function computeProvenance(
+  globalDocument: AgentConfigDocument,
+  projectDocument: AgentConfigDocument | null
+): ConfigProvenance {
+  const project = projectDocument ?? {}
+  const hasProviders = (value: AgentConfigDocument['providers']): boolean =>
+    Array.isArray(value) ? value.length > 0 : Boolean(value && Object.keys(value).length > 0)
+  const hasCommands = (value: AgentConfigDocument['commands']): boolean =>
+    Array.isArray(value) ? value.length > 0 : Boolean(value && Object.keys(value).length > 0)
+  return {
+    snapshots: fieldSource(globalDocument.snapshots !== undefined, project.snapshots !== undefined),
+    instructions: fieldSource(
+      (globalDocument.instructions?.length ?? 0) > 0,
+      (project.instructions?.length ?? 0) > 0,
+      true
+    ),
+    lsp: fieldSource(
+      globalDocument.lsp !== undefined || globalDocument.lspEnabled !== undefined,
+      project.lsp !== undefined || project.lspEnabled !== undefined
+    ),
+    formatters: fieldSource(
+      globalDocument.formatters !== undefined || globalDocument.formattersEnabled !== undefined,
+      project.formatters !== undefined || project.formattersEnabled !== undefined
+    ),
+    references: fieldSource(
+      Array.isArray(globalDocument.references) && globalDocument.references.length > 0,
+      Array.isArray(project.references) && project.references.length > 0,
+      true
+    ),
+    permissions: fieldSource(
+      (globalDocument.permissions?.length ?? 0) > 0,
+      (project.permissions?.length ?? 0) > 0,
+      true
+    ),
+    mcp: fieldSource((globalDocument.mcp?.length ?? 0) > 0, (project.mcp?.length ?? 0) > 0, true),
+    agents: fieldSource(
+      (globalDocument.agents?.length ?? 0) > 0,
+      (project.agents?.length ?? 0) > 0,
+      true
+    ),
+    providers: fieldSource(
+      hasProviders(globalDocument.providers),
+      hasProviders(project.providers),
+      true
+    ),
+    plugins: fieldSource(
+      (globalDocument.plugins?.length ?? 0) > 0,
+      (project.plugins?.length ?? 0) > 0,
+      true
+    ),
+    commands: fieldSource(
+      hasCommands(globalDocument.commands),
+      hasCommands(project.commands),
+      true
+    ),
+    skills: fieldSource(
+      (globalDocument.skills?.length ?? 0) > 0,
+      (project.skills?.length ?? 0) > 0,
+      true
+    )
+  }
 }
 
 export async function readEffectiveAgentConfig(
@@ -97,7 +174,8 @@ export async function readEffectiveAgentConfig(
         projectConfigDir: null,
         projectRoot: userDataPath
       },
-      diagnostics
+      diagnostics,
+      provenance: computeProvenance(global.document, null)
     }
   }
 
@@ -113,7 +191,13 @@ export async function readEffectiveAgentConfig(
     projectConfigDir: project.directory,
     projectRoot: project.root
   }
-  return { config, sources, diagnostics }
+  return {
+    config,
+    sources,
+    diagnostics,
+    provenance: computeProvenance(global.document, project.document),
+    projectMcpServers: project.document.mcp ?? []
+  }
 }
 
 export async function readAgentConfig(
@@ -157,6 +241,25 @@ export class AgentConfigStore {
     if ('skills' in patch) next.skills = patch.skills
     if ('plugins' in patch) next.plugins = patch.plugins
     if ('providers' in patch) next.providers = patch.providers
+    if ('permissionRules' in patch) next.permissions = patch.permissionRules
+    if ('mcpServers' in patch) next.mcp = patch.mcpServers
+    if ('agents' in patch) next.agents = patch.agents
+    if ('lspServers' in patch) {
+      if (patch.lspServers) {
+        next.lsp = patch.lspServers
+        if ('lsp' in patch) next.lspEnabled = patch.lsp
+      } else if (!('lsp' in patch)) {
+        delete next.lsp
+      }
+    }
+    if ('formatterServers' in patch) {
+      if (patch.formatterServers) {
+        next.formatters = patch.formatterServers
+        if ('formatters' in patch) next.formattersEnabled = patch.formatters
+      } else if (!('formatters' in patch)) {
+        delete next.formatters
+      }
+    }
     if ('commands' in patch && patch.commands) {
       next.commands = Object.fromEntries(
         patch.commands.map((command) => [

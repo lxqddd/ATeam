@@ -747,4 +747,50 @@ describe('ModelsPage edge cases', () => {
     expect(screen.getByText('No models yet. Add one to get started.')).toBeInTheDocument()
     expect(screen.queryByText('Default')).not.toBeInTheDocument()
   })
+  it('shows project provider overlays as read-only', async () => {
+    vi.mocked(mock.api.agent.config.resolve).mockResolvedValue({
+      config: {
+        snapshots: true,
+        instructions: [],
+        lsp: true,
+        formatters: true,
+        formatterOverrides: {},
+        providers: {
+          'provider-1': {
+            name: 'Project Provider',
+            baseURL: 'https://project.example.com',
+            models: { 'project-model': { name: 'Project Model' } }
+          }
+        }
+      },
+      sources: {
+        globalConfigPath: '/tmp/user-data/agent/config.json',
+        projectConfigPath: '/tmp/workspace/ateam.json',
+        projectConfigDir: '/tmp/workspace',
+        projectRoot: '/tmp/workspace'
+      },
+      diagnostics: [],
+      provenance: {
+        snapshots: 'default',
+        instructions: 'default',
+        lsp: 'default',
+        formatters: 'default',
+        references: 'default',
+        permissions: 'default',
+        mcp: 'default',
+        agents: 'default',
+        providers: 'project',
+        plugins: 'default',
+        commands: 'default',
+        skills: 'default'
+      }
+    })
+
+    render(<ModelsPage />)
+
+    const section = await screen.findByTestId('project-providers')
+    expect(section).toHaveTextContent('Project Provider')
+    expect(section).toHaveTextContent('Project Model')
+    expect(section).toHaveTextContent('Project')
+  })
 })

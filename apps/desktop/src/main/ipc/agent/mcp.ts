@@ -8,6 +8,8 @@ import {
 import { authorizeMcpServer } from '@ateam/agent-core/integrations'
 import type { AgentIpcContext } from './context'
 import {
+  authPayloadSchema,
+  directoryPayloadSchema,
   idPayloadSchema,
   mcpPromptSchema,
   mcpServerInputSchema,
@@ -21,13 +23,18 @@ export function registerMcpHandlers(ctx: AgentIpcContext): void {
 
   handle(
     AGENT_CHANNELS.mcpList,
-    (): Promise<{ servers: McpServerConfig[]; statuses: McpServerStatus[] }> =>
-      manager.request('mcp.list')
+    (payload): Promise<{ servers: McpServerConfig[]; statuses: McpServerStatus[] }> => {
+      const { directory } = directoryPayloadSchema.parse(payload ?? {})
+      return manager.request('mcp.list', { workspace: requestedDirectory(directory) })
+    }
   )
 
   handle(AGENT_CHANNELS.mcpStatuses, (payload): Promise<McpServerStatus[]> => {
-    const { probe } = mcpStatusesSchema.parse(payload ?? {})
-    return manager.request('mcp.statuses', { probe })
+    const { probe, directory } = mcpStatusesSchema.parse(payload ?? {})
+    return manager.request('mcp.statuses', {
+      probe,
+      workspace: requestedDirectory(directory)
+    })
   })
 
   handle(AGENT_CHANNELS.mcpAdd, (payload): Promise<McpServerConfig> => {
@@ -73,14 +80,20 @@ export function registerMcpHandlers(ctx: AgentIpcContext): void {
     return removed
   })
 
-  handle(AGENT_CHANNELS.mcpAuthStatuses, async (): Promise<McpAuthStatus[]> => {
-    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+  handle(AGENT_CHANNELS.mcpAuthStatuses, async (payload): Promise<McpAuthStatus[]> => {
+    const { directory } = directoryPayloadSchema.parse(payload ?? {})
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list', {
+      workspace: requestedDirectory(directory)
+    })
     return mcpAuthStore.statuses(servers)
   })
 
   handle(AGENT_CHANNELS.mcpAuthorize, async (payload): Promise<McpAuthStatus[]> => {
-    const { id } = idPayloadSchema.parse(payload)
-    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    const { id, directory } = authPayloadSchema.parse(payload)
+    const workspace = requestedDirectory(directory)
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list', {
+      workspace
+    })
     const server = servers.find((candidate) => candidate.id === id)
     if (!server) throw new Error('MCP server not found')
     await authorizeMcpServer({
@@ -89,16 +102,19 @@ export function registerMcpHandlers(ctx: AgentIpcContext): void {
       openExternal: (url) => shell.openExternal(url)
     })
     await manager.setMcpAuth(mcpAuthStore.list())
-    await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
+    await manager.request('mcp.statuses', { probe: true, workspace }).catch(() => undefined)
     return mcpAuthStore.statuses(servers)
   })
 
   handle(AGENT_CHANNELS.mcpLogout, async (payload): Promise<McpAuthStatus[]> => {
-    const { id } = idPayloadSchema.parse(payload)
+    const { id, directory } = authPayloadSchema.parse(payload)
+    const workspace = requestedDirectory(directory)
     await mcpAuthStore.remove(id)
     await manager.setMcpAuth(mcpAuthStore.list())
-    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
-    await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list', {
+      workspace
+    })
+    await manager.request('mcp.statuses', { probe: true, workspace }).catch(() => undefined)
     return mcpAuthStore.statuses(servers)
   })
 }

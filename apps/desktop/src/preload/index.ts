@@ -93,11 +93,18 @@ const api: AteamApi = {
     },
     config: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.agentConfig),
-      update: (patch) => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigUpdate, patch)
+      update: (patch) => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigUpdate, patch),
+      resolve: (directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.agentConfigResolve, { directory: directory ?? undefined })
     },
     mcp: {
-      list: () => ipcRenderer.invoke(AGENT_CHANNELS.mcpList),
-      statuses: (options) => ipcRenderer.invoke(AGENT_CHANNELS.mcpStatuses, options ?? {}),
+      list: (directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpList, { directory: directory ?? undefined }),
+      statuses: (options) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpStatuses, {
+          ...(options ?? {}),
+          directory: options?.directory ?? undefined
+        }),
       add: (input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAdd, input),
       update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.mcpUpdate, { id, input }),
       remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpRemove, { id }),
@@ -108,9 +115,18 @@ const api: AteamApi = {
           arguments: args,
           directory
         }),
-      authStatuses: () => ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthStatuses),
-      authorize: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthorize, { id }),
-      logout: (id) => ipcRenderer.invoke(AGENT_CHANNELS.mcpLogout, { id })
+      authStatuses: (directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthStatuses, { directory: directory ?? undefined }),
+      authorize: (id, directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpAuthorize, {
+          id,
+          directory: directory ?? undefined
+        }),
+      logout: (id, directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.mcpLogout, {
+          id,
+          directory: directory ?? undefined
+        })
     },
     websearch: {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.webSearchGet),

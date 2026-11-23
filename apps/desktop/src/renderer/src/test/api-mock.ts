@@ -5,6 +5,7 @@ import type {
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
+  EffectiveAgentConfig,
   AteamApi,
   CommandDefinition,
   McpAuthStatus,
@@ -259,6 +260,36 @@ export function createApiMock(
           formatters: true,
           formatterOverrides: {},
           ...patch
+        })),
+        resolve: vi.fn(async (): Promise<EffectiveAgentConfig> => ({
+          config: {
+            snapshots: true,
+            instructions: [],
+            lsp: true,
+            formatters: true,
+            formatterOverrides: {}
+          },
+          sources: {
+            globalConfigPath: '/tmp/user-data/agent/config.json',
+            projectConfigPath: null,
+            projectConfigDir: null,
+            projectRoot: '/tmp/workspace'
+          },
+          diagnostics: [],
+          provenance: {
+            snapshots: 'default',
+            instructions: 'default',
+            lsp: 'default',
+            formatters: 'default',
+            references: 'default',
+            permissions: 'default',
+            mcp: 'default',
+            agents: 'default',
+            providers: 'default',
+            plugins: 'default',
+            commands: 'default',
+            skills: 'default'
+          }
         }))
       },
       mcp: {

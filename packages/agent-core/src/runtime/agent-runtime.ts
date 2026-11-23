@@ -780,14 +780,17 @@ export class AgentRuntime {
     await this.workspaceServices.setMcpAuth(auths)
   }
 
-  async listMcpServers(): Promise<McpServerConfig[]> {
-    await this.applyWorkspaceConfig(this.options.workspacePath)
-    return this.workspaceServices.listMcpServers()
+  async listMcpServers(workspace = this.options.workspacePath): Promise<McpServerConfig[]> {
+    await this.applyWorkspaceConfig(workspace)
+    return this.workspaceServices.listMcpServers(workspace)
   }
 
-  async mcpStatuses(options?: { probe?: boolean }): Promise<McpServerStatus[]> {
-    await this.applyWorkspaceConfig(this.options.workspacePath)
-    return this.workspaceServices.mcpStatuses(options)
+  async mcpStatuses(
+    options?: { probe?: boolean },
+    workspace = this.options.workspacePath
+  ): Promise<McpServerStatus[]> {
+    await this.applyWorkspaceConfig(workspace)
+    return this.workspaceServices.mcpStatuses(options, workspace)
   }
 
   async addMcpServer(input: McpServerInput): Promise<McpServerConfig> {

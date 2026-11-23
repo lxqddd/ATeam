@@ -25,7 +25,21 @@ function effective(skills: string[]): EffectiveAgentConfig {
       projectConfigDir: directory,
       projectRoot: directory
     },
-    diagnostics: []
+    diagnostics: [],
+    provenance: {
+      snapshots: 'project',
+      instructions: 'default',
+      lsp: 'default',
+      formatters: 'default',
+      references: 'default',
+      permissions: 'default',
+      mcp: 'default',
+      agents: 'default',
+      providers: 'default',
+      plugins: 'default',
+      commands: 'default',
+      skills: skills.length > 0 ? 'project' : 'default'
+    }
   }
 }
 

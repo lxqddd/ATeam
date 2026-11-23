@@ -439,10 +439,30 @@ export interface ConfigDiagnostic {
   message: string
 }
 
+export type ConfigFieldSource = 'global' | 'project' | 'merged' | 'default'
+
+export interface ConfigProvenance {
+  snapshots: ConfigFieldSource
+  instructions: ConfigFieldSource
+  lsp: ConfigFieldSource
+  formatters: ConfigFieldSource
+  references: ConfigFieldSource
+  permissions: ConfigFieldSource
+  mcp: ConfigFieldSource
+  agents: ConfigFieldSource
+  providers: ConfigFieldSource
+  plugins: ConfigFieldSource
+  commands: ConfigFieldSource
+  skills: ConfigFieldSource
+}
+
 export interface EffectiveAgentConfig {
   config: AgentConfig
   sources: ConfigSources
   diagnostics: ConfigDiagnostic[]
+  provenance: ConfigProvenance
+  /** MCP servers that came from the project document, safe to manage as config-owned. */
+  projectMcpServers?: McpServerInput[]
 }
 
 export type McpServerType = 'local' | 'remote'

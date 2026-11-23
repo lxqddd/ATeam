@@ -205,11 +205,11 @@ export class McpManager implements McpManagerLike {
 
   async servers(): Promise<McpServerConfig[]> {
     await this.ready
-    return [
-      ...this.store.list().map((server) => ({ ...server, source: 'user' as const })),
-      ...this.project.map((server) => ({ ...server, source: 'project' as const })),
-      ...this.transient.map((server) => ({ ...server, source: 'transient' as const }))
-    ]
+    const byName = new Map<string, McpServerConfig>()
+    for (const server of this.store.list()) byName.set(server.name, { ...server, source: 'user' })
+    for (const server of this.project) byName.set(server.name, { ...server, source: 'project' })
+    for (const server of this.transient) byName.set(server.name, { ...server, source: 'transient' })
+    return [...byName.values()]
   }
 
   async setProjectServers(inputs: McpServerInput[]): Promise<void> {

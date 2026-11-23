@@ -189,7 +189,9 @@ describe('McpServers', () => {
 
     await user.click(screen.getByRole('button', { name: 'Authorize' }))
 
-    await waitFor(() => expect(mock.api.agent.mcp.authorize).toHaveBeenCalledWith('server-1'))
+    await waitFor(() =>
+      expect(mock.api.agent.mcp.authorize).toHaveBeenCalledWith('server-1', undefined)
+    )
   })
 
   it('signs out an authorized server', async () => {
@@ -210,7 +212,9 @@ describe('McpServers', () => {
     render(<McpServers />)
     await user.click(await screen.findByRole('button', { name: 'Sign out' }))
 
-    await waitFor(() => expect(mock.api.agent.mcp.logout).toHaveBeenCalledWith('server-1'))
+    await waitFor(() =>
+      expect(mock.api.agent.mcp.logout).toHaveBeenCalledWith('server-1', undefined)
+    )
   })
 
   it('toggles a server and keeps the returned state', async () => {
@@ -302,5 +306,25 @@ describe('McpServers', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Local MCP servers require a command'
     )
+  })
+  it('marks project-managed servers read-only while keeping authorization available', async () => {
+    const projectServer = {
+      ...SERVER,
+      source: 'project' as const,
+      type: 'remote' as const,
+      url: 'https://mcp.example.com/mcp'
+    }
+    vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({
+      servers: [projectServer],
+      statuses: [STATUS]
+    })
+
+    render(<McpServers />)
+
+    expect(await screen.findByText('Project')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Enabled: demo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Authorize' })).toBeInTheDocument()
   })
 })

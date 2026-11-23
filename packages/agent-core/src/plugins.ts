@@ -1,3 +1,4 @@
+import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ToolSet } from 'ai'
@@ -140,7 +141,9 @@ export class PluginRegistry {
 }
 
 function resolveSpec(spec: string, workspace: string): string {
-  if (spec.startsWith('.') || spec.startsWith('/') || /^[A-Za-z]:[\\/]/.test(spec)) {
+  if (spec === '~') return pathToFileURL(os.homedir()).href
+  if (spec.startsWith('~/')) return pathToFileURL(path.join(os.homedir(), spec.slice(2))).href
+  if (spec.startsWith('.') || path.isAbsolute(spec)) {
     return pathToFileURL(path.resolve(workspace, spec)).href
   }
   return spec

@@ -164,12 +164,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'mcp.list': {
       const runtime = requireRuntime()
       return {
-        servers: await runtime.listMcpServers(),
-        statuses: await runtime.mcpStatuses()
+        servers: await runtime.listMcpServers(request.params?.workspace),
+        statuses: await runtime.mcpStatuses(undefined, request.params?.workspace)
       }
     }
     case 'mcp.statuses':
-      return requireRuntime().mcpStatuses(request.params)
+      return requireRuntime().mcpStatuses({ probe: request.params.probe }, request.params.workspace)
     case 'mcp.add':
       return requireRuntime().addMcpServer(request.params)
     case 'mcp.update':

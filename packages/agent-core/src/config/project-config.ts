@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { parse as parseJsonc, printParseErrorCode, type ParseError } from 'jsonc-parser'
 import type {
@@ -123,7 +124,9 @@ export async function readProjectConfig(workspacePath: string): Promise<ProjectC
 function anchorPath(value: string, directory: string): string {
   const trimmed = value.trim()
   if (!trimmed) return trimmed
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) || trimmed.startsWith('~')) return trimmed
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed
+  if (trimmed === '~') return os.homedir()
+  if (trimmed.startsWith('~/')) return path.join(os.homedir(), trimmed.slice(2))
   if (path.isAbsolute(trimmed)) return trimmed
   return path.resolve(directory, trimmed)
 }
@@ -131,7 +134,9 @@ function anchorPath(value: string, directory: string): string {
 function anchorPlugin(spec: string, directory: string): string {
   const trimmed = spec.trim()
   if (!trimmed) return trimmed
-  if (trimmed.startsWith('.') || trimmed.startsWith('/')) return path.resolve(directory, trimmed)
+  if (trimmed === '~') return os.homedir()
+  if (trimmed.startsWith('~/')) return path.join(os.homedir(), trimmed.slice(2))
+  if (path.isAbsolute(trimmed) || trimmed.startsWith('.')) return path.resolve(directory, trimmed)
   return trimmed
 }
 
@@ -207,7 +212,22 @@ function mergeProviderConfigs(
       ...(previous ?? {}),
       ...provider,
       ...(previous?.models || provider.models
-        ? { models: { ...(previous?.models ?? {}), ...(provider.models ?? {}) } }
+        ? {
+            models: Object.fromEntries(
+              Array.from(
+                new Set([
+                  ...Object.keys(previous?.models ?? {}),
+                  ...Object.keys(provider.models ?? {})
+                ])
+              ).map((modelId) => [
+                modelId,
+                {
+                  ...(previous?.models?.[modelId] ?? {}),
+                  ...(provider.models?.[modelId] ?? {})
+                }
+              ])
+            )
+          }
         : {})
     }
   }

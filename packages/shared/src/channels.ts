@@ -37,6 +37,7 @@ export const AGENT_CHANNELS = {
   permissionRuleRemove: 'ateam:agent:permissions:remove-rule',
   agentConfig: 'ateam:agent:config:get',
   agentConfigUpdate: 'ateam:agent:config:update',
+  agentConfigResolve: 'ateam:agent:config:resolve',
   mcpList: 'ateam:agent:mcp:list',
   mcpStatuses: 'ateam:agent:mcp:statuses',
   mcpAdd: 'ateam:agent:mcp:add',

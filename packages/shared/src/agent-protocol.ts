@@ -119,8 +119,12 @@ export type WorkerRequest =
       params: PermissionRuleInput
     }
   | { id: string; method: 'permissions.removeRule'; params: { id: string } }
-  | { id: string; method: 'mcp.list'; params?: undefined }
-  | { id: string; method: 'mcp.statuses'; params: { probe?: boolean } }
+  | { id: string; method: 'mcp.list'; params?: { workspace?: string } }
+  | {
+      id: string
+      method: 'mcp.statuses'
+      params: { probe?: boolean; workspace?: string }
+    }
   | { id: string; method: 'mcp.add'; params: McpServerInput }
   | {
       id: string

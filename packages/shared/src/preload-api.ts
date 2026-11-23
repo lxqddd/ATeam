@@ -1,6 +1,7 @@
 import type {
   AgentConfig,
   AgentDefinition,
+  EffectiveAgentConfig,
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
@@ -90,10 +91,17 @@ export interface AgentBridge {
   config: {
     get: () => Promise<AgentConfig>
     update: (patch: Partial<AgentConfig>) => Promise<AgentConfig>
+    resolve: (directory?: string | null) => Promise<EffectiveAgentConfig>
   }
   mcp: {
-    list: () => Promise<{ servers: McpServerConfig[]; statuses: McpServerStatus[] }>
-    statuses: (options?: { probe?: boolean }) => Promise<McpServerStatus[]>
+    list: (directory?: string | null) => Promise<{
+      servers: McpServerConfig[]
+      statuses: McpServerStatus[]
+    }>
+    statuses: (options?: {
+      probe?: boolean
+      directory?: string | null
+    }) => Promise<McpServerStatus[]>
     add: (input: McpServerInput) => Promise<McpServerConfig>
     update: (id: string, input: Partial<McpServerInput>) => Promise<McpServerConfig>
     remove: (id: string) => Promise<boolean>
@@ -103,9 +111,9 @@ export interface AgentBridge {
       args?: Record<string, string>,
       directory?: string | null
     ) => Promise<string>
-    authStatuses: () => Promise<McpAuthStatus[]>
-    authorize: (id: string) => Promise<McpAuthStatus[]>
-    logout: (id: string) => Promise<McpAuthStatus[]>
+    authStatuses: (directory?: string | null) => Promise<McpAuthStatus[]>
+    authorize: (id: string, directory?: string | null) => Promise<McpAuthStatus[]>
+    logout: (id: string, directory?: string | null) => Promise<McpAuthStatus[]>
   }
   websearch: {
     get: () => Promise<WebSearchProviderPublic>

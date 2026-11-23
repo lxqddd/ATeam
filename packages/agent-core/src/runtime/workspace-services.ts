@@ -65,7 +65,7 @@ export class WorkspaceServices {
     this.fingerprints.set(workspace, fingerprint)
     if (previous === fingerprint) {
       const manager = this.mcpManagers.get(workspace)
-      await manager?.setProjectServers?.(effective.config.mcpServers ?? [])
+      await manager?.setProjectServers?.(effective.projectMcpServers ?? [])
       return
     }
     this.skillCaches.delete(workspace)
@@ -76,7 +76,7 @@ export class WorkspaceServices {
     const lsp = this.lspManagers.get(workspace)
     this.lspManagers.delete(workspace)
     await lsp?.dispose().catch(() => undefined)
-    const servers = effective.config.mcpServers ?? []
+    const servers = effective.projectMcpServers ?? []
     const manager = this.mcpManagers.get(workspace)
     if (manager) await manager.setProjectServers?.(servers)
     else if (servers.length > 0) await this.mcp(workspace).setProjectServers?.(servers)
@@ -131,7 +131,7 @@ export class WorkspaceServices {
         workspacePath: target,
         mcpAuth: this.mcpAuth,
         onMcpAuth: (auth) => this.host.onMcpAuth?.(auth),
-        projectServers: this.configs.get(target)?.config.mcpServers ?? []
+        projectServers: this.configs.get(target)?.projectMcpServers ?? []
       })
       this.mcpManagers.set(target, manager)
     }
@@ -152,12 +152,12 @@ export class WorkspaceServices {
     )
   }
 
-  listMcpServers(): Promise<McpServerConfig[]> {
-    return this.mcp().servers()
+  listMcpServers(workspace?: string): Promise<McpServerConfig[]> {
+    return this.mcp(workspace).servers()
   }
 
-  mcpStatuses(options?: { probe?: boolean }): Promise<McpServerStatus[]> {
-    return this.mcp().statuses(options)
+  mcpStatuses(options?: { probe?: boolean }, workspace?: string): Promise<McpServerStatus[]> {
+    return this.mcp(workspace).statuses(options)
   }
 
   async addMcpServer(input: McpServerInput): Promise<McpServerConfig> {

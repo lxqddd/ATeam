@@ -11,6 +11,7 @@ import type {
 import { readJsonFile } from '../atomic-json'
 import { readAgentConfig } from './config-store'
 import { findProjectRoot } from './project-root'
+import { readProjectConfig } from './project-config'
 import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100
@@ -362,6 +363,11 @@ export async function loadAgents(input: {
   for (const agent of await readJsonAgents(path.join(input.userDataPath, 'agent', 'agents.json'))) {
     add(agent)
   }
+  const globalConfig = await readAgentConfig(input.userDataPath)
+  for (const entry of globalConfig.agents ?? []) {
+    const agent = parseAgentJson(entry, 'user')
+    if (agent) add(agent)
+  }
   const root = await findProjectRoot(input.workspacePath)
   const directories = new Set<string>()
   for (const base of [root, input.workspacePath]) {
@@ -373,7 +379,7 @@ export async function loadAgents(input: {
   for (const directory of directories) {
     for (const agent of await readMarkdownAgents(directory, 'project')) add(agent)
   }
-  const projectConfig = await readAgentConfig(input.userDataPath, input.workspacePath)
+  const projectConfig = await readProjectConfig(input.workspacePath)
   for (const entry of projectConfig.agents ?? []) {
     const agent = parseAgentJson(entry, 'project')
     if (agent) add(agent)

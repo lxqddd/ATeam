@@ -9,6 +9,10 @@ const referenceSchema = z.object({
   hidden: z.boolean().optional()
 })
 
+export const agentConfigResolveSchema = z.object({
+  directory: z.string().max(2_000).optional()
+})
+
 export const agentConfigPatchSchema = z.object({
   snapshots: z.boolean().optional(),
   instructions: z.array(z.string().max(2_000)).max(50).optional(),

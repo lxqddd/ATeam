@@ -213,3 +213,32 @@ describe('partial server overrides', () => {
     })
   })
 })
+
+describe('provider model merging', () => {
+  it('preserves global model fields in a partial project override', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({
+        providers: {
+          'provider-1': {
+            type: 'openai',
+            models: { 'model-1': { contextWindow: 200000, costInput: 3 } }
+          }
+        }
+      })
+    )
+    await fs.writeFile(
+      path.join(directory, 'repo', 'ateam.json'),
+      JSON.stringify({
+        providers: { 'provider-1': { models: { 'model-1': { name: 'Project Name' } } } }
+      })
+    )
+
+    const config = await readAgentConfig(userData, workspace)
+    expect(config.providers?.['provider-1']?.models?.['model-1']).toEqual({
+      name: 'Project Name',
+      contextWindow: 200000,
+      costInput: 3
+    })
+  })
+})

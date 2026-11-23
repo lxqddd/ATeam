@@ -10,6 +10,11 @@ export const renameSchema = z.object({
 
 export const idPayloadSchema = z.object({ id: idSchema })
 
+export const authPayloadSchema = z.object({
+  id: idSchema,
+  directory: z.string().max(2_000).nullable().optional()
+})
+
 export const directoryPayloadSchema = z.object({
   directory: z.string().max(2_000).nullable().optional()
 })
@@ -39,7 +44,10 @@ export const mcpUpdateSchema = z.object({
   input: mcpServerInputSchema.partial()
 })
 
-export const mcpStatusesSchema = z.object({ probe: z.boolean().optional() })
+export const mcpStatusesSchema = z.object({
+  probe: z.boolean().optional(),
+  directory: z.string().max(2_000).nullable().optional()
+})
 
 export const mcpPromptSchema = z.object({
   server: z.string().min(1).max(200),

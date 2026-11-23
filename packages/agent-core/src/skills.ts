@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import type { AgentConfig, SkillDefinition } from '@ateam/shared'
 import { findProjectRoot } from './config/project-root'
@@ -98,6 +99,11 @@ async function readSkillDirectory(
   return skills
 }
 
+function skillSource(target: string, userDataPath: string): 'user' | 'project' {
+  const relative = path.relative(path.join(userDataPath, 'agent'), path.resolve(target))
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? 'user' : 'project'
+}
+
 export async function loadSkills(input: {
   userDataPath: string
   workspacePath: string
@@ -126,14 +132,21 @@ export async function loadSkills(input: {
   for (const directory of directories) {
     for (const skill of await readSkillDirectory(directory, 'project')) add(skill)
   }
-  for (const target of input.config?.skills ?? []) {
+  for (const rawTarget of input.config?.skills ?? []) {
+    const target =
+      rawTarget === '~'
+        ? os.homedir()
+        : rawTarget.startsWith('~/')
+          ? path.join(os.homedir(), rawTarget.slice(2))
+          : rawTarget
+    const source = skillSource(target, input.userDataPath)
     const stat = await fs.stat(target).catch(() => null)
     if (stat?.isDirectory()) {
-      for (const skill of await readSkillDirectory(target, 'project')) add(skill)
+      for (const skill of await readSkillDirectory(target, source)) add(skill)
     } else if (stat?.isFile() && path.basename(target).toLowerCase() === 'skill.md') {
       const content = await fs.readFile(target, 'utf8').catch(() => null)
       if (content === null) continue
-      const skill = parseSkillMarkdown(target, content, 'project')
+      const skill = parseSkillMarkdown(target, content, source)
       if (skill) {
         skill.resources = await listSkillResources(path.dirname(target))
         add(skill)

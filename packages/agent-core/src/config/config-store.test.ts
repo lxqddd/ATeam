@@ -134,3 +134,26 @@ it('preserves layered document fields when updating global switches', async () =
   expect(updated.skills).toEqual([path.join(directory, 'agent', 'skills')])
   expect(again.get()).toEqual(updated)
 })
+
+describe('additional patch fields', () => {
+  it('persists additional config fields from a core patch', async () => {
+    const updated = await store.update({
+      permissionRules: [{ action: 'shell', resource: 'git *', effect: 'allow', sessionId: null }],
+      mcpServers: [{ name: 'patch-mcp', type: 'local', command: 'node' }],
+      agents: [{ name: 'patch-agent' }],
+      lspServers: { custom: { command: ['custom-lsp'], extensions: ['.x'] } },
+      formatterServers: { custom: { command: ['fmt', '$FILE'], extensions: ['.x'] } }
+    })
+
+    expect(updated.permissionRules).toEqual([
+      { action: 'shell', resource: 'git *', effect: 'allow', sessionId: null }
+    ])
+    expect(updated.mcpServers?.[0]).toMatchObject({ name: 'patch-mcp' })
+    expect(updated.agents).toEqual([{ name: 'patch-agent' }])
+    expect(updated.lspServers?.custom).toMatchObject({ command: ['custom-lsp'] })
+    expect(updated.formatterServers?.custom).toMatchObject({ command: ['fmt', '$FILE'] })
+    const reloaded = new AgentConfigStore(directory)
+    await reloaded.init()
+    expect(reloaded.get()).toEqual(updated)
+  })
+})

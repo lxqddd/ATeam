@@ -1,4 +1,5 @@
 import { errorMessage } from '../../lib/errors'
+import { useChatStore } from '../../chat/store'
 import SettingsLoadError from './SettingsLoadError'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -64,11 +65,14 @@ function McpServers(): React.JSX.Element {
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthScope, setOauthScope] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
+  const { sessions, selectedSessionId } = useChatStore()
+  const directory =
+    sessions.find((session) => session.id === selectedSessionId)?.directory ?? undefined
 
   async function reload(): Promise<void> {
     const [next, auth] = await Promise.all([
-      window.api.agent.mcp.list(),
-      window.api.agent.mcp.authStatuses()
+      window.api.agent.mcp.list(directory),
+      window.api.agent.mcp.authStatuses(directory)
     ])
     setServers(next.servers)
     setStatuses(next.statuses)
@@ -77,7 +81,10 @@ function McpServers(): React.JSX.Element {
 
   useEffect(() => {
     let active = true
-    Promise.all([window.api.agent.mcp.list(), window.api.agent.mcp.authStatuses()])
+    Promise.all([
+      window.api.agent.mcp.list(directory),
+      window.api.agent.mcp.authStatuses(directory)
+    ])
       .then(([next, auth]) => {
         if (!active) return
         setServers(next.servers)
@@ -90,7 +97,7 @@ function McpServers(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [reloadKey])
+  }, [reloadKey, directory])
 
   function resetForm(): void {
     setEditingId(null)
@@ -202,7 +209,7 @@ function McpServers(): React.JSX.Element {
     setProbing(true)
     setError(null)
     try {
-      setStatuses(await window.api.agent.mcp.statuses({ probe: true }))
+      setStatuses(await window.api.agent.mcp.statuses({ probe: true, directory }))
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {
@@ -214,7 +221,7 @@ function McpServers(): React.JSX.Element {
     setAuthorizingId(server.id)
     setError(null)
     try {
-      setAuthStatuses(await window.api.agent.mcp.authorize(server.id))
+      setAuthStatuses(await window.api.agent.mcp.authorize(server.id, directory))
       await reload()
     } catch (caught) {
       setError(errorMessage(caught))
@@ -227,7 +234,7 @@ function McpServers(): React.JSX.Element {
     setLoggingOutId(server.id)
     setError(null)
     try {
-      setAuthStatuses(await window.api.agent.mcp.logout(server.id))
+      setAuthStatuses(await window.api.agent.mcp.logout(server.id, directory))
       await reload()
     } catch (caught) {
       setError(errorMessage(caught))
@@ -296,6 +303,7 @@ function McpServers(): React.JSX.Element {
           {servers.map((server) => {
             const status = statuses.find((entry) => entry.id === server.id)
             const auth = authStatuses.find((entry) => entry.serverId === server.id)
+            const readOnly = server.source === 'project' || server.source === 'transient'
             return (
               <li
                 key={server.id}
@@ -303,6 +311,11 @@ function McpServers(): React.JSX.Element {
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-label font-medium text-foreground">{server.name}</span>
+                  {server.source === 'project' && (
+                    <span className="inline-flex h-[18px] items-center rounded-full bg-accent-soft px-1.5 text-[12px] leading-none font-medium text-accent">
+                      {t('settings.sourceProject')}
+                    </span>
+                  )}
                   <span className="inline-flex h-[18px] items-center rounded-full bg-surface px-1.5 text-[12px] leading-none font-medium text-muted">
                     {server.type === 'local'
                       ? t('settings.mcpTypeLocal')
@@ -326,6 +339,7 @@ function McpServers(): React.JSX.Element {
                       type="checkbox"
                       aria-label={`${t('settings.mcpEnabled')}: ${server.name}`}
                       checked={server.enabled}
+                      disabled={readOnly}
                       onChange={(event) => {
                         void toggle(server, event.target.checked)
                       }}
@@ -363,23 +377,27 @@ function McpServers(): React.JSX.Element {
                       )}
                     </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => startEdit(server)}
-                    className="h-7 flex-none rounded-md px-2 text-caption font-medium text-foreground transition-colors hover:bg-background-subtle"
-                  >
-                    {t('settings.mcpEdit')}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={removing === server.id}
-                    onClick={() => {
-                      void remove(server)
-                    }}
-                    className="h-7 flex-none rounded-md px-2 text-caption font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
-                  >
-                    {t('settings.mcpDelete')}
-                  </button>
+                  {!readOnly && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(server)}
+                        className="h-7 flex-none rounded-md px-2 text-caption font-medium text-foreground transition-colors hover:bg-background-subtle"
+                      >
+                        {t('settings.mcpEdit')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={removing === server.id}
+                        onClick={() => {
+                          void remove(server)
+                        }}
+                        className="h-7 flex-none rounded-md px-2 text-caption font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+                      >
+                        {t('settings.mcpDelete')}
+                      </button>
+                    </>
+                  )}
                 </div>
                 {status?.state === 'failed' && status.error && (
                   <p className="m-0 text-caption text-danger">{status.error}</p>
