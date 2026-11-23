@@ -209,6 +209,7 @@ export type PermissionAction =
   | 'websearch'
   | 'skill'
   | 'subagent'
+  | 'plugin'
 export type PermissionDecision = 'once' | 'always' | 'reject'
 
 export type PermissionEffect = 'allow' | 'ask' | 'deny'

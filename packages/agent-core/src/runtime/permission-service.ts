@@ -227,15 +227,15 @@ export class PermissionService {
       if (externalEffect === 'deny') return false
     }
 
-    if (effect === 'allow' && externalEffect === 'allow' && !run.plugins) return true
+    const initialAllow = effect === 'allow' && externalEffect === 'allow'
+    if (initialAllow && !run.plugins) return true
     if (run.plugins) {
-      const status = {
-        status: (effect === 'allow' && externalEffect === 'allow' ? 'allow' : 'ask') as
-          'allow' | 'ask' | 'deny'
-      }
+      // Plugins may tighten a permission decision, never grant an approval
+      // that the configured rules left as ask or deny.
+      const status = { status: (initialAllow ? 'allow' : 'ask') as 'allow' | 'ask' | 'deny' }
       await run.plugins.permissionAsk({ action, resource, toolName }, status)
-      if (status.status === 'allow') return true
       if (status.status === 'deny') return false
+      if (initialAllow && status.status === 'allow') return true
     }
 
     const message = this.host.assistantFor(run)

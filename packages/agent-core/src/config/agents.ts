@@ -31,6 +31,7 @@ const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'websearch',
   'skill',
   'subagent',
+  'plugin',
   '*'
 ]
 const RULE_EFFECTS: readonly PermissionEffect[] = ['allow', 'ask', 'deny']

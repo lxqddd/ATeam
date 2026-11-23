@@ -139,6 +139,7 @@ const zhCN = {
     permissionActionMcp: 'MCP 工具',
     permissionActionWebfetch: '抓取网页',
     permissionActionWebsearch: '网页搜索',
+    permissionActionPlugin: '插件工具',
     permissionActionSubagent: '子代理',
     permissionActionSkill: '加载 Skill',
     models: '模型',

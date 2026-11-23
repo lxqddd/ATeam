@@ -4,7 +4,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { ToolSet } from 'ai'
-import type { AgentConfig, AgentEvent, PermissionAction } from '@ateam/shared'
+import type {
+  AgentConfig,
+  AgentEvent,
+  PermissionAction,
+  RuntimeModelsConfig,
+  RuntimeProvider
+} from '@ateam/shared'
 import { readJsonFile } from './atomic-json'
 
 export interface PluginContext {
@@ -53,6 +59,14 @@ export interface PluginHooks {
     input: { cwd: string; sessionId: string },
     output: { env: Record<string, string> }
   ) => void | Promise<void>
+  provider?: (
+    input: { workspace: string; models: RuntimeModelsConfig },
+    output: { models: RuntimeModelsConfig }
+  ) => void | Promise<void>
+  auth?: (
+    input: { workspace: string; provider: RuntimeProvider },
+    output: { apiKey?: string; baseURL?: string }
+  ) => void | Promise<void>
   dispose?: () => void | Promise<void>
 }
 
@@ -66,12 +80,39 @@ export class PluginRegistry {
     this.hooks = hooks
   }
 
-  async tools(context: PluginContext): Promise<ToolSet> {
+  async tools(
+    context: PluginContext,
+    options: {
+      askPermission?: (pluginName: string, toolName: string, toolCallId: string) => Promise<boolean>
+    } = {}
+  ): Promise<ToolSet> {
     const result: ToolSet = {}
     for (const hook of this.hooks) {
       if (!hook.tool) continue
+      const pluginName = hook.name ?? 'plugin'
       const tools = typeof hook.tool === 'function' ? await hook.tool(context) : hook.tool
-      Object.assign(result, tools)
+      for (const [name, definition] of Object.entries(tools)) {
+        if (!options.askPermission) {
+          result[name] = definition
+          continue
+        }
+        const candidate = definition as unknown as {
+          execute?: (input: never, exec: { toolCallId: string }) => unknown
+        }
+        if (typeof candidate.execute !== 'function') {
+          result[name] = definition
+          continue
+        }
+        const execute = candidate.execute
+        result[name] = {
+          ...(definition as object),
+          execute: async (input: never, exec: { toolCallId: string }) => {
+            const allowed = await options.askPermission?.(pluginName, name, exec.toolCallId)
+            if (!allowed) return `Permission denied; plugin tool ${name} was not run.`
+            return execute(input, exec)
+          }
+        } as unknown as (typeof result)[string]
+      }
     }
     return result
   }
@@ -101,6 +142,32 @@ export class PluginRegistry {
     for (const hook of this.hooks) {
       await hook.commandExecuteBefore?.(input, output)
     }
+  }
+
+  async transformProviders(
+    input: { workspace: string; models: RuntimeModelsConfig },
+    output: { models: RuntimeModelsConfig }
+  ): Promise<void> {
+    for (const hook of this.hooks) {
+      await hook.provider?.(input, output)
+    }
+  }
+
+  async applyAuth(workspace: string, providers: RuntimeProvider[]): Promise<RuntimeProvider[]> {
+    const result = providers.map((provider) => ({ ...provider }))
+    for (const hook of this.hooks) {
+      if (!hook.auth) continue
+      for (const provider of result) {
+        const output: { apiKey?: string; baseURL?: string } = {
+          ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
+          ...(provider.baseURL ? { baseURL: provider.baseURL } : {})
+        }
+        await hook.auth({ workspace, provider: { ...provider } }, output)
+        if (output.apiKey) provider.apiKey = output.apiKey
+        if (output.baseURL) provider.baseURL = output.baseURL
+      }
+    }
+    return result
   }
 
   async emitEvent(event: AgentEvent): Promise<void> {
@@ -244,6 +311,7 @@ export async function loadPlugins(
       }
       const loaded = (await (factory as PluginFactory)(context)) as PluginHooks | undefined
       if (!loaded || typeof loaded !== 'object') throw new Error('plugin returned no hooks')
+      loaded.name = loaded.name ?? spec
       if (loaded.config) await loaded.config(context.config)
       hooks.push(loaded)
     } catch (error) {

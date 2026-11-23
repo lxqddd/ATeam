@@ -23,6 +23,7 @@ const RULE_ACTIONS = new Set<PermissionRuleAction>([
   'websearch',
   'skill',
   'subagent',
+  'plugin',
   '*'
 ])
 const RULE_EFFECTS = new Set<PermissionEffect>(['allow', 'ask', 'deny'])

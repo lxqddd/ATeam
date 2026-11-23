@@ -28,7 +28,8 @@ export function modePermissionRules(
     base('webfetch', 'allow'),
     base('websearch', 'allow'),
     base('skill', 'allow'),
-    base('subagent', 'allow')
+    base('subagent', 'allow'),
+    base('plugin', 'ask')
   ]
   switch (mode) {
     case 'plan':
@@ -36,6 +37,7 @@ export function modePermissionRules(
         ...reads,
         base('write', 'deny'),
         base('edit', 'deny'),
+        base('plugin', 'deny'),
         ...(options.planPath
           ? [base('write', 'allow', options.planPath), base('edit', 'allow', options.planPath)]
           : []),
@@ -51,6 +53,7 @@ export function modePermissionRules(
         base('edit', 'allow'),
         base('shell', 'ask'),
         base('mcp', 'ask'),
+        base('plugin', 'ask'),
         external,
         ...web
       ]
@@ -61,6 +64,7 @@ export function modePermissionRules(
         base('edit', 'allow'),
         base('shell', 'allow'),
         base('mcp', 'allow'),
+        base('plugin', 'allow'),
         external,
         ...web
       ]
@@ -72,6 +76,7 @@ export function modePermissionRules(
         base('edit', 'ask'),
         base('shell', 'ask'),
         base('mcp', 'ask'),
+        base('plugin', 'ask'),
         external,
         ...web
       ]

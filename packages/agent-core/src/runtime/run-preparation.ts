@@ -104,11 +104,17 @@ export async function prepareRun(
   })
   const plugins = await host.plugins(run.config, run.workspace)
   run.plugins = plugins
-  const pluginTools = await plugins.tools({
-    workspace: run.workspace,
-    sessionId: run.sessionId,
-    config: run.config
-  })
+  const pluginTools = await plugins.tools(
+    {
+      workspace: run.workspace,
+      sessionId: run.sessionId,
+      config: run.config
+    },
+    {
+      askPermission: (pluginName, toolName, toolCallId) =>
+        toolContext.askPermission('plugin', `${pluginName}/${toolName}`, toolName, toolCallId)
+    }
+  )
   const baseTools = host.createTools(toolContext)
   let mcpTools: ToolSet = {}
   let mcpInstructions: Array<{ server: string; instructions: string }> = []

@@ -166,6 +166,7 @@ export const permissionRuleInputSchema = z.object({
     'websearch',
     'skill',
     'subagent',
+    'plugin',
     '*'
   ]),
   resource: z.string().trim().min(1).max(500),

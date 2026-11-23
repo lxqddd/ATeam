@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tool } from 'ai'
+import type { RuntimeModelsConfig } from '@ateam/shared'
 import { z } from 'zod'
 import { loadPlugins, PluginRegistry } from './plugins'
 
@@ -69,6 +70,83 @@ describe('PluginRegistry', () => {
     await registry.transformCommand({ command: 'review', args: 'src', sessionId: null }, output)
 
     expect(output).toEqual({ template: 'review\nextra', args: 'src!' })
+  })
+
+  it('requires permission before running plugin tools', async () => {
+    const execute = vi.fn(async () => 'ran')
+    const registry = new PluginRegistry([
+      {
+        name: '@acme/tools',
+        tool: {
+          dangerous: tool({
+            description: 'dangerous',
+            inputSchema: z.object({}),
+            execute
+          })
+        }
+      }
+    ])
+    const context = {
+      workspace: directory,
+      config: {
+        snapshots: true,
+        instructions: [],
+        lsp: true,
+        formatters: true,
+        formatterOverrides: {}
+      }
+    }
+    const askPermission = vi.fn(async () => false)
+    const denied = await registry.tools(context, { askPermission })
+    const deniedExecute = (
+      denied.dangerous as unknown as {
+        execute: (input: object, exec: { toolCallId: string }) => Promise<string>
+      }
+    ).execute
+
+    await expect(deniedExecute({}, { toolCallId: 'call-1' })).resolves.toContain(
+      'Permission denied'
+    )
+    expect(execute).not.toHaveBeenCalled()
+    expect(askPermission).toHaveBeenCalledWith('@acme/tools', 'dangerous', 'call-1')
+
+    const allowed = await registry.tools(context, {
+      askPermission: async () => true
+    })
+    const allowedExecute = (
+      allowed.dangerous as unknown as {
+        execute: (input: object, exec: { toolCallId: string }) => Promise<string>
+      }
+    ).execute
+    await expect(allowedExecute({}, { toolCallId: 'call-2' })).resolves.toBe('ran')
+  })
+
+  it('applies provider and auth hooks', async () => {
+    const registry = new PluginRegistry([
+      {
+        provider: (_input, output) => {
+          output.models = {
+            ...output.models,
+            providers: [
+              ...output.models.providers,
+              { id: 'plugin-provider', name: 'Plugin', type: 'openai' }
+            ]
+          }
+        },
+        auth: (_input, output) => {
+          output.apiKey = 'plugin-key'
+        }
+      }
+    ])
+    const models: RuntimeModelsConfig = { providers: [], models: [], defaultModel: null }
+    const output = { models }
+
+    await registry.transformProviders({ workspace: directory, models }, output)
+    output.models.providers = await registry.applyAuth(directory, output.models.providers)
+
+    expect(output.models.providers).toEqual([
+      { id: 'plugin-provider', name: 'Plugin', type: 'openai', apiKey: 'plugin-key' }
+    ])
   })
 
   it('forwards runtime events to plugin hooks', async () => {

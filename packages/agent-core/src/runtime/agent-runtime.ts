@@ -218,6 +218,19 @@ export class AgentRuntime {
     return models
   }
 
+  private async modelsForWorkspace(
+    workspace: string,
+    config: AgentConfig
+  ): Promise<RuntimeModelsConfig> {
+    const base = this.modelsForConfig(workspace, config)
+    const plugins = await this.workspaceServices.plugins(config, workspace)
+    const output = { models: base }
+    await plugins.transformProviders({ workspace, models: base }, output)
+    output.models.providers = await plugins.applyAuth(workspace, output.models.providers)
+    this.effectiveModels.set(workspace, output.models)
+    return output.models
+  }
+
   private modelsForSession(sessionId: string): RuntimeModelsConfig {
     return this.effectiveModels.get(this.sessionWorkspace(sessionId)) ?? this.models
   }
@@ -335,7 +348,7 @@ export class AgentRuntime {
 
     try {
       const effective = await this.applyWorkspaceConfig(this.sessionWorkspace(id))
-      const models = this.modelsForConfig(this.sessionWorkspace(id), effective.config)
+      const models = await this.modelsForWorkspace(this.sessionWorkspace(id), effective.config)
       const model = this.deps.createLanguageModel(
         models,
         record.session.model ?? models.defaultModel,
@@ -603,7 +616,7 @@ export class AgentRuntime {
       const workspace = this.sessionWorkspace(sessionId)
       const effective = await this.applyWorkspaceConfig(workspace)
       const config = effective.config
-      const models = this.modelsForConfig(workspace, config)
+      const models = await this.modelsForWorkspace(workspace, config)
       const target = requestedModel ?? record.session.model ?? models.defaultModel
       resolveModelRef(models, target)
 
@@ -705,7 +718,7 @@ export class AgentRuntime {
       const workspace = this.sessionWorkspace(sessionId)
       const effective = await this.applyWorkspaceConfig(workspace)
       const config = effective.config
-      const models = this.modelsForConfig(workspace, config)
+      const models = await this.modelsForWorkspace(workspace, config)
       resolveModelRef(models, record.session.model ?? models.defaultModel)
       const assistant = makeAssistantMessage(sessionId)
       if (config.snapshots) {
@@ -747,7 +760,7 @@ export class AgentRuntime {
     const start = Date.now()
     try {
       const effective = await this.applyWorkspaceConfig(this.options.workspacePath)
-      const models = this.modelsForConfig(this.options.workspacePath, effective.config)
+      const models = await this.modelsForWorkspace(this.options.workspacePath, effective.config)
       const model = this.deps.createLanguageModel(
         models,
         { providerId, modelId },

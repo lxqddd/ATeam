@@ -67,11 +67,13 @@
 
 - [x] npm 插件自动安装与真实包版本检查（`npm install --ignore-scripts`，读取安装后 package.json）
 - [x] `command.execute.before` 与 `event` hook
-- [ ] `auth`、`provider`、workspace adapter hook
+- [x] `provider` hook：在模型解析前修改 provider/model 列表
+- [x] `auth` hook：插件为 provider 注入凭据（声明式 auth 方法 UI 待补）
+- [ ] workspace adapter hook
 - [x] 插件管理 UI：启用/禁用、来源、版本与加载错误
 - [x] 插件 `dispose` 生命周期与配置变更缓存失效
-- [ ] 插件工具纳入权限规则，或明确只允许可信本地插件
-- [ ] `permissionAsk` 对 deny 的覆盖策略，避免绕过安全边界
+- [x] 插件工具纳入 `plugin` 权限 action，执行前统一审批
+- [x] `permissionAsk` 只能收紧权限，不能把 ask/deny 提升为 allow
 - [ ] 工具 hook 修改后的参数/结果同步到 UI 工具详情
 - [ ] 插件加载、hook 顺序、失败隔离、shell env 的运行时测试
 

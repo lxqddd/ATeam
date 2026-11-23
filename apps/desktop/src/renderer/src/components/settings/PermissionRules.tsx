@@ -18,6 +18,7 @@ const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
   websearch: 'settings.permissionActionWebsearch',
   skill: 'settings.permissionActionSkill',
   subagent: 'settings.permissionActionSubagent',
+  plugin: 'settings.permissionActionPlugin',
   '*': 'settings.permissionActionAll'
 }
 
