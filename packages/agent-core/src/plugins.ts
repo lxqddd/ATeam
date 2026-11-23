@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -10,6 +11,7 @@ export interface PluginContext {
   workspace: string
   sessionId?: string
   config: AgentConfig
+  pluginRoot?: string
 }
 
 export interface PluginParams {
@@ -197,10 +199,20 @@ function packageEntry(pkg: Record<string, unknown> | null): string {
   return 'index.mjs'
 }
 
-async function resolveSpec(spec: string, workspace: string): Promise<string> {
+async function resolveSpec(spec: string, workspace: string, pluginRoot?: string): Promise<string> {
   if (spec === '~') return pathToFileURL(os.homedir()).href
   if (spec.startsWith('~/')) return pathToFileURL(path.join(os.homedir(), spec.slice(2))).href
-  if (!spec.startsWith('.') && !path.isAbsolute(spec)) return spec
+  if (!spec.startsWith('.') && !path.isAbsolute(spec)) {
+    if (pluginRoot) {
+      try {
+        const require = createRequire(path.join(pluginRoot, 'package.json'))
+        return pathToFileURL(require.resolve(spec)).href
+      } catch {
+        /* fall back to Node's normal package resolution */
+      }
+    }
+    return spec
+  }
   const resolved = path.resolve(workspace, spec)
   try {
     const stat = await fs.stat(resolved)
@@ -223,10 +235,9 @@ export async function loadPlugins(
   const errors: Array<{ spec: string; message: string }> = []
   for (const spec of [...new Set(specs)]) {
     try {
-      const module = (await import(await resolveSpec(spec, context.workspace))) as Record<
-        string,
-        unknown
-      >
+      const module = (await import(
+        await resolveSpec(spec, context.workspace, context.pluginRoot)
+      )) as Record<string, unknown>
       const factory = module.default ?? module.plugin ?? module.server
       if (typeof factory !== 'function') {
         throw new Error('plugin does not export a default function')

@@ -129,7 +129,14 @@ export class WorkspaceServices {
     const key = `${workspace}\u0000${specs.join('\u0000')}`
     let cached = this.pluginCaches.get(key)
     if (!cached) {
-      cached = loadPlugins(specs, { workspace, config })
+      cached = loadPlugins(specs, {
+        workspace,
+        config,
+        pluginRoot: this.pluginStore.pluginDirectory()
+      }).then(async (registry) => {
+        await this.pluginStore.setLoadErrors(specs, registry.errors).catch(() => undefined)
+        return registry
+      })
       this.pluginCaches.set(key, cached)
     }
     return cached

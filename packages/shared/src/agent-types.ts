@@ -446,6 +446,8 @@ export interface PluginEntry {
   compatibility: PluginCompatibility
   requiredVersion: string | null
   error: string | null
+  /** Absolute entry file used by the runtime loader. */
+  resolvedPath: string | null
   installedAt: string
   updatedAt: string
 }

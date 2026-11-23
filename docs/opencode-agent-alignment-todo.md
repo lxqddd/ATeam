@@ -65,10 +65,10 @@
 
 #### R-P0-2 插件系统
 
-- [ ] npm 插件自动安装与真实包版本检查
+- [x] npm 插件自动安装与真实包版本检查（`npm install --ignore-scripts`，读取安装后 package.json）
 - [x] `command.execute.before` 与 `event` hook
 - [ ] `auth`、`provider`、workspace adapter hook
-- [x] 插件管理 UI：启用/禁用、来源与版本（加载错误展示待补）
+- [x] 插件管理 UI：启用/禁用、来源、版本与加载错误
 - [x] 插件 `dispose` 生命周期与配置变更缓存失效
 - [ ] 插件工具纳入权限规则，或明确只允许可信本地插件
 - [ ] `permissionAsk` 对 deny 的覆盖策略，避免绕过安全边界

@@ -169,6 +169,11 @@ function PluginSettings({ defaultDirectory }: PluginSettingsProps): React.JSX.El
               >
                 {t('settings.pluginRemove')}
               </button>
+              {plugin.error && (
+                <p className="m-0 basis-full break-words text-caption text-danger">
+                  {plugin.error}
+                </p>
+              )}
             </li>
           ))}
         </ul>

@@ -154,6 +154,41 @@ describe('PluginRegistry', () => {
     expect(system.system).toBe('base:pkg')
   })
 
+  it('resolves npm plugins from the plugin root', async () => {
+    const root = path.join(directory, 'plugin-root')
+    const packageRoot = path.join(root, 'node_modules', '@acme', 'npm-plugin')
+    await fs.mkdir(packageRoot, { recursive: true })
+    await fs.writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({ name: 'ateam-installed-plugins', private: true })
+    )
+    await fs.writeFile(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({ name: '@acme/npm-plugin', version: '1.0.0', main: 'index.mjs' })
+    )
+    await fs.writeFile(
+      path.join(packageRoot, 'index.mjs'),
+      `export default () => ({ system: (_i, out) => { out.system += ':npm' } })`
+    )
+
+    const registry = await loadPlugins(['@acme/npm-plugin'], {
+      workspace: directory,
+      pluginRoot: root,
+      config: {
+        snapshots: true,
+        instructions: [],
+        lsp: true,
+        formatters: true,
+        formatterOverrides: {}
+      }
+    })
+    const system = { system: 'base' }
+    await registry.transformSystem({ sessionId: 's', model: 'm' }, system)
+
+    expect(system.system).toBe('base:npm')
+    expect(registry.errors).toEqual([])
+  })
+
   it('loads a local plugin module and reports broken specs', async () => {
     const file = path.join(directory, 'plugin.mjs')
     await fs.writeFile(

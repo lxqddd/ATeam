@@ -48,6 +48,27 @@ describe('isPluginCompatible', () => {
   })
 })
 
+async function installNpm(_spec: string, root: string): Promise<void> {
+  await fs.mkdir(path.join(root, 'node_modules', '@acme', 'tools'), { recursive: true })
+  await fs.writeFile(
+    path.join(root, 'package.json'),
+    JSON.stringify({ name: 'ateam-installed-plugins', private: true })
+  )
+  await fs.writeFile(
+    path.join(root, 'node_modules', '@acme', 'tools', 'package.json'),
+    JSON.stringify({
+      name: '@acme/tools',
+      version: '2.1.0',
+      main: 'index.mjs',
+      engines: { ateam: '^0.1.0' }
+    })
+  )
+  await fs.writeFile(
+    path.join(root, 'node_modules', '@acme', 'tools', 'index.mjs'),
+    'export default () => ({})'
+  )
+}
+
 describe('PluginStore', () => {
   it('installs a local plugin and persists metadata', async () => {
     const relative = await writePlugin('alpha', '^0.1.0')
@@ -86,8 +107,8 @@ describe('PluginStore', () => {
     ).rejects.toThrow('PLUGIN_SPEC_NOT_FOUND')
   })
 
-  it('accepts npm specs without local files', async () => {
-    const store = new PluginStore(userData)
+  it('installs npm specs and reads the resolved package version', async () => {
+    const store = new PluginStore(userData, { installPackage: installNpm })
     const entries = await store.install(
       { spec: '@acme/tools@2.1.0', directory: workspace },
       workspace,
@@ -98,8 +119,44 @@ describe('PluginStore', () => {
       name: '@acme/tools',
       version: '2.1.0',
       source: 'npm',
-      compatibility: 'unknown'
+      compatibility: 'compatible',
+      requiredVersion: '^0.1.0'
     })
+    expect(entries[0].resolvedPath).toContain(
+      path.join('node_modules', '@acme', 'tools', 'index.mjs')
+    )
+    expect(await store.enabledSpecs()).toEqual([entries[0].resolvedPath])
+  })
+
+  it('reports npm installation failures', async () => {
+    const store = new PluginStore(userData, {
+      installPackage: async () => {
+        throw new Error('PLUGIN_NPM_INSTALL_FAILED: offline')
+      }
+    })
+
+    await expect(
+      store.install({ spec: '@acme/tools', directory: workspace }, workspace, '0.1.1')
+    ).rejects.toThrow('PLUGIN_NPM_INSTALL_FAILED')
+  })
+
+  it('records and clears plugin load errors', async () => {
+    const relative = await writePlugin('delta', '^0.1.0')
+    const store = new PluginStore(userData)
+    const [entry] = await store.install(
+      { spec: relative, directory: workspace },
+      workspace,
+      '0.1.1'
+    )
+
+    await store.setLoadErrors(
+      [entry.resolvedPath ?? entry.spec],
+      [{ spec: entry.resolvedPath ?? entry.spec, message: 'boom' }]
+    )
+    expect((await store.list())[0].error).toBe('boom')
+
+    await store.setLoadErrors([entry.resolvedPath ?? entry.spec], [])
+    expect((await store.list())[0].error).toBeNull()
   })
 
   it('toggles, removes and reloads entries', async () => {

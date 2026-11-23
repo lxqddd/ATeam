@@ -16,6 +16,7 @@ function plugin(overrides: Partial<PluginEntry> = {}): PluginEntry {
     compatibility: 'compatible',
     requiredVersion: '^0.1.0',
     error: null,
+    resolvedPath: '/tmp/workspace/plugins/demo/index.mjs',
     installedAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     ...overrides
@@ -44,6 +45,13 @@ describe('PluginSettings', () => {
       spec: './plugins/demo',
       directory: '/tmp/workspace'
     })
+  })
+
+  it('shows plugin load errors', async () => {
+    api.api.agent.plugins.list = vi.fn(async () => [plugin({ error: 'load failed' })])
+    render(<PluginSettings />)
+
+    expect(await screen.findByText('load failed')).toBeInTheDocument()
   })
 
   it('toggles and removes an installed plugin', async () => {
