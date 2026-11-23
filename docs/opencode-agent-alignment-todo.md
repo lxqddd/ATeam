@@ -46,6 +46,75 @@
 | R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配                                                                                    | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略                       |
 | R-P0-7 Plan 工作流    | 基础完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示                                                                     | 当前轮内切换工具集、计划文件 UI/查看入口、build 切换提醒、自动化测试覆盖                           |
 
+### 第二轮 P0 审计遗留（2026-11-23）
+
+> 以下是 P0 首轮实现后的逐项审计结果。上表记录“已实现”，本节只列仍未对齐、需要继续补齐的点。
+
+#### R-P0-1 分层配置
+
+- [ ] 设置页展示每项配置的来源（全局 / 项目）与最终生效值
+- [ ] 支持项目级配置编辑，或明确项目配置只读并展示文件路径
+- [ ] 应用项目 `providers`，支持项目级供应商与模型覆盖
+- [ ] 支持项目级自定义 LSP server 配置，而不只是 `lsp: boolean`
+- [ ] 支持项目级自定义 formatter 命令，而不只是内置 formatter 覆盖
+- [ ] 支持在 `ateam.json` 中定义 commands / skills，而不只依赖资源目录
+- [ ] 项目 MCP server 进入设置页展示与 OAuth 授权流程，或明确标记为配置文件管理
+- [ ] 配置变更后的热加载 / 会话刷新策略
+- [ ] 项目 instructions 相对路径按项目根解析，而不是固定按 workspace
+- [ ] 增加配置来源、冲突覆盖、坏配置降级的端到端测试
+
+#### R-P0-2 插件系统
+
+- [ ] npm 插件安装、版本兼容检查与锁文件
+- [ ] `command.execute.before`、`event`、`auth`、`provider`、workspace adapter hook
+- [ ] 插件管理 UI：启用/禁用、加载错误、来源与版本
+- [ ] 插件 `dispose` 生命周期与缓存失效
+- [ ] 插件工具纳入权限规则，或明确只允许可信本地插件
+- [ ] `permissionAsk` 对 deny 的覆盖策略，避免绕过安全边界
+- [ ] 工具 hook 修改后的参数/结果同步到 UI 工具详情
+- [ ] 插件加载、hook 顺序、失败隔离、shell env 的运行时测试
+
+#### R-P0-3 LLM 重试
+
+- [ ] 响应头已返回后的流中断重试
+- [ ] 可配置最大重试次数、退避上限与总超时
+- [ ] 重试原因、最终失败原因在 UI 中展示
+- [ ] 重试次数、成功率与时延指标
+- [ ] 覆盖 AI SDK 响应解析错误与流式错误的重试测试
+
+#### R-P0-4 提示词与上下文
+
+- [ ] 完整的分模型 prompt 文件，而不是单行 model guidance
+- [ ] MCP instructions 按 agent 工具权限精细过滤
+- [ ] MCP server 名称与 instructions 的 XML 转义
+- [ ] 本地时区日期与可配置环境信息
+- [ ] MCP server instructions 捕获与注入的运行时测试
+
+#### R-P0-5 推理与缓存
+
+- [ ] provider transform 层，集中处理缓存与供应商差异
+- [ ] system / tool 结果的缓存断点
+- [ ] 缓存命中率与节省 token 指标
+- [ ] 跨供应商 reasoning 降级（不同模型时降级为文本或丢弃）
+- [ ] 旧消息缺少 `model` 字段时的兼容策略与迁移
+- [ ] 供应商 reasoning metadata 的端到端测试
+
+#### R-P0-6 Shell arity
+
+- [ ] tree-sitter 或等价解析，覆盖 bash 与 PowerShell / cmd
+- [ ] 扩大命令 arity 表，覆盖 flags 在子命令前的常见形式
+- [ ] 参数级外部目录提取，替代简单 token 扫描
+- [ ] 危险命令（`rm *`、`sudo` 等）的额外保护策略
+- [ ] 权限规则命中未来同类命令的集成测试
+
+#### R-P0-7 Plan 工作流
+
+- [ ] `plan_exit` 后当前轮立即切换 build 工具集，或注入新的 build 回合
+- [ ] 计划文件查看/打开入口与计划状态 UI
+- [ ] plan → build 切换提醒（build switch reminder）
+- [ ] 按模式隐藏 `plan_exit`，避免 build / 子代理调用
+- [ ] plan_exit、计划文件权限与切换 agent 的端到端测试
+
 ### 第二轮 P0：核心运行时与配置
 
 #### R-P0-1 分层配置模型（ATeam 自有格式）
