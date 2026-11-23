@@ -50,6 +50,7 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
   const refreshProviderTokens = async (): Promise<void> => {
     const changed = await refreshExpiringProviderAuth(providerAuthStore)
     if (!changed) return
+    await manager.setProviderAuth(providerAuthStore.runtimeAuth())
     await manager.setModels(runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore))
   }
 

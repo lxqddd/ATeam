@@ -5,6 +5,7 @@ import type {
   AgentStatus,
   McpAuthRecord,
   RuntimeModelsConfig,
+  RuntimeProviderAuth,
   RuntimeWebSearchConfig,
   WorkerMessage
 } from '@ateam/shared'
@@ -28,6 +29,7 @@ export interface AgentManagerOptions {
   onEvent: (envelope: AgentEventEnvelope) => void
   mcpAuth?: () => McpAuthRecord[]
   onMcpAuth?: (auth: McpAuthRecord) => void
+  providerAuth?: () => RuntimeProviderAuth[]
   browserRequest?: (
     sessionId: string,
     method: string,
@@ -43,6 +45,8 @@ export class AgentManager {
   private stopping = false
   private models: RuntimeModelsConfig = { providers: [], models: [], defaultModel: null }
   private modelsDirty = false
+  private providerAuth: RuntimeProviderAuth[] = []
+  private providerAuthDirty = false
   private webSearch: RuntimeWebSearchConfig | null = null
   private webSearchDirty = false
 
@@ -87,6 +91,7 @@ export class AgentManager {
         workspacePath: this.options.workspacePath,
         appVersion: this.options.appVersion,
         models: this.models,
+        providerAuth: this.options.providerAuth?.() ?? this.providerAuth,
         webSearch: this.webSearch,
         mcpAuth: this.options.mcpAuth?.() ?? []
       })
@@ -97,6 +102,14 @@ export class AgentManager {
           this.modelsDirty = false
         } catch (error) {
           console.error('[agent] failed to apply the latest model configuration', error)
+        }
+      }
+      if (this.providerAuthDirty) {
+        try {
+          await this.call('setProviderAuth', { auths: this.providerAuth })
+          this.providerAuthDirty = false
+        } catch (error) {
+          console.error('[agent] failed to apply the latest provider credentials', error)
         }
       }
       if (this.webSearchDirty) {
@@ -162,6 +175,14 @@ export class AgentManager {
     if (this.status.status !== 'ready' || !this.worker) return
     await this.call('setWebSearch', { config })
     this.webSearchDirty = false
+  }
+
+  async setProviderAuth(auths: RuntimeProviderAuth[]): Promise<void> {
+    this.providerAuth = [...auths]
+    this.providerAuthDirty = true
+    if (this.status.status !== 'ready' || !this.worker) return
+    await this.call('setProviderAuth', { auths })
+    this.providerAuthDirty = false
   }
 
   async request<T>(method: string, params?: unknown): Promise<T> {

@@ -90,6 +90,37 @@ describe('ProviderAuthStore', () => {
     expect(store.getClientSecret('provider-1')).toBe('client-secret')
   })
 
+  it('stores plugin credentials and exposes runtime auth entries', async () => {
+    await store.setPluginCredentials('plugin-api', { type: 'api', key: 'sk-plugin' })
+    await store.setPluginCredentials('plugin-oauth', {
+      type: 'oauth',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      expiresAt: 1_900_000_000_000
+    })
+
+    expect(await readAuth()).toEqual({
+      'plugin-api': { type: 'api', key: 'sk-plugin' },
+      'plugin-oauth': {
+        type: 'oauth',
+        access: 'access-1',
+        refresh: 'refresh-1',
+        expires: 1_900_000_000_000
+      }
+    })
+    expect(store.get('plugin-oauth')).toBeNull()
+    expect(store.runtimeAuth()).toEqual([
+      { providerId: 'plugin-api', type: 'api', key: 'sk-plugin' },
+      {
+        providerId: 'plugin-oauth',
+        type: 'oauth',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        expiresAt: 1_900_000_000_000
+      }
+    ])
+  })
+
   it('replaces OAuth credentials when an API key is saved', async () => {
     await store.setClientSecret('provider-1', 'client-secret')
     await store.set({

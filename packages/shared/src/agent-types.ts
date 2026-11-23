@@ -462,6 +462,75 @@ export interface PluginUpdateInput {
   enabled: boolean
 }
 
+export type PluginAuthMethodType = 'api' | 'oauth'
+
+export interface PluginAuthPromptOption {
+  label: string
+  value: string
+}
+
+export interface PluginAuthPrompt {
+  type: 'text' | 'select'
+  key: string
+  message: string
+  placeholder?: string
+  /** Mask the input; use for keys, tokens and secrets. */
+  secret?: boolean
+  /** Defaults to true; the UI blocks submission until a value is entered. */
+  required?: boolean
+  options?: PluginAuthPromptOption[]
+}
+
+/** Serializable declarative login method exposed by a plugin. */
+export interface PluginAuthMethodInfo {
+  id: string
+  plugin: string
+  provider: string
+  providerName: string
+  type: PluginAuthMethodType
+  label: string
+  description: string | null
+  prompts: PluginAuthPrompt[]
+}
+
+export type PluginAuthCredentials =
+  | { type: 'api'; key: string }
+  | {
+      type: 'oauth'
+      accessToken: string
+      refreshToken?: string | null
+      /** Epoch milliseconds. */
+      expiresAt?: number | null
+      tokenEndpoint?: string | null
+      clientId?: string | null
+      clientSecret?: string | null
+      scope?: string | null
+    }
+
+export type PluginAuthResult =
+  | { status: 'success'; provider: string; credentials: PluginAuthCredentials }
+  | { status: 'failed'; message: string }
+  | {
+      status: 'pending'
+      provider: string
+      requestId: string
+      url: string
+      instructions: string | null
+      codeRequired: boolean
+    }
+
+export interface PluginAuthAuthorizeInput {
+  id: string
+  answers: Record<string, string>
+  directory?: string | null
+}
+
+export interface PluginAuthCompleteInput {
+  requestId: string
+  code?: string
+  directory?: string | null
+}
+
 export interface ConfigSources {
   globalConfigPath: string
   projectConfigPath: string | null

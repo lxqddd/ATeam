@@ -3125,6 +3125,53 @@ describe('background subagents and sampling', () => {
 })
 
 describe('project provider and MCP configuration', () => {
+  it('loads declarative plugin auth methods on demand', async () => {
+    const pluginPath = path.join(directory, 'auth-plugin.mjs')
+    await fs.writeFile(
+      pluginPath,
+      `export default () => ({
+        name: '@acme/auth',
+        auth: {
+          provider: 'acme',
+          providerName: 'Acme Cloud',
+          methods: [{
+            type: 'api',
+            label: 'API key',
+            prompts: [{ type: 'text', key: 'token', message: 'Token' }],
+            authorize: ({ answers }) => ({
+              status: 'success',
+              credentials: { type: 'api', key: answers.token }
+            })
+          }]
+        }
+      })`
+    )
+    const configDirectory = path.join(directory, 'agent')
+    await fs.mkdir(configDirectory, { recursive: true })
+    await fs.writeFile(
+      path.join(configDirectory, 'config.json'),
+      JSON.stringify({ snapshots: true, instructions: [], plugins: [pluginPath] })
+    )
+    const workspace = path.join(directory, 'workspace')
+
+    await expect(runtime.pluginAuthMethods(workspace)).resolves.toEqual([
+      expect.objectContaining({
+        id: '0:0',
+        plugin: '@acme/auth',
+        provider: 'acme',
+        providerName: 'Acme Cloud',
+        label: 'API key'
+      })
+    ])
+    await expect(
+      runtime.authorizePluginAuth(workspace, '0:0', { token: 'typed-key' })
+    ).resolves.toEqual({
+      status: 'success',
+      provider: 'acme',
+      credentials: { type: 'api', key: 'typed-key' }
+    })
+  })
+
   it('resolves project provider models for a run', async () => {
     await fs.writeFile(
       path.join(directory, 'workspace', 'ateam.json'),

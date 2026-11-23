@@ -1,6 +1,12 @@
 import path from 'node:path'
 import { safeStorage } from 'electron'
-import type { ProviderAuthRecord, ProviderOAuthStatus, ProviderPublic } from '@ateam/shared'
+import type {
+  PluginAuthCredentials,
+  ProviderAuthRecord,
+  ProviderOAuthStatus,
+  ProviderPublic,
+  RuntimeProviderAuth
+} from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core/storage'
 
 interface ApiEntry {
@@ -43,6 +49,7 @@ export interface ProviderAuthStoreLike {
   get(providerId: string): ProviderAuthRecord | null
   set(record: ProviderAuthRecord): Promise<void>
   remove(providerId: string): Promise<void>
+  runtimeAuth?(): RuntimeProviderAuth[]
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -124,6 +131,50 @@ export class ProviderAuthStore implements ProviderAuthStoreLike {
   async setApiKey(providerId: string, key: string): Promise<void> {
     this.entries[providerId] = { type: 'api', key }
     await this.persist()
+  }
+
+  async setPluginCredentials(
+    providerId: string,
+    credentials: PluginAuthCredentials
+  ): Promise<void> {
+    if (credentials.type === 'api') {
+      await this.setApiKey(providerId, credentials.key)
+      return
+    }
+    const entry: OAuthEntry = { type: 'oauth', access: credentials.accessToken }
+    const refresh = stringValue(credentials.refreshToken)
+    const expires = numberValue(credentials.expiresAt)
+    const tokenEndpoint = stringValue(credentials.tokenEndpoint)
+    const clientId = stringValue(credentials.clientId)
+    const clientSecret = stringValue(credentials.clientSecret)
+    const scope = stringValue(credentials.scope)
+    if (refresh) entry.refresh = refresh
+    if (expires !== undefined) entry.expires = expires
+    if (tokenEndpoint) entry.tokenEndpoint = tokenEndpoint
+    if (clientId) entry.clientId = clientId
+    if (clientSecret) entry.clientSecret = clientSecret
+    if (scope) entry.scope = scope
+    this.entries[providerId] = entry
+    await this.persist()
+  }
+
+  runtimeAuth(): RuntimeProviderAuth[] {
+    const auths: RuntimeProviderAuth[] = []
+    for (const [providerId, entry] of Object.entries(this.entries)) {
+      if (entry.type === 'api') {
+        auths.push({ providerId, type: 'api', key: entry.key })
+        continue
+      }
+      if (!entry.access) continue
+      auths.push({
+        providerId,
+        type: 'oauth',
+        accessToken: entry.access,
+        ...(entry.refresh ? { refreshToken: entry.refresh } : {}),
+        ...(entry.expires !== undefined ? { expiresAt: entry.expires } : {})
+      })
+    }
+    return auths
   }
 
   async removeApiKey(providerId: string): Promise<void> {

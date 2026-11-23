@@ -232,6 +232,7 @@
 | MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                     |
 | 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                              |
 | Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用         |
+| 插件     | 安装 / 启用 / 移除、来源与加载错误、插件声明的登录方式与授权流程        |
 
 模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据。
 
@@ -265,7 +266,7 @@ models/                  # 供应商 / 模型配置
 
 ## 17. 已知限制与后续方向
 
-- 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 不实现这类非公开认证。
+- 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 内置流程不实现这类非公开认证。插件可以声明 `auth` 方法与提示项，由设置页动态渲染登录表单并调用插件自己的 `authorize` 流程。
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。

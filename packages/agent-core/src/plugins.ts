@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import os from 'node:os'
@@ -8,6 +9,10 @@ import type {
   AgentConfig,
   AgentEvent,
   PermissionAction,
+  PluginAuthCredentials,
+  PluginAuthMethodInfo,
+  PluginAuthResult,
+  PluginAuthPrompt,
   RuntimeModelsConfig,
   RuntimeProvider
 } from '@ateam/shared'
@@ -24,6 +29,40 @@ export interface PluginParams {
   temperature?: number
   maxOutputTokens?: number
   reasoning?: string | null
+}
+
+export type PluginAuthOutcome =
+  | { status: 'success'; credentials: PluginAuthCredentials }
+  | { status: 'failed'; message?: string }
+  | {
+      status: 'pending'
+      url: string
+      instructions?: string
+      codeRequired?: boolean
+      complete: (input: { code?: string }) => PluginAuthOutcome | Promise<PluginAuthOutcome>
+    }
+
+export interface PluginAuthMethod {
+  id?: string
+  type: 'api' | 'oauth'
+  label: string
+  description?: string
+  prompts?: PluginAuthPrompt[]
+  authorize: (input: {
+    answers: Record<string, string>
+  }) => PluginAuthOutcome | Promise<PluginAuthOutcome>
+}
+
+export interface PluginAuthHook {
+  provider: string
+  providerName?: string
+  methods: PluginAuthMethod[]
+}
+
+interface PendingAuth {
+  provider: string
+  complete: (input: { code?: string }) => PluginAuthOutcome | Promise<PluginAuthOutcome>
+  timer: NodeJS.Timeout
 }
 
 export interface PluginHooks {
@@ -63,10 +102,12 @@ export interface PluginHooks {
     input: { workspace: string; models: RuntimeModelsConfig },
     output: { models: RuntimeModelsConfig }
   ) => void | Promise<void>
-  auth?: (
-    input: { workspace: string; provider: RuntimeProvider },
-    output: { apiKey?: string; baseURL?: string }
-  ) => void | Promise<void>
+  auth?:
+    | PluginAuthHook
+    | ((
+        input: { workspace: string; provider: RuntimeProvider },
+        output: { apiKey?: string; baseURL?: string }
+      ) => void | Promise<void>)
   workspaceAdapter?: {
     name: string
     description?: string
@@ -84,10 +125,137 @@ export type PluginFactory = (context: PluginContext) => PluginHooks | Promise<Pl
 
 export class PluginRegistry {
   private readonly hooks: PluginHooks[]
+  private readonly pendingAuth = new Map<string, PendingAuth>()
   readonly errors: Array<{ spec: string; message: string }> = []
 
   constructor(hooks: PluginHooks[] = []) {
     this.hooks = hooks
+  }
+
+  authMethods(): PluginAuthMethodInfo[] {
+    return this.authEntries().map((entry) => entry.info)
+  }
+
+  async authorizeAuth(id: string, answers: Record<string, string>): Promise<PluginAuthResult> {
+    const entry = this.authEntries().find((candidate) => candidate.info.id === id)
+    if (!entry) throw new Error(`AUTH_METHOD_NOT_FOUND: ${id}`)
+    for (const prompt of entry.info.prompts) {
+      if (prompt.required === false) continue
+      if (!answers[prompt.key]?.trim()) {
+        return { status: 'failed', message: `Missing required value: ${prompt.key}` }
+      }
+    }
+    try {
+      return this.normalizeAuthOutcome(
+        await entry.method.authorize({ answers }),
+        entry.info.provider
+      )
+    } catch (error) {
+      return {
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Authorization failed.'
+      }
+    }
+  }
+
+  async completeAuth(requestId: string, input: { code?: string }): Promise<PluginAuthResult> {
+    const pending = this.pendingAuth.get(requestId)
+    if (!pending) throw new Error('AUTH_REQUEST_NOT_FOUND')
+    this.pendingAuth.delete(requestId)
+    clearTimeout(pending.timer)
+    try {
+      return this.normalizeAuthOutcome(await pending.complete(input), pending.provider, false)
+    } catch (error) {
+      return {
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Authorization failed.'
+      }
+    }
+  }
+
+  private authEntries(): Array<{
+    info: PluginAuthMethodInfo
+    method: PluginAuthMethod
+  }> {
+    const entries: Array<{ info: PluginAuthMethodInfo; method: PluginAuthMethod }> = []
+    this.hooks.forEach((hook, hookIndex) => {
+      const auth = hook.auth
+      if (!auth || typeof auth === 'function') return
+      const plugin = hook.name ?? `plugin-${hookIndex + 1}`
+      auth.methods.forEach((method, methodIndex) => {
+        entries.push({
+          method,
+          info: {
+            id: method.id?.trim() || `${hookIndex}:${methodIndex}`,
+            plugin,
+            provider: auth.provider,
+            providerName: auth.providerName ?? auth.provider,
+            type: method.type,
+            label: method.label,
+            description: method.description?.trim() || null,
+            prompts: (method.prompts ?? [])
+              .filter((prompt) => prompt.key.trim() && prompt.message.trim())
+              .map((prompt) => ({
+                type: prompt.type,
+                key: prompt.key,
+                message: prompt.message,
+                ...(prompt.placeholder ? { placeholder: prompt.placeholder } : {}),
+                ...(prompt.secret ? { secret: true } : {}),
+                required: prompt.required !== false,
+                ...(prompt.options
+                  ? {
+                      options: prompt.options.map((option) => ({
+                        label: option.label,
+                        value: option.value
+                      }))
+                    }
+                  : {})
+              }))
+          }
+        })
+      })
+    })
+    return entries
+  }
+
+  private normalizeAuthOutcome(
+    outcome: PluginAuthOutcome,
+    provider: string,
+    allowPending = true
+  ): PluginAuthResult {
+    if (outcome.status === 'failed') {
+      return { status: 'failed', message: outcome.message?.trim() || 'Authorization failed.' }
+    }
+    if (outcome.status === 'success') {
+      if (!validCredentials(outcome.credentials)) {
+        return { status: 'failed', message: 'Authorization did not return usable credentials.' }
+      }
+      return { status: 'success', provider, credentials: outcome.credentials }
+    }
+    if (!allowPending) {
+      return { status: 'failed', message: 'Nested authorization requests are not supported.' }
+    }
+    let url: URL
+    try {
+      url = new URL(outcome.url)
+    } catch {
+      return { status: 'failed', message: 'Auth URL must use http or https.' }
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return { status: 'failed', message: 'Auth URL must use http or https.' }
+    }
+    const requestId = randomUUID()
+    const timer = setTimeout(() => this.pendingAuth.delete(requestId), 15 * 60 * 1000)
+    timer.unref?.()
+    this.pendingAuth.set(requestId, { provider, complete: outcome.complete, timer })
+    return {
+      status: 'pending',
+      provider,
+      requestId,
+      url: url.toString(),
+      instructions: outcome.instructions?.trim() || null,
+      codeRequired: outcome.codeRequired ?? false
+    }
   }
 
   async tools(
@@ -166,7 +334,7 @@ export class PluginRegistry {
   async applyAuth(workspace: string, providers: RuntimeProvider[]): Promise<RuntimeProvider[]> {
     const result = providers.map((provider) => ({ ...provider }))
     for (const hook of this.hooks) {
-      if (!hook.auth) continue
+      if (!hook.auth || typeof hook.auth !== 'function') continue
       for (const provider of result) {
         const output: { apiKey?: string; baseURL?: string } = {
           ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
@@ -247,6 +415,8 @@ export class PluginRegistry {
   }
 
   async dispose(): Promise<void> {
+    for (const pending of this.pendingAuth.values()) clearTimeout(pending.timer)
+    this.pendingAuth.clear()
     for (const hook of this.hooks) {
       try {
         await hook.dispose?.()
@@ -293,6 +463,11 @@ export class PluginRegistry {
     }
     return wrapped
   }
+}
+
+function validCredentials(credentials: PluginAuthCredentials): boolean {
+  if (credentials.type === 'api') return credentials.key.trim().length > 0
+  return credentials.accessToken.trim().length > 0
 }
 
 function packageEntry(pkg: Record<string, unknown> | null): string {

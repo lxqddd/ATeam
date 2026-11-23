@@ -175,6 +175,7 @@ if (!hasSingleInstanceLock) {
       workspacePath,
       appVersion: app.getVersion(),
       mcpAuth: () => mcpAuthStore.list(),
+      providerAuth: () => providerAuthStore.runtimeAuth(),
       onMcpAuth: (auth) => {
         void mcpAuthStore.set(auth).catch((error) => {
           console.error('[mcp-auth] failed to store refreshed credentials', error)

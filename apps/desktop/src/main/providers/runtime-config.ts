@@ -7,6 +7,21 @@ export function runtimeModelsWithOAuth(
   config: RuntimeModelsConfig,
   authStore: ProviderAuthStoreLike
 ): RuntimeModelsConfig {
+  const saved = authStore.runtimeAuth?.()
+  if (saved) {
+    const tokens = new Map(
+      saved
+        .filter((auth) => auth.type === 'oauth')
+        .map((auth) => [auth.providerId, auth.accessToken])
+    )
+    return {
+      ...config,
+      providers: config.providers.map((provider) => {
+        const accessToken = tokens.get(provider.id)
+        return accessToken ? { ...provider, apiKey: accessToken } : provider
+      })
+    }
+  }
   return {
     ...config,
     providers: config.providers.map((provider) => {

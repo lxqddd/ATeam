@@ -87,6 +87,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
       .catch(() => undefined)
       .then(async () => {
         try {
+          await manager.setProviderAuth(providerAuthStore.runtimeAuth())
           await manager.setModels(
             runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore)
           )

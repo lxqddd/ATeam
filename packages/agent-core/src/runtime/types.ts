@@ -15,6 +15,7 @@ import type {
   QuestionRequest,
   ReasoningEffort,
   RuntimeModelsConfig,
+  RuntimeProviderAuth,
   RuntimeWebSearchConfig,
   WebFetchFormat
 } from '@ateam/shared'
@@ -73,6 +74,7 @@ export interface AgentRuntimeOptions {
   workspacePath: string
   appVersion?: string
   models: RuntimeModelsConfig
+  providerAuth?: RuntimeProviderAuth[]
   webSearch?: RuntimeWebSearchConfig | null
   mcpAuth?: McpAuthRecord[]
   onMcpAuth?: (auth: McpAuthRecord) => void

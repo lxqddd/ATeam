@@ -2,6 +2,10 @@ import type {
   AgentConfig,
   AgentDefinition,
   EffectiveAgentConfig,
+  PluginAuthAuthorizeInput,
+  PluginAuthCompleteInput,
+  PluginAuthMethodInfo,
+  PluginAuthResult,
   PluginEntry,
   PluginInstallInput,
   PluginUpdateInput,
@@ -106,6 +110,9 @@ export interface AgentBridge {
     install: (input: PluginInstallInput) => Promise<PluginEntry[]>
     update: (id: string, input: PluginUpdateInput) => Promise<PluginEntry[]>
     remove: (id: string) => Promise<PluginEntry[]>
+    authMethods: (directory?: string | null) => Promise<PluginAuthMethodInfo[]>
+    authorizeAuth: (input: PluginAuthAuthorizeInput) => Promise<PluginAuthResult>
+    completeAuth: (input: PluginAuthCompleteInput) => Promise<PluginAuthResult>
   }
   mcp: {
     list: (directory?: string | null) => Promise<{

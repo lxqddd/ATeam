@@ -114,7 +114,13 @@ const api: AteamApi = {
       list: () => ipcRenderer.invoke(AGENT_CHANNELS.pluginsList),
       install: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsInstall, input),
       update: (id, input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsUpdate, { id, input }),
-      remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsRemove, { id })
+      remove: (id) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsRemove, { id }),
+      authMethods: (directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.pluginsAuthMethods, {
+          directory: directory ?? undefined
+        }),
+      authorizeAuth: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsAuthorizeAuth, input),
+      completeAuth: (input) => ipcRenderer.invoke(AGENT_CHANNELS.pluginsCompleteAuth, input)
     },
     mcp: {
       list: (directory) =>

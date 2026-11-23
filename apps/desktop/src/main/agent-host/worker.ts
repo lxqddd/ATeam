@@ -75,6 +75,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         workspacePath: request.params.workspacePath,
         appVersion: request.params.appVersion,
         models: request.params.models,
+        providerAuth: request.params.providerAuth ?? [],
         webSearch: request.params.webSearch ?? null,
         mcpAuth: request.params.mcpAuth ?? [],
         onMcpAuth: (auth) => send({ kind: 'mcp-auth', auth }),
@@ -87,6 +88,9 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     }
     case 'setModels':
       requireRuntime().setModels(request.params.models)
+      return null
+    case 'setProviderAuth':
+      requireRuntime().setProviderAuth(request.params.auths)
       return null
     case 'setWebSearch':
       requireRuntime().setWebSearch(request.params.config)
@@ -193,6 +197,20 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'mcp.setAuth':
       await requireRuntime().setMcpAuth(request.params.auths)
       return null
+    case 'plugins.authMethods':
+      return requireRuntime().pluginAuthMethods(request.params?.workspace)
+    case 'plugins.authorizeAuth':
+      return requireRuntime().authorizePluginAuth(
+        request.params.workspace,
+        request.params.id,
+        request.params.answers
+      )
+    case 'plugins.completeAuth':
+      return requireRuntime().completePluginAuth(
+        request.params.workspace,
+        request.params.requestId,
+        request.params.code
+      )
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'shutdown':

@@ -92,6 +92,25 @@ describe('provider runtime helpers', () => {
     expect(injected.providers[1].apiKey).toBe('other-key')
   })
 
+  it('injects plugin oauth tokens that have no refresh endpoint', async () => {
+    await store.setPluginCredentials('provider-1', {
+      type: 'oauth',
+      accessToken: 'plugin-access'
+    })
+    const injected = runtimeModelsWithOAuth(
+      {
+        providers: [
+          { id: 'provider-1', name: 'OpenAI', type: 'openai' as const, apiKey: 'api-key' }
+        ],
+        models: [],
+        defaultModel: null
+      },
+      store
+    )
+
+    expect(injected.providers[0].apiKey).toBe('plugin-access')
+  })
+
   it('refreshes expiring tokens', async () => {
     const expiring = { ...RECORD, expiresAt: Date.now() + 10_000 }
     const saved: ProviderAuthRecord[] = []

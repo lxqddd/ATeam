@@ -6,7 +6,7 @@ import type {
   RuntimeWebSearchConfig,
   SessionSettings
 } from './agent-types'
-import type { ModelPublic, ModelRef, ProviderType } from './model-types'
+import type { ModelPublic, ModelRef, ProviderType, RuntimeProviderAuth } from './model-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
 export interface RuntimeProvider {
@@ -32,11 +32,13 @@ export type WorkerRequest =
         workspacePath: string
         appVersion: string
         models: RuntimeModelsConfig
+        providerAuth?: RuntimeProviderAuth[]
         webSearch?: RuntimeWebSearchConfig | null
         mcpAuth?: import('./agent-types').McpAuthRecord[]
       }
     }
   | { id: string; method: 'setModels'; params: { models: RuntimeModelsConfig } }
+  | { id: string; method: 'setProviderAuth'; params: { auths: RuntimeProviderAuth[] } }
   | {
       id: string
       method: 'setWebSearch'
@@ -151,6 +153,21 @@ export type WorkerRequest =
       id: string
       method: 'mcp.setAuth'
       params: { auths: import('./agent-types').McpAuthRecord[] }
+    }
+  | {
+      id: string
+      method: 'plugins.authMethods'
+      params?: { workspace?: string }
+    }
+  | {
+      id: string
+      method: 'plugins.authorizeAuth'
+      params: { workspace: string; id: string; answers: Record<string, string> }
+    }
+  | {
+      id: string
+      method: 'plugins.completeAuth'
+      params: { workspace: string; requestId: string; code?: string }
     }
   | {
       id: string

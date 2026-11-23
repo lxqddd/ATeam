@@ -19,10 +19,13 @@ import type {
   PermissionRequest,
   PermissionRule,
   PermissionRuleInput,
+  PluginAuthMethodInfo,
+  PluginAuthResult,
   QuestionAnswer,
   QuestionRequest,
   RunOutcome,
   RuntimeModelsConfig,
+  RuntimeProviderAuth,
   RuntimeWebSearchConfig,
   SessionMeta,
   SessionSearchResult,
@@ -69,6 +72,7 @@ import { DEFAULT_DEPENDENCIES } from './defaults'
 import { isContextLengthError } from './helpers'
 import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
 import { PermissionService } from './permission-service'
+import { applyProviderAuth } from './provider-auth'
 import {
   appendToolOutput,
   emitPart,
@@ -103,6 +107,7 @@ export class AgentRuntime {
   private readonly runs = new Map<string, Run>()
   private readonly starting = new Set<string>()
   private models: RuntimeModelsConfig
+  private providerAuth: RuntimeProviderAuth[]
   private readonly effectiveModels: Map<string, RuntimeModelsConfig>
   private readonly projectProviderConfigs = new Map<string, AgentConfig['providers']>()
   private readonly deps: AgentRuntimeDependencies
@@ -118,6 +123,7 @@ export class AgentRuntime {
     this.snapshots = new SnapshotStore(options.userDataPath)
     this.toolOutputs = new ToolOutputStore(options.userDataPath)
     this.models = options.models
+    this.providerAuth = options.providerAuth ?? []
     this.effectiveModels = new Map()
     this.deps = { ...DEFAULT_DEPENDENCIES, ...options.dependencies }
     this.events = new RuntimeEvents({
@@ -226,7 +232,10 @@ export class AgentRuntime {
     const plugins = await this.workspaceServices.plugins(config, workspace)
     const output = { models: base }
     await plugins.transformProviders({ workspace, models: base }, output)
-    output.models.providers = await plugins.applyAuth(workspace, output.models.providers)
+    output.models.providers = applyProviderAuth(
+      await plugins.applyAuth(workspace, output.models.providers),
+      this.providerAuth
+    )
     this.effectiveModels.set(workspace, output.models)
     return output.models
   }
@@ -241,6 +250,36 @@ export class AgentRuntime {
 
   listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {
     return this.sessionService.listAgents(workspace)
+  }
+
+  async pluginAuthMethods(workspace = this.options.workspacePath): Promise<PluginAuthMethodInfo[]> {
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const plugins = await this.workspaceServices.plugins(effective.config, workspace)
+    return plugins.authMethods()
+  }
+
+  async authorizePluginAuth(
+    workspace: string,
+    id: string,
+    answers: Record<string, string>
+  ): Promise<PluginAuthResult> {
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const plugins = await this.workspaceServices.plugins(effective.config, workspace)
+    return plugins.authorizeAuth(id, answers)
+  }
+
+  async completePluginAuth(
+    workspace: string,
+    requestId: string,
+    code?: string
+  ): Promise<PluginAuthResult> {
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const plugins = await this.workspaceServices.plugins(effective.config, workspace)
+    return plugins.completeAuth(requestId, { code })
+  }
+
+  setProviderAuth(auths: RuntimeProviderAuth[]): void {
+    this.providerAuth = [...auths]
   }
 
   async listCommands(workspace = this.options.workspacePath): Promise<CommandDefinition[]> {

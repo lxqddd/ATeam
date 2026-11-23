@@ -68,6 +68,17 @@ export interface ProviderAuthRecord {
   scope?: string | null
 }
 
+/** Credentials applied to runtime providers, including plugin-authorized ones. */
+export type RuntimeProviderAuth =
+  | { providerId: string; type: 'api'; key: string }
+  | {
+      providerId: string
+      type: 'oauth'
+      accessToken: string
+      refreshToken?: string | null
+      expiresAt?: number | null
+    }
+
 export interface ModelPublic {
   id: string
   providerId: string

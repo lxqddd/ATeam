@@ -192,6 +192,234 @@ describe('PluginRegistry', () => {
     ])
   })
 
+  it('lists declarative auth methods with serializable prompts', () => {
+    const registry = new PluginRegistry([
+      {
+        name: '@acme/auth',
+        auth: {
+          provider: 'acme',
+          providerName: 'Acme Cloud',
+          methods: [
+            {
+              type: 'api',
+              label: 'API key',
+              description: 'Paste an account key',
+              prompts: [
+                {
+                  type: 'text',
+                  key: 'token',
+                  message: 'Account token',
+                  placeholder: 'acme_...'
+                },
+                {
+                  type: 'select',
+                  key: 'region',
+                  message: 'Region',
+                  options: [
+                    { label: 'US', value: 'us' },
+                    { label: 'EU', value: 'eu' }
+                  ]
+                }
+              ],
+              authorize: async () => ({
+                status: 'success',
+                credentials: { type: 'api', key: 'key' }
+              })
+            }
+          ]
+        }
+      }
+    ])
+
+    expect(registry.authMethods()).toEqual([
+      {
+        id: '0:0',
+        plugin: '@acme/auth',
+        provider: 'acme',
+        providerName: 'Acme Cloud',
+        type: 'api',
+        label: 'API key',
+        description: 'Paste an account key',
+        prompts: [
+          {
+            type: 'text',
+            key: 'token',
+            message: 'Account token',
+            placeholder: 'acme_...',
+            required: true
+          },
+          {
+            type: 'select',
+            key: 'region',
+            message: 'Region',
+            required: true,
+            options: [
+              { label: 'US', value: 'us' },
+              { label: 'EU', value: 'eu' }
+            ]
+          }
+        ]
+      }
+    ])
+  })
+
+  it('authorizes an api auth method with entered prompts', async () => {
+    const authorize = vi.fn(async () => ({
+      status: 'success' as const,
+      credentials: { type: 'api' as const, key: 'acme-key' }
+    }))
+    const registry = new PluginRegistry([
+      {
+        auth: {
+          provider: 'acme',
+          methods: [
+            {
+              type: 'api',
+              label: 'API key',
+              prompts: [{ type: 'text', key: 'token', message: 'Token' }],
+              authorize
+            }
+          ]
+        }
+      }
+    ])
+
+    await expect(registry.authorizeAuth('0:0', { token: 'typed' })).resolves.toEqual({
+      status: 'success',
+      provider: 'acme',
+      credentials: { type: 'api', key: 'acme-key' }
+    })
+    expect(authorize).toHaveBeenCalledWith({ answers: { token: 'typed' } })
+  })
+
+  it('rejects missing auth prompt answers before calling the plugin', async () => {
+    const authorize = vi.fn(async () => ({
+      status: 'success' as const,
+      credentials: { type: 'api' as const, key: 'acme-key' }
+    }))
+    const registry = new PluginRegistry([
+      {
+        auth: {
+          provider: 'acme',
+          methods: [
+            {
+              type: 'api',
+              label: 'API key',
+              prompts: [{ type: 'text', key: 'token', message: 'Token' }],
+              authorize
+            }
+          ]
+        }
+      }
+    ])
+
+    await expect(registry.authorizeAuth('0:0', { token: '  ' })).resolves.toEqual({
+      status: 'failed',
+      message: 'Missing required value: token'
+    })
+    expect(authorize).not.toHaveBeenCalled()
+  })
+
+  it('supports pending oauth authorization and completion', async () => {
+    const registry = new PluginRegistry([
+      {
+        name: '@acme/oauth',
+        auth: {
+          provider: 'acme',
+          methods: [
+            {
+              type: 'oauth',
+              label: 'Browser login',
+              authorize: async () => ({
+                status: 'pending',
+                url: 'https://acme.example.com/login',
+                instructions: 'Sign in and paste the code.',
+                codeRequired: true,
+                complete: async ({ code }) => ({
+                  status: 'success',
+                  credentials: {
+                    type: 'oauth',
+                    accessToken: `access:${code}`,
+                    refreshToken: 'refresh',
+                    expiresAt: 1_800_000_000_000
+                  }
+                })
+              })
+            }
+          ]
+        }
+      }
+    ])
+
+    const pending = await registry.authorizeAuth('0:0', {})
+    expect(pending).toMatchObject({
+      status: 'pending',
+      provider: 'acme',
+      url: 'https://acme.example.com/login',
+      instructions: 'Sign in and paste the code.',
+      codeRequired: true
+    })
+    if (pending.status !== 'pending') throw new Error('expected pending authorization')
+
+    await expect(registry.completeAuth(pending.requestId, { code: 'abc' })).resolves.toEqual({
+      status: 'success',
+      provider: 'acme',
+      credentials: {
+        type: 'oauth',
+        accessToken: 'access:abc',
+        refreshToken: 'refresh',
+        expiresAt: 1_800_000_000_000
+      }
+    })
+    await expect(registry.completeAuth(pending.requestId, { code: 'abc' })).rejects.toThrow(
+      'AUTH_REQUEST_NOT_FOUND'
+    )
+  })
+
+  it('rejects unsafe auth redirects', async () => {
+    const registry = new PluginRegistry([
+      {
+        auth: {
+          provider: 'acme',
+          methods: [
+            {
+              type: 'oauth',
+              label: 'Login',
+              authorize: async () => ({
+                status: 'pending',
+                url: 'javascript:alert(1)',
+                complete: async () => ({
+                  status: 'success',
+                  credentials: { type: 'api', key: 'key' }
+                })
+              })
+            }
+          ]
+        }
+      }
+    ])
+
+    await expect(registry.authorizeAuth('0:0', {})).resolves.toEqual({
+      status: 'failed',
+      message: 'Auth URL must use http or https.'
+    })
+  })
+
+  it('keeps function auth hooks as credential injection', async () => {
+    const registry = new PluginRegistry([
+      {
+        auth: (_input, output) => {
+          output.apiKey = 'injected'
+        }
+      }
+    ])
+
+    await expect(
+      registry.applyAuth(directory, [{ id: 'p', name: 'P', type: 'openai' }])
+    ).resolves.toEqual([{ id: 'p', name: 'P', type: 'openai', apiKey: 'injected' }])
+    expect(registry.authMethods()).toEqual([])
+  })
+
   it('forwards runtime events to plugin hooks', async () => {
     const handler = vi.fn()
     const registry = new PluginRegistry([{ event: handler }])
