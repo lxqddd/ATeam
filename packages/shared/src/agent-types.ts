@@ -380,7 +380,9 @@ export interface AgentConfigDocument {
   snapshots?: boolean
   instructions?: string[]
   lsp?: boolean | Record<string, LspServerConfigInput>
+  lspEnabled?: boolean
   formatters?: boolean | Record<string, FormatterConfigInput>
+  formattersEnabled?: boolean
   formatterOverrides?: Record<string, string>
   references?: AgentReference[] | Record<string, string | AgentReference>
   permissions?: PermissionRuleInput[]

@@ -606,4 +606,27 @@ describe('project MCP servers', () => {
     expect(next.some((server) => server.name === 'project-next')).toBe(true)
     await manager.dispose()
   })
+  it('preserves project OAuth client configuration', async () => {
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      projectServers: [
+        {
+          name: 'oauth-project',
+          type: 'remote',
+          url: 'https://mcp.example.com/mcp',
+          oauthClientId: 'client-1',
+          oauthScope: 'read',
+          oauthRedirectUri: 'http://127.0.0.1:19876/callback'
+        }
+      ]
+    })
+    const server = (await manager.servers()).find((entry) => entry.name === 'oauth-project')
+    expect(server).toMatchObject({
+      oauthClientId: 'client-1',
+      oauthScope: 'read',
+      oauthRedirectUri: 'http://127.0.0.1:19876/callback'
+    })
+    await manager.dispose()
+  })
 })

@@ -22,6 +22,7 @@ export interface SessionHost {
   readonly userDataPath: string
   readonly defaultWorkspacePath: string
   models(): RuntimeModelsConfig
+  modelsFor(sessionId: string): RuntimeModelsConfig
   emit(event: AgentEvent): void
   currentSeq(): number
   reserveSession(sessionId: string): void
@@ -97,7 +98,7 @@ export class SessionService {
 
   async setSessionModel(id: string, model: ModelRef | null): Promise<SessionMeta> {
     if (model) {
-      const resolved = resolveModelRef(this.host.models(), model).model
+      const resolved = resolveModelRef(this.host.modelsFor(id), model).model
       if (model.variant && !(resolved.variants ?? []).some((item) => item.id === model.variant)) {
         throw new Error('INVALID_VARIANT')
       }
@@ -182,11 +183,11 @@ export class SessionService {
     }
   }
 
-  setModels(models: RuntimeModelsConfig): void {
+  setModels(): void {
     for (const session of this.host.store.list()) {
       if (!session.model) continue
       try {
-        const resolved = resolveModelRef(models, session.model)
+        const resolved = resolveModelRef(this.host.modelsFor(session.id), session.model)
         if (
           session.model.variant &&
           !(resolved.model.variants ?? []).some((variant) => variant.id === session.model?.variant)

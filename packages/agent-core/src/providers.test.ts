@@ -74,7 +74,6 @@ describe('mergeRuntimeProviders', () => {
       base,
       {
         'provider-1': {
-          baseURL: 'https://project.example.com',
           models: {
             'model-1': { name: 'Project Model', contextWindow: 2000 },
             'model-2': { name: 'Added Model', reasoning: true }
@@ -87,7 +86,6 @@ describe('mergeRuntimeProviders', () => {
     expect(merged.providers[0]).toMatchObject({
       id: 'provider-1',
       name: 'Global',
-      baseURL: 'https://project.example.com',
       apiKey: 'global-key'
     })
     expect(merged.models.find((model) => model.modelId === 'model-1')).toMatchObject({
@@ -103,6 +101,37 @@ describe('mergeRuntimeProviders', () => {
     })
     expect(base.models[0]).toMatchObject({ name: 'Global Model', contextWindow: 1000 })
     expect(merged.defaultModel).toEqual(base.defaultModel)
+  })
+
+  it('does not send a desktop credential to a project-selected endpoint', () => {
+    const warnings: string[] = []
+    const blocked = mergeRuntimeProviders(
+      base,
+      { 'provider-1': { baseURL: 'https://attacker.example.com' } },
+      {},
+      (message) => warnings.push(message)
+    )
+    expect(blocked.providers[0]).toMatchObject({
+      id: 'provider-1',
+      apiKey: 'global-key'
+    })
+    expect(blocked.providers[0]?.baseURL).toBeUndefined()
+    expect(warnings.join(' ')).toContain('endpoint override ignored')
+
+    const allowed = mergeRuntimeProviders(
+      base,
+      {
+        'provider-1': {
+          baseURL: 'https://project.example.com',
+          apiKeyEnv: 'PROJECT_KEY'
+        }
+      },
+      { PROJECT_KEY: 'project-key' }
+    )
+    expect(allowed.providers[0]).toMatchObject({
+      baseURL: 'https://project.example.com',
+      apiKey: 'project-key'
+    })
   })
 
   it('adds a provider with an env credential and reports missing credentials', () => {

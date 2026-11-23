@@ -279,10 +279,6 @@ function normalizeLspServers(
       .map((entry) => (entry.startsWith('.') ? entry.toLowerCase() : `.${entry.toLowerCase()}`))
       .filter((entry) => /^\.[a-z0-9+]{1,20}$/.test(entry))
     const disabled = raw.disabled === true
-    if (!disabled && command.length === 0) {
-      diagnostic(diagnostics, source, `${path}.${id}.command`, 'LSP server command is required')
-      continue
-    }
     const env = stringRecord(raw.env)
     servers[id] = {
       ...(command.length > 0 ? { command } : {}),
@@ -314,10 +310,6 @@ function normalizeFormatterServers(
     }
     const command = strings(raw.command)
     const disabled = raw.disabled === true
-    if (!disabled && command.length === 0) {
-      diagnostic(diagnostics, source, `${path}.${id}.command`, 'formatter command is required')
-      continue
-    }
     const extensions = strings(raw.extensions)
       .map((entry) => (entry.startsWith('.') ? entry.toLowerCase() : `.${entry.toLowerCase()}`))
       .filter((entry) => /^\.[a-z0-9+]{1,20}$/.test(entry))
@@ -516,12 +508,16 @@ export function normalizeAgentConfigDocument(
       diagnostic(diagnostics, source, '$.instructions', 'instructions must be a string array')
     }
   }
+  if (typeof value.lspEnabled === 'boolean') document.lspEnabled = value.lspEnabled
   if (typeof value.lsp === 'boolean') document.lsp = value.lsp
   else if (isRecord(value.lsp)) {
     const servers = normalizeLspServers(value.lsp, source, '$.lsp', diagnostics)
     if (servers) document.lsp = servers
   } else if (value.lsp !== undefined) {
     diagnostic(diagnostics, source, '$.lsp', 'lsp must be a boolean or object')
+  }
+  if (typeof value.formattersEnabled === 'boolean') {
+    document.formattersEnabled = value.formattersEnabled
   }
   if (typeof value.formatters === 'boolean') document.formatters = value.formatters
   else if (isRecord(value.formatters)) {

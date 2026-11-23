@@ -104,6 +104,7 @@ export class AgentRuntime {
   private readonly starting = new Set<string>()
   private models: RuntimeModelsConfig
   private readonly effectiveModels: Map<string, RuntimeModelsConfig>
+  private readonly projectProviderConfigs = new Map<string, AgentConfig['providers']>()
   private readonly deps: AgentRuntimeDependencies
   private readonly events: RuntimeEvents
   private readonly compaction: CompactionService
@@ -153,6 +154,7 @@ export class AgentRuntime {
       userDataPath: options.userDataPath,
       defaultWorkspacePath: options.workspacePath,
       models: () => this.models,
+      modelsFor: (sessionId) => this.modelsForSession(sessionId),
       emit: (event) => this.events.emit(event),
       currentSeq: () => this.events.currentSeq,
       reserveSession: (sessionId) => this.reserveSession(sessionId),
@@ -180,19 +182,42 @@ export class AgentRuntime {
     await this.permissionRules.init()
     await this.snapshots.init()
     await this.applyWorkspaceConfig(this.options.workspacePath)
+    for (const session of this.store.list()) {
+      const workspace = this.sessionWorkspace(session.id)
+      if (workspace !== this.options.workspacePath) {
+        await this.rememberWorkspaceConfig(workspace, false)
+      }
+    }
     await this.workspaceServices.skillsFor(this.options.workspacePath)
   }
 
   private async applyWorkspaceConfig(workspace: string): Promise<EffectiveAgentConfig> {
+    return this.rememberWorkspaceConfig(workspace, true)
+  }
+
+  private async rememberWorkspaceConfig(
+    workspace: string,
+    applyServices: boolean
+  ): Promise<EffectiveAgentConfig> {
     const effective = await readEffectiveAgentConfig(this.options.userDataPath, workspace)
-    await this.workspaceServices.applyConfig(workspace, effective)
+    this.projectProviderConfigs.set(workspace, effective.config.providers)
+    this.effectiveModels.set(
+      workspace,
+      mergeRuntimeProviders(this.models, effective.config.providers, process.env)
+    )
+    if (applyServices) await this.workspaceServices.applyConfig(workspace, effective)
     return effective
   }
 
   private modelsForConfig(workspace: string, config: AgentConfig): RuntimeModelsConfig {
     const models = mergeRuntimeProviders(this.models, config.providers, process.env)
+    this.projectProviderConfigs.set(workspace, config.providers)
     this.effectiveModels.set(workspace, models)
     return models
+  }
+
+  private modelsForSession(sessionId: string): RuntimeModelsConfig {
+    return this.effectiveModels.get(this.sessionWorkspace(sessionId)) ?? this.models
   }
 
   listSessions(): SessionMeta[] {
@@ -279,6 +304,7 @@ export class AgentRuntime {
   }
 
   async setSessionModel(id: string, model: ModelRef | null): Promise<SessionMeta> {
+    await this.applyWorkspaceConfig(this.sessionWorkspace(id))
     return this.sessionService.setSessionModel(id, model)
   }
 
@@ -293,7 +319,7 @@ export class AgentRuntime {
 
     try {
       const effective = await this.applyWorkspaceConfig(this.sessionWorkspace(id))
-      const models = this.modelsForConfig(this.options.workspacePath, effective.config)
+      const models = this.modelsForConfig(this.sessionWorkspace(id), effective.config)
       const model = this.deps.createLanguageModel(
         models,
         record.session.model ?? models.defaultModel,
@@ -523,7 +549,15 @@ export class AgentRuntime {
   setModels(models: RuntimeModelsConfig): void {
     this.models = models
     this.effectiveModels.clear()
-    this.sessionService.setModels(models)
+    const workspaces = new Set([this.options.workspacePath])
+    for (const session of this.store.list()) workspaces.add(this.sessionWorkspace(session.id))
+    for (const workspace of workspaces) {
+      this.effectiveModels.set(
+        workspace,
+        mergeRuntimeProviders(models, this.projectProviderConfigs.get(workspace), process.env)
+      )
+    }
+    this.sessionService.setModels()
   }
 
   private reserveSession(sessionId: string): void {

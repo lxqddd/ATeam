@@ -143,8 +143,15 @@ export class AgentConfigStore {
     const next: AgentConfigDocument = { ...this.document }
     if ('snapshots' in patch) next.snapshots = patch.snapshots
     if ('instructions' in patch) next.instructions = patch.instructions
-    if ('lsp' in patch) next.lsp = patch.lsp
-    if ('formatters' in patch) next.formatters = patch.formatters
+    if ('lsp' in patch) {
+      if (next.lsp && typeof next.lsp === 'object') next.lspEnabled = patch.lsp
+      else next.lsp = patch.lsp
+    }
+    if ('formatters' in patch) {
+      if (next.formatters && typeof next.formatters === 'object') {
+        next.formattersEnabled = patch.formatters
+      } else next.formatters = patch.formatters
+    }
     if ('formatterOverrides' in patch) next.formatterOverrides = patch.formatterOverrides
     if ('references' in patch) next.references = patch.references
     if ('skills' in patch) next.skills = patch.skills

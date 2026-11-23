@@ -467,7 +467,7 @@ describe('resolveLspServers', () => {
     formatters: true,
     formatterOverrides: {},
     lspServers: {
-      typescript: { command: ['custom-ts', '--stdio'], extensions: ['.ts'] },
+      typescript: { extensions: ['.ts', '.foo'] },
       clangd: { disabled: true },
       deno: { command: ['deno', 'lsp'], extensions: ['.tsx'] }
     }
@@ -476,12 +476,66 @@ describe('resolveLspServers', () => {
   it('overrides, disables and adds servers', () => {
     const servers = resolveLspServers(config)
     expect(servers.find((server) => server.id === 'typescript')?.command).toEqual([
-      'custom-ts',
+      'typescript-language-server',
       '--stdio'
+    ])
+    expect(servers.find((server) => server.id === 'typescript')?.extensions).toEqual([
+      '.ts',
+      '.foo'
     ])
     expect(servers.some((server) => server.id === 'clangd')).toBe(false)
     expect(servers.find((server) => server.id === 'deno')?.extensions).toEqual(['.tsx'])
     expect(lspServerForFile('index.ts', servers)?.id).toBe('typescript')
     expect(lspServerForFile('index.tsx', servers)?.id).toBe('deno')
+  })
+})
+
+describe('configured LSP manager', () => {
+  let workspace: string
+
+  beforeEach(async () => {
+    workspace = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-lsp-config-')))
+  })
+
+  afterEach(async () => {
+    await fs.rm(workspace, { recursive: true, force: true })
+  })
+
+  it('uses configured servers for hover and definition', async () => {
+    const file = path.join(workspace, 'a.foo')
+    await fs.writeFile(file, 'const x = 1')
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/hover') {
+            instance.respond(message.id, { contents: 'Custom docs' })
+          }
+          if (message.method === 'textDocument/definition') {
+            instance.respond(message.id, {
+              uri: pathToFileURL(file).toString(),
+              range: { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } }
+            })
+          }
+        })
+      )
+      return server as unknown as LspChildProcess
+    })
+    const manager = new LspManager({
+      workspace,
+      servers: [
+        {
+          id: 'custom',
+          command: ['/bin/custom-language-server'],
+          extensions: ['.foo']
+        }
+      ],
+      spawn,
+      resolveExecutable: async () => '/bin/custom-language-server',
+      diagnosticsTimeoutMs: 30
+    })
+
+    await expect(manager.hover(file, 1, 1)).resolves.toContain('Custom docs')
+    await expect(manager.definition(file, 1, 1)).resolves.toContain('a.foo:1:1')
+    await manager.dispose()
   })
 })

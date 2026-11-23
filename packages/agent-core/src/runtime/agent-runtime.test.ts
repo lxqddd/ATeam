@@ -3187,4 +3187,27 @@ describe('project provider and MCP configuration', () => {
     expect(turns[0].system).toContain('PROJECT_RULE_MARKER')
     expect(commands.find((command) => command.name === 'review')?.source).toBe('project')
   })
+  it('keeps project models when validating sessions and refreshing base models', async () => {
+    await fs.writeFile(
+      path.join(directory, 'workspace', 'ateam.json'),
+      JSON.stringify({
+        providers: {
+          'provider-1': {
+            models: { 'project-model': { name: 'Project Model', contextWindow: 4096 } }
+          }
+        }
+      })
+    )
+    const projectModel = { providerId: 'provider-1', modelId: 'project-model' }
+
+    await runtime.setSessionModel(sessionId, projectModel)
+    expect(runtime.listSessions().find((session) => session.id === sessionId)?.model).toEqual(
+      projectModel
+    )
+
+    runtime.setModels(MODELS)
+    expect(runtime.listSessions().find((session) => session.id === sessionId)?.model).toEqual(
+      projectModel
+    )
+  })
 })

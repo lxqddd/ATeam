@@ -56,16 +56,26 @@ export function mergeRuntimeProviders(
       onWarning?.(`provider ${id} requires baseURL for openai-compatible`)
       continue
     }
-    const apiKey =
-      existing?.apiKey ?? (input.apiKeyEnv ? env[input.apiKeyEnv] : undefined) ?? undefined
+    const envKey = input.apiKeyEnv ? env[input.apiKeyEnv] : undefined
+    const endpointChanged =
+      Boolean(existing) &&
+      ((input.baseURL !== undefined && input.baseURL !== existing?.baseURL) ||
+        (input.type !== undefined && input.type !== existing?.type))
+    if (existing && endpointChanged && !envKey) {
+      onWarning?.(
+        `provider ${id} endpoint override ignored: apiKeyEnv credential is required to redirect an existing provider`
+      )
+    }
+    const allowEndpointOverride = !existing || !endpointChanged || Boolean(envKey)
+    const apiKey = existing ? (envKey ?? existing.apiKey) : envKey
     if (!existing && !apiKey) {
       onWarning?.(`provider ${id} has no credential (apiKeyEnv=${input.apiKeyEnv ?? 'unset'})`)
     }
     const merged = {
       ...(existing ?? { id, name: input.name ?? id, type }),
       ...(input.name ? { name: input.name } : {}),
-      ...(input.type ? { type: input.type } : {}),
-      ...(input.baseURL ? { baseURL: input.baseURL } : {}),
+      ...(allowEndpointOverride && input.type ? { type: input.type } : {}),
+      ...(allowEndpointOverride && input.baseURL ? { baseURL: input.baseURL } : {}),
       ...(apiKey ? { apiKey } : {})
     }
     if (existing) {

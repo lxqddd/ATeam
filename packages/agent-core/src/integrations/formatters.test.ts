@@ -131,11 +131,26 @@ describe('formatFile', () => {
     })
 
     expect(result).toEqual({ formatted: true, formatter: 'prettier' })
+    expect(spawn.mock.calls[0]?.[2].env).toBeUndefined()
     expect(spawn).toHaveBeenCalledWith(
       path.join(workspace, 'node_modules', '.bin', 'prettier'),
       ['--write', file],
       expect.objectContaining({ cwd: workspace })
     )
+  })
+
+  it('merges configured environments over the inherited process env', async () => {
+    const file = path.join(workspace, 'a.ts')
+    const formatter = { ...PRETTIER, environment: { A_TEAM_FMT_TEST: '1' } }
+    const spawn = vi.fn<FormatterSpawn>(() => fakeChild(0) as unknown as FormatterSpawnChild)
+
+    await formatFile(file, [formatter], workspace, {
+      spawn,
+      resolveExecutable: async () => '/bin/prettier'
+    })
+
+    expect(spawn.mock.calls[0]?.[2].env).toMatchObject({ A_TEAM_FMT_TEST: '1' })
+    expect(spawn.mock.calls[0]?.[2].env?.PATH).toBe(process.env.PATH)
   })
 
   it('skips files without a matching formatter', async () => {
@@ -212,7 +227,7 @@ describe('configured formatters', () => {
     formatters: true,
     formatterOverrides: {},
     formatterServers: {
-      prettier: { command: ['custom-prettier', '$FILE'] },
+      prettier: { extensions: ['.tsx'] },
       custom: {
         command: ['myfmt', '$FILE'],
         extensions: ['.foo'],
@@ -222,11 +237,13 @@ describe('configured formatters', () => {
   } satisfies AgentConfig
 
   it('overrides built-ins and adds custom commands with env', async () => {
+    await fs.writeFile(path.join(workspace, '.prettierrc'), '{}')
     const formatters = await discoverFormatters(workspace, config)
     const prettier = formatters.find((formatter) => formatter.id === 'prettier')
     const custom = formatters.find((formatter) => formatter.id === 'custom')
 
-    expect(prettier?.command('index.ts')).toEqual(['custom-prettier', 'index.ts'])
+    expect(prettier?.command('index.ts')).toEqual(['prettier', '--write', 'index.ts'])
+    expect(prettier?.extensions).toEqual(['.tsx'])
     expect(custom?.command('file.foo')).toEqual(['myfmt', 'file.foo'])
     expect(custom?.environment).toEqual({ FOO: 'bar' })
     expect(formatters[0]?.id).toBe('prettier')

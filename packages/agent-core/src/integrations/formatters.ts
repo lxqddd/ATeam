@@ -244,10 +244,14 @@ export async function formatFile(
     return await new Promise<FormatResult>((resolveResult) => {
       let settled = false
       let stderr = ''
-      const child = spawn(executable, args, {
-        cwd: workspace,
-        env: { ...options.env, ...formatter.environment }
-      })
+      const envOverrides = { ...(options.env ?? {}), ...(formatter.environment ?? {}) }
+      const child = spawn(
+        executable,
+        args,
+        Object.keys(envOverrides).length > 0
+          ? { cwd: workspace, env: { ...process.env, ...envOverrides } }
+          : { cwd: workspace }
+      )
       const finish = (result: FormatResult): void => {
         if (settled) return
         settled = true

@@ -188,7 +188,11 @@ function mergeServerConfigs<T extends { disabled?: boolean }>(
   project: Record<string, T> | undefined
 ): Record<string, T> | undefined {
   if (!base && !project) return undefined
-  return { ...(base ?? {}), ...(project ?? {}) }
+  const merged: Record<string, T> = { ...(base ?? {}) }
+  for (const [id, value] of Object.entries(project ?? {})) {
+    merged[id] = { ...(base?.[id] ?? {}), ...value }
+  }
+  return merged
 }
 
 function mergeProviderConfigs(
@@ -253,8 +257,10 @@ export function mergeAgentConfig(
     lsp = true
     lspServers = undefined
   } else if (project.lsp) {
-    lsp = true
+    lsp = project.lspEnabled ?? true
     lspServers = mergeServerConfigs(base.lspServers, project.lsp)
+  } else if (project.lspEnabled !== undefined) {
+    lsp = project.lspEnabled
   }
   let formatters = base.formatters
   let formatterServers: Record<string, FormatterConfigInput> | undefined = base.formatterServers
@@ -264,8 +270,10 @@ export function mergeAgentConfig(
     formatters = true
     formatterServers = undefined
   } else if (project.formatters) {
-    formatters = true
+    formatters = project.formattersEnabled ?? true
     formatterServers = mergeServerConfigs(base.formatterServers, project.formatters)
+  } else if (project.formattersEnabled !== undefined) {
+    formatters = project.formattersEnabled
   }
   const references = mergeReferences(
     base.references,

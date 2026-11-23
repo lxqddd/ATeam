@@ -467,7 +467,7 @@ export class LspManager {
   }
 
   async hover(file: string, line: number, character: number): Promise<string> {
-    const server = lspServerForFile(file)
+    const server = lspServerForFile(file, this.options.servers)
     if (!server) return ''
     try {
       const client = await this.clientFor(server)
@@ -482,7 +482,7 @@ export class LspManager {
   }
 
   async definition(file: string, line: number, character: number): Promise<string> {
-    const server = lspServerForFile(file)
+    const server = lspServerForFile(file, this.options.servers)
     if (!server) return ''
     try {
       const client = await this.clientFor(server)
@@ -536,12 +536,13 @@ export class LspManager {
 
     const executable = await this.executableFor(server)
     if (!executable || this.disposed) return null
+    const envOverrides = { ...(this.options.env ?? {}), ...(server.env ?? {}) }
     const client = new LspClient({
       workspace: this.options.workspace,
       server,
       command: executable,
       spawn: this.options.spawn,
-      env: { ...this.options.env, ...server.env },
+      env: Object.keys(envOverrides).length > 0 ? { ...process.env, ...envOverrides } : undefined,
       requestTimeoutMs: this.options.requestTimeoutMs,
       diagnosticsTimeoutMs: this.options.diagnosticsTimeoutMs
     })

@@ -90,6 +90,9 @@ function projectConfigs(inputs: McpServerInput[]): McpServerConfig[] {
     headers: server.headers ?? {},
     env: server.env ?? {},
     enabled: server.enabled !== false,
+    ...(server.oauthClientId ? { oauthClientId: server.oauthClientId } : {}),
+    ...(server.oauthScope ? { oauthScope: server.oauthScope } : {}),
+    ...(server.oauthRedirectUri ? { oauthRedirectUri: server.oauthRedirectUri } : {}),
     createdAt: PROJECT_SERVER_TIMESTAMP,
     updatedAt: PROJECT_SERVER_TIMESTAMP,
     source: 'project'

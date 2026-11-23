@@ -157,7 +157,7 @@ describe('layered document fields', () => {
   it('reports invalid fields and never retains literal credentials', () => {
     const parsed = parseProjectConfigDocument(
       JSON.stringify({
-        lsp: { broken: { extensions: ['.ts'] } },
+        lsp: { broken: 'bad' },
         providers: { 'provider-1': { apiKey: 'super-secret' } },
         skills: ['https://example.com/skill']
       }),
@@ -167,7 +167,7 @@ describe('layered document fields', () => {
     expect((parsed.document.providers as Record<string, unknown>)['provider-1']).toEqual({})
     expect(JSON.stringify(parsed)).not.toContain('super-secret')
     expect(parsed.diagnostics.map((entry) => entry.path)).toEqual(
-      expect.arrayContaining(['$.lsp.broken.command', '$.providers.provider-1.apiKey', '$.skills'])
+      expect.arrayContaining(['$.lsp.broken', '$.providers.provider-1.apiKey', '$.skills'])
     )
   })
 
@@ -191,5 +191,25 @@ describe('layered document fields', () => {
     expect(config.references).toEqual([{ alias: 'docs', path: path.join(root, 'docs') }])
     expect(config.plugins).toEqual([path.join(root, 'plugin.ts')])
     expect(config.skills).toEqual([path.join(root, 'project-skills')])
+  })
+})
+describe('partial server overrides', () => {
+  it('deep-merges project LSP entries over global entries', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({
+        lsp: { typescript: { command: ['custom-ts'], extensions: ['.ts'] } }
+      })
+    )
+    await fs.writeFile(
+      path.join(directory, 'repo', 'ateam.json'),
+      JSON.stringify({ lsp: { typescript: { extensions: ['.tsx'] } } })
+    )
+
+    const config = await readAgentConfig(userData, workspace)
+    expect(config.lspServers?.typescript).toEqual({
+      command: ['custom-ts'],
+      extensions: ['.tsx']
+    })
   })
 })
