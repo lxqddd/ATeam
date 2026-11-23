@@ -17,32 +17,29 @@ ATeam 是一个基于 Electron 的 AI Agent 桌面应用。当前版本包含完
 ```text
 ATeam/
 ├── apps/
-│   └── desktop/
-│       └── src/
-│           ├── main/                 # 主进程（只有这里能用 Electron API）
-│           │   ├── agent/            # Agent utilityProcess 侧
-│           │   │   ├── runtime/      # 运行循环、子代理、默认依赖、策略
-│           │   │   ├── sessions/     # 会话存储、压缩、快照、工具输出
-│           │   │   ├── config/       # 指令、权限规则、Agent 定义
-│           │   │   ├── integrations/ # MCP、LSP、格式化、Web 抓取与搜索
-│           │   │   ├── tools.ts      # 内置工具
-│           │   │   └── worker.ts / agent-manager.ts
-│           │   ├── stores/           # 主进程配置存储（模型 / 搜索，凭据明文 0600）
-│           │   ├── models/           # 供应商模型目录查询与 auth.json
-│           │   └── ipc/              # 类型化 IPC、入参校验
-│           ├── preload/              # 窄接口 window.api
-│           └── renderer/src/
-│               ├── chat/             # 会话事件 store
-│               ├── components/       # AppRail、会话页、设置页
-│               └── pages/            # ChatPage、SettingsPage
+│   ├── desktop/
+│   │   └── src/
+│   │       ├── main/                 # Electron 主进程（只有这里能用 Electron API）
+│   │       │   ├── agent-host/       # utilityProcess manager / worker
+│   │       │   ├── credentials/      # 旧密文凭据迁移与 MCP auth 适配
+│   │       │   ├── providers/        # 供应商目录、OAuth、运行时模型配置
+│   │       │   ├── settings/         # 全局模型 / Web 搜索配置存储
+│   │       │   ├── browser/          # 桌面浏览器控制
+│   │       │   └── ipc/              # 类型化 IPC、入参校验
+│   │       ├── preload/              # 窄接口 window.api
+│   │       └── renderer/src/         # React 页面、会话 store 与设置 UI
+│   └── headless/
+│       └── src/                      # CLI / Server / ACP 独立入口
 ├── packages/
+│   ├── agent-core/                   # Electron-free Agent runtime/tools/sessions/config
+│   ├── client-sdk/                   # 独立 HTTP SDK（ESM + CJS + d.ts）
 │   └── shared/                       # 跨进程共享的事件、模型、协议类型
-├── docs/                             # 对齐 TODO 与归档文档
+├── docs/                             # 功能说明、对齐 TODO 与归档文档
 ├── package.json
 └── pnpm-workspace.yaml
 ```
 
-`main/agent` 运行在 Agent utilityProcess 中；`main/stores` 与 `main/models` 只在主进程运行，凭据以明文 JSON（文件权限 0600）保存，读取后的配置通过 worker 请求下发给 Agent。
+`@ateam/agent-core` 提供 Electron-free 的 Agent 运行时，由 desktop 的 `agent-host` 在 utilityProcess 中加载；headless 通过 tsup 独立构建 CLI/Server/ACP。主进程的 `settings/providers/credentials` 负责全局配置与凭据，项目级 `ateam.json/jsonc` 由 Agent 读取并按 workspace 合并。凭据以明文 JSON（文件权限 0600）保存，读取后的配置通过 worker 请求下发给 Agent。
 
 ## 环境要求
 
@@ -64,8 +61,10 @@ pnpm dev
 | --------------------------------------------- | ---------------------------- |
 | `pnpm dev`                                    | 启动桌面应用开发模式         |
 | `pnpm start`                                  | 预览已构建的应用             |
-| `pnpm build`                                  | 类型检查并构建桌面应用       |
+| `pnpm build`                                  | 构建全部 workspace 包        |
 | `pnpm typecheck`                              | 对全部包执行 TypeScript 检查 |
+| `pnpm test`                                   | 运行全部包单元测试           |
+| `pnpm test:coverage`                          | 运行全部包覆盖率             |
 | `pnpm lint`                                   | 对全部包执行 ESLint          |
 | `pnpm format`                                 | 对全部包执行 Prettier        |
 | `pnpm format:check`                           | 检查全部文件格式             |
@@ -100,6 +99,6 @@ pnpm dev
 
 ## 功能范围
 
-已实现：多会话与工作目录、流式文本/推理/工具调用、Markdown、附件与 `@` 文件引用、权限审批、停止/重试/撤销/重做、上下文压缩、模型供应商与 OAuth、项目规则与自定义 Agent、子代理、MCP、Skills 与自定义命令、LSP 诊断与自动格式化、Web 抓取与搜索、快照与引用、Git worktree、桌面浏览器自动化、SQLite 事件溯源存储，以及 Headless CLI、Server API / SDK、ACP、GitHub Action。
+已实现：多会话与工作目录、流式文本/推理/工具调用、Markdown、附件与 `@` 文件引用、权限审批、停止/重试/撤销/重做、上下文压缩、模型供应商与 OAuth、项目规则与自定义 Agent、子代理、MCP、Skills 与自定义命令、LSP 诊断与自动格式化、Web 抓取与搜索、快照与引用、Git worktree、桌面浏览器自动化、SQLite 事件溯源存储，以及 Headless CLI、Server API / SDK、ACP、GitHub Action。分层配置支持全局 + 项目 `ateam.json/jsonc`、配置来源/生效值/诊断展示和项目配置编辑。
 
 已知限制与后续方向见 [docs/features.md](docs/features.md) 第 17 节。

@@ -1,8 +1,8 @@
 # ATeam 已实现功能模块说明
 
-> 更新日期：2026-11-22。覆盖当前 `master` 上已实现并对齐 OpenCode 语义的 Agent 功能；文末列出已知遗留项。
+> 更新日期：2026-11-23。覆盖当前 `master` 上已实现并对齐 OpenCode 语义的 Agent 功能；文末列出已知遗留项。
 >
-> 运行架构：Electron 主进程负责窗口、IPC、模型 / 搜索配置与凭据存储；Agent 运行在独立 utilityProcess（`apps/desktop/src/main/agent`）；渲染进程只通过 `window.api` 的窄接口与主进程通信。
+> 运行架构：Electron 主进程负责窗口、IPC、模型 / 搜索配置与凭据存储；Electron-free Agent 运行时位于 `packages/agent-core/src`，由 desktop 的 agent-host 在 utilityProcess 中加载；CLI/Server/ACP 位于 `apps/headless`，HTTP SDK 位于 `packages/client-sdk`。渲染进程只通过 `window.api` 的窄接口与主进程通信。
 
 ## 1. 会话与消息
 
@@ -224,16 +224,16 @@
 
 ## 15. 设置页
 
-| 分区     | 内容                                                                    |
-| -------- | ----------------------------------------------------------------------- |
-| 外观     | 内置主题（跟随系统 / 浅色 / 深色 / 日落橙 / 暖墨 / 石墨 / 奶油 / 冷雾） |
-| 语言     | 跟随系统 / 中文 / English                                               |
-| 权限     | 查看与删除已保存的权限规则                                              |
-| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                     |
-| 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                              |
-| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用         |
+| 分区     | 内容                                                                                                                 |
+| -------- | -------------------------------------------------------------------------------------------------------------------- |
+| 外观     | 内置主题（跟随系统 / 浅色 / 深色 / 日落橙 / 暖墨 / 石墨 / 奶油 / 冷雾）                                              |
+| 语言     | 跟随系统 / 中文 / English                                                                                            |
+| 权限     | 查看与删除已保存的权限规则                                                                                           |
+| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                                                                  |
+| 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                                                                           |
+| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用；项目配置来源/生效值/诊断、原始 `ateam.json(c)` 编辑 |
 
-模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据。
+模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据；选中会话工作区存在项目 providers 时，额外展示只读的项目 provider/模型覆盖。MCP 页按当前会话 workspace 加载，project server 显示来源并禁用编辑/启停，OAuth 授权仍可用。
 
 ## 16. 数据与存储布局
 
@@ -267,19 +267,21 @@ models/                  # 供应商 / 模型配置
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 不实现这类非公开认证。
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
+- 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示和原始项目配置编辑；结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入选择器、项目权限规则来源 UI、文件监听热更新和完整配置 E2E 仍待补齐。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 - 桌面安装包尚未配置代码签名与公证（macOS `notarize: false`）；正式分发前需提供证书、公证凭据并调整 `electron-builder.yml`。
 
 ## 18. 关键文件索引
 
-- 运行时：[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)、[types.ts](../apps/desktop/src/main/agent/runtime/types.ts)、[defaults.ts](../apps/desktop/src/main/agent/runtime/defaults.ts)、[subagents.ts](../apps/desktop/src/main/agent/runtime/subagents.ts)
-- 会话：[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[context.ts](../apps/desktop/src/main/agent/sessions/context.ts)、[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)
-- 配置：[instructions.ts](../apps/desktop/src/main/agent/config/instructions.ts)、[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)、[agents.ts](../apps/desktop/src/main/agent/config/agents.ts)
-- 集成：[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[webfetch.ts](../apps/desktop/src/main/agent/integrations/webfetch.ts)、[websearch.ts](../apps/desktop/src/main/agent/integrations/websearch.ts)
-- 工具与能力：[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)、[attachments.ts](../apps/desktop/src/main/agent/attachments.ts)、[commands.ts](../apps/desktop/src/main/agent/commands.ts)、[skills.ts](../apps/desktop/src/main/agent/skills.ts)、[todos.ts](../apps/desktop/src/main/agent/todos.ts)、[cost.ts](../apps/desktop/src/main/agent/cost.ts)
-- 浏览器与控制台：[browser-controller.ts](../apps/desktop/src/main/browser/browser-controller.ts)、[cli/main.ts](../apps/desktop/src/cli/main.ts)、[server/main.ts](../apps/desktop/src/server/main.ts)、[acp/main.ts](../apps/desktop/src/acp/main.ts)、[sdk/client.ts](../apps/desktop/src/sdk/client.ts)
-- 会话存储：[session-storage.ts](../apps/desktop/src/main/agent/sessions/session-storage.ts)
-- 主进程存储：[stores/models.ts](../apps/desktop/src/main/stores/models.ts)、[stores/websearch.ts](../apps/desktop/src/main/stores/websearch.ts)、[models/catalog.ts](../apps/desktop/src/main/models/catalog.ts)
+- 运行时：[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[types.ts](../packages/agent-core/src/runtime/types.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[subagents.ts](../packages/agent-core/src/runtime/subagents.ts)
+- 会话：[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[context.ts](../packages/agent-core/src/sessions/context.ts)、[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)
+- 配置：[config-store.ts](../packages/agent-core/src/config/config-store.ts)、[project-config.ts](../packages/agent-core/src/config/project-config.ts)、[instructions.ts](../packages/agent-core/src/config/instructions.ts)、[permissions.ts](../packages/agent-core/src/config/permissions.ts)、[agents.ts](../packages/agent-core/src/config/agents.ts)
+- 集成：[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)、[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)、[formatters.ts](../packages/agent-core/src/integrations/formatters.ts)、[webfetch.ts](../packages/agent-core/src/integrations/webfetch.ts)、[websearch.ts](../packages/agent-core/src/integrations/websearch.ts)
+- 工具与能力：[tools.ts](../packages/agent-core/src/tools.ts)、[worktrees.ts](../packages/agent-core/src/worktrees.ts)、[attachments.ts](../packages/agent-core/src/attachments.ts)、[commands.ts](../packages/agent-core/src/commands.ts)、[skills.ts](../packages/agent-core/src/skills.ts)、[todos.ts](../packages/agent-core/src/todos.ts)、[cost.ts](../packages/agent-core/src/cost.ts)
+- 浏览器与控制台：[browser-controller.ts](../apps/desktop/src/main/browser/browser-controller.ts)、[cli/main.ts](../apps/headless/src/cli/main.ts)、[server/main.ts](../apps/headless/src/server/main.ts)、[acp/main.ts](../apps/headless/src/acp/main.ts)、[sdk/client.ts](../packages/client-sdk/src/client.ts)
+- 会话存储：[session-storage.ts](../packages/agent-core/src/sessions/session-storage.ts)
+- 主进程存储：[model-config-store.ts](../apps/desktop/src/main/settings/model-config-store.ts)、[websearch-config-store.ts](../apps/desktop/src/main/settings/websearch-config-store.ts)、[catalog.ts](../apps/desktop/src/main/providers/catalog.ts)
+- 配置 UI：[ProjectConfigCard.tsx](../apps/desktop/src/renderer/src/components/settings/ProjectConfigCard.tsx)
 
 ## 19. Headless CLI
 
@@ -288,7 +290,7 @@ models/                  # 供应商 / 模型配置
 - 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话，`--restore-sessions` 将 `.migrated` 旧会话备份恢复并重新导入数据库后退出。
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
 - 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
-- 限制：凭据通过命令行或环境变量以明文传入；CLI 不读取桌面端 `auth.json`；尚未提供独立打包的二进制。
+- 限制：凭据通过命令行或环境变量以明文传入；CLI 不读取桌面端 `auth.json`；已有独立 `apps/headless/dist` 构建，但尚未提供单一可执行文件。
 
 ## 20. Server API 与 SDK
 
@@ -296,9 +298,9 @@ models/                  # 供应商 / 模型配置
 - 安全：默认仅监听回环地址并拒绝在无 token 时绑定非回环地址（`--allow-unauthenticated-remote` 可显式放宽）；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权；`/health` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
 - REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
-- SDK：`apps/desktop/src/sdk/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
+- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、权限、提问与 SSE 事件流。
 - 版本与安全：所有路由同时接受 `/` 与 `/v1` 前缀；绑定非回环地址且未设置 token 时默认拒绝启动（可用 `--allow-unauthenticated-remote` 显式放宽），默认不发送 CORS 头。
-- 限制：SDK 目前以源码形式提供，尚未发布独立 npm 包。
+- 构建：`packages/client-sdk` 通过 tsup 生成 ESM + CJS + d.ts，当前仍为 private，尚未发布独立 npm 包。
 
 ## 21. 外部引用（References）
 
@@ -319,7 +321,7 @@ models/                  # 供应商 / 模型配置
 
 - 根目录 [action.yml](../action.yml) 提供 composite action，安装 ATeam CLI 后在同一 runner 上运行 Headless Agent。
 - 输入：`prompt`、`api-key`、`model`、`provider`、`base-url`、`workspace`（默认 `github.workspace`）、`permission`（默认 `auto`）、`reasoning`、`context-window`、`max-output`、`agent`、`data`、`node-version`、`pnpm-version`。
-- 安装步骤使用 `pnpm install --ignore-scripts` 跳过 Electron 等桌面依赖脚本，仅执行 `pnpm rebuild esbuild` 供 CLI 使用；prompt 通过 stdin 传入 `pnpm cli`，避免以 `--` 开头的内容被当作参数，并支持多行 prompt。
+- 安装步骤使用 `pnpm install --frozen-lockfile --ignore-scripts`，执行 `pnpm rebuild esbuild` 并构建 `@ateam/headless`；prompt 通过 stdin 传入构建后的 `apps/headless/dist/cli.js`，避免以 `--` 开头的内容被当作参数，并支持多行 prompt。
 - 使用示例：
   ```yaml
   - uses: actions/checkout@v4
@@ -347,7 +349,7 @@ models/                  # 供应商 / 模型配置
         "command": "bash",
         "args": [
           "-lc",
-          "cd /path/to/ATeam/apps/desktop && pnpm acp -- --provider openai --api-key \"$OPENAI_API_KEY\" --model gpt-5 --permission ask"
+          "cd /path/to/ATeam && pnpm acp -- --provider openai --api-key \"$OPENAI_API_KEY\" --model gpt-5 --permission ask"
         ]
       }
     }

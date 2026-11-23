@@ -34,34 +34,56 @@
 - [x] 启动时一次性把旧 `secrets.json` / `oauth-tokens.json` / 旧版 `mcp-auth.json` / 加密搜索 Key 迁移为明文
 - [x] 测试明文落盘、0600 权限、刷新 / 登出、损坏条目与旧数据迁移
 
-### 第二轮 P0 实现进度（2026-11-22）
+### 第二轮 P0 实现进度（2026-11-23）
 
-| 项目                  | 状态     | 已实现                                                                                                                                                | 仍待补齐                                                                                           |
-| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| R-P0-1 分层配置       | 部分完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins，项目权限与 MCP 已接入运行时 | 设置页来源展示与项目级编辑、项目 providers、自定义 LSP server、项目 commands/skills、配置热更新    |
-| R-P0-2 插件系统       | 核心完成 | 本地/包加载、config/tool/chatParams/system/permissionAsk/toolBefore/toolAfter/shellEnv hook                                                           | npm 自动安装与版本检查、command/event/auth/provider/workspace hook、插件管理 UI、错误展示、dispose |
-| R-P0-3 LLM 重试       | 基础完成 | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态                                                                       | 流已开始后的中断重试、可配置重试策略、重试指标                                                     |
-| R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                   | 完整模型专用 prompt 文件、MCP instructions 权限过滤的细化、XML 转义                                |
-| R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、Anthropic cache control、OpenAI promptCacheKey                                                                | provider transform 层、system/tool 结果缓存断点、缓存命中指标、跨供应商 reasoning 降级             |
-| R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配                                                                                    | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略                       |
-| R-P0-7 Plan 工作流    | 基础完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示                                                                     | 当前轮内切换工具集、计划文件 UI/查看入口、build 切换提醒、自动化测试覆盖                           |
+| 项目                  | 状态           | 已实现                                                                                                                                                             | 仍待补齐                                                                                                                      |
+| --------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| R-P0-1 分层配置       | 核心与编辑完成 | JSONC 发现/校验/诊断、全局+项目深合并、项目 providers/LSP/formatter/commands/skills/MCP、路径锚定、配置来源/生效值展示、原始项目配置编辑、project MCP 来源与 OAuth | 结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入模型选择器、项目权限规则来源 UI、文件监听热更新、完整 E2E |
+| R-P0-2 插件系统       | 核心完成       | 本地/包加载、config/tool/chatParams/system/permissionAsk/toolBefore/toolAfter/shellEnv hook                                                                        | npm 自动安装与版本检查、command/event/auth/provider/workspace hook、插件管理 UI、错误展示、dispose                            |
+| R-P0-3 LLM 重试       | 基础完成       | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态                                                                                    | 流已开始后的中断重试、可配置重试策略、重试指标                                                                                |
+| R-P0-4 提示词与上下文 | 基础完成       | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                                | 完整模型专用 prompt 文件、MCP instructions 权限过滤的细化、XML 转义                                                           |
+| R-P0-5 推理与缓存     | 基础完成       | 同模型 reasoning providerMetadata 回放、Anthropic cache control、OpenAI promptCacheKey                                                                             | provider transform 层、system/tool 结果缓存断点、缓存命中指标、跨供应商 reasoning 降级                                        |
+| R-P0-6 Shell arity    | 基础完成       | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配                                                                                                 | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略                                                  |
+| R-P0-7 Plan 工作流    | 基础完成       | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示                                                                                  | 当前轮内切换工具集、计划文件 UI/查看入口、build 切换提醒、自动化测试覆盖                                                      |
 
 ### 第二轮 P0 审计遗留（2026-11-23）
 
-> 以下是 P0 首轮实现后的逐项审计结果。上表记录“已实现”，本节只列仍未对齐、需要继续补齐的点。
+> 以下是 P0 首轮实现后的逐项审计结果。上表记录当前状态，本节保留已完成项与仍需补齐的点。
 
 #### R-P0-1 分层配置
 
-- [ ] 设置页展示每项配置的来源（全局 / 项目）与最终生效值
-- [ ] 支持项目级配置编辑，或明确项目配置只读并展示文件路径
-- [ ] 应用项目 `providers`，支持项目级供应商与模型覆盖
-- [ ] 支持项目级自定义 LSP server 配置，而不只是 `lsp: boolean`
-- [ ] 支持项目级自定义 formatter 命令，而不只是内置 formatter 覆盖
-- [ ] 支持在 `ateam.json` 中定义 commands / skills，而不只依赖资源目录
-- [ ] 项目 MCP server 进入设置页展示与 OAuth 授权流程，或明确标记为配置文件管理
-- [ ] 配置变更后的热加载 / 会话刷新策略
-- [ ] 项目 instructions 相对路径按项目根解析，而不是固定按 workspace
-- [ ] 增加配置来源、冲突覆盖、坏配置降级的端到端测试
+- [x] 设置页展示每项配置的来源（全局 / 项目）与最终生效值
+- [x] 支持项目级配置编辑（原始 `ateam.json/jsonc` 编辑器，保存前 JSONC 校验）
+- [x] 应用项目 `providers`，支持项目级供应商与模型覆盖（Models 页只读展示，配置文件可编辑）
+- [x] 支持项目级自定义 LSP server 配置，而不只是 `lsp: boolean`
+- [x] 支持项目级自定义 formatter 命令，而不只是内置 formatter 覆盖
+- [x] 支持在 `ateam.json` 中定义 commands / skills，而不只依赖资源目录
+- [x] 项目 MCP server 进入设置页展示与 OAuth 授权流程（当前 workspace 展示、只读编辑、可授权）
+- [ ] 配置变更后的文件监听热更新（已完成“下一轮生效”缓存刷新；watcher 未做）
+- [x] 项目 instructions 相对路径按项目根解析，而不是固定按 workspace
+- [ ] 增加配置来源、冲突覆盖、坏配置降级的完整端到端测试（已有单元/运行时测试与部分 UI 测试）
+
+### R-P0-1 实现记录（2026-11-23）
+
+已完成：
+
+- `ateam.json/jsonc` JSONC 解析、字段校验、结构化诊断和坏字段隔离。
+- 全局 → 项目分层合并、项目相对路径锚定、`lspEnabled/formattersEnabled` 开关语义。
+- 项目 providers/models、自定义 LSP、formatter、commands、skills、plugins、MCP、permissions。
+- `.ateam/agents|commands|skills` 资源目录，保留 `.opencode`/`.claude` 兼容。
+- runtime 按 workspace 读取 effective config，并在下一轮刷新 skills/formatter/LSP/MCP 缓存。
+- `agent.config.resolve` 返回 sources、provenance、diagnostics。
+- Settings 项目配置卡展示路径、来源、生效值、诊断，并支持创建/编辑原始 JSONC。
+- Models 页展示只读项目 provider/model 覆盖；MCP 页按当前 workspace 展示 project server、来源和只读约束，OAuth 授权继续可用。
+- 审查发现的 important/nit 已修复：凭据边界、formatter/LSP 环境、LSP 自定义 server、compaction/session 模型缓存、project MCP OAuth、配置切换数据丢失、部分覆盖、patch 字段持久化、home/Windows 路径、provider 模型深合并、agents/skills 来源、MCP project/global 分离与去重。
+
+仍待补齐：
+
+- 结构化 provider/LSP/formatter/commands/skills 管理表单（当前通过原始 JSONC 编辑器编辑）。
+- 项目模型进入桌面模型选择器。
+- 项目 permission rules 在 PermissionRules 页按来源展示。
+- 配置文件监听热更新（当前下一次 run 生效）。
+- 配置矩阵完整 E2E。
 
 #### R-P0-2 插件系统
 
@@ -119,7 +141,7 @@
 
 #### R-P0-1 分层配置模型（ATeam 自有格式）
 
-**现状**：ATeam 只读取 `userData/agent/config.json`（[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)），项目侧仅支持 `.opencode/agent|command|skill` 目录与 `references.json`；没有项目级 provider、MCP、LSP、formatter、permission、plugin 配置。
+**现状（2026-11-23）**：已完成全局 `userData/agent/config.json` + 项目 `ateam.json/jsonc` 分层配置、JSONC 诊断、项目 providers/LSP/formatter/commands/skills/MCP 和运行时消费；以下保留最初的方案记录。
 
 **OpenCode 参考**：`packages/opencode/src/config/config.ts` 的分层发现与深合并思路，以及 agents、providers、mcp、lsp、plugins、permissions、formatters、instructions、references 的字段组织。
 
@@ -162,7 +184,7 @@
 
 #### R-P0-3 LLM 重试与错误状态
 
-**现状**：AI SDK 调用固定 `maxRetries: 1`（[defaults.ts](../apps/desktop/src/main/agent/runtime/defaults.ts)），没有可重试分类、退避策略、`Retry-After` 解析，也没有把重试状态推送到 UI。
+**现状**：AI SDK 调用固定 `maxRetries: 1`（[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)），没有可重试分类、退避策略、`Retry-After` 解析，也没有把重试状态推送到 UI。
 
 **OpenCode 参考**：`packages/opencode/src/session/retry.ts` 对 429/5xx/网络/超时做指数退避 + 抖动，解析 `retry-after` 与 `retry-after-ms`，最多 5 次，上下文溢出与用户取消不重试，并发布 retry 状态。
 
@@ -179,7 +201,7 @@
 
 #### R-P0-4 系统提示词与上下文构建
 
-**现状**：system prompt 基本固定（[policy.ts](../apps/desktop/src/main/agent/runtime/policy.ts)），仅拼接 AGENTS.md、references、skills；不按模型选择提示词，不包含模型 ID、Git 仓库状态、日期、MCP server instructions。
+**现状**：system prompt 基本固定（[policy.ts](../packages/agent-core/src/runtime/policy.ts)），仅拼接 AGENTS.md、references、skills；不按模型选择提示词，不包含模型 ID、Git 仓库状态、日期、MCP server instructions。
 
 **OpenCode 参考**：`packages/opencode/src/session/system.ts` 按模型选择 Anthropic / GPT / Codex / Gemini / Kimi / Trinity 等提示词，并注入模型信息、工作目录、Git 状态、平台、日期、References 和 MCP instructions；`session/reminders.ts` 负责 plan/build 切换提醒。
 
@@ -195,7 +217,7 @@
 
 #### R-P0-5 推理块与 prompt caching
 
-**现状**：持久化消息中的 reasoning 只有 `text`，[message-history.ts](../apps/desktop/src/main/agent/message-history.ts) 重建历史时直接丢弃 reasoning；未显式设置 Anthropic cache control / OpenAI cache key，也没有 provider transform 层。
+**现状**：持久化消息中的 reasoning 只有 `text`，[message-history.ts](../packages/agent-core/src/message-history.ts) 重建历史时直接丢弃 reasoning；未显式设置 Anthropic cache control / OpenAI cache key，也没有 provider transform 层。
 
 **OpenCode 参考**：同模型历史会保留 reasoning 的 `providerMetadata` 以支持推理连续性与 prompt caching；`provider/transform.ts` 和各 provider 插件处理缓存、请求头与供应商差异。
 
@@ -211,7 +233,7 @@
 
 #### R-P0-6 Shell 权限解析与 arity
 
-**现状**：`scanShellCommand` 用正则和分隔符拆分命令（[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)），权限资源是整条命令；“始终允许”对 shell 基本只匹配完全相同命令，外部目录识别也依赖 token 扫描。
+**现状**：`scanShellCommand` 用正则和分隔符拆分命令（[permissions.ts](../packages/agent-core/src/config/permissions.ts)），权限资源是整条命令；“始终允许”对 shell 基本只匹配完全相同命令，外部目录识别也依赖 token 扫描。
 
 **OpenCode 参考**：`packages/opencode/src/tool/shell.ts` 用 tree-sitter 解析 bash / PowerShell，按命令 arity 生成 `git status *`、`npm run *` 等规则，并从参数中精确提取外部目录。
 
@@ -228,7 +250,7 @@
 
 #### R-P0-7 Plan 工作流
 
-**现状**：内置 plan agent 只有只读工具集（[agents.ts](../apps/desktop/src/main/agent/config/agents.ts)），没有计划文件、没有退出工具，也不会在计划完成后切换 build agent。
+**现状**：内置 plan agent 只有只读工具集（[agents.ts](../packages/agent-core/src/config/agents.ts)），没有计划文件、没有退出工具，也不会在计划完成后切换 build agent。
 
 **OpenCode 参考**：`packages/opencode/src/session/reminders.ts` 维护 plan 文件提示与 plan/build 切换提醒；`tool/plan.ts` 提供 `plan_exit`，确认后切换到 build agent 并注入执行指令（实验性）。
 
@@ -277,7 +299,7 @@
 
 #### R-P1-3 会话级回滚、unrevert 与 diff
 
-**现状**：已有 undo/redo 和最新轮文件级回滚（[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)），但没有 part 级回滚、unrevert 和会话级 diff 汇总。
+**现状**：已有 undo/redo 和最新轮文件级回滚（[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)），但没有 part 级回滚、unrevert 和会话级 diff 汇总。
 
 **OpenCode 参考**：`session/revert.ts` 支持 message/part 级 revert、快照恢复、diff 汇总与 unrevert；`session/summary.ts` 计算会话 diff。
 
@@ -293,7 +315,7 @@
 
 #### R-P1-4 后台任务框架与结果注入
 
-**现状**：后台 shell 有完成通知，后台子代理通过 `subagent.finished` 发 UI 通知（[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)），结果不会回到父会话上下文。
+**现状**：后台 shell 有完成通知，后台子代理通过 `subagent.finished` 发 UI 通知（[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)），结果不会回到父会话上下文。
 
 **OpenCode 参考**：`background/job.ts` 提供 list / get / wait / extend / promote / cancel 的统一任务注册表；`tool/task.ts` 在后台任务完成后把结果作为合成消息注入父会话。
 
@@ -309,7 +331,7 @@
 
 #### R-P1-5 工具输出截断策略
 
-**现状**：固定 30k 字符、只保留头部（[tool-output-store.ts](../apps/desktop/src/main/agent/sessions/tool-output-store.ts)），没有配置项、tail 模式、过期清理或子代理提示。
+**现状**：固定 30k 字符、只保留头部（[tool-output-store.ts](../packages/agent-core/src/sessions/tool-output-store.ts)），没有配置项、tail 模式、过期清理或子代理提示。
 
 **OpenCode 参考**：`tool/truncate.ts` 支持 `max_lines` / `max_bytes` 配置、head/tail、写盘预览、按子代理能力提示委派，并定期清理过期输出。
 
@@ -325,7 +347,7 @@
 
 #### R-P1-6 LSP 工具与服务矩阵
 
-**现状**：仅 5 个内置服务器（[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)），只暴露 `lsp_hover` / `lsp_definition`，不能配置自定义 server，也不会自动安装。
+**现状**：仅 5 个内置服务器（[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)），只暴露 `lsp_hover` / `lsp_definition`，不能配置自定义 server，也不会自动安装。
 
 **OpenCode 参考**：`lsp/server.ts` 覆盖 20+ 语言服务器，支持 npm 自动安装、root marker、自定义配置；LSP 工具支持 references、implementation、documentSymbol、workspaceSymbol、callHierarchy 等操作。
 
@@ -342,7 +364,7 @@
 
 #### R-P1-7 MCP 细节
 
-**现状**：已实现 stdio / Streamable HTTP、OAuth、prompts/resources 与工具刷新（[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)）；缺少 server instructions 注入、resource templates、SSE transport fallback、per-server timeout/cwd 配置。
+**现状**：已实现 stdio / Streamable HTTP、OAuth、prompts/resources 与工具刷新（[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)）；缺少 server instructions 注入、resource templates、SSE transport fallback、per-server timeout/cwd 配置。
 
 **OpenCode 参考**：`mcp/index.ts` 注入 server instructions，支持 resources / resourceTemplates、StreamableHTTP 与 SSE 两种远程传输回退、per-server timeout/cwd/OAuth 配置，以及按 agent 权限过滤工具。
 
@@ -390,7 +412,7 @@
 
 #### R-P1-10 VCS / Git 模块
 
-**现状**：只有 worktree 辅助（[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)）和 shell 里的 git；没有统一的 branch/status/diff/apply 服务，也没有会话级 Git diff。
+**现状**：只有 worktree 辅助（[worktrees.ts](../packages/agent-core/src/worktrees.ts)）和 shell 里的 git；没有统一的 branch/status/diff/apply 服务，也没有会话级 Git diff。
 
 **OpenCode 参考**：`project/vcs.ts` 提供 branch、default branch、status、diff、diffRaw、apply，并与 session diff / TUI 侧栏集成。
 
@@ -427,7 +449,7 @@
 
 ### P0-1 上下文窗口管理与自动压缩
 
-**现状**：每轮把完整历史重新提交（[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)）；模型只有 id/name，没有上下文窗口等元数据（[model-types.ts](../packages/shared/src/model-types.ts)）；长会话最终会触发供应商 context overflow。
+**现状**：每轮把完整历史重新提交（[message-history.ts](../packages/agent-core/src/message-history.ts)）；模型只有 id/name，没有上下文窗口等元数据（[model-types.ts](../packages/shared/src/model-types.ts)）；长会话最终会触发供应商 context overflow。
 
 **OpenCode 参考**：自动 / 手动 / 后台压缩，保留最近一段对话，按模型窗口留 buffer，超长错误自动压缩后重试一次。
 
@@ -451,7 +473,7 @@
 
 ### P0-2 项目规则 AGENTS.md
 
-**现状**：system prompt 完全硬编码（[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)），不读取仓库的构建命令、测试要求或代码约定。
+**现状**：system prompt 完全硬编码（[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)），不读取仓库的构建命令、测试要求或代码约定。
 
 **OpenCode 参考**：全局、项目根、当前目录向上的 `AGENTS.md` 自动合并，`CLAUDE.md` 作为回退，支持配置额外 instructions。
 
@@ -491,7 +513,7 @@
 
 ### P0-4 细粒度且可持久化的权限规则
 
-**现状**：会话级 mode + 内存中的 `allowed` 集合（[agent-runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)）；没有通配符、路径或命令级规则，重启后“始终允许”丢失。
+**现状**：会话级 mode + 内存中的 `allowed` 集合（[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)）；没有通配符、路径或命令级规则，重启后“始终允许”丢失。
 
 **OpenCode 参考**：有序的 allow / ask / deny 规则，支持通配符、持久化审批、按 agent 配置、shell 命令扫描和 external_directory 边界。
 
@@ -708,7 +730,7 @@
 ## 参考
 
 - OpenCode 源码（第二轮基准）：`packages/opencode/src/config/config.ts`、`plugin/index.ts`、`session/retry.ts`、`session/system.ts`、`session/reminders.ts`、`session/revert.ts`、`background/job.ts`、`tool/shell.ts`、`tool/task.ts`、`tool/truncate.ts`、`tool/lsp.ts`、`lsp/server.ts`、`mcp/index.ts`、`session/message-v2.ts`、`project/vcs.ts`。
-- ATeam：[runtime.ts](../apps/desktop/src/main/agent/runtime/agent-runtime.ts)、[defaults.ts](../apps/desktop/src/main/agent/runtime/defaults.ts)、[policy.ts](../apps/desktop/src/main/agent/runtime/policy.ts)、[message-history.ts](../apps/desktop/src/main/agent/message-history.ts)、[config-store.ts](../apps/desktop/src/main/agent/config/config-store.ts)、[tools.ts](../apps/desktop/src/main/agent/tools.ts)、[sessions-store.ts](../apps/desktop/src/main/agent/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
-- ATeam 集成：[lsp.ts](../apps/desktop/src/main/agent/integrations/lsp.ts)、[formatters.ts](../apps/desktop/src/main/agent/integrations/formatters.ts)、[mcp.ts](../apps/desktop/src/main/agent/integrations/mcp.ts)、[mcp-auth-store.ts](../apps/desktop/src/main/agent/integrations/mcp-auth-store.ts)、[provider-auth-store.ts](../apps/desktop/src/main/models/provider-auth-store.ts)、[websearch.ts](../apps/desktop/src/main/stores/websearch.ts)、[permissions.ts](../apps/desktop/src/main/agent/config/permissions.ts)、[tool-output-store.ts](../apps/desktop/src/main/agent/sessions/tool-output-store.ts)、[snapshots.ts](../apps/desktop/src/main/agent/sessions/snapshots.ts)、[worktrees.ts](../apps/desktop/src/main/agent/worktrees.ts)
-- ATeam 接口：[server/api.ts](../apps/desktop/src/server/api.ts)、[sdk/client.ts](../apps/desktop/src/sdk/client.ts)、[cli/main.ts](../apps/desktop/src/cli/main.ts)、[acp/server.ts](../apps/desktop/src/acp/server.ts)
+- ATeam：[runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[policy.ts](../packages/agent-core/src/runtime/policy.ts)、[message-history.ts](../packages/agent-core/src/message-history.ts)、[config-store.ts](../packages/agent-core/src/config/config-store.ts)、[tools.ts](../packages/agent-core/src/tools.ts)、[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
+- ATeam 集成：[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)、[formatters.ts](../packages/agent-core/src/integrations/formatters.ts)、[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)、[mcp-auth-store.ts](../apps/desktop/src/main/credentials/mcp-auth-store.ts)、[provider-auth-store.ts](../apps/desktop/src/main/providers/provider-auth-store.ts)、[websearch.ts](../apps/desktop/src/main/settings/websearch-config-store.ts)、[permissions.ts](../packages/agent-core/src/config/permissions.ts)、[tool-output-store.ts](../packages/agent-core/src/sessions/tool-output-store.ts)、[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)、[worktrees.ts](../packages/agent-core/src/worktrees.ts)
+- ATeam 接口：[server/api.ts](../apps/headless/src/server/api.ts)、[sdk/client.ts](../packages/client-sdk/src/client.ts)、[cli/main.ts](../apps/headless/src/cli/main.ts)、[acp/server.ts](../apps/headless/src/acp/server.ts)
 - OpenCode 文档：Tools、Agents、Permissions、Instructions、Compaction、Snapshots、MCP Servers、Skills、Commands、Attachments、Formatters、LSP、Plugins、Server、TUI。
