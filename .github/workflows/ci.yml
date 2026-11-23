@@ -56,3 +56,6 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Smoke test headless build
+        run: pnpm --filter @ateam/headless smoke

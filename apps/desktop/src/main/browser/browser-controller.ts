@@ -1,5 +1,5 @@
 import { BrowserWindow, type Session } from 'electron'
-import { assertPublicWebUrl } from '../agent/integrations/webfetch'
+import { assertPublicWebUrl } from '@ateam/agent-core/integrations'
 import {
   clickScript,
   evalResult,

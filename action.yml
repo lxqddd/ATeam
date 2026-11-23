@@ -79,6 +79,7 @@ runs:
       run: |
         pnpm install --frozen-lockfile --ignore-scripts
         pnpm rebuild esbuild
+        pnpm --filter @ateam/headless build
 
     - name: Run ATeam
       shell: bash
@@ -107,4 +108,4 @@ runs:
         if [ -n "$INPUT_MAX_OUTPUT" ]; then args+=(--max-output "$INPUT_MAX_OUTPUT"); fi
         if [ -n "$INPUT_AGENT" ]; then args+=(--agent "$INPUT_AGENT"); fi
         if [ -n "$INPUT_DATA" ]; then args+=(--data "$INPUT_DATA"); fi
-        printf '%s' "$INPUT_PROMPT" | pnpm cli -- "${args[@]}"
+        printf '%s' "$INPUT_PROMPT" | node "${{ github.action_path }}/apps/headless/dist/cli.js" "${args[@]}"

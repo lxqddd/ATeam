@@ -14,15 +14,15 @@ import {
   type ProviderUpdateInput
 } from '@ateam/shared'
 import { modelCreateSchema, modelRefSchema, modelUpdateSchema } from './model-schema'
-import type { AgentManager } from '../agent/agent-manager'
-import { normalizeError } from '../agent/errors'
-import { listProviderModels } from '../models/available'
-import { previewApiKey } from '../models/preview'
-import type { ModelCatalogStore } from '../models/catalog-store'
-import type { ModelsStore } from '../stores/models'
-import type { ProviderAuthStore } from '../models/provider-auth-store'
-import { authorizeProvider } from '../models/oauth-flow'
-import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../models/runtime'
+import type { AgentManager } from '../agent-host/agent-manager'
+import { normalizeError } from '@ateam/agent-core'
+import { listProviderModels } from '../providers/available'
+import { previewApiKey } from '../providers/preview'
+import type { ModelCatalogStore } from '../providers/catalog-store'
+import type { ModelConfigStore } from '../settings/model-config-store'
+import type { ProviderAuthStore } from '../providers/provider-auth-store'
+import { authorizeProvider } from '../providers/oauth-flow'
+import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../providers/runtime-config'
 import type { TrustedSender } from './trusted-sender'
 
 const providerTypeSchema = z.enum(['anthropic', 'openai', 'google', 'openai-compatible'])
@@ -71,7 +71,7 @@ const providerPreviewSchema = z.object({
 
 export interface ModelsIpcOptions {
   manager: AgentManager
-  modelsStore: ModelsStore
+  modelsStore: ModelConfigStore
   providerAuthStore: ProviderAuthStore
   catalogStore: ModelCatalogStore
   isTrustedSender: TrustedSender

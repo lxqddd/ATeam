@@ -1,0 +1,56 @@
+{
+  "name": "@ateam/headless",
+  "version": "0.1.1",
+  "private": true,
+  "description": "ATeam headless CLI, HTTP server, and ACP adapter",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "ateam": "./dist/cli.js",
+    "ateam-server": "./dist/server.js",
+    "ateam-acp": "./dist/acp.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "cli": "tsx src/cli/main.ts",
+    "serve": "tsx src/server/main.ts",
+    "acp": "tsx src/acp/main.ts",
+    "build": "tsup",
+    "prepack": "tsup",
+    "smoke": "node scripts/smoke.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.106",
+    "@ai-sdk/google": "4.0.122",
+    "@ai-sdk/openai": "4.0.121",
+    "@ai-sdk/openai-compatible": "3.0.93",
+    "@anthropic-ai/tokenizer": "^0.0.4",
+    "@vscode/ripgrep": "^1.18.0",
+    "ai": "7.0.177",
+    "diff": "8.0.4",
+    "gpt-tokenizer": "^4.1.2",
+    "turndown": "^7.2.5",
+    "unpdf": "^2.2.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@ateam/agent-core": "workspace:*",
+    "@ateam/shared": "workspace:*",
+    "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "5.1.1",
+    "tsup": "^8.5.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "5.1.1",
+    "esbuild": "^0.28.0"
+  }
+}

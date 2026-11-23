@@ -1,0 +1,104 @@
+import { shell } from 'electron'
+import {
+  AGENT_CHANNELS,
+  type McpAuthStatus,
+  type McpServerConfig,
+  type McpServerStatus
+} from '@ateam/shared'
+import { authorizeMcpServer } from '@ateam/agent-core/integrations'
+import type { AgentIpcContext } from './context'
+import {
+  idPayloadSchema,
+  mcpPromptSchema,
+  mcpServerInputSchema,
+  mcpStatusesSchema,
+  mcpUpdateSchema
+} from './schemas'
+
+/** Registers MCP server CRUD, prompt resolution and auth channels. */
+export function registerMcpHandlers(ctx: AgentIpcContext): void {
+  const { manager, mcpAuthStore, handle, requestedDirectory } = ctx
+
+  handle(
+    AGENT_CHANNELS.mcpList,
+    (): Promise<{ servers: McpServerConfig[]; statuses: McpServerStatus[] }> =>
+      manager.request('mcp.list')
+  )
+
+  handle(AGENT_CHANNELS.mcpStatuses, (payload): Promise<McpServerStatus[]> => {
+    const { probe } = mcpStatusesSchema.parse(payload ?? {})
+    return manager.request('mcp.statuses', { probe })
+  })
+
+  handle(AGENT_CHANNELS.mcpAdd, (payload): Promise<McpServerConfig> => {
+    const input = mcpServerInputSchema.parse(payload)
+    return manager.request('mcp.add', input)
+  })
+
+  handle(AGENT_CHANNELS.mcpUpdate, async (payload): Promise<McpServerConfig> => {
+    const { id, input } = mcpUpdateSchema.parse(payload)
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    const previous = servers.find((server) => server.id === id)
+    const updated = await manager.request<McpServerConfig>('mcp.update', { id, input })
+    const credentialsChanged =
+      !previous ||
+      previous.url !== updated.url ||
+      previous.type !== updated.type ||
+      (previous.oauthClientId ?? null) !== (updated.oauthClientId ?? null) ||
+      (previous.oauthRedirectUri ?? null) !== (updated.oauthRedirectUri ?? null)
+    if (credentialsChanged) {
+      await mcpAuthStore.remove(updated.id)
+      await manager.setMcpAuth(mcpAuthStore.list())
+    }
+    return updated
+  })
+
+  handle(AGENT_CHANNELS.mcpPrompt, (payload): Promise<string> => {
+    const { server, prompt, arguments: args, directory } = mcpPromptSchema.parse(payload)
+    return manager.request('mcp.prompt', {
+      server,
+      prompt,
+      arguments: args,
+      workspace: requestedDirectory(directory)
+    })
+  })
+
+  handle(AGENT_CHANNELS.mcpRemove, async (payload): Promise<boolean> => {
+    const { id } = idPayloadSchema.parse(payload)
+    const removed = await manager.request<boolean>('mcp.remove', { id })
+    if (removed) {
+      await mcpAuthStore.remove(id)
+      await manager.setMcpAuth(mcpAuthStore.list())
+    }
+    return removed
+  })
+
+  handle(AGENT_CHANNELS.mcpAuthStatuses, async (): Promise<McpAuthStatus[]> => {
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    return mcpAuthStore.statuses(servers)
+  })
+
+  handle(AGENT_CHANNELS.mcpAuthorize, async (payload): Promise<McpAuthStatus[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    const server = servers.find((candidate) => candidate.id === id)
+    if (!server) throw new Error('MCP server not found')
+    await authorizeMcpServer({
+      server,
+      authStore: mcpAuthStore,
+      openExternal: (url) => shell.openExternal(url)
+    })
+    await manager.setMcpAuth(mcpAuthStore.list())
+    await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
+    return mcpAuthStore.statuses(servers)
+  })
+
+  handle(AGENT_CHANNELS.mcpLogout, async (payload): Promise<McpAuthStatus[]> => {
+    const { id } = idPayloadSchema.parse(payload)
+    await mcpAuthStore.remove(id)
+    await manager.setMcpAuth(mcpAuthStore.list())
+    const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
+    await manager.request('mcp.statuses', { probe: true }).catch(() => undefined)
+    return mcpAuthStore.statuses(servers)
+  })
+}

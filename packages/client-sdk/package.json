@@ -1,0 +1,38 @@
+{
+  "name": "@ateam/client-sdk",
+  "version": "0.1.1",
+  "private": true,
+  "description": "ATeam HTTP API client SDK",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@ateam/shared": "workspace:*",
+    "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "5.1.1",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "5.1.1",
+    "esbuild": "^0.28.0"
+  }
+}

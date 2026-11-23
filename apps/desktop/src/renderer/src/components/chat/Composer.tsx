@@ -1,108 +1,16 @@
-import { errorMessage } from '../../lib/errors'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
-import type {
-  AgentDefinition,
-  CommandDefinition,
-  MessageAttachment,
-  ModelRef,
-  PermissionMode,
-  ReasoningEffort,
-  SessionSettings
-} from '@ateam/shared'
-import { commandShellSnippets, expandCommand, splitArguments } from '@ateam/shared'
-import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
-import ComposerChoiceChip from './ComposerChoiceChip'
-import ModelPicker from './ModelPicker'
-
-const REASONING_LABEL_KEYS: Record<ReasoningEffort, string> = {
-  minimal: 'chat.reasoningMinimal',
-  low: 'chat.reasoningLow',
-  medium: 'chat.reasoningMedium',
-  high: 'chat.reasoningHigh'
-}
-
-const PERMISSION_LABEL_KEYS: Record<PermissionMode, string> = {
-  plan: 'chat.permissionPlan',
-  ask: 'chat.permissionAsk',
-  acceptEdits: 'chat.permissionAcceptEdits',
-  auto: 'chat.permissionAuto'
-}
-
-const PERMISSION_HINT_KEYS: Record<PermissionMode, string> = {
-  plan: 'chat.permissionPlanHint',
-  ask: 'chat.permissionAskHint',
-  acceptEdits: 'chat.permissionAcceptEditsHint',
-  auto: 'chat.permissionAutoHint'
-}
-
-function ReasoningIcon(): React.JSX.Element {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 3.5 13.6 9l5.4 1.7-5.4 1.7L12 18l-1.6-5.6L5 10.7 10.4 9 12 3.5Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M18.5 16.5 19.2 19l2.3.8-2.3.7-.7 2.5-.7-2.5-2.3-.7 2.3-.8.7-2.5Z"
-        fill="currentColor"
-      />
-    </svg>
-  )
-}
-
-function ShieldIcon(): React.JSX.Element {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M12 3.5 19 6v5.3c0 4.4-2.8 7.8-7 9.2-4.2-1.4-7-4.8-7-9.2V6l7-2.5Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m8.8 12 2.2 2.2 4.2-4.4"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function formatFileSize(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-const AGENT_DESCRIPTION_KEYS: Record<string, string> = {
-  build: 'chat.agentBuildDescription',
-  plan: 'chat.agentPlanDescription'
-}
-
-function displayAgentName(agent: AgentDefinition): string {
-  return agent.name ? agent.name.charAt(0).toUpperCase() + agent.name.slice(1) : agent.id
-}
-
-function AgentIcon(): React.JSX.Element {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <rect x="4" y="7" width="16" height="12" rx="3" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M12 7V4M9 12h.01M15 12h.01M9 16h6"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
+import ComposerActions from './composer/ComposerActions'
+import ComposerAttachments from './composer/ComposerAttachments'
+import ComposerShellPrompt from './composer/ComposerShellPrompt'
+import ComposerSuggestions from './composer/ComposerSuggestions'
+import ComposerToolbar from './composer/ComposerToolbar'
+import { useComposerAttachments } from './composer/useComposerAttachments'
+import { useCommandMenu } from './composer/useCommandMenu'
+import { useComposerSubmit } from './composer/useComposerSubmit'
+import { useMentionSearch } from './composer/useMentionSearch'
 
 function Composer(): React.JSX.Element {
   const { t } = useTranslation()
@@ -111,25 +19,7 @@ function Composer(): React.JSX.Element {
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [sending, setSending] = useState(false)
-  const [attachments, setAttachments] = useState<MessageAttachment[]>([])
-  const [attaching, setAttaching] = useState(false)
-  const [mention, setMention] = useState<{
-    query: string
-    start: number
-    items: string[]
-  } | null>(null)
-  const [commandQuery, setCommandQuery] = useState<string | null>(null)
-  const [activeCommand, setActiveCommand] = useState(0)
-  const [activeMention, setActiveMention] = useState(0)
-  const [pendingShell, setPendingShell] = useState<{
-    command: CommandDefinition
-    args: string
-    snippets: string[]
-  } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const mentionSeq = useRef(0)
 
   const hasModels = (models?.models.length ?? 0) > 0
   const effectiveModel = session?.model ?? models?.defaultModel ?? null
@@ -145,55 +35,72 @@ function Composer(): React.JSX.Element {
     modelVariants.some((variant) => variant.id === effectiveModel.variant)
       ? effectiveModel.variant
       : null
-  const variantLabel = activeVariant
-    ? (modelVariants.find((variant) => variant.id === activeVariant)?.name ?? activeVariant)
-    : t('chat.variantDefault')
   const reasoningEffort = session?.reasoningEffort ?? null
   const permissionMode = session?.permissionMode ?? 'ask'
-  const reasoningLabel = reasoningEffort
-    ? t(REASONING_LABEL_KEYS[reasoningEffort])
-    : t('chat.reasoningDefault')
-
-  const reasoningOptions = [
-    { value: 'default', label: t('chat.reasoningDefault') },
-    ...REASONING_EFFORTS.map((effort) => ({
-      value: effort,
-      label: t(REASONING_LABEL_KEYS[effort])
-    }))
-  ]
-  const permissionOptions = PERMISSION_MODES.map((mode) => ({
-    value: mode,
-    label: t(PERMISSION_LABEL_KEYS[mode]),
-    description: t(PERMISSION_HINT_KEYS[mode])
-  }))
-
   const primaryAgents = agents.filter((agent) => agent.mode !== 'subagent')
   const activeAgent =
     primaryAgents.find((agent) => agent.id === session?.agent) ??
     primaryAgents.find((agent) => agent.id === 'build') ??
     primaryAgents[0] ??
     null
-  const agentLabel = activeAgent ? displayAgentName(activeAgent) : t('chat.agentDefault')
-  const agentOptions = primaryAgents.map((agent) => ({
-    value: agent.id,
-    label: displayAgentName(agent),
-    description:
-      agent.source === 'builtin' && AGENT_DESCRIPTION_KEYS[agent.id]
-        ? t(AGENT_DESCRIPTION_KEYS[agent.id])
-        : agent.description
-  }))
-
   const attachmentsDisabled = effectiveModelInfo?.attachment === false
-  const commandItems: CommandDefinition[] =
-    commandQuery === null
-      ? []
-      : commands.filter((command) => {
-          const needle = commandQuery.toLowerCase()
-          return (
-            command.name.toLowerCase().includes(needle) ||
-            command.description.toLowerCase().includes(needle)
-          )
-        })
+
+  const { attachments, setAttachments, attaching, fileInputRef, addFiles, removeAttachment } =
+    useComposerAttachments({
+      sessionId: session?.id ?? selectedSessionId,
+      disabled: attachmentsDisabled,
+      onError: setError
+    })
+
+  const {
+    setCommandQuery,
+    activeCommand,
+    setActiveCommand,
+    commandItems,
+    pendingShell,
+    setPendingShell,
+    detectCommand,
+    applyCommand,
+    expandSlashCommand,
+    applyCommandBindings
+  } = useCommandMenu({
+    commands,
+    agents,
+    models,
+    session,
+    setText,
+    textareaRef
+  })
+
+  const { mention, setMention, activeMention, setActiveMention, detectMention, applyMention } =
+    useMentionSearch({
+      session,
+      text,
+      setText,
+      textareaRef
+    })
+
+  const { sending, submit, runPendingShell, stop, changeModel, changeSettings, changeAgent } =
+    useComposerSubmit({
+      t,
+      text,
+      setText,
+      attachments,
+      setAttachments,
+      setMention,
+      setCommandQuery,
+      session,
+      running,
+      ready,
+      hasModels,
+      effectiveModel,
+      pendingShell,
+      setPendingShell,
+      expandSlashCommand,
+      applyCommandBindings,
+      setError,
+      textareaRef
+    })
 
   useLayoutEffect(() => {
     const element = textareaRef.current
@@ -210,267 +117,6 @@ function Composer(): React.JSX.Element {
     chatStore.clearRevertPrompt()
     textareaRef.current?.focus()
   }, [revertPrompt])
-
-  async function addFiles(files: File[]): Promise<void> {
-    if (files.length === 0 || attachmentsDisabled) return
-    setAttaching(true)
-    setError(null)
-    try {
-      const target = await chatStore.ensureSession()
-      const added: MessageAttachment[] = []
-      for (const file of files) {
-        const data = new Uint8Array(await file.arrayBuffer())
-        added.push(
-          await window.api.agent.attachments.import(target.id, {
-            name: file.name,
-            mimeType: file.type,
-            data
-          })
-        )
-      }
-      setAttachments((current) => [...current, ...added])
-    } catch (caught) {
-      setError(errorMessage(caught))
-    } finally {
-      setAttaching(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  async function removeAttachment(attachment: MessageAttachment): Promise<void> {
-    setAttachments((current) => current.filter((entry) => entry.id !== attachment.id))
-    const sessionId = session?.id ?? selectedSessionId
-    if (!sessionId) return
-    await window.api.agent.attachments.remove(sessionId, attachment.id).catch(() => undefined)
-  }
-
-  function detectMention(value: string, cursor: number): void {
-    const slash = /^\/([^\s]*)$/.exec(value.slice(0, cursor))
-    setCommandQuery(slash ? slash[1] : null)
-    setActiveCommand(0)
-    const match = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, cursor))
-    const sequence = ++mentionSeq.current
-    setMention(null)
-    setActiveMention(0)
-    if (!match) return
-    const query = match[2]
-    const start = cursor - query.length - 1
-    window.api.agent.files
-      .search(query, session?.directory ?? undefined)
-      .then((items) => {
-        if (sequence !== mentionSeq.current) return
-        setMention(items.length > 0 ? { query, start, items } : null)
-      })
-      .catch(() => {
-        if (sequence === mentionSeq.current) setMention(null)
-      })
-  }
-
-  function applyCommand(command: CommandDefinition): void {
-    setText(`/${command.name} `)
-    setCommandQuery(null)
-    textareaRef.current?.focus()
-  }
-
-  async function expandSlashCommand(value: string): Promise<{
-    text: string
-    command: CommandDefinition | null
-    shell?: { command: CommandDefinition; args: string; snippets: string[] }
-  }> {
-    const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(value)
-    if (!match) return { text: value, command: null }
-    const command = commands.find(
-      (candidate) => candidate.name.toLowerCase() === match[1].toLowerCase()
-    )
-    if (!command) return { text: value, command: null }
-    const args = match[2] ?? ''
-    if (command.source === 'mcp' && command.mcp) {
-      const tokens = splitArguments(args)
-      const argumentNames = command.mcp.arguments ?? []
-      const promptArgs: Record<string, string> = {}
-      if (argumentNames.length > 0) {
-        argumentNames.forEach((name, index) => {
-          const token = tokens[index]
-          if (token !== undefined) promptArgs[name] = token
-        })
-        if (tokens.length > argumentNames.length) {
-          const last = argumentNames[argumentNames.length - 1]
-          promptArgs[last] = tokens.slice(argumentNames.length - 1).join(' ')
-        }
-      } else if (tokens.length > 0) {
-        promptArgs.input = tokens.join(' ')
-      }
-      return {
-        text: await window.api.agent.mcp.prompt(
-          command.mcp.server,
-          command.mcp.prompt,
-          promptArgs,
-          session?.directory ?? undefined
-        ),
-        command
-      }
-    }
-    if (command.template.includes('!`')) {
-      return {
-        text: value,
-        command,
-        shell: {
-          command,
-          args,
-          snippets: commandShellSnippets(command.template)
-        }
-      }
-    }
-    return { text: expandCommand(command.template, args), command }
-  }
-
-  async function applyCommandBindings(command: CommandDefinition): Promise<void> {
-    if (!command.agent && !command.model) return
-    const session = await chatStore.ensureSession()
-    if (command.agent && agents.some((agent) => agent.id === command.agent)) {
-      await chatStore.setSessionAgent(session.id, command.agent).catch(() => undefined)
-    }
-    const bound = command.model
-    if (
-      bound &&
-      models?.models.some(
-        (model) => model.providerId === bound.providerId && model.modelId === bound.modelId
-      )
-    ) {
-      await chatStore.setSessionModel(session.id, bound).catch(() => undefined)
-    }
-  }
-
-  function applyMention(filePath: string): void {
-    if (!mention) return
-    const after = text.slice(mention.start + mention.query.length + 1)
-    const spacer = filePath.endsWith('/') ? '' : ' '
-    const next = `${text.slice(0, mention.start)}@${filePath}${spacer}${after.replace(/^\s*/, '')}`
-    setText(next)
-    setMention(null)
-    textareaRef.current?.focus()
-  }
-
-  async function submit(): Promise<void> {
-    const content = text.trim()
-    if ((!content && attachments.length === 0) || sending || running) return
-    if (!ready) {
-      setError(t('chat.agentStoppedHint'))
-      return
-    }
-    if (!hasModels) {
-      setError(t('chat.noModel'))
-      return
-    }
-    if (!effectiveModel) {
-      setError(t('chat.selectModelFirst'))
-      return
-    }
-
-    setSending(true)
-    setError(null)
-    try {
-      const expanded = await expandSlashCommand(content)
-      if (expanded.shell) {
-        setPendingShell(expanded.shell)
-        return
-      }
-      if (expanded.command) await applyCommandBindings(expanded.command)
-      await chatStore.send(expanded.text, attachments)
-      setText('')
-      setAttachments([])
-      setMention(null)
-      setCommandQuery(null)
-    } catch (caught) {
-      const message = errorMessage(caught)
-      setError(
-        message === 'AGENT_NOT_READY'
-          ? t('chat.agentStoppedHint')
-          : message === 'SESSION_BUSY'
-            ? t('chat.sessionBusy')
-            : message
-      )
-    } finally {
-      setSending(false)
-      textareaRef.current?.focus()
-    }
-  }
-
-  async function runPendingShell(): Promise<void> {
-    const pending = pendingShell
-    if (!pending) return
-    setPendingShell(null)
-    setSending(true)
-    setError(null)
-    try {
-      const text = await window.api.agent.commands.expand({
-        template: pending.command.template,
-        args: pending.args,
-        directory: session?.directory ?? undefined
-      })
-      await applyCommandBindings(pending.command)
-      await chatStore.send(text, attachments)
-      setText('')
-      setAttachments([])
-      setMention(null)
-      setCommandQuery(null)
-    } catch (caught) {
-      const message = errorMessage(caught)
-      setError(
-        message === 'AGENT_NOT_READY'
-          ? t('chat.agentStoppedHint')
-          : message === 'SESSION_BUSY'
-            ? t('chat.sessionBusy')
-            : message
-      )
-    } finally {
-      setSending(false)
-      textareaRef.current?.focus()
-    }
-  }
-
-  async function stop(): Promise<void> {
-    setError(null)
-    try {
-      await chatStore.stop()
-    } catch (caught) {
-      setError(errorMessage(caught))
-    }
-  }
-
-  async function changeModel(model: ModelRef): Promise<void> {
-    setError(null)
-    try {
-      const target = await chatStore.ensureSession()
-      await chatStore.setSessionModel(target.id, model)
-    } catch (caught) {
-      setError(errorMessage(caught))
-    }
-  }
-
-  async function changeSettings(patch: Partial<SessionSettings>): Promise<void> {
-    setError(null)
-    try {
-      const target = await chatStore.ensureSession()
-      await chatStore.setSessionSettings(target.id, {
-        reasoningEffort: target.reasoningEffort ?? null,
-        permissionMode: target.permissionMode ?? 'ask',
-        ...patch
-      })
-    } catch (caught) {
-      setError(errorMessage(caught))
-    }
-  }
-
-  async function changeAgent(agentId: string): Promise<void> {
-    setError(null)
-    try {
-      const target = await chatStore.ensureSession()
-      await chatStore.setSessionAgent(target.id, agentId)
-    } catch (caught) {
-      setError(errorMessage(caught))
-    }
-  }
 
   const placeholder = !ready
     ? status.status === 'starting'
@@ -509,129 +155,42 @@ function Composer(): React.JSX.Element {
           void addFiles(Array.from(event.dataTransfer.files))
         }}
       >
-        {commandItems.length > 0 && (
-          <div
-            role="listbox"
-            aria-label={t('chat.commands')}
-            className="mb-2 max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-1"
-          >
-            {commandItems.map((command, index) => (
-              <button
-                key={command.id}
-                type="button"
-                role="option"
-                aria-selected={index === Math.min(activeCommand, commandItems.length - 1)}
-                onClick={() => applyCommand(command)}
-                className={`block w-full rounded px-2 py-1 text-left transition-colors hover:bg-hover ${
-                  index === Math.min(activeCommand, commandItems.length - 1) ? 'bg-hover' : ''
-                }`}
-              >
-                <span className="block truncate text-label text-foreground">
-                  <span aria-hidden className="text-muted">
-                    /
-                  </span>
-                  {command.name}
-                </span>
-                {command.description && (
-                  <span className="mt-0.5 block truncate text-caption text-muted">
-                    {command.description}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
+        <ComposerSuggestions
+          commandItems={commandItems}
+          activeCommand={activeCommand}
+          onApplyCommand={applyCommand}
+          mention={mention}
+          activeMention={activeMention}
+          onApplyMention={applyMention}
+        />
 
         {pendingShell && (
-          <div
-            role="alertdialog"
-            aria-label={t('chat.commandShellTitle')}
-            className="mb-2 rounded-md border border-warning/40 bg-warning/10 p-3"
-          >
-            <p className="m-0 text-label font-medium text-foreground">
-              {t('chat.commandShellTitle')}
-            </p>
-            <p className="mb-2 mt-1 text-caption text-muted">{t('chat.commandShellHint')}</p>
-            <ul className="mb-2 max-h-32 list-none overflow-y-auto p-0 font-mono text-caption text-foreground">
-              {pendingShell.snippets.map((snippet, index) => (
-                <li key={`${index}-${snippet}`} className="truncate">
-                  {snippet}
-                </li>
-              ))}
-            </ul>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => void runPendingShell()}
-                disabled={sending}
-                className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-50"
-              >
-                {t('chat.commandShellRun')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingShell(null)}
-                className="h-8 rounded-md border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:bg-hover"
-              >
-                {t('chat.commandShellCancel')}
-              </button>
-            </div>
-          </div>
+          <ComposerShellPrompt
+            pending={pendingShell}
+            sending={sending}
+            onRun={() => {
+              void runPendingShell()
+            }}
+            onCancel={() => setPendingShell(null)}
+          />
         )}
 
-        {mention && (
-          <div
-            role="listbox"
-            aria-label={t('chat.mentionFiles')}
-            className="mb-2 max-h-48 overflow-y-auto rounded-md border border-border bg-surface p-1"
-          >
-            {mention.items.map((filePath, index) => (
-              <button
-                key={filePath}
-                type="button"
-                role="option"
-                aria-selected={index === Math.min(activeMention, mention.items.length - 1)}
-                onClick={() => applyMention(filePath)}
-                className={`block w-full truncate rounded px-2 py-1 text-left font-mono text-caption text-foreground transition-colors hover:bg-hover ${
-                  index === Math.min(activeMention, mention.items.length - 1) ? 'bg-hover' : ''
-                }`}
-              >
-                {filePath}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {attachments.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {attachments.map((attachment) => (
-              <span
-                key={attachment.id}
-                className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border-subtle bg-background-subtle px-2 py-1 text-caption text-muted"
-              >
-                <span className="max-w-[200px] truncate text-foreground">{attachment.name}</span>
-                <span className="flex-none">{formatFileSize(attachment.size)}</span>
-                <button
-                  type="button"
-                  aria-label={`${t('chat.removeAttachment')}: ${attachment.name}`}
-                  onClick={() => {
-                    void removeAttachment(attachment)
-                  }}
-                  className="flex-none rounded px-1 text-subtle transition-colors hover:text-danger"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
+        <ComposerAttachments
+          attachments={attachments}
+          onRemove={(attachment) => {
+            void removeAttachment(attachment)
+          }}
+        />
 
         <textarea
           ref={textareaRef}
           value={text}
           onChange={(event) => {
-            setText(event.target.value)
-            detectMention(event.target.value, event.target.selectionStart ?? 0)
+            const value = event.target.value
+            const cursor = event.target.selectionStart ?? 0
+            setText(value)
+            detectCommand(value, cursor)
+            detectMention(value, cursor)
           }}
           onKeyDown={(event) => {
             if (commandItems.length > 0) {
@@ -694,150 +253,46 @@ function Composer(): React.JSX.Element {
         />
 
         <div className="mt-1 flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              aria-label={t('chat.chooseFiles')}
-              className="sr-only"
-              disabled={attachmentsDisabled}
-              onChange={(event) => {
-                void addFiles(Array.from(event.target.files ?? []))
-              }}
-            />
-            <button
-              type="button"
-              aria-label={t('chat.attachFiles')}
-              title={t('chat.attachFiles')}
-              disabled={!ready || sending || attaching || attachmentsDisabled}
-              onClick={() => fileInputRef.current?.click()}
-              className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden>
-                <path
-                  d="m20 11.5-8.2 8.2a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-            <ModelPicker
-              models={models}
-              value={effectiveModel}
-              onChange={(model) => {
-                void changeModel(model)
-              }}
-              disabled={!ready || running || sending}
-            />
-            {modelVariants.length > 0 && (
-              <ComposerChoiceChip
-                ariaLabel={t('chat.modelVariant')}
-                accessibleLabel={`${t('chat.modelVariant')}: ${variantLabel}`}
-                label={`${t('chat.variantShort')} · ${variantLabel}`}
-                value={activeVariant ?? 'default'}
-                options={[
-                  { value: 'default', label: t('chat.variantDefault') },
-                  ...modelVariants.map((variant) => ({ value: variant.id, label: variant.name }))
-                ]}
-                onChange={(value) => {
-                  if (!effectiveModel) return
-                  void changeModel({
-                    ...effectiveModel,
-                    variant: value === 'default' ? null : value
-                  })
-                }}
-                disabled={!ready || running || sending}
-              />
-            )}
-            {agentOptions.length > 0 && (
-              <ComposerChoiceChip
-                ariaLabel={t('chat.agent')}
-                accessibleLabel={`${t('chat.agent')}: ${agentLabel}`}
-                label={agentLabel}
-                value={activeAgent?.id ?? ''}
-                options={agentOptions}
-                onChange={(value) => {
-                  void changeAgent(value)
-                }}
-                disabled={!ready || sending}
-                icon={<AgentIcon />}
-              />
-            )}
-            {effectiveModelInfo?.reasoning !== false && (
-              <ComposerChoiceChip
-                ariaLabel={t('chat.reasoning')}
-                accessibleLabel={`${t('chat.reasoning')}: ${reasoningLabel}`}
-                label={`${t('chat.reasoningShort')} · ${reasoningLabel}`}
-                value={reasoningEffort ?? 'default'}
-                options={reasoningOptions}
-                onChange={(value) => {
-                  void changeSettings({
-                    reasoningEffort: value === 'default' ? null : (value as ReasoningEffort)
-                  })
-                }}
-                disabled={!ready || sending}
-                icon={<ReasoningIcon />}
-              />
-            )}
-            <ComposerChoiceChip
-              ariaLabel={t('chat.permissionMode')}
-              label={t(PERMISSION_LABEL_KEYS[permissionMode])}
-              value={permissionMode}
-              options={permissionOptions}
-              onChange={(value) => {
-                void changeSettings({ permissionMode: value as PermissionMode })
-              }}
-              disabled={!ready || sending}
-              icon={<ShieldIcon />}
-            />
-          </div>
-
-          {running ? (
-            <button
-              type="button"
-              onClick={() => {
-                void stop()
-              }}
-              title={t('chat.stop')}
-              aria-label={t('chat.stop')}
-              className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-accent text-accent-foreground transition-colors hover:bg-accent-hover"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <rect x="6" y="6" width="12" height="12" rx="2.5" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                void submit()
-              }}
-              disabled={sendDisabled}
-              title={t('chat.send')}
-              aria-label={t('chat.send')}
-              className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-accent text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:bg-active disabled:text-subtle"
-            >
-              {sending ? (
-                <span
-                  aria-hidden
-                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-                />
-              ) : (
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <path
-                    d="M12 19V5M6.5 10.5 12 5l5.5 5.5"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </button>
-          )}
+          <ComposerToolbar
+            models={models}
+            model={effectiveModel}
+            onModelChange={(model) => {
+              void changeModel(model)
+            }}
+            modelVariants={modelVariants}
+            activeVariant={activeVariant}
+            agents={primaryAgents}
+            activeAgentId={activeAgent?.id ?? ''}
+            reasoningEffort={reasoningEffort}
+            showReasoning={effectiveModelInfo?.reasoning !== false}
+            permissionMode={permissionMode}
+            ready={ready}
+            running={running}
+            sending={sending}
+            attaching={attaching}
+            attachmentsDisabled={attachmentsDisabled}
+            fileInputRef={fileInputRef}
+            onFilesSelected={(files) => {
+              void addFiles(files)
+            }}
+            onSettingsChange={(patch) => {
+              void changeSettings(patch)
+            }}
+            onAgentChange={(agentId) => {
+              void changeAgent(agentId)
+            }}
+          />
+          <ComposerActions
+            running={running}
+            sending={sending}
+            sendDisabled={sendDisabled}
+            onStop={() => {
+              void stop()
+            }}
+            onSubmit={() => {
+              void submit()
+            }}
+          />
         </div>
       </div>
     </div>

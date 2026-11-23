@@ -15,13 +15,7 @@ export default defineConfig({
         test: {
           name: 'main',
           environment: 'node',
-          include: [
-            'src/main/**/*.test.ts',
-            'src/cli/**/*.test.ts',
-            'src/server/**/*.test.ts',
-            'src/acp/**/*.test.ts',
-            'src/sdk/**/*.test.ts'
-          ],
+          include: ['src/main/**/*.test.ts'],
           testTimeout: 20000
         }
       },
@@ -39,15 +33,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html'],
       include: [
-        'src/main/agent/errors.ts',
-        'src/main/agent/message-history.ts',
-        'src/main/agent/atomic-json.ts',
-        'src/main/agent/sessions/sessions-store.ts',
-        'src/main/agent/tools.ts',
-        'src/main/agent/runtime/agent-runtime.ts',
-        'src/main/agent/providers.ts',
-        'src/main/models/available.ts',
-        'src/main/stores/models.ts',
+        'src/main/providers/available.ts',
+        'src/main/settings/model-config-store.ts',
         'src/renderer/src/chat/store.ts',
         'src/renderer/src/hooks/useElapsed.ts',
         'src/renderer/src/components/chat/PermissionCard.tsx',

@@ -163,6 +163,14 @@ function startModelMock() {
               digest: null
             },
             {
+              name: 'ATeam-99.0.0-x64.dmg',
+              browser_download_url:
+                'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0-x64.dmg',
+              size: 1024,
+              content_type: 'application/octet-stream',
+              digest: null
+            },
+            {
               name: 'ATeam-99.0.0-x64-setup.exe',
               browser_download_url:
                 'https://github.com/lxqddd/ATeam/releases/download/v99.0.0/ATeam-99.0.0-x64-setup.exe',

@@ -1,0 +1,101 @@
+{
+  "name": "@ateam/agent-core",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Electron-free ATeam agent runtime, tools, sessions, and integrations",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./runtime": {
+      "types": "./src/runtime/index.ts",
+      "import": "./src/runtime/index.ts",
+      "default": "./src/runtime/index.ts"
+    },
+    "./sessions": {
+      "types": "./src/sessions/index.ts",
+      "import": "./src/sessions/index.ts",
+      "default": "./src/sessions/index.ts"
+    },
+    "./config": {
+      "types": "./src/config/index.ts",
+      "import": "./src/config/index.ts",
+      "default": "./src/config/index.ts"
+    },
+    "./integrations": {
+      "types": "./src/integrations/index.ts",
+      "import": "./src/integrations/index.ts",
+      "default": "./src/integrations/index.ts"
+    },
+    "./tools": {
+      "types": "./src/tools.ts",
+      "import": "./src/tools.ts",
+      "default": "./src/tools.ts"
+    },
+    "./attachments": {
+      "types": "./src/attachments.ts",
+      "import": "./src/attachments.ts",
+      "default": "./src/attachments.ts"
+    },
+    "./commands": {
+      "types": "./src/commands.ts",
+      "import": "./src/commands.ts",
+      "default": "./src/commands.ts"
+    },
+    "./references": {
+      "types": "./src/references.ts",
+      "import": "./src/references.ts",
+      "default": "./src/references.ts"
+    },
+    "./providers": {
+      "types": "./src/providers.ts",
+      "import": "./src/providers.ts",
+      "default": "./src/providers.ts"
+    },
+    "./storage": {
+      "types": "./src/atomic-json.ts",
+      "import": "./src/atomic-json.ts",
+      "default": "./src/atomic-json.ts"
+    },
+    "./testing": {
+      "types": "./src/test/index.ts",
+      "import": "./src/test/index.ts",
+      "default": "./src/test/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.106",
+    "@ai-sdk/google": "4.0.122",
+    "@ai-sdk/openai": "4.0.121",
+    "@ai-sdk/openai-compatible": "3.0.93",
+    "@anthropic-ai/tokenizer": "^0.0.4",
+    "@ateam/shared": "workspace:*",
+    "@vscode/ripgrep": "^1.18.0",
+    "ai": "7.0.177",
+    "diff": "8.0.4",
+    "gpt-tokenizer": "^4.1.2",
+    "turndown": "^7.2.5",
+    "unpdf": "^2.2.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/turndown": "^5.0.6",
+    "@vitest/coverage-v8": "5.1.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "5.1.1"
+  }
+}

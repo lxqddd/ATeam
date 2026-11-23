@@ -11,14 +11,14 @@ import {
   UPDATE_EVENT_CHANNEL,
   type AgentEventEnvelope
 } from '@ateam/shared'
-import { AgentManager } from './agent/agent-manager'
+import { AgentManager } from './agent-host/agent-manager'
 import { BrowserController } from './browser/browser-controller'
-import { ModelsStore } from './stores/models'
-import { ModelCatalogStore } from './models/catalog-store'
-import { WebSearchStore } from './stores/websearch'
-import { McpAuthStore } from './agent/integrations/mcp-auth-store'
-import { ProviderAuthStore } from './models/provider-auth-store'
-import { runtimeModelsWithOAuth } from './models/runtime'
+import { ModelConfigStore } from './settings/model-config-store'
+import { ModelCatalogStore } from './providers/catalog-store'
+import { WebSearchConfigStore } from './settings/websearch-config-store'
+import { McpAuthStore } from './credentials/mcp-auth-store'
+import { ProviderAuthStore } from './providers/provider-auth-store'
+import { runtimeModelsWithOAuth } from './providers/runtime-config'
 import { registerAgentIpc } from './ipc/agent'
 import { registerModelsIpc } from './ipc/models'
 import { registerUpdatesIpc } from './ipc/updates'
@@ -143,13 +143,13 @@ if (!hasSingleInstanceLock) {
     const workspacePath = join(userDataPath, 'agent-workspace')
 
     const providerAuthStore = new ProviderAuthStore(userDataPath)
-    const modelsStore = new ModelsStore(userDataPath, providerAuthStore)
+    const modelsStore = new ModelConfigStore(userDataPath, providerAuthStore)
     try {
       await modelsStore.init()
     } catch (error) {
       console.error('[models] failed to load the model configuration', error)
     }
-    const webSearchStore = new WebSearchStore(userDataPath)
+    const webSearchStore = new WebSearchConfigStore(userDataPath)
     try {
       await webSearchStore.init()
     } catch (error) {

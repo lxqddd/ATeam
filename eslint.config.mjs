@@ -38,5 +38,49 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  {
+    files: ['packages/agent-core/**/*.ts', 'apps/headless/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['electron', 'electron/*', '@electron-toolkit/*'],
+              message: 'Agent core and headless modes must not depend on Electron.'
+            },
+            {
+              group: ['@ateam/desktop', '**/apps/desktop/**'],
+              message: 'Agent core and headless modes must not import the desktop app.'
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    files: rendererFiles,
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@ateam/agent-core', '@ateam/agent-core/*'],
+              message: 'Renderer code must use window.api instead of the agent core.'
+            },
+            {
+              group: ['**/src/main/**', '**/main/**'],
+              message: 'Renderer code must not import main-process modules.'
+            },
+            {
+              group: ['electron', 'electron/*'],
+              message: 'Renderer code must not import Electron directly.'
+            }
+          ]
+        }
+      ]
+    }
+  },
   eslintConfigPrettier
 )
