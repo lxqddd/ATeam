@@ -13,6 +13,11 @@ export const agentConfigResolveSchema = z.object({
   directory: z.string().max(2_000).optional()
 })
 
+export const projectConfigUpdateSchema = z.object({
+  directory: z.string().max(2_000).nullable().optional(),
+  content: z.string().max(1_000_000)
+})
+
 export const agentConfigPatchSchema = z.object({
   snapshots: z.boolean().optional(),
   instructions: z.array(z.string().max(2_000)).max(50).optional(),

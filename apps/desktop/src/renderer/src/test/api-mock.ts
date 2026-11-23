@@ -6,6 +6,7 @@ import type {
   AgentInfo,
   AgentStatus,
   EffectiveAgentConfig,
+  ProjectConfigFile,
   AteamApi,
   CommandDefinition,
   McpAuthStatus,
@@ -261,6 +262,24 @@ export function createApiMock(
           formatterOverrides: {},
           ...patch
         })),
+        project: {
+          get: vi.fn(async (): Promise<ProjectConfigFile> => ({
+            path: '/tmp/workspace/ateam.json',
+            directory: '/tmp/workspace',
+            root: '/tmp/workspace',
+            exists: false,
+            content: '',
+            diagnostics: []
+          })),
+          update: vi.fn(async (input: { content: string }): Promise<ProjectConfigFile> => ({
+            path: '/tmp/workspace/ateam.json',
+            directory: '/tmp/workspace',
+            root: '/tmp/workspace',
+            exists: true,
+            content: input.content,
+            diagnostics: []
+          }))
+        },
         resolve: vi.fn(async (): Promise<EffectiveAgentConfig> => ({
           config: {
             snapshots: true,

@@ -95,7 +95,20 @@ const api: AteamApi = {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.agentConfig),
       update: (patch) => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigUpdate, patch),
       resolve: (directory) =>
-        ipcRenderer.invoke(AGENT_CHANNELS.agentConfigResolve, { directory: directory ?? undefined })
+        ipcRenderer.invoke(AGENT_CHANNELS.agentConfigResolve, {
+          directory: directory ?? undefined
+        }),
+      project: {
+        get: (directory) =>
+          ipcRenderer.invoke(AGENT_CHANNELS.agentConfigProjectGet, {
+            directory: directory ?? undefined
+          }),
+        update: (input) =>
+          ipcRenderer.invoke(AGENT_CHANNELS.agentConfigProjectUpdate, {
+            directory: input.directory ?? undefined,
+            content: input.content
+          })
+      }
     },
     mcp: {
       list: (directory) =>

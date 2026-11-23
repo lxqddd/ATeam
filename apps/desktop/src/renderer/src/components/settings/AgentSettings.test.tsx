@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentSettings from './AgentSettings'
@@ -190,5 +190,28 @@ describe('AgentSettings', () => {
       })
     )
     expect(await screen.findByText('Saved')).toBeInTheDocument()
+  })
+  it('edits the project config from the read-only card', async () => {
+    const user = userEvent.setup()
+    vi.mocked(mock.api.agent.config.project.update).mockResolvedValue({
+      path: '/tmp/workspace/ateam.json',
+      directory: '/tmp/workspace',
+      root: '/tmp/workspace',
+      exists: true,
+      content: '{"snapshots": false}\n',
+      diagnostics: []
+    })
+    render(<AgentSettings />)
+
+    await user.click(await screen.findByRole('button', { name: 'Create project config' }))
+    const editor = screen.getByRole('textbox', { name: /ateam\.json/ })
+    fireEvent.change(editor, { target: { value: '{"snapshots": false}\n' } })
+    await user.click(screen.getByRole('button', { name: 'Save project config' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.config.project.update).toHaveBeenCalledWith(
+        expect.objectContaining({ content: '{"snapshots": false}\n' })
+      )
+    )
   })
 })

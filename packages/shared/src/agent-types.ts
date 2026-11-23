@@ -424,6 +424,15 @@ export interface AgentConfig {
   skills?: string[]
 }
 
+export interface ProjectConfigFile {
+  path: string
+  directory: string
+  root: string
+  exists: boolean
+  content: string
+  diagnostics: ConfigDiagnostic[]
+}
+
 export interface ConfigSources {
   globalConfigPath: string
   projectConfigPath: string | null

@@ -2,6 +2,7 @@ import type {
   AgentConfig,
   AgentDefinition,
   EffectiveAgentConfig,
+  ProjectConfigFile,
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
@@ -92,6 +93,10 @@ export interface AgentBridge {
     get: () => Promise<AgentConfig>
     update: (patch: Partial<AgentConfig>) => Promise<AgentConfig>
     resolve: (directory?: string | null) => Promise<EffectiveAgentConfig>
+    project: {
+      get: (directory?: string | null) => Promise<ProjectConfigFile>
+      update: (input: { directory?: string | null; content: string }) => Promise<ProjectConfigFile>
+    }
   }
   mcp: {
     list: (directory?: string | null) => Promise<{

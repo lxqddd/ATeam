@@ -308,7 +308,12 @@ const enUS = {
     plugins: 'Plugins',
     configuredProviders: 'Providers',
     configuredCommands: 'Commands',
-    configuredSkills: 'Skills'
+    configuredSkills: 'Skills',
+    editProjectConfig: 'Edit project config',
+    createProjectConfig: 'Create project config',
+    saveProjectConfig: 'Save project config',
+    projectConfigEditorHint:
+      'Edit the raw ateam.json/ateam.jsonc. JSONC comments and trailing commas are supported; invalid JSONC or config fields are rejected.'
   },
   modelsPage: {
     projectProviders: 'Project providers',

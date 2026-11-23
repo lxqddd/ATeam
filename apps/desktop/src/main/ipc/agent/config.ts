@@ -1,7 +1,15 @@
 import { app } from 'electron'
 import { AGENT_CHANNELS, type AgentConfig, type EffectiveAgentConfig } from '@ateam/shared'
-import { readEffectiveAgentConfig } from '@ateam/agent-core/config'
-import { agentConfigPatchSchema, agentConfigResolveSchema } from '../config-schema'
+import {
+  readEffectiveAgentConfig,
+  readProjectConfigFile,
+  writeProjectConfigFile
+} from '@ateam/agent-core/config'
+import {
+  agentConfigPatchSchema,
+  agentConfigResolveSchema,
+  projectConfigUpdateSchema
+} from '../config-schema'
 import type { AgentIpcContext } from './context'
 
 /** Registers persisted agent configuration channels. */
@@ -25,5 +33,17 @@ export function registerConfigHandlers(ctx: AgentIpcContext): void {
       app.getPath('userData'),
       ctx.requestedDirectory(directory) ?? ctx.workspacePath
     )
+  })
+
+  handle(AGENT_CHANNELS.agentConfigProjectGet, (payload) => {
+    const { directory } = agentConfigResolveSchema.parse(payload ?? {})
+    return readProjectConfigFile(ctx.requestedDirectory(directory) ?? ctx.workspacePath)
+  })
+
+  handle(AGENT_CHANNELS.agentConfigProjectUpdate, async (payload) => {
+    const { directory, content } = projectConfigUpdateSchema.parse(payload)
+    const workspace = ctx.requestedDirectory(directory) ?? ctx.workspacePath
+    await writeProjectConfigFile(workspace, content)
+    return readProjectConfigFile(workspace)
   })
 }

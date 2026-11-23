@@ -299,7 +299,12 @@ const zhCN = {
     plugins: '插件',
     configuredProviders: 'Providers',
     configuredCommands: '命令',
-    configuredSkills: 'Skills'
+    configuredSkills: 'Skills',
+    editProjectConfig: '编辑项目配置',
+    createProjectConfig: '创建项目配置',
+    saveProjectConfig: '保存项目配置',
+    projectConfigEditorHint:
+      '直接编辑 ateam.json/ateam.jsonc。支持 JSONC 注释和尾逗号；无效 JSONC 或配置字段会被拒绝。'
   },
   modelsPage: {
     projectProviders: '项目 Providers',

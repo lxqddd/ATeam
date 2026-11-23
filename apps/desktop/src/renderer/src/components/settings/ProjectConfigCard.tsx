@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ConfigFieldSource, ConfigProvenance, EffectiveAgentConfig } from '@ateam/shared'
+import type {
+  ConfigFieldSource,
+  ConfigProvenance,
+  EffectiveAgentConfig,
+  ProjectConfigFile
+} from '@ateam/shared'
 import { useChatStore } from '../../chat/store'
 import { errorMessage } from '../../lib/errors'
 
@@ -34,7 +39,12 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
   const selected = sessions.find((session) => session.id === selectedSessionId)
   const directory = selected?.directory ?? defaultDirectory
   const [resolved, setResolved] = useState<EffectiveAgentConfig | null>(null)
+  const [projectFile, setProjectFile] = useState<ProjectConfigFile | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -53,6 +63,42 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
       active = false
     }
   }, [directory])
+
+  useEffect(() => {
+    let active = true
+    window.api.agent.config.project
+      .get(directory)
+      .then((next) => {
+        if (active) setProjectFile(next)
+      })
+      .catch((caught: unknown) => {
+        if (active) setError(errorMessage(caught))
+      })
+    return () => {
+      active = false
+    }
+  }, [directory])
+
+  async function saveProjectConfig(): Promise<void> {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const next = await window.api.agent.config.project.update({ directory, content: draft })
+      setProjectFile(next)
+      setResolved(await window.api.agent.config.resolve(directory))
+      setEditing(false)
+    } catch (caught) {
+      setSaveError(errorMessage(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function startEditing(): void {
+    setDraft(projectFile?.content || '{\n}\n')
+    setSaveError(null)
+    setEditing(true)
+  }
 
   if (error) {
     return (
@@ -123,23 +169,78 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
       data-testid="project-config-card"
       className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-subtle px-3 py-3"
     >
-      <div>
-        <p className="m-0 text-label font-medium text-foreground">
-          {t('settings.projectConfiguration')}
-        </p>
-        <p className="m-0 mt-0.5 text-caption text-muted">
-          {t('settings.projectConfigurationDescription')}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="m-0 text-label font-medium text-foreground">
+            {t('settings.projectConfiguration')}
+          </p>
+          <p className="m-0 mt-0.5 text-caption text-muted">
+            {t('settings.projectConfigurationDescription')}
+          </p>
+        </div>
+        {!editing && (
+          <button
+            type="button"
+            onClick={startEditing}
+            className="h-7 flex-none rounded-md border border-border px-2 text-caption font-medium text-foreground transition-colors hover:bg-background-subtle"
+          >
+            {projectFile?.exists
+              ? t('settings.editProjectConfig')
+              : t('settings.createProjectConfig')}
+          </button>
+        )}
       </div>
       <div className="text-caption text-muted">
         <p className="m-0 break-all font-mono">
-          {projectPath ?? t('settings.projectConfigMissing')}
+          {projectFile?.path ?? projectPath ?? t('settings.projectConfigMissing')}
         </p>
         <p className="m-0 mt-0.5 break-all">
           {t('settings.projectConfigRoot')}:{' '}
           <span className="font-mono">{resolved.sources.projectRoot}</span>
         </p>
       </div>
+      {editing && (
+        <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-surface p-2.5">
+          <p className="m-0 text-caption text-muted">{t('settings.projectConfigEditorHint')}</p>
+          <textarea
+            aria-label={t('settings.projectConfigEditorHint')}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            rows={12}
+            spellCheck={false}
+            className="w-full resize-y rounded-md border border-border bg-background-subtle px-3 py-2 font-mono text-caption text-foreground outline-none focus:border-border-strong"
+          />
+          {saveError && (
+            <p role="alert" className="m-0 text-caption text-danger">
+              {saveError}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                setEditing(false)
+                setSaveError(null)
+              }}
+              className="h-7 rounded-md px-2 text-caption font-medium text-muted hover:bg-background-subtle disabled:opacity-50"
+            >
+              {t('settings.cancel')}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                void saveProjectConfig()
+              }}
+              className="h-7 rounded-md bg-accent px-2.5 text-caption font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-50"
+            >
+              {saving ? t('settings.saving') : t('settings.saveProjectConfig')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {resolved.diagnostics.length > 0 && (
         <div className="rounded-md border border-warning/40 bg-warning-soft px-2.5 py-2">
           <p className="m-0 text-caption font-medium text-warning">

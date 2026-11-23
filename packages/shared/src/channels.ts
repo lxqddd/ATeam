@@ -38,6 +38,8 @@ export const AGENT_CHANNELS = {
   agentConfig: 'ateam:agent:config:get',
   agentConfigUpdate: 'ateam:agent:config:update',
   agentConfigResolve: 'ateam:agent:config:resolve',
+  agentConfigProjectGet: 'ateam:agent:config:project:get',
+  agentConfigProjectUpdate: 'ateam:agent:config:project:update',
   mcpList: 'ateam:agent:mcp:list',
   mcpStatuses: 'ateam:agent:mcp:statuses',
   mcpAdd: 'ateam:agent:mcp:add',

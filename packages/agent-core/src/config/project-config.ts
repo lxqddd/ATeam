@@ -11,6 +11,7 @@ import type {
   FormatterConfigInput,
   LspServerConfigInput,
   McpServerInput,
+  ProjectConfigFile,
   ProviderConfigInput
 } from '@ateam/shared'
 import { parseCommandJson } from '../commands'
@@ -37,6 +38,67 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+export async function readProjectConfigFile(workspacePath: string): Promise<ProjectConfigFile> {
+  const root = await findProjectRoot(workspacePath)
+  const existing = await findProjectConfig(workspacePath)
+  const file = existing ?? path.join(root, CONFIG_NAMES[0])
+  const directory = path.dirname(file)
+  if (!existing) {
+    return { path: file, directory, root, exists: false, content: '', diagnostics: [] }
+  }
+  try {
+    const content = await fs.readFile(file, 'utf8')
+    const parsed = parseProjectConfigDocument(content, file)
+    return {
+      path: file,
+      directory,
+      root,
+      exists: true,
+      content,
+      diagnostics: parsed.diagnostics
+    }
+  } catch (error) {
+    return {
+      path: file,
+      directory,
+      root,
+      exists: true,
+      content: '',
+      diagnostics: [
+        {
+          source: file,
+          path: '$',
+          severity: 'error',
+          message: `unable to read config: ${error instanceof Error ? error.message : 'unknown error'}`
+        }
+      ]
+    }
+  }
+}
+
+export async function writeProjectConfigFile(
+  workspacePath: string,
+  content: string
+): Promise<ProjectConfigFile> {
+  const root = await findProjectRoot(workspacePath)
+  const existing = await findProjectConfig(workspacePath)
+  const file = existing ?? path.join(root, CONFIG_NAMES[0])
+  const parsed = parseProjectConfigDocument(content, file)
+  const errors = parsed.diagnostics.filter((entry) => entry.severity === 'error')
+  if (errors.length > 0) {
+    throw new Error(`INVALID_PROJECT_CONFIG: ${errors[0].message}`)
+  }
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`
+  try {
+    await fs.writeFile(temporary, content, { encoding: 'utf8', mode: 0o644 })
+    await fs.rename(temporary, file)
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined)
+    throw error
+  }
+  return readProjectConfigFile(workspacePath)
 }
 
 export async function findProjectConfig(workspacePath: string): Promise<string | null> {

@@ -21,6 +21,22 @@ vi.mock('@ateam/agent-core/config', () => ({
     get = vi.fn(() => ({}))
     update = vi.fn((patch: unknown) => patch)
   },
+  readProjectConfigFile: vi.fn(async () => ({
+    path: '',
+    directory: '',
+    root: '',
+    exists: false,
+    content: '',
+    diagnostics: []
+  })),
+  writeProjectConfigFile: vi.fn(async () => ({
+    path: '',
+    directory: '',
+    root: '',
+    exists: true,
+    content: '',
+    diagnostics: []
+  })),
   readEffectiveAgentConfig: vi.fn(async () => ({
     config: {},
     sources: {
@@ -103,8 +119,8 @@ describe('registerAgentIpc', () => {
     const channels = registeredChannels()
     const expected = Object.values(AGENT_CHANNELS)
 
-    expect(channels).toHaveLength(53)
-    expect(expected).toHaveLength(53)
+    expect(channels).toHaveLength(55)
+    expect(expected).toHaveLength(55)
     expect(channels).toContain(AGENT_CHANNELS.mcpList)
     expect(new Set(channels).size).toBe(channels.length)
     expect([...channels].sort()).toEqual([...expected].sort())
@@ -114,7 +130,7 @@ describe('registerAgentIpc', () => {
     registerAgentIpc(createOptions(false))
 
     const listeners = ipcHandle.mock.calls.map(([, listener]) => listener)
-    expect(listeners).toHaveLength(53)
+    expect(listeners).toHaveLength(55)
     for (const listener of listeners) {
       const invoke = listener as (event: unknown, payload: unknown) => unknown
       expect(() => invoke({}, undefined)).toThrow('UNTRUSTED_SENDER')

@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readAgentConfig } from './config-store'
 import {
   parseProjectConfigContent,
+  readProjectConfigFile,
+  writeProjectConfigFile,
   parseProjectConfigDocument,
   readProjectConfig
 } from './project-config'
@@ -240,5 +242,29 @@ describe('provider model merging', () => {
       contextWindow: 200000,
       costInput: 3
     })
+  })
+})
+
+describe('project config file editor', () => {
+  it('creates, reads and validates the project config file', async () => {
+    const initial = await readProjectConfigFile(workspace)
+    expect(initial.exists).toBe(false)
+    expect(initial.path).toBe(path.join(directory, 'repo', 'ateam.json'))
+
+    const written = await writeProjectConfigFile(
+      workspace,
+      `{\n  // editor\n  "snapshots": false,\n}\n`
+    )
+    expect(written.exists).toBe(true)
+    expect(written.content).toContain('// editor')
+    expect(written.diagnostics).toEqual([])
+
+    const reloaded = await readProjectConfigFile(workspace)
+    expect(reloaded.path).toBe(written.path)
+    expect(reloaded.content).toContain('"snapshots": false')
+
+    await expect(writeProjectConfigFile(workspace, '{ not json')).rejects.toThrow(
+      'INVALID_PROJECT_CONFIG'
+    )
   })
 })
