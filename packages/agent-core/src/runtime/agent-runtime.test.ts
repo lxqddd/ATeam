@@ -3125,6 +3125,75 @@ describe('background subagents and sampling', () => {
 })
 
 describe('project provider and MCP configuration', () => {
+  it('shows plugin-modified tool args and output in the tool part', async () => {
+    const pluginPath = path.join(directory, 'tool-hooks-plugin.mjs')
+    await fs.writeFile(
+      pluginPath,
+      `export default () => ({
+        name: '@acme/tool-hooks',
+        toolBefore: (_input, output) => {
+          output.args = { value: String(output.args.value) + '!' }
+        },
+        toolAfter: (_input, output) => {
+          output.output = String(output.output) + '?'
+        }
+      })`
+    )
+    const configDirectory = path.join(directory, 'agent')
+    await fs.mkdir(configDirectory, { recursive: true })
+    await fs.writeFile(
+      path.join(configDirectory, 'config.json'),
+      JSON.stringify({ snapshots: true, instructions: [], plugins: [pluginPath] })
+    )
+    baseTools = {
+      task: {
+        description: 'task',
+        execute: async (input: { value: string }) => `done:${input.value}`
+      } as never
+    }
+    scripts.push(async function* (input) {
+      const task = input.tools.task as unknown as {
+        execute: (
+          args: { value: string },
+          options: {
+            toolCallId: string
+            messages: never[]
+            abortSignal: AbortSignal
+          }
+        ) => Promise<string>
+      }
+      yield part({
+        type: 'tool-call',
+        toolCallId: 'call-1',
+        toolName: 'task',
+        input: { value: 'hi' }
+      })
+      const output = await task.execute(
+        { value: 'hi' },
+        { toolCallId: 'call-1', messages: [], abortSignal: input.abortSignal }
+      )
+      yield part({
+        type: 'tool-result',
+        toolCallId: 'call-1',
+        toolName: 'task',
+        input: { value: 'hi' },
+        output
+      })
+      yield part({ type: 'text-start', id: 't1' })
+      yield part({ type: 'text-delta', id: 't1', text: 'done' })
+      yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+    })
+
+    await runtime.sendChat(sessionId, 'run')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1')).toMatchObject({
+      state: 'completed',
+      input: { value: 'hi!' },
+      output: 'done:hi!?'
+    })
+  })
+
   it('loads declarative plugin auth methods on demand', async () => {
     const pluginPath = path.join(directory, 'auth-plugin.mjs')
     await fs.writeFile(

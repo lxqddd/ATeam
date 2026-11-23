@@ -56,6 +56,46 @@ describe('PluginRegistry', () => {
     await expect(execute({ value: 'hi' }, { toolCallId: 'call-1' })).resolves.toBe('plugin:hi!?')
   })
 
+  it('reports hook-modified tool args and results', async () => {
+    const registry = new PluginRegistry([
+      {
+        toolBefore: (_input, output) => {
+          output.args = { value: `${(output.args as { value: string }).value}!` }
+        },
+        toolAfter: (_input, output) => {
+          output.output = `${String(output.output)}?`
+        }
+      }
+    ])
+    const tools = {
+      echo: tool({
+        description: 'echo',
+        inputSchema: z.object({ value: z.string() }),
+        execute: async ({ value }) => `echo:${value}`
+      })
+    }
+    const updates: Array<{ kind: string; tool: string; callId: string; value: unknown }> = []
+    const wrapped = registry.wrapTools(tools, 'session-1', {
+      onToolInput: ({ tool: name, callId, args }) => {
+        updates.push({ kind: 'input', tool: name, callId, value: args })
+      },
+      onToolOutput: ({ tool: name, callId, output }) => {
+        updates.push({ kind: 'output', tool: name, callId, value: output })
+      }
+    })
+    const execute = (
+      wrapped.echo as unknown as {
+        execute: (input: { value: string }, options: { toolCallId: string }) => Promise<string>
+      }
+    ).execute
+
+    await expect(execute({ value: 'hi' }, { toolCallId: 'call-1' })).resolves.toBe('echo:hi!?')
+    expect(updates).toEqual([
+      { kind: 'input', tool: 'echo', callId: 'call-1', value: { value: 'hi!' } },
+      { kind: 'output', tool: 'echo', callId: 'call-1', value: 'echo:hi!?' }
+    ])
+  })
+
   it('transforms command templates before execution', async () => {
     const registry = new PluginRegistry([
       {

@@ -5,6 +5,27 @@ import type { Run } from './types'
 
 export type ToolPart = Extract<MessagePart, { type: 'tool' }>
 
+export interface FormattedToolOutput {
+  text?: string
+  images?: Array<{ mimeType: string; data: string }>
+}
+
+export function formatToolOutput(output: unknown): FormattedToolOutput {
+  if (output && typeof output === 'object' && 'summary' in output && 'image' in output) {
+    const media = output as {
+      summary: string
+      image: { mimeType: string; data: string }
+    }
+    return { text: media.summary, images: [media.image] }
+  }
+  if (typeof output === 'string') return { text: output }
+  try {
+    return { text: JSON.stringify(output) }
+  } catch {
+    return { text: String(output) }
+  }
+}
+
 export function findToolPart(message: ChatMessage, toolCallId: string): MessagePart | undefined {
   return message.parts.find((part) => part.type === 'tool' && part.toolCallId === toolCallId)
 }

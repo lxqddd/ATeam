@@ -78,6 +78,7 @@ import {
   emitPart,
   ensureToolPart,
   findToolPart,
+  formatToolOutput,
   settleTools
 } from './run-messages'
 import { prepareRun, type RunPreparationHost } from './run-preparation'
@@ -1439,8 +1440,36 @@ export class AgentRuntime {
       historyMessages: (run, assistantMessageId) => this.historyMessages(run, assistantMessageId),
       attachmentPayloads: (sessionId, messages) => this.attachmentPayloads(sessionId, messages),
       isGitRepository: (workspace) => this.isGitRepository(workspace),
-      planFilePath: (run) => this.planFilePath(run)
+      planFilePath: (run) => this.planFilePath(run),
+      applyPluginToolUpdate: (run, messageId, update) =>
+        this.applyPluginToolUpdate(run, messageId, update)
     }
+  }
+
+  private applyPluginToolUpdate(
+    run: Run,
+    messageId: string,
+    update: {
+      toolCallId: string
+      toolName: string
+      input?: unknown
+      output?: unknown
+    }
+  ): void {
+    const message = this.record(run.sessionId).messages.find((entry) => entry.id === messageId)
+    if (!message) return
+    const toolPart = ensureToolPart(message, update.toolCallId, update.toolName)
+    if ('input' in update) toolPart.input = update.input
+    if ('output' in update) {
+      const formatted = formatToolOutput(update.output)
+      if (formatted.text === undefined) delete toolPart.output
+      else toolPart.output = formatted.text
+      if (formatted.images) toolPart.images = formatted.images
+    }
+    if (toolPart.state === 'pending') toolPart.state = 'running'
+    message.updatedAt = nowIso()
+    emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
+    void this.store.persist(run.sessionId).catch(() => undefined)
   }
 
   private async runAgent(run: Run): Promise<void> {
@@ -1633,7 +1662,10 @@ export class AgentRuntime {
           }
           case 'tool-call': {
             const toolPart = ensureToolPart(message, part.toolCallId, part.toolName)
-            toolPart.input = part.input
+            const overrides = run.pluginToolOverrides
+            toolPart.input = overrides?.inputs.has(part.toolCallId)
+              ? overrides.inputs.get(part.toolCallId)
+              : part.input
             toolPart.state = 'running'
             emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
             break
@@ -1643,23 +1675,13 @@ export class AgentRuntime {
             if (toolPart && toolPart.type === 'tool') {
               if (toolPart.state !== 'denied') {
                 toolPart.state = 'completed'
-                const output = part.output as unknown
-                if (
-                  output &&
-                  typeof output === 'object' &&
-                  'summary' in output &&
-                  'image' in output
-                ) {
-                  const media = output as {
-                    summary: string
-                    image: { mimeType: string; data: string }
-                  }
-                  toolPart.output = media.summary
-                  toolPart.images = [media.image]
-                } else {
-                  toolPart.output =
-                    typeof part.output === 'string' ? part.output : JSON.stringify(part.output)
-                }
+                const overrides = run.pluginToolOverrides
+                const output = overrides?.outputs.has(part.toolCallId)
+                  ? overrides.outputs.get(part.toolCallId)
+                  : (part.output as unknown)
+                const formatted = formatToolOutput(output)
+                toolPart.output = formatted.text
+                toolPart.images = formatted.images
                 toolPart.finishedAt = nowIso()
                 emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
               }

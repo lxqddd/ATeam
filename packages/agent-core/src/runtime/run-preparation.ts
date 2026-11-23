@@ -64,6 +64,16 @@ export interface RunPreparationHost {
   ): Promise<Map<string, AttachmentPayload>>
   isGitRepository(workspace: string): Promise<boolean>
   planFilePath(run: Run): string
+  applyPluginToolUpdate(
+    run: Run,
+    messageId: string,
+    update: {
+      toolCallId: string
+      toolName: string
+      input?: unknown
+      output?: unknown
+    }
+  ): void
 }
 
 export interface PreparedRun {
@@ -126,6 +136,10 @@ export async function prepareRun(
     /* MCP servers are best effort */
   }
   const targetInfo = resolvedTarget.model
+  const pluginToolOverrides = (run.pluginToolOverrides ??= {
+    inputs: new Map(),
+    outputs: new Map()
+  })
   const tools = plugins.wrapTools(
     filterToolsForAgent(
       filterToolsForModel(
@@ -134,7 +148,25 @@ export async function prepareRun(
       ),
       agent
     ),
-    run.sessionId
+    run.sessionId,
+    {
+      onToolInput: ({ tool, callId, args }) => {
+        pluginToolOverrides.inputs.set(callId, args)
+        host.applyPluginToolUpdate(run, input.messageId, {
+          toolCallId: callId,
+          toolName: tool,
+          input: args
+        })
+      },
+      onToolOutput: ({ tool, callId, output }) => {
+        pluginToolOverrides.outputs.set(callId, output)
+        host.applyPluginToolUpdate(run, input.messageId, {
+          toolCallId: callId,
+          toolName: tool,
+          output
+        })
+      }
+    }
   )
   toolContext.codeModeTools = () => tools
 

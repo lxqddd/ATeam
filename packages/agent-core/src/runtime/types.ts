@@ -47,6 +47,10 @@ export interface Run {
   references?: ResolvedReference[]
   policyRules?: PermissionRule[]
   plugins?: PluginRegistry
+  pluginToolOverrides?: {
+    inputs: Map<string, unknown>
+    outputs: Map<string, unknown>
+  }
   permissionDelegate?: (
     action: PermissionAction,
     resource: string,

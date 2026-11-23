@@ -65,6 +65,11 @@ interface PendingAuth {
   timer: NodeJS.Timeout
 }
 
+export interface PluginToolSync {
+  onToolInput?: (input: { tool: string; callId: string; args: unknown }) => void
+  onToolOutput?: (input: { tool: string; callId: string; args: unknown; output: unknown }) => void
+}
+
 export interface PluginHooks {
   name?: string
   config?: (config: AgentConfig) => void | Promise<void>
@@ -426,8 +431,10 @@ export class PluginRegistry {
     }
   }
 
-  wrapTools(tools: ToolSet, sessionId: string): ToolSet {
+  wrapTools(tools: ToolSet, sessionId: string, sync: PluginToolSync = {}): ToolSet {
     if (this.hooks.length === 0) return tools
+    const hasBefore = this.hooks.some((hook) => hook.toolBefore)
+    const hasAfter = this.hooks.some((hook) => hook.toolAfter)
     const wrapped: ToolSet = {}
     for (const [name, definition] of Object.entries(tools)) {
       const candidate = definition as unknown as {
@@ -448,6 +455,17 @@ export class PluginRegistry {
               before
             )
           }
+          if (hasBefore) {
+            try {
+              sync.onToolInput?.({
+                tool: name,
+                callId: options.toolCallId,
+                args: before.args
+              })
+            } catch {
+              /* syncing tool details must not break execution */
+            }
+          }
           let output: unknown = await execute(before.args as never, options)
           const after = { output }
           for (const hook of this.hooks) {
@@ -457,6 +475,18 @@ export class PluginRegistry {
             )
           }
           output = after.output
+          if (hasAfter) {
+            try {
+              sync.onToolOutput?.({
+                tool: name,
+                callId: options.toolCallId,
+                args: before.args,
+                output
+              })
+            } catch {
+              /* syncing tool details must not break execution */
+            }
+          }
           return output
         }
       } as unknown as (typeof wrapped)[string]
