@@ -47,6 +47,20 @@ const enUS = {
     lspDescription: 'Attach language server diagnostics after reading and editing files.',
     formatters: 'Auto format',
     formattersDescription: 'Run the project formatter after writing or editing files.',
+    retrySettings: 'Model request retries',
+    retrySettingsDescription:
+      'Retries cover rate limits, server errors, network failures and interrupted streams.',
+    retryMaxRetries: 'Max retries',
+    retryMaxDelay: 'Max wait (s)',
+    retryTimeout: 'Response timeout (s)',
+    retryTimeoutHint:
+      '0 disables it. The timeout covers one request and its retry waits until response headers arrive.',
+    saveRetry: 'Save retry settings',
+    retryInvalid: 'Retry settings must be whole numbers within the allowed range.',
+    retryMetrics: 'Retry metrics',
+    retryMetricsEmpty: 'No retries recorded in this agent process.',
+    retryMetricsSummary: '{{retries}} retries · {{rate}}% success · average wait {{seconds}}s',
+    retryMetricsLastReason: 'Last reason: {{reason}}',
     formatterOverrides: 'Formatter overrides',
     formatterOverridesDescription:
       'One override per line: extension=formatter, or extension=none to disable formatting.',
@@ -524,6 +538,7 @@ const enUS = {
     working: 'Working…',
     retrying: 'Retrying…',
     retryStatus: 'attempt {{attempt}}/{{max}}, retrying in {{seconds}}s',
+    retryFailure: 'Retried {{count}} times · last reason: {{reason}}',
     stepLimitHint: 'This run reached the tool-call limit. Send another message to continue.',
     agentStoppedHint: 'The agent is not running. Past messages are still available.',
     projectConfiguration: 'Project configuration',

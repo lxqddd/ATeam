@@ -11,7 +11,8 @@ import type {
   PermissionRuleInput,
   ProviderConfigInput,
   ProviderModelConfigInput,
-  ProviderType
+  ProviderType,
+  RetryConfigInput
 } from '@ateam/shared'
 
 const RULE_ACTIONS: readonly PermissionRuleAction[] = [
@@ -72,6 +73,68 @@ function stringRecord(value: unknown): Record<string, string> {
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function boundedInteger(
+  value: unknown,
+  path: string,
+  source: string,
+  diagnostics: ConfigDiagnostic[],
+  min: number,
+  max: number
+): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) {
+    return value
+  }
+  diagnostic(
+    diagnostics,
+    source,
+    path,
+    `${path} must be an integer between ${min} and ${max}`,
+    'warning'
+  )
+  return undefined
+}
+
+function normalizeRetry(
+  value: unknown,
+  source: string,
+  diagnostics: ConfigDiagnostic[]
+): RetryConfigInput | undefined {
+  if (!isRecord(value)) {
+    diagnostic(diagnostics, source, '$.retry', 'retry must be an object')
+    return undefined
+  }
+  const retry: RetryConfigInput = {}
+  const maxRetries = boundedInteger(
+    value.maxRetries,
+    '$.retry.maxRetries',
+    source,
+    diagnostics,
+    0,
+    10
+  )
+  const maxDelayMs = boundedInteger(
+    value.maxDelayMs,
+    '$.retry.maxDelayMs',
+    source,
+    diagnostics,
+    0,
+    600_000
+  )
+  const timeoutMs = boundedInteger(
+    value.timeoutMs,
+    '$.retry.timeoutMs',
+    source,
+    diagnostics,
+    0,
+    3_600_000
+  )
+  if (maxRetries !== undefined) retry.maxRetries = maxRetries
+  if (maxDelayMs !== undefined) retry.maxDelayMs = maxDelayMs
+  if (timeoutMs !== undefined) retry.timeoutMs = timeoutMs
+  return Object.keys(retry).length > 0 ? retry : undefined
 }
 
 export function normalizeFormatterOverrides(value: unknown): Record<string, string> {
@@ -577,6 +640,10 @@ export function normalizeAgentConfigDocument(
       skills.push(trimmed)
     }
     if (skills.length > 0) document.skills = [...new Set(skills)]
+  }
+  if (value.retry !== undefined) {
+    const retry = normalizeRetry(value.retry, source, diagnostics)
+    if (retry) document.retry = retry
   }
   return { document, diagnostics }
 }

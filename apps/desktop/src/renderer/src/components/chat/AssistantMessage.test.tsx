@@ -56,6 +56,20 @@ describe('changed files', () => {
 
     expect(screen.getByText('Retrying…')).toBeInTheDocument()
     expect(screen.getByText('attempt 2/5, retrying in 3s')).toBeInTheDocument()
+    expect(screen.getByText('HTTP 503')).toBeInTheDocument()
+  })
+
+  it('shows the last retry reason when retries are exhausted', () => {
+    const message = makeMessage({
+      parts: [],
+      status: 'error',
+      error: 'The model provider returned a server error.',
+      retryFailure: { retries: 3, reason: 'HTTP 503' }
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
+
+    expect(screen.getByText('The model provider returned a server error.')).toBeInTheDocument()
+    expect(screen.getByText('Retried 3 times · last reason: HTTP 503')).toBeInTheDocument()
   })
 
   it('opens the review panel for a message with changes', async () => {

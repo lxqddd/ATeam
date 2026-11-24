@@ -11,6 +11,7 @@ import type {
   ModelVariant,
   ModelVariantInput,
   ProviderConfigInput,
+  RetryConfig,
   RuntimeModelsConfig
 } from '@ateam/shared'
 import { createRetryFetch } from './retry-fetch'
@@ -197,13 +198,23 @@ export function createLanguageModel(
   ref: ModelRef | null,
   options: {
     sessionId?: string
+    retry?: RetryConfig
     onRetry?: (info: ChatRetryStatus | null) => void
   } = {}
 ): LanguageModel {
   const { ref: target, provider } = resolveModelRef(config, ref)
   const apiKey = provider.apiKey
   const headers = providerHeaders(provider.baseURL, options.sessionId)
-  const fetch = createRetryFetch({ onRetry: options.onRetry })
+  const fetch = createRetryFetch({
+    onRetry: options.onRetry,
+    ...(options.retry
+      ? {
+          maxAttempts: options.retry.maxRetries + 1,
+          maxDelayMs: options.retry.maxDelayMs,
+          timeoutMs: options.retry.timeoutMs
+        }
+      : {})
+  })
 
   switch (provider.type) {
     case 'anthropic':

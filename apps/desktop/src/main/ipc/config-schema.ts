@@ -18,11 +18,18 @@ export const projectConfigUpdateSchema = z.object({
   content: z.string().max(1_000_000)
 })
 
+const retryPatchSchema = z.object({
+  maxRetries: z.number().int().min(0).max(10).optional(),
+  maxDelayMs: z.number().int().min(0).max(600_000).optional(),
+  timeoutMs: z.number().int().min(0).max(3_600_000).optional()
+})
+
 export const agentConfigPatchSchema = z.object({
   snapshots: z.boolean().optional(),
   instructions: z.array(z.string().max(2_000)).max(50).optional(),
   lsp: z.boolean().optional(),
   formatters: z.boolean().optional(),
   formatterOverrides: z.record(z.string().max(16), z.string().max(40)).optional(),
-  references: z.array(referenceSchema).max(50).optional()
+  references: z.array(referenceSchema).max(50).optional(),
+  retry: retryPatchSchema.optional()
 })

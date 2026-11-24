@@ -14,6 +14,7 @@ import type {
   ProjectConfigFile,
   ProviderConfigInput
 } from '@ateam/shared'
+import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import { parseCommandJson } from '../commands'
 import { normalizeAgentConfigDocument, type ParsedConfigDocument } from './normalize'
 import { findProjectRoot } from './project-root'
@@ -379,6 +380,13 @@ export function mergeAgentConfig(
     formatterOverrides: {
       ...base.formatterOverrides,
       ...(project.formatterOverrides ?? {})
+    },
+    retry: {
+      maxRetries:
+        project.retry?.maxRetries ?? base.retry?.maxRetries ?? DEFAULT_RETRY_CONFIG.maxRetries,
+      maxDelayMs:
+        project.retry?.maxDelayMs ?? base.retry?.maxDelayMs ?? DEFAULT_RETRY_CONFIG.maxDelayMs,
+      timeoutMs: project.retry?.timeoutMs ?? base.retry?.timeoutMs ?? DEFAULT_RETRY_CONFIG.timeoutMs
     },
     ...(lspServers ? { lspServers } : {}),
     ...(formatterServers ? { formatterServers } : {}),

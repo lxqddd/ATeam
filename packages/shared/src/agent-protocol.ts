@@ -185,6 +185,7 @@ export type WorkerRequest =
       method: 'models.test'
       params: { providerId: string; modelId: string }
     }
+  | { id: string; method: 'metrics.get'; params?: undefined }
   | { id: string; method: 'shutdown'; params?: undefined }
 
 export type WorkerMessage =

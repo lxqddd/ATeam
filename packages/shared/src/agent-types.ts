@@ -172,6 +172,12 @@ export interface ChatRetryStatus {
   reason: string
 }
 
+/** Retry state kept on a message when the run failed after at least one retry. */
+export interface ChatRetryFailure {
+  retries: number
+  reason: string
+}
+
 export interface ChatMessage {
   id: string
   sessionId: string
@@ -184,6 +190,7 @@ export interface ChatMessage {
   /** Model that produced this assistant message. */
   model?: ModelRef
   retry?: ChatRetryStatus
+  retryFailure?: ChatRetryFailure
   usage?: TokenUsage
   /** Provider usage for the final model step, used for context sizing. */
   contextUsage?: TokenUsage
@@ -320,6 +327,22 @@ export interface AgentInfo {
   lspServers: string[]
   formatters: string[]
   policy?: OrgPolicyInfo
+  retryMetrics?: RetryMetricsSnapshot | null
+}
+
+/** In-memory retry counters for the current agent process. */
+export interface RetryMetricsSnapshot {
+  retries: number
+  /** Runs that eventually completed after at least one retry. */
+  successes: number
+  /** Runs that failed after at least one retry. */
+  failures: number
+  /** successes / (successes + failures); null until a retried run finishes. */
+  successRate: number | null
+  totalDelayMs: number
+  averageDelayMs: number
+  lastReason: string | null
+  lastRetriedAt: string | null
 }
 
 export interface AgentReference {
@@ -395,6 +418,24 @@ export interface AgentConfigDocument {
   plugins?: string[]
   commands?: Record<string, CommandConfigInput> | CommandConfigInput[]
   skills?: string[]
+  retry?: RetryConfigInput
+}
+
+export interface RetryConfig {
+  /** Retries after the first attempt; 0 disables retries. */
+  maxRetries: number
+  /** Upper bound for one retry wait, in milliseconds. */
+  maxDelayMs: number
+  /** Time allowed for one request and its retry waits until response headers arrive; 0 disables. */
+  timeoutMs: number
+}
+
+export type RetryConfigInput = Partial<RetryConfig>
+
+export const DEFAULT_RETRY_CONFIG: RetryConfig = {
+  maxRetries: 4,
+  maxDelayMs: 60_000,
+  timeoutMs: 0
 }
 
 export interface AgentConfig {
@@ -402,6 +443,8 @@ export interface AgentConfig {
   instructions: string[]
   lsp: boolean
   formatters: boolean
+  /** Effective retry policy; always filled by the config loader. */
+  retry?: RetryConfig
   references?: AgentReference[]
   /** File extension (e.g. .ts) to formatter id, or "none" to disable formatting. */
   formatterOverrides: Record<string, string>

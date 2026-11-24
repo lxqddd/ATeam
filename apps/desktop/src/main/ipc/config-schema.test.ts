@@ -25,6 +25,20 @@ describe('agentConfigPatchSchema', () => {
     expect(parsed.references).toHaveLength(2)
   })
 
+  it('keeps retry settings', () => {
+    expect(
+      agentConfigPatchSchema.parse({
+        retry: { maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 30_000 }
+      })
+    ).toEqual({ retry: { maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 30_000 } })
+  })
+
+  it('rejects retry settings outside their bounds', () => {
+    expect(() => agentConfigPatchSchema.parse({ retry: { maxRetries: 11 } })).toThrow()
+    expect(() => agentConfigPatchSchema.parse({ retry: { maxDelayMs: -1 } })).toThrow()
+    expect(() => agentConfigPatchSchema.parse({ retry: { timeoutMs: 1.5 } })).toThrow()
+  })
+
   it('rejects overly broad overrides', () => {
     expect(() =>
       agentConfigPatchSchema.parse({ formatterOverrides: { ['.x'.repeat(20)]: 'prettier' } })

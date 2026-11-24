@@ -8,8 +8,10 @@ import type {
   ConfigSources,
   ConfigFieldSource,
   ConfigProvenance,
-  EffectiveAgentConfig
+  EffectiveAgentConfig,
+  RetryConfigInput
 } from '@ateam/shared'
+import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 import { normalizeAgentConfigDocument } from './normalize'
 import { anchorProjectDocument, mergeAgentConfig, readProjectConfigDetails } from './project-config'
@@ -25,7 +27,8 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   instructions: [],
   lsp: true,
   formatters: true,
-  formatterOverrides: {}
+  formatterOverrides: {},
+  retry: { ...DEFAULT_RETRY_CONFIG }
 }
 
 function configFile(userDataPath: string): string {
@@ -39,6 +42,7 @@ function cloneConfig(config: AgentConfig): AgentConfig {
     lsp: config.lsp,
     formatters: config.formatters,
     formatterOverrides: { ...config.formatterOverrides },
+    ...(config.retry ? { retry: { ...config.retry } } : {}),
     ...(config.references ? { references: config.references.map((ref) => ({ ...ref })) } : {}),
     ...(config.permissionRules
       ? { permissionRules: config.permissionRules.map((rule) => ({ ...rule })) }
@@ -223,7 +227,9 @@ export class AgentConfigStore {
     return cloneConfig(this.config)
   }
 
-  async update(patch: Partial<AgentConfig>): Promise<AgentConfig> {
+  async update(
+    patch: Omit<Partial<AgentConfig>, 'retry'> & { retry?: RetryConfigInput }
+  ): Promise<AgentConfig> {
     const next: AgentConfigDocument = { ...this.document }
     if ('snapshots' in patch) next.snapshots = patch.snapshots
     if ('instructions' in patch) next.instructions = patch.instructions
@@ -237,6 +243,7 @@ export class AgentConfigStore {
       } else next.formatters = patch.formatters
     }
     if ('formatterOverrides' in patch) next.formatterOverrides = patch.formatterOverrides
+    if ('retry' in patch && patch.retry) next.retry = patch.retry
     if ('references' in patch) next.references = patch.references
     if ('skills' in patch) next.skills = patch.skills
     if ('plugins' in patch) next.plugins = patch.plugins

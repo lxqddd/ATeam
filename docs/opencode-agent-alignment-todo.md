@@ -41,7 +41,7 @@
 | --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件                                   | 完整配置矩阵端到端测试                                                                 |
 | R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                                                                                     |
-| R-P0-3 LLM 重试       | 基础完成 | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态、基础测试                                                                                                                                                                          | 流中断重试、可配置策略、重试原因 UI、重试指标、AI SDK 流式错误测试                     |
+| R-P0-3 LLM 重试       | 完成     | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无                                                                                     |
 | R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                                                                                                                                | 完整模型专用 prompt 文件、MCP instructions 权限过滤、XML 转义、时区、运行时测试        |
 | R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、跨模型丢弃、Anthropic cache control、OpenAI promptCacheKey、单元测试                                                                                                                                                       | provider transform 层、system/tool 缓存断点、缓存指标、旧消息迁移、端到端测试          |
 | R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配、基础单元测试                                                                                                                                                                                   | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略、集成测试 |
@@ -54,7 +54,6 @@
 **P0 收尾**
 
 - [ ] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
-- [ ] R-P0-3：响应开始后的流中断重试；可配置最大次数 / 退避上限 / 总超时；重试原因与最终失败原因 UI；重试指标；AI SDK 解析错误与流式错误测试
 - [ ] R-P0-4：完整的分模型 prompt 文件；MCP instructions 按 agent 权限精细过滤；MCP server 名称与 instructions 的 XML 转义；本地时区日期与可配置环境信息；MCP instructions 运行时测试
 - [ ] R-P0-5：provider transform 层；system / tool 结果缓存断点；缓存命中率与节省指标；旧消息缺少 `model` 字段的迁移策略；reasoning metadata 端到端测试
 - [ ] R-P0-6：tree-sitter 或等价 bash / PowerShell / cmd 解析；扩大 arity 表；参数级外部目录提取；危险命令额外保护；权限规则覆盖同类命令的集成测试
@@ -104,14 +103,14 @@
 
 #### R-P0-3 LLM 重试
 
-- [x] 429 / 5xx / 网络错误重试、`Retry-After`（秒 / HTTP 日期）解析、指数退避 + 抖动、最多 5 次、可中止等待
-- [x] 重试状态推送到 UI（次数、最大次数、等待时间）
+- [x] 429 / 5xx / 网络错误重试、`Retry-After`（秒 / HTTP 日期）解析、指数退避 + 抖动、可中止等待
+- [x] 重试状态推送到 UI（次数、最大次数、等待时间、原因）
 - [x] 覆盖错误码、尝试上限、网络失败、取消与不可复用流式 body 的测试
-- [ ] 响应头已返回后的流中断重试
-- [ ] 可配置最大重试次数、退避上限与总超时
-- [ ] 重试原因、最终失败原因在 UI 中展示（当前只显示次数与等待时间）
-- [ ] 重试次数、成功率与时延指标
-- [ ] 覆盖 AI SDK 响应解析错误与流式错误的重试测试
+- [x] 响应头已返回后的流中断重试（无工具副作用时重置部分输出后重试）
+- [x] 可配置最大重试次数、退避上限与响应超时（设置 → Agent / `ateam.json`）
+- [x] 重试原因、最终失败原因在 UI 中展示
+- [x] 重试次数、成功率与时延指标（Agent 信息与设置页）
+- [x] 覆盖 AI SDK 响应解析错误与流式错误的重试分类测试
 
 #### R-P0-4 提示词与上下文
 
@@ -203,18 +202,18 @@
 
 #### R-P0-3 LLM 重试与错误状态
 
-**现状**：AI SDK 调用固定 `maxRetries: 1`（[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)），没有可重试分类、退避策略、`Retry-After` 解析，也没有把重试状态推送到 UI。
+**现状（2026-11-24）**：fetch 层对 408/409/425/429/5xx/524 与网络错误做指数退避 + 抖动，解析 `Retry-After` / `retry-after-ms`；默认 4 次重试（共 5 次尝试）。`AgentConfig.retry` 可配置最大重试次数、最大等待与响应超时。响应头已返回后的流中断在未执行工具时重置部分 assistant 输出并重试；重试原因、最终失败原因与内存指标（次数、成功率、平均等待）在聊天与设置页展示。上下文溢出仍走独立压缩重试。
 
-**OpenCode 参考**：`packages/opencode/src/session/retry.ts` 对 429/5xx/网络/超时做指数退避 + 抖动，解析 `retry-after` 与 `retry-after-ms`，最多 5 次，上下文溢出与用户取消不重试，并发布 retry 状态。
+**OpenCode 参考**：`packages/opencode/src/session/retry.ts` 对 429/5xx/网络/超时做指数退避 + 抖动，解析 `retry-after` 与 `retry-after-ms`，上下文溢出与用户取消不重试，并发布 retry 状态。
 
 **待办**：
 
-- [ ] 建立错误分类：可重试（429/5xx/网络/超时）与不可重试（上下文溢出/取消/鉴权失败）
-- [ ] 实现指数退避 + 抖动、最大重试次数与总时长上限
-- [ ] 解析 `Retry-After` 秒数与 HTTP 日期格式
-- [ ] 通过事件/状态把重试次数、等待时间、最终失败原因传给 UI
-- [ ] 与上下文压缩重试协调，避免同一错误重复压缩
-- [ ] 测试各错误码、重试上限、取消、Retry-After、状态事件
+- [x] 建立错误分类：可重试（429/5xx/网络/超时/流中断）与不可重试（上下文溢出/取消/鉴权失败）
+- [x] 实现指数退避 + 抖动、最大重试次数、最大等待与响应超时上限
+- [x] 解析 `Retry-After` 秒数与 HTTP 日期格式
+- [x] 通过事件/状态把重试次数、等待时间、原因与最终失败原因传给 UI
+- [x] 与上下文压缩重试协调，避免同一错误重复压缩
+- [x] 测试各错误码、重试上限、取消、Retry-After、状态事件与流中断
 
 **验收**：遇到 429/5xx/网络抖动时自动退避重试，UI 能看到等待与最终结果；上下文溢出不会被无意义重试。
 
@@ -459,7 +458,7 @@
 ### 第二轮建议实施顺序
 
 1. **R-P0-1 配置收尾**（小）——补完整配置矩阵端到端测试（R-P0-2 插件 OAuth 自动刷新已完成）。
-2. **R-P0-3 重试收尾 + R-P0-5 推理/缓存 + R-P1-2 max steps + R-P1-1 steering**（小到中等）——直接改善长任务可靠性。
+2. **R-P0-5 推理/缓存 + R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试已完成，继续改善长任务可靠性。
 3. **R-P0-4 提示词 + R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——补齐日常编码体验。
 4. **第二轮 P1 剩余项**（按使用频率取舍）。
 5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。

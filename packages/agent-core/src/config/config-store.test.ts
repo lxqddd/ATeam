@@ -24,14 +24,16 @@ describe('AgentConfigStore', () => {
       instructions: [],
       lsp: true,
       formatters: true,
-      formatterOverrides: {}
+      formatterOverrides: {},
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
     })
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
       instructions: [],
       lsp: true,
       formatters: true,
-      formatterOverrides: {}
+      formatterOverrides: {},
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
     })
   })
 
@@ -48,7 +50,8 @@ describe('AgentConfigStore', () => {
       lsp: false,
       formatters: false,
       instructions: ['AGENTS.md', 'https://example.com/rules.md'],
-      formatterOverrides: {}
+      formatterOverrides: {},
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
     })
     const reloaded = new AgentConfigStore(directory)
     await reloaded.init()
@@ -92,6 +95,32 @@ describe('AgentConfigStore', () => {
     expect(updated.formatterOverrides).toEqual({ '.ts': 'prettier', '.py': 'none' })
   })
 
+  it('normalizes retry settings', async () => {
+    const updated = await store.update({
+      retry: { maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 120_000 }
+    })
+
+    expect(updated.retry).toEqual({ maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 120_000 })
+    const reloaded = new AgentConfigStore(directory)
+    await reloaded.init()
+    expect(reloaded.get().retry).toEqual({ maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 120_000 })
+  })
+
+  it('clamps invalid retry settings back to the previous values', async () => {
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(
+      file,
+      JSON.stringify({ retry: { maxRetries: 99, maxDelayMs: -1, timeoutMs: 1.5 } })
+    )
+
+    expect((await readAgentConfig(directory)).retry).toEqual({
+      maxRetries: 4,
+      maxDelayMs: 60_000,
+      timeoutMs: 0
+    })
+  })
+
   it('ignores invalid config files', async () => {
     const file = path.join(directory, 'agent', 'config.json')
     await fs.mkdir(path.dirname(file), { recursive: true })
@@ -102,7 +131,8 @@ describe('AgentConfigStore', () => {
       instructions: [],
       lsp: true,
       formatters: true,
-      formatterOverrides: {}
+      formatterOverrides: {},
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
     })
   })
 })

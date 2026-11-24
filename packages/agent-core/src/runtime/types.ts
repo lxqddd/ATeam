@@ -114,6 +114,7 @@ export interface AgentRuntimeDependencies {
     ref: ModelRef | null,
     options?: {
       sessionId?: string
+      retry?: import('@ateam/shared').RetryConfig
       onRetry?: (info: import('@ateam/shared').ChatRetryStatus | null) => void
     }
   ) => LanguageModel

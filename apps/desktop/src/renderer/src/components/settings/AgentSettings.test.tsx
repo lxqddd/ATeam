@@ -9,7 +9,8 @@ const DEFAULTS = {
   instructions: [],
   lsp: true,
   formatters: true,
-  formatterOverrides: {}
+  formatterOverrides: {},
+  retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
 }
 
 let mock: ApiMock
@@ -121,6 +122,65 @@ describe('AgentSettings', () => {
         formatterOverrides: { '.ts': 'prettier' }
       })
     )
+  })
+
+  it('loads and saves retry settings', async () => {
+    vi.mocked(mock.api.agent.config.update).mockResolvedValue({
+      ...DEFAULTS,
+      retry: { maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 30_000 }
+    })
+    const user = userEvent.setup()
+    render(<AgentSettings />)
+
+    const retries = await screen.findByLabelText('Max retries')
+    expect(retries).toHaveValue(4)
+    expect(screen.getByLabelText('Max wait (s)')).toHaveValue(60)
+    expect(screen.getByLabelText('Response timeout (s)')).toHaveValue(0)
+
+    await user.clear(retries)
+    await user.type(retries, '2')
+    const delay = screen.getByLabelText('Max wait (s)')
+    await user.clear(delay)
+    await user.type(delay, '5')
+    const timeout = screen.getByLabelText('Response timeout (s)')
+    await user.clear(timeout)
+    await user.type(timeout, '30')
+    await user.click(screen.getByRole('button', { name: 'Save retry settings' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.config.update).toHaveBeenCalledWith({
+        retry: { maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 30_000 }
+      })
+    )
+  })
+
+  it('shows retry metrics', async () => {
+    mock = createApiMock({
+      info: {
+        workspacePath: '/tmp/workspace',
+        appVersion: '0.1.0',
+        instructionFiles: [],
+        lspServers: [],
+        formatters: [],
+        retryMetrics: {
+          retries: 3,
+          successes: 2,
+          failures: 1,
+          successRate: 2 / 3,
+          totalDelayMs: 12_000,
+          averageDelayMs: 4_000,
+          lastReason: 'HTTP 503',
+          lastRetriedAt: '2026-11-24T00:00:00.000Z'
+        }
+      }
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+
+    render(<AgentSettings />)
+
+    expect(await screen.findByText('Retry metrics')).toBeInTheDocument()
+    expect(screen.getByText('3 retries · 67% success · average wait 4.0s')).toBeInTheDocument()
+    expect(screen.getByText('Last reason: HTTP 503')).toBeInTheDocument()
   })
 
   it('shows the organization policy and its rules', async () => {

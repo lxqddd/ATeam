@@ -143,6 +143,21 @@ function errorScript(message: string): Script {
   }
 }
 
+function interruptedStreamScript(text: string): Script {
+  return async function* () {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text })
+    yield part({ type: 'error', error: new TypeError('fetch failed') })
+  }
+}
+
+function interruptedToolStreamScript(): Script {
+  return async function* () {
+    yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'read' })
+    yield part({ type: 'error', error: new TypeError('fetch failed') })
+  }
+}
+
 function contextErrorScript(): Script {
   return async function* () {
     yield part({ type: 'error', error: new Error('maximum context length exceeded') })
@@ -156,6 +171,16 @@ function maxStepsScript(steps: number): Script {
     }
     yield part({ type: 'finish', finishReason: 'tool-calls', totalUsage: {} })
   }
+}
+
+async function writeRetryConfig(retry: {
+  maxRetries: number
+  maxDelayMs: number
+  timeoutMs: number
+}): Promise<void> {
+  const configDirectory = path.join(directory, 'agent')
+  await fs.mkdir(configDirectory, { recursive: true })
+  await fs.writeFile(path.join(configDirectory, 'config.json'), JSON.stringify({ retry }))
 }
 
 let directory: string
@@ -179,6 +204,13 @@ let subagentExecutor:
 let baseTools: ToolSet
 let languageModelRefs: Array<ModelRef | null>
 let languageModelModels: RuntimeModelsConfig[]
+let languageModelOptions: Array<
+  | {
+      sessionId?: string
+      retry?: { maxRetries: number; maxDelayMs: number; timeoutMs: number }
+    }
+  | undefined
+>
 let mcpManager: McpManagerLike
 let mcpManagerInput: {
   workspacePath: string
@@ -221,9 +253,10 @@ function createRuntime(): AgentRuntime {
     send: sink.send,
     browserRequest,
     dependencies: {
-      createLanguageModel: (models, ref) => {
+      createLanguageModel: (models, ref, options) => {
         languageModelModels.push(models)
         languageModelRefs.push(ref)
+        languageModelOptions.push(options)
         return {} as unknown as LanguageModel
       },
       createTools: (context) => {
@@ -592,6 +625,7 @@ beforeEach(async () => {
   baseTools = {}
   languageModelRefs = []
   languageModelModels = []
+  languageModelOptions = []
   mcpTools = vi.fn(async () => ({}))
   mcpDispose = vi.fn(async () => undefined)
   mcpManagerInput = null
@@ -905,6 +939,80 @@ describe('AgentRuntime', () => {
     expect(assistant.status).toBe('error')
     expect(assistant.error).toBe('boom')
     expect(runtime.listSessions()[0].status).toBe('error')
+  })
+
+  it('retries interrupted model streams and replaces partial output', async () => {
+    await writeRetryConfig({ maxRetries: 1, maxDelayMs: 0, timeoutMs: 0 })
+    scripts.push(interruptedStreamScript('partial'))
+    scripts.push(textScript('recovered'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(turns).toHaveLength(2)
+    expect(languageModelOptions[0]?.retry).toEqual({
+      maxRetries: 1,
+      maxDelayMs: 0,
+      timeoutMs: 0
+    })
+    const [assistant] = assistantMessages()
+    expect(assistant.status).toBe('complete')
+    expect(assistant.parts).toEqual([{ type: 'text', text: 'recovered' }])
+    expect(assistant.retry).toBeUndefined()
+    expect(assistant.retryFailure).toBeUndefined()
+    expect(
+      sink.envelopes.some(
+        (envelope) =>
+          envelope.event.type === 'message.upsert' &&
+          envelope.event.message.retry?.reason ===
+            'Network error while contacting the model provider.'
+      )
+    ).toBe(true)
+    expect(runtime.retryMetricsSnapshot()).toMatchObject({
+      retries: 1,
+      successes: 1,
+      failures: 0,
+      successRate: 1
+    })
+  })
+
+  it('reports the last retry reason when a stream keeps failing', async () => {
+    await writeRetryConfig({ maxRetries: 1, maxDelayMs: 0, timeoutMs: 0 })
+    scripts.push(interruptedStreamScript('once'))
+    scripts.push(interruptedStreamScript('twice'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({
+      status: 'failed',
+      error: 'Network error while contacting the model provider.'
+    })
+    const [assistant] = assistantMessages()
+    expect(assistant.status).toBe('error')
+    expect(assistant.retryFailure).toEqual({
+      retries: 1,
+      reason: 'Network error while contacting the model provider.'
+    })
+    expect(runtime.retryMetricsSnapshot()).toMatchObject({
+      retries: 1,
+      successes: 0,
+      failures: 1,
+      successRate: 0
+    })
+  })
+
+  it('does not retry an interrupted stream after tools have started', async () => {
+    await writeRetryConfig({ maxRetries: 1, maxDelayMs: 0, timeoutMs: 0 })
+    scripts.push(interruptedToolStreamScript())
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'failed' })
+    expect(turns).toHaveLength(1)
+    expect(runtime.retryMetricsSnapshot().retries).toBe(0)
   })
 
   it('retries without duplicating the user message or the failed assistant', async () => {

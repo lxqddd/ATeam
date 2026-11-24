@@ -3,10 +3,12 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { generateText } from 'ai'
 import type { LanguageModel } from 'ai'
+import type { TextStreamPart, ToolSet } from 'ai'
 import type {
   AgentConfig,
   AgentDefinition,
   ChatMessage,
+  ChatRetryStatus,
   CommandDefinition,
   EffectiveAgentConfig,
   MessagesSnapshot,
@@ -24,6 +26,7 @@ import type {
   PluginAuthResult,
   QuestionAnswer,
   QuestionRequest,
+  RetryMetricsSnapshot,
   RunOutcome,
   RuntimeModelsConfig,
   RuntimeProviderAuth,
@@ -37,6 +40,7 @@ import type {
   TokenUsage,
   TurnChanges
 } from '@ateam/shared'
+import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import { DEFAULT_CONTEXT_WINDOW, messagesAfterCompaction, shouldCompact } from '../sessions/context'
 import { readEffectiveAgentConfig } from '../config/config-store'
 import { loadOrgPolicy } from '../config/org-policy'
@@ -54,6 +58,7 @@ import {
   removeSessionAttachments
 } from '../attachments'
 import { mergeRuntimeProviders, resolveModelRef } from '../providers'
+import { abortableSleep, isRetryableStreamError, retryDelayMs } from '../retry-fetch'
 import { expandCommandTemplate, loadCommands, runWorkspaceShell } from '../commands'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
@@ -82,6 +87,7 @@ import {
   formatToolOutput,
   settleTools
 } from './run-messages'
+import { RetryMetricsCollector } from './retry-metrics'
 import { prepareRun, type RunPreparationHost } from './run-preparation'
 import { RuntimeEvents } from './runtime-events'
 import { SessionService } from './session-service'
@@ -101,6 +107,14 @@ import {
 } from './types'
 import { WorkspaceServices } from './workspace-services'
 
+interface TurnStreamState {
+  textParts: Map<string, number>
+  reasoningParts: Map<string, number>
+  usage?: TokenUsage
+  lastStepUsage?: TokenUsage
+  finishReason: string
+}
+
 export class AgentRuntime {
   private readonly store: SessionsStore
   private readonly permissionRules: PermissionsStore
@@ -118,6 +132,7 @@ export class AgentRuntime {
   private readonly workspaceServices: WorkspaceServices
   private readonly sessionService: SessionService
   private readonly permissionService: PermissionService
+  private readonly retryMetrics = new RetryMetricsCollector()
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
@@ -268,6 +283,10 @@ export class AgentRuntime {
 
   listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {
     return this.sessionService.listAgents(workspace)
+  }
+
+  retryMetricsSnapshot(): RetryMetricsSnapshot {
+    return this.retryMetrics.snapshot()
   }
 
   async pluginAuthMethods(workspace = this.options.workspacePath): Promise<PluginAuthMethodInfo[]> {
@@ -434,7 +453,7 @@ export class AgentRuntime {
       const model = this.deps.createLanguageModel(
         models,
         record.session.model ?? models.defaultModel,
-        { sessionId: id }
+        { sessionId: id, retry: effective.config.retry ?? DEFAULT_RETRY_CONFIG }
       )
       const compacted = await this.compaction.compactMessages(
         id,
@@ -847,7 +866,8 @@ export class AgentRuntime {
         models,
         { providerId, modelId },
         {
-          sessionId: randomUUID()
+          sessionId: randomUUID(),
+          retry: effective.config.retry ?? DEFAULT_RETRY_CONFIG
         }
       )
       await generateText({
@@ -1185,7 +1205,162 @@ export class AgentRuntime {
     return payloads
   }
 
-  private resetAssistantMessage(run: Run, message: ChatMessage): void {
+  private async consumeTurnStream(
+    run: Run,
+    message: ChatMessage,
+    stream: AsyncIterable<TextStreamPart<ToolSet>>,
+    state: TurnStreamState,
+    schedulePersist: () => void
+  ): Promise<void> {
+    for await (const part of stream) {
+      switch (part.type) {
+        case 'text-start': {
+          const index = message.parts.length
+          message.parts.push({ type: 'text', text: '' })
+          state.textParts.set(part.id, index)
+          emitPart(this.events, run, message.parts[index], index)
+          break
+        }
+        case 'text-delta': {
+          const index = state.textParts.get(part.id)
+          if (index === undefined) break
+          const textPart = message.parts[index]
+          if (textPart?.type !== 'text') break
+          textPart.text += part.text
+          message.updatedAt = nowIso()
+          this.events.emit({
+            type: 'message.part.delta',
+            sessionId: run.sessionId,
+            messageId: message.id,
+            partIndex: index,
+            kind: 'text',
+            delta: part.text
+          })
+          schedulePersist()
+          break
+        }
+        case 'text-end':
+          state.textParts.delete(part.id)
+          break
+        case 'reasoning-start': {
+          const index = message.parts.length
+          message.parts.push({
+            type: 'reasoning',
+            text: '',
+            ...(part.providerMetadata
+              ? { providerMetadata: structuredClone(part.providerMetadata) }
+              : {})
+          })
+          state.reasoningParts.set(part.id, index)
+          emitPart(this.events, run, message.parts[index], index)
+          break
+        }
+        case 'reasoning-delta': {
+          const index = state.reasoningParts.get(part.id)
+          if (index === undefined) break
+          const reasoningPart = message.parts[index]
+          if (reasoningPart?.type !== 'reasoning') break
+          reasoningPart.text += part.text
+          message.updatedAt = nowIso()
+          this.events.emit({
+            type: 'message.part.delta',
+            sessionId: run.sessionId,
+            messageId: message.id,
+            partIndex: index,
+            kind: 'reasoning',
+            delta: part.text
+          })
+          schedulePersist()
+          break
+        }
+        case 'reasoning-end': {
+          const index = state.reasoningParts.get(part.id)
+          if (index !== undefined && part.providerMetadata) {
+            const reasoningPart = message.parts[index]
+            if (reasoningPart?.type === 'reasoning') {
+              reasoningPart.providerMetadata = structuredClone(part.providerMetadata)
+              emitPart(this.events, run, reasoningPart, index)
+            }
+          }
+          state.reasoningParts.delete(part.id)
+          break
+        }
+        case 'tool-input-start': {
+          const toolPart = ensureToolPart(message, part.id, part.toolName)
+          toolPart.state = 'pending'
+          emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
+          break
+        }
+        case 'tool-call': {
+          const toolPart = ensureToolPart(message, part.toolCallId, part.toolName)
+          const overrides = run.pluginToolOverrides
+          toolPart.input = overrides?.inputs.has(part.toolCallId)
+            ? overrides.inputs.get(part.toolCallId)
+            : part.input
+          toolPart.state = 'running'
+          emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
+          break
+        }
+        case 'tool-result': {
+          const toolPart = findToolPart(message, part.toolCallId)
+          if (toolPart && toolPart.type === 'tool') {
+            if (toolPart.state !== 'denied') {
+              toolPart.state = 'completed'
+              const overrides = run.pluginToolOverrides
+              const output = overrides?.outputs.has(part.toolCallId)
+                ? overrides.outputs.get(part.toolCallId)
+                : (part.output as unknown)
+              const formatted = formatToolOutput(output)
+              toolPart.output = formatted.text
+              toolPart.images = formatted.images
+              toolPart.finishedAt = nowIso()
+              emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
+            }
+            await this.store.persist(run.sessionId)
+          }
+          break
+        }
+        case 'tool-error': {
+          const toolPart = findToolPart(message, part.toolCallId)
+          if (toolPart && toolPart.type === 'tool') {
+            toolPart.state = 'failed'
+            toolPart.error = normalizeError(part.error)
+            toolPart.finishedAt = nowIso()
+            emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
+            await this.store.persist(run.sessionId)
+          }
+          break
+        }
+        case 'tool-output-denied': {
+          const toolPart = findToolPart(message, part.toolCallId)
+          if (toolPart && toolPart.type === 'tool') {
+            toolPart.state = 'denied'
+            toolPart.error = 'Permission denied by user'
+            toolPart.finishedAt = nowIso()
+            emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
+          }
+          break
+        }
+        case 'finish-step':
+          run.steps += 1
+          if (part.usage) state.lastStepUsage = usageFrom(part.usage)
+          await this.recordStepSnapshot(run, message)
+          break
+        case 'finish':
+          state.finishReason = part.finishReason
+          state.usage = usageFrom(part.totalUsage)
+          break
+        case 'error':
+          throw part.error
+        case 'abort':
+          throw new Error('ABORTED')
+        default:
+          break
+      }
+    }
+  }
+
+  private resetAssistantMessage(run: Run, message: ChatMessage, retry?: ChatRetryStatus): void {
     message.parts = []
     message.error = undefined
     message.usage = undefined
@@ -1195,6 +1370,8 @@ export class AgentRuntime {
     message.snapshotSteps = []
     message.changedFiles = undefined
     delete message.retry
+    delete message.retryFailure
+    if (retry) message.retry = retry
     message.status = 'streaming'
     message.updatedAt = nowIso()
     run.steps = 0
@@ -1529,13 +1706,15 @@ export class AgentRuntime {
       }, wait)
     }
 
-    const textParts = new Map<string, number>()
-    const reasoningParts = new Map<string, number>()
-    let usage: TokenUsage | undefined
-    let lastStepUsage: TokenUsage | undefined
+    const state: TurnStreamState = {
+      textParts: new Map(),
+      reasoningParts: new Map(),
+      finishReason: ''
+    }
     let runTarget: ModelRef | null = null
-    let finishReason = ''
     let prepareCompaction = false
+    let retryCount = 0
+    let lastRetryReason: string | null = null
 
     try {
       const record = this.record(run.sessionId)
@@ -1563,11 +1742,17 @@ export class AgentRuntime {
       runTarget = target
       if (target) message.model = { ...target }
       schedulePersist()
+      const retryConfig = run.config.retry ?? DEFAULT_RETRY_CONFIG
       const model = this.deps.createLanguageModel(run.models, target, {
         sessionId: run.sessionId,
+        retry: retryConfig,
         onRetry: (info) => {
-          if (info) message.retry = info
-          else delete message.retry
+          if (info) {
+            retryCount += 1
+            lastRetryReason = info.reason
+            this.retryMetrics.recordRetry(info)
+            message.retry = info
+          } else delete message.retry
           message.updatedAt = nowIso()
           this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
         }
@@ -1610,173 +1795,64 @@ export class AgentRuntime {
         nativeCompaction,
         contextWindow
       })
-      const result = this.deps.createTurn({
-        model,
-        system: prepared.system,
-        messages: prepared.messages,
-        tools: prepared.tools,
-        abortSignal: run.abort.signal,
-        reasoning: prepared.params.reasoning,
-        maxSteps: agent?.maxSteps ?? undefined,
-        maxOutputTokens: prepared.params.maxOutputTokens,
-        temperature: prepared.params.temperature,
-        providerOptions: prepared.providerOptions
-      })
-
-      for await (const part of result.stream) {
-        switch (part.type) {
-          case 'text-start': {
-            const index = message.parts.length
-            message.parts.push({ type: 'text', text: '' })
-            textParts.set(part.id, index)
-            emitPart(this.events, run, message.parts[index], index)
-            break
+      const maxStreamAttempts = retryConfig.maxRetries + 1
+      let streamAttempt = 0
+      for (;;) {
+        streamAttempt += 1
+        try {
+          const result = this.deps.createTurn({
+            model,
+            system: prepared.system,
+            messages: prepared.messages,
+            tools: prepared.tools,
+            abortSignal: run.abort.signal,
+            reasoning: prepared.params.reasoning,
+            maxSteps: agent?.maxSteps ?? undefined,
+            maxOutputTokens: prepared.params.maxOutputTokens,
+            temperature: prepared.params.temperature,
+            providerOptions: prepared.providerOptions
+          })
+          await this.consumeTurnStream(run, message, result.stream, state, schedulePersist)
+          break
+        } catch (error) {
+          if (
+            streamAttempt >= maxStreamAttempts ||
+            run.abort.signal.aborted ||
+            !isRetryableStreamError(error) ||
+            message.parts.some((part) => part.type === 'tool')
+          ) {
+            throw error
           }
-          case 'text-delta': {
-            const index = textParts.get(part.id)
-            if (index === undefined) break
-            const textPart = message.parts[index]
-            if (textPart?.type !== 'text') break
-            textPart.text += part.text
-            message.updatedAt = nowIso()
-            this.events.emit({
-              type: 'message.part.delta',
-              sessionId: run.sessionId,
-              messageId: message.id,
-              partIndex: index,
-              kind: 'text',
-              delta: part.text
-            })
-            schedulePersist()
-            break
+          const delayMs = retryDelayMs(streamAttempt, retryConfig.maxDelayMs)
+          const reason = normalizeError(error)
+          const retry: ChatRetryStatus = {
+            attempt: streamAttempt,
+            maxAttempts: maxStreamAttempts,
+            delayMs,
+            reason
           }
-          case 'text-end':
-            textParts.delete(part.id)
-            break
-          case 'reasoning-start': {
-            const index = message.parts.length
-            message.parts.push({
-              type: 'reasoning',
-              text: '',
-              ...(part.providerMetadata
-                ? { providerMetadata: structuredClone(part.providerMetadata) }
-                : {})
-            })
-            reasoningParts.set(part.id, index)
-            emitPart(this.events, run, message.parts[index], index)
-            break
-          }
-          case 'reasoning-delta': {
-            const index = reasoningParts.get(part.id)
-            if (index === undefined) break
-            const reasoningPart = message.parts[index]
-            if (reasoningPart?.type !== 'reasoning') break
-            reasoningPart.text += part.text
-            message.updatedAt = nowIso()
-            this.events.emit({
-              type: 'message.part.delta',
-              sessionId: run.sessionId,
-              messageId: message.id,
-              partIndex: index,
-              kind: 'reasoning',
-              delta: part.text
-            })
-            schedulePersist()
-            break
-          }
-          case 'reasoning-end': {
-            const index = reasoningParts.get(part.id)
-            if (index !== undefined && part.providerMetadata) {
-              const reasoningPart = message.parts[index]
-              if (reasoningPart?.type === 'reasoning') {
-                reasoningPart.providerMetadata = structuredClone(part.providerMetadata)
-                emitPart(this.events, run, reasoningPart, index)
-              }
-            }
-            reasoningParts.delete(part.id)
-            break
-          }
-          case 'tool-input-start': {
-            const toolPart = ensureToolPart(message, part.id, part.toolName)
-            toolPart.state = 'pending'
-            emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
-            break
-          }
-          case 'tool-call': {
-            const toolPart = ensureToolPart(message, part.toolCallId, part.toolName)
-            const overrides = run.pluginToolOverrides
-            toolPart.input = overrides?.inputs.has(part.toolCallId)
-              ? overrides.inputs.get(part.toolCallId)
-              : part.input
-            toolPart.state = 'running'
-            emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
-            break
-          }
-          case 'tool-result': {
-            const toolPart = findToolPart(message, part.toolCallId)
-            if (toolPart && toolPart.type === 'tool') {
-              if (toolPart.state !== 'denied') {
-                toolPart.state = 'completed'
-                const overrides = run.pluginToolOverrides
-                const output = overrides?.outputs.has(part.toolCallId)
-                  ? overrides.outputs.get(part.toolCallId)
-                  : (part.output as unknown)
-                const formatted = formatToolOutput(output)
-                toolPart.output = formatted.text
-                toolPart.images = formatted.images
-                toolPart.finishedAt = nowIso()
-                emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
-              }
-              await this.store.persist(run.sessionId)
-            }
-            break
-          }
-          case 'tool-error': {
-            const toolPart = findToolPart(message, part.toolCallId)
-            if (toolPart && toolPart.type === 'tool') {
-              toolPart.state = 'failed'
-              toolPart.error = normalizeError(part.error)
-              toolPart.finishedAt = nowIso()
-              emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
-              await this.store.persist(run.sessionId)
-            }
-            break
-          }
-          case 'tool-output-denied': {
-            const toolPart = findToolPart(message, part.toolCallId)
-            if (toolPart && toolPart.type === 'tool') {
-              toolPart.state = 'denied'
-              toolPart.error = 'Permission denied by user'
-              toolPart.finishedAt = nowIso()
-              emitPart(this.events, run, toolPart, message.parts.indexOf(toolPart))
-            }
-            break
-          }
-          case 'finish-step':
-            run.steps += 1
-            if (part.usage) lastStepUsage = usageFrom(part.usage)
-            await this.recordStepSnapshot(run, message)
-            break
-          case 'finish':
-            finishReason = part.finishReason
-            usage = usageFrom(part.totalUsage)
-            break
-          case 'error':
-            throw part.error
-          case 'abort':
-            throw new Error('ABORTED')
-          default:
-            break
+          retryCount += 1
+          lastRetryReason = reason
+          this.retryMetrics.recordRetry(retry)
+          state.usage = undefined
+          state.lastStepUsage = undefined
+          state.finishReason = ''
+          state.textParts.clear()
+          state.reasoningParts.clear()
+          this.resetAssistantMessage(run, message, retry)
+          await abortableSleep(delayMs, run.abort.signal)
         }
       }
 
       message.status = 'complete'
       delete message.retry
+      delete message.retryFailure
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
-      message.usage = usage
-      message.contextUsage = lastStepUsage
-      message.costUsd = this.messageCost(runTarget, usage, run.models)
+      message.usage = state.usage
+      message.contextUsage = state.lastStepUsage
+      message.costUsd = this.messageCost(runTarget, state.usage, run.models)
+      if (retryCount > 0) this.retryMetrics.recordOutcome(true)
       settleTools(message, 'Tool call did not finish')
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
@@ -1787,13 +1863,13 @@ export class AgentRuntime {
       this.events.emitSession(run.sessionId)
       await this.maybeGenerateTitle(run, model, message)
       const outcome: RunOutcome =
-        finishReason === 'tool-calls' && run.steps >= MAX_STEPS ? 'max-steps' : 'completed'
+        state.finishReason === 'tool-calls' && run.steps >= MAX_STEPS ? 'max-steps' : 'completed'
       this.events.emit({
         type: 'run.finished',
         sessionId: run.sessionId,
         messageId: message.id,
         status: outcome,
-        usage,
+        usage: state.usage,
         durationMs: message.durationMs
       })
     } catch (error) {
@@ -1815,12 +1891,21 @@ export class AgentRuntime {
         run.abort.signal.aborted || /ABORTED|AbortError|interrupted/i.test(normalizeError(error))
       message.status = interrupted ? 'interrupted' : 'error'
       delete message.retry
+      if (retryCount > 0 && !interrupted) {
+        this.retryMetrics.recordOutcome(false)
+        message.retryFailure = {
+          retries: retryCount,
+          reason: lastRetryReason ?? normalizeError(error)
+        }
+      } else {
+        delete message.retryFailure
+      }
       message.error = interrupted ? 'Interrupted by user' : normalizeError(error)
       message.updatedAt = nowIso()
       message.durationMs = Date.now() - run.startedAt
-      message.usage = usage
-      message.contextUsage = lastStepUsage
-      message.costUsd = this.messageCost(runTarget, usage, run.models)
+      message.usage = state.usage
+      message.contextUsage = state.lastStepUsage
+      message.costUsd = this.messageCost(runTarget, state.usage, run.models)
       settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
       await this.recordAfterSnapshot(run, message)
       await this.store.persist(run.sessionId)
@@ -1835,7 +1920,7 @@ export class AgentRuntime {
         messageId: message.id,
         status: interrupted ? 'interrupted' : 'failed',
         error: message.error,
-        usage,
+        usage: state.usage,
         durationMs: message.durationMs
       })
     } finally {

@@ -1,4 +1,5 @@
 import type { LanguageModel } from 'ai'
+import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import type {
   AgentDefinition,
   AgentEvent,
@@ -139,7 +140,8 @@ export class CompactionService {
     const models = run.models
     const target = this.host.resolveAgentTarget(run.agent, record.session.model, models)
     const model = this.host.deps.createLanguageModel(models, target, {
-      sessionId: run.sessionId
+      sessionId: run.sessionId,
+      retry: run.config.retry ?? DEFAULT_RETRY_CONFIG
     })
     const session = await this.compactMessages(
       run.sessionId,

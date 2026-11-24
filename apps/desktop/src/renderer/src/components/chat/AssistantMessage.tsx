@@ -130,6 +130,14 @@ function AssistantMessage({
           <p className="mt-1 whitespace-pre-wrap break-words text-label text-danger/90">
             {message.error}
           </p>
+          {message.retryFailure && (
+            <p className="mt-1 whitespace-pre-wrap break-words text-caption text-danger/80">
+              {t('chat.retryFailure', {
+                count: message.retryFailure.retries,
+                reason: message.retryFailure.reason
+              })}
+            </p>
+          )}
           {canRetry && (
             <button
               type="button"
