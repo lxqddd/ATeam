@@ -124,6 +124,10 @@ export interface TokenUsage {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
+  /** Input tokens served from the provider prompt cache. */
+  cacheReadTokens?: number
+  /** Input tokens written to the provider prompt cache. */
+  cacheWriteTokens?: number
 }
 
 export type FileChangeStatus = 'added' | 'modified' | 'deleted'
@@ -328,6 +332,25 @@ export interface AgentInfo {
   formatters: string[]
   policy?: OrgPolicyInfo
   retryMetrics?: RetryMetricsSnapshot | null
+  cacheMetrics?: CacheMetricsSnapshot | null
+}
+
+/** In-memory prompt-cache counters for the current agent process. */
+export interface CacheMetricsSnapshot {
+  /** Model requests that reported usage. */
+  requests: number
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** cacheReadTokens / inputTokens; null until a request reports input tokens. */
+  hitRate: number | null
+  /** Input tokens served from cache instead of being processed again. */
+  savedTokens: number
+}
+
+export interface AgentMetricsSnapshot {
+  retry: RetryMetricsSnapshot
+  cache: CacheMetricsSnapshot
 }
 
 /** In-memory retry counters for the current agent process. */

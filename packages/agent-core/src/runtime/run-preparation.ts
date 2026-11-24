@@ -16,10 +16,11 @@ import {
   type InstructionFile
 } from '../config/instructions'
 import type { McpManagerLike } from '../integrations/mcp'
-import { applyAnthropicCache, buildModelMessages, type AttachmentPayload } from '../message-history'
+import { buildModelMessages, type AttachmentPayload } from '../message-history'
+import { transformProviderRequest } from '../provider-transform'
 import type { PluginRegistry } from '../plugins'
 import { referencesPrompt, type ResolvedReference } from '../references'
-import { contextTokenLimit, systemWithSummary } from '../sessions/context'
+import { systemWithSummary } from '../sessions/context'
 import type { SessionRecord } from '../sessions/sessions-store'
 import { skillsPrompt } from '../skills'
 import { filterToolsForModel, type ToolContext } from '../tools'
@@ -79,6 +80,7 @@ export interface RunPreparationHost {
 export interface PreparedRun {
   tools: ToolSet
   system: string
+  systemProviderOptions?: Record<string, Record<string, unknown>>
   messages: ModelMessage[]
   providerOptions: Record<string, Record<string, unknown>> | undefined
   params: {
@@ -217,29 +219,14 @@ export async function prepareRun(
     await host.attachmentPayloads(run.sessionId, modelHistory),
     { currentModel: target }
   )
-  const messages =
-    resolvedTarget.provider.type === 'anthropic'
-      ? applyAnthropicCache(historyMessages)
-      : historyMessages
-  const providerOptions: Record<string, Record<string, unknown>> = {}
-  if (nativeCompaction && resolvedTarget.provider.type === 'anthropic') {
-    providerOptions.anthropic = {
-      contextManagement: {
-        edits: [
-          {
-            type: 'compact_20260112',
-            trigger: { type: 'input_tokens', value: contextTokenLimit(contextWindow) }
-          }
-        ]
-      }
-    }
-  }
-  if (resolvedTarget.provider.type === 'openai') {
-    providerOptions.openai = {
-      ...(providerOptions.openai ?? {}),
-      promptCacheKey: run.sessionId
-    }
-  }
+  const transformed = transformProviderRequest({
+    provider: resolvedTarget.provider,
+    sessionId: run.sessionId,
+    system,
+    messages: historyMessages,
+    nativeCompaction,
+    contextWindow
+  })
   const variantSettings = variant?.settings ?? {}
   const params = {
     reasoning: variantSettings.reasoningEffort ?? current.session.reasoningEffort,
@@ -256,9 +243,12 @@ export async function prepareRun(
   )
   return {
     tools,
-    system,
-    messages,
-    providerOptions: Object.keys(providerOptions).length > 0 ? providerOptions : undefined,
+    system: transformed.system,
+    ...(transformed.systemProviderOptions
+      ? { systemProviderOptions: transformed.systemProviderOptions }
+      : {}),
+    messages: transformed.messages,
+    providerOptions: transformed.providerOptions,
     params
   }
 }

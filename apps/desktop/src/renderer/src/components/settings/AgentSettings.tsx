@@ -392,6 +392,30 @@ function AgentSettings(): React.JSX.Element {
               )}
             </div>
           )}
+          {info.cacheMetrics && (
+            <div className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
+              <p className="m-0 text-label font-medium text-foreground">
+                {t('settings.cacheMetrics')}
+              </p>
+              {info.cacheMetrics.requests === 0 ? (
+                <p className="m-0 mt-0.5 text-caption text-subtle">
+                  {t('settings.cacheMetricsEmpty')}
+                </p>
+              ) : (
+                <p className="m-0 mt-0.5 text-caption text-muted">
+                  {t('settings.cacheMetricsSummary', {
+                    requests: info.cacheMetrics.requests,
+                    rate:
+                      info.cacheMetrics.hitRate === null
+                        ? '—'
+                        : Math.round(info.cacheMetrics.hitRate * 100),
+                    read: info.cacheMetrics.cacheReadTokens,
+                    write: info.cacheMetrics.cacheWriteTokens
+                  })}
+                </p>
+              )}
+            </div>
+          )}
           <div className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
             <p className="m-0 text-label font-medium text-foreground">{t('settings.orgPolicy')}</p>
             {policy?.path ? (

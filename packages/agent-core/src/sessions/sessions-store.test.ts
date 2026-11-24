@@ -319,6 +319,30 @@ describe('SessionsStore', () => {
     }
   })
 
+  it('fills missing assistant model metadata from the session model', async () => {
+    const session = await store.create()
+    await store.setModel(session.id, { providerId: 'provider-1', modelId: 'model-1' })
+    await store.appendMessage(
+      session.id,
+      makeMessage({ role: 'assistant', parts: [makeTextPart('old')] })
+    )
+    await store.appendMessage(
+      session.id,
+      makeMessage({
+        role: 'assistant',
+        parts: [makeTextPart('kept')],
+        model: { providerId: 'provider-2', modelId: 'model-2' }
+      })
+    )
+
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
+    await reloaded.init()
+
+    const messages = reloaded.getMessages(session.id) ?? []
+    expect(messages[0].model).toEqual({ providerId: 'provider-1', modelId: 'model-1' })
+    expect(messages[1].model).toEqual({ providerId: 'provider-2', modelId: 'model-2' })
+  })
+
   it('repairs waiting-permission sessions on startup', async () => {
     const session = await store.create()
     await store.setStatus(session.id, 'waiting-permission')

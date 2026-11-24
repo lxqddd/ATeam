@@ -210,6 +210,38 @@ describe('buildModelMessages', () => {
     ])
   })
 
+  it('adds an Anthropic cache breakpoint to a trailing tool result', () => {
+    const messages = [
+      { role: 'user', content: 'read it' },
+      {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: 'call-1',
+            toolName: 'read',
+            output: { type: 'text', value: 'file' }
+          }
+        ]
+      }
+    ] as Parameters<typeof applyAnthropicCache>[0]
+
+    const result = applyAnthropicCache(messages)
+
+    expect(result.at(-1)).toMatchObject({
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 'call-1',
+          providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+        }
+      ]
+    })
+    const originalPart = (messages.at(-1) as { content: Array<Record<string, unknown>> }).content[0]
+    expect(originalPart.providerOptions).toBeUndefined()
+  })
+
   it('produces no message for an assistant without content', () => {
     const message = makeMessage({ parts: [makeReasoningPart('thinking'), makeTextPart('   ')] })
     expect(buildModelMessages([message])).toEqual([])

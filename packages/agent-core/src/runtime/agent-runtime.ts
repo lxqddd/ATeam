@@ -7,6 +7,8 @@ import type { TextStreamPart, ToolSet } from 'ai'
 import type {
   AgentConfig,
   AgentDefinition,
+  AgentMetricsSnapshot,
+  CacheMetricsSnapshot,
   ChatMessage,
   ChatRetryStatus,
   CommandDefinition,
@@ -74,6 +76,7 @@ import {
   worktreeRootFor
 } from '../worktrees'
 import { CompactionService } from './compaction-service'
+import { CacheMetricsCollector } from './cache-metrics'
 import { DEFAULT_DEPENDENCIES } from './defaults'
 import { isContextLengthError } from './helpers'
 import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
@@ -133,6 +136,7 @@ export class AgentRuntime {
   private readonly sessionService: SessionService
   private readonly permissionService: PermissionService
   private readonly retryMetrics = new RetryMetricsCollector()
+  private readonly cacheMetrics = new CacheMetricsCollector()
 
   constructor(private readonly options: AgentRuntimeOptions) {
     this.store = new SessionsStore(options.userDataPath)
@@ -287,6 +291,17 @@ export class AgentRuntime {
 
   retryMetricsSnapshot(): RetryMetricsSnapshot {
     return this.retryMetrics.snapshot()
+  }
+
+  cacheMetricsSnapshot(): CacheMetricsSnapshot {
+    return this.cacheMetrics.snapshot()
+  }
+
+  metricsSnapshot(): AgentMetricsSnapshot {
+    return {
+      retry: this.retryMetrics.snapshot(),
+      cache: this.cacheMetrics.snapshot()
+    }
   }
 
   async pluginAuthMethods(workspace = this.options.workspacePath): Promise<PluginAuthMethodInfo[]> {
@@ -1343,7 +1358,11 @@ export class AgentRuntime {
         }
         case 'finish-step':
           run.steps += 1
-          if (part.usage) state.lastStepUsage = usageFrom(part.usage)
+          if (part.usage) {
+            const stepUsage = usageFrom(part.usage)
+            state.lastStepUsage = stepUsage
+            this.cacheMetrics.record(stepUsage)
+          }
           await this.recordStepSnapshot(run, message)
           break
         case 'finish':
@@ -1803,6 +1822,7 @@ export class AgentRuntime {
           const result = this.deps.createTurn({
             model,
             system: prepared.system,
+            systemProviderOptions: prepared.systemProviderOptions,
             messages: prepared.messages,
             tools: prepared.tools,
             abortSignal: run.abort.signal,

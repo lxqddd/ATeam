@@ -140,6 +140,11 @@ function repairRecord(record: SessionRecord): boolean {
   }
 
   for (const message of record.messages) {
+    if (message.role === 'assistant' && !message.model && record.session.model) {
+      // Messages written before model metadata existed inherit the session model.
+      message.model = { ...record.session.model }
+      changed = true
+    }
     if (message.status === 'streaming') {
       message.status = 'interrupted'
       changed = true

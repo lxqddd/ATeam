@@ -43,7 +43,7 @@
 | R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                                                                                     |
 | R-P0-3 LLM 重试       | 完成     | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无                                                                                     |
 | R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                                                                                                                                | 完整模型专用 prompt 文件、MCP instructions 权限过滤、XML 转义、时区、运行时测试        |
-| R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、跨模型丢弃、Anthropic cache control、OpenAI promptCacheKey、单元测试                                                                                                                                                       | provider transform 层、system/tool 缓存断点、缓存指标、旧消息迁移、端到端测试          |
+| R-P0-5 推理与缓存     | 完成     | 同模型 reasoning providerMetadata 回放、跨模型丢弃、provider transform 层、Anthropic system/末条消息缓存断点、OpenAI promptCacheKey、缓存命中率与节省指标、旧消息模型迁移、端到端测试                                                                              | 无                                                                                     |
 | R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配、基础单元测试                                                                                                                                                                                   | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略、集成测试 |
 | R-P0-7 Plan 工作流    | 基本完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示、基础测试                                                                                                                                                                        | 当前轮内切换工具集、计划文件 UI、build 切换提醒、按模式隐藏 plan_exit、端到端测试      |
 
@@ -55,7 +55,6 @@
 
 - [ ] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
 - [ ] R-P0-4：完整的分模型 prompt 文件；MCP instructions 按 agent 权限精细过滤；MCP server 名称与 instructions 的 XML 转义；本地时区日期与可配置环境信息；MCP instructions 运行时测试
-- [ ] R-P0-5：provider transform 层；system / tool 结果缓存断点；缓存命中率与节省指标；旧消息缺少 `model` 字段的迁移策略；reasoning metadata 端到端测试
 - [ ] R-P0-6：tree-sitter 或等价 bash / PowerShell / cmd 解析；扩大 arity 表；参数级外部目录提取；危险命令额外保护；权限规则覆盖同类命令的集成测试
 - [ ] R-P0-7：`plan_exit` 后当前轮立即切换 build 工具集；计划文件查看入口与计划状态 UI；plan → build 切换提醒；按模式隐藏 `plan_exit`；端到端测试
 
@@ -125,11 +124,11 @@
 - [x] reasoning part 持久化 `providerMetadata`，同模型重建历史时回放
 - [x] Anthropic cache control 与 OpenAI `promptCacheKey`
 - [x] 跨模型时丢弃 reasoning metadata（message-history 单元测试覆盖）
-- [ ] provider transform 层，集中处理缓存与供应商差异
-- [ ] system / tool 结果的缓存断点
-- [ ] 缓存命中率与节省 token 指标
-- [ ] 旧消息缺少 `model` 字段时的兼容策略与迁移
-- [ ] 供应商 reasoning metadata 的端到端测试（当前已有 message-history 单元测试）
+- [x] provider transform 层，集中处理缓存与供应商差异
+- [x] system / tool 结果的缓存断点
+- [x] 缓存命中率与节省 token 指标
+- [x] 旧消息缺少 `model` 字段时的兼容策略与迁移
+- [x] 供应商 reasoning metadata 的端到端测试
 
 #### R-P0-6 Shell arity
 
@@ -235,17 +234,19 @@
 
 #### R-P0-5 推理块与 prompt caching
 
-**现状**：持久化消息中的 reasoning 只有 `text`，[message-history.ts](../packages/agent-core/src/message-history.ts) 重建历史时直接丢弃 reasoning；未显式设置 Anthropic cache control / OpenAI cache key，也没有 provider transform 层。
+**现状（2026-11-24）**：reasoning part 持久化 `providerMetadata`，同模型重建历史时回放，跨模型丢弃。新增 `provider-transform.ts` 集中处理供应商差异：Anthropic 在 system 与末条 user/tool 消息上设置 cache_control（最多两个断点），OpenAI 使用会话级 `promptCacheKey`，Anthropic native compaction 的 `contextManagement` 也由此生成。usage 记录 cache read / write tokens，运行时聚合缓存命中率与节省 token，并展示在 Agent 设置页。启动时把缺少 `model` 的旧 assistant 消息补为迁移时的会话模型。
 
 **OpenCode 参考**：同模型历史会保留 reasoning 的 `providerMetadata` 以支持推理连续性与 prompt caching；`provider/transform.ts` 和各 provider 插件处理缓存、请求头与供应商差异。
 
 **待办**：
 
-- [ ] 扩展 reasoning part，持久化 `providerMetadata` 与必要签名
-- [ ] 重建历史时仅在模型一致时回传 reasoning metadata，避免跨模型污染
-- [ ] 为 Anthropic 增加 cache_control 断点，为 OpenAI 增加 prompt cache key
-- [ ] 建立 provider transform 层，集中处理供应商请求差异
-- [ ] 测试 reasoning 回放、跨模型丢弃、缓存标记与多轮成本
+- [x] 扩展 reasoning part，持久化 `providerMetadata` 与必要签名
+- [x] 重建历史时仅在模型一致时回传 reasoning metadata，避免跨模型污染
+- [x] 为 Anthropic 增加 system 与末条消息 cache_control 断点，为 OpenAI 增加 prompt cache key
+- [x] 建立 provider transform 层，集中处理供应商请求差异
+- [x] 旧消息缺少 `model` 时按会话模型迁移
+- [x] 缓存命中率、读取 / 写入与节省 token 指标
+- [x] 测试 reasoning 回放、跨模型丢弃、缓存标记与多轮缓存指标
 
 **验收**：多轮对话能命中供应商缓存，推理模型在后续轮次保持必要的推理上下文。
 
@@ -458,7 +459,7 @@
 ### 第二轮建议实施顺序
 
 1. **R-P0-1 配置收尾**（小）——补完整配置矩阵端到端测试（R-P0-2 插件 OAuth 自动刷新已完成）。
-2. **R-P0-5 推理/缓存 + R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试已完成，继续改善长任务可靠性。
+2. **R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试与 R-P0-5 推理/缓存已完成，继续改善长任务可靠性。
 3. **R-P0-4 提示词 + R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——补齐日常编码体验。
 4. **第二轮 P1 剩余项**（按使用频率取舍）。
 5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。

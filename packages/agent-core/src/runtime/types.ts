@@ -94,6 +94,7 @@ export interface AgentRuntimeOptions {
 export interface AgentTurnInput {
   model: LanguageModel
   system: string
+  systemProviderOptions?: Record<string, Record<string, unknown>>
   messages: ModelMessage[]
   tools: ToolSet
   abortSignal: AbortSignal

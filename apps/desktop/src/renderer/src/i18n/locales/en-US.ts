@@ -61,6 +61,10 @@ const enUS = {
     retryMetricsEmpty: 'No retries recorded in this agent process.',
     retryMetricsSummary: '{{retries}} retries · {{rate}}% success · average wait {{seconds}}s',
     retryMetricsLastReason: 'Last reason: {{reason}}',
+    cacheMetrics: 'Prompt cache',
+    cacheMetricsEmpty: 'No prompt cache usage recorded in this agent process.',
+    cacheMetricsSummary:
+      '{{requests}} requests · {{rate}}% hit · {{read}} read / {{write}} written tokens',
     formatterOverrides: 'Formatter overrides',
     formatterOverridesDescription:
       'One override per line: extension=formatter, or extension=none to disable formatting.',

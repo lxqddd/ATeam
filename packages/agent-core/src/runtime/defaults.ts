@@ -44,7 +44,15 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
   createTurn: (input) => ({
     stream: streamText({
       model: input.model,
-      system: input.system,
+      system: input.systemProviderOptions
+        ? {
+            role: 'system' as const,
+            content: input.system,
+            providerOptions: input.systemProviderOptions as Parameters<
+              typeof streamText
+            >[0]['providerOptions']
+          }
+        : input.system,
       messages: input.messages,
       tools: input.tools,
       stopWhen: stepCountIs(input.maxSteps ?? MAX_STEPS),

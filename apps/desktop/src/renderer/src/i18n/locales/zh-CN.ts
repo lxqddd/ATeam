@@ -56,6 +56,10 @@ const zhCN = {
     retryMetricsEmpty: '当前 Agent 进程还没有重试记录。',
     retryMetricsSummary: '{{retries}} 次重试 · 成功率 {{rate}}% · 平均等待 {{seconds}} 秒',
     retryMetricsLastReason: '最后原因：{{reason}}',
+    cacheMetrics: 'Prompt 缓存',
+    cacheMetricsEmpty: '当前 Agent 进程还没有缓存使用记录。',
+    cacheMetricsSummary:
+      '{{requests}} 次请求 · 命中率 {{rate}}% · 读取 {{read}} / 写入 {{write}} tokens',
     formatterOverrides: '格式化器覆盖',
     formatterOverridesDescription:
       '每行一个覆盖：扩展名=格式化器，或 扩展名=none 关闭该类型的格式化。',

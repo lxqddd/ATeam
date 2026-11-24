@@ -3,9 +3,9 @@ import {
   AGENT_CHANNELS,
   type AgentDefinition,
   type AgentInfo,
+  type AgentMetricsSnapshot,
   type AgentStatus,
-  type CommandDefinition,
-  type RetryMetricsSnapshot
+  type CommandDefinition
 } from '@ateam/shared'
 import { discoverInstructionFiles, loadOrgPolicy } from '@ateam/agent-core/config'
 import { availableLspServers, discoverFormatters } from '@ateam/agent-core/integrations'
@@ -52,12 +52,12 @@ export function registerInfoHandlers(ctx: AgentIpcContext): void {
     } catch {
       /* language server discovery is best effort */
     }
-    let retryMetrics: RetryMetricsSnapshot | null = null
+    let metrics: AgentMetricsSnapshot | null = null
     if (manager.isReady()) {
       try {
-        retryMetrics = await manager.request<RetryMetricsSnapshot>('metrics.get')
+        metrics = await manager.request<AgentMetricsSnapshot>('metrics.get')
       } catch {
-        retryMetrics = null
+        metrics = null
       }
     }
     return {
@@ -66,7 +66,8 @@ export function registerInfoHandlers(ctx: AgentIpcContext): void {
       instructionFiles,
       lspServers,
       formatters,
-      retryMetrics,
+      retryMetrics: metrics?.retry ?? null,
+      cacheMetrics: metrics?.cache ?? null,
       policy: loadOrgPolicy({
         userDataPath: app.getPath('userData'),
         envPolicyFile: process.env.ATEAM_POLICY_FILE

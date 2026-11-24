@@ -158,6 +158,32 @@ function interruptedToolStreamScript(): Script {
   }
 }
 
+const REASONING_METADATA = { anthropic: { signature: 'sig-1' } }
+
+function reasoningMetadataScript(text: string): Script {
+  return async function* () {
+    yield part({ type: 'reasoning-start', id: 'r1', providerMetadata: REASONING_METADATA })
+    yield part({ type: 'reasoning-delta', id: 'r1', text })
+    yield part({ type: 'reasoning-end', id: 'r1', providerMetadata: REASONING_METADATA })
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'answer' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
+function usageDetailsScript(): Script {
+  return async function* () {
+    const usage = {
+      inputTokens: 100,
+      outputTokens: 10,
+      totalTokens: 110,
+      inputTokenDetails: { cacheReadTokens: 60, cacheWriteTokens: 20 }
+    }
+    yield part({ type: 'finish-step', usage })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: usage })
+  }
+}
+
 function contextErrorScript(): Script {
   return async function* () {
     yield part({ type: 'error', error: new Error('maximum context length exceeded') })
@@ -1482,6 +1508,66 @@ describe('AgentRuntime', () => {
       { type: 'reasoning', text: 'think' },
       { type: 'text', text: 'answer' }
     ])
+  })
+
+  it('replays reasoning metadata for the same model and drops it after a model switch', async () => {
+    scripts.push(reasoningMetadataScript('think'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    scripts.push(textScript('next'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+
+    const replayed = turns[1].messages.find((message) => message.role === 'assistant')
+    expect(JSON.stringify(replayed)).toContain('"type":"reasoning"')
+    expect(JSON.stringify(replayed)).toContain('sig-1')
+
+    runtime.setModels({
+      ...MODELS,
+      models: [
+        ...MODELS.models,
+        {
+          id: 'model-2',
+          providerId: 'provider-1',
+          modelId: 'model-2',
+          name: 'Alternate',
+          createdAt: '2026-01-01T00:00:00.000Z'
+        }
+      ]
+    })
+    await runtime.setSessionModel(sessionId, { providerId: 'provider-1', modelId: 'model-2' })
+    scripts.push(textScript('third'))
+    await runtime.sendChat(sessionId, 'switch')
+    await sink.next('run.finished')
+
+    expect(JSON.stringify(turns[2].messages)).not.toContain('"type":"reasoning"')
+    expect(JSON.stringify(turns[2].messages)).toContain('answer')
+  })
+
+  it('records prompt cache usage and Anthropic cache breakpoints', async () => {
+    scripts.push(usageDetailsScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].systemProviderOptions).toEqual({
+      anthropic: { cacheControl: { type: 'ephemeral' } }
+    })
+    const [assistant] = assistantMessages()
+    expect(assistant.usage).toMatchObject({
+      inputTokens: 100,
+      cacheReadTokens: 60,
+      cacheWriteTokens: 20
+    })
+    expect(runtime.cacheMetricsSnapshot()).toMatchObject({
+      requests: 1,
+      inputTokens: 100,
+      cacheReadTokens: 60,
+      cacheWriteTokens: 20,
+      hitRate: 0.6,
+      savedTokens: 60
+    })
+    expect(runtime.metricsSnapshot().cache.savedTokens).toBe(60)
   })
 
   it('serializes non-string tool output', async () => {

@@ -46,10 +46,20 @@ export function usageFrom(total: {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
+  inputTokenDetails?: {
+    cacheReadTokens?: number
+    cacheWriteTokens?: number
+  }
 }): TokenUsage {
   return {
     inputTokens: total.inputTokens,
     outputTokens: total.outputTokens,
-    totalTokens: total.totalTokens
+    totalTokens: total.totalTokens,
+    ...(total.inputTokenDetails?.cacheReadTokens !== undefined
+      ? { cacheReadTokens: total.inputTokenDetails.cacheReadTokens }
+      : {}),
+    ...(total.inputTokenDetails?.cacheWriteTokens !== undefined
+      ? { cacheWriteTokens: total.inputTokenDetails.cacheWriteTokens }
+      : {})
   }
 }

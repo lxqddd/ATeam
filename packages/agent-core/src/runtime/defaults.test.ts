@@ -91,7 +91,11 @@ describe('AgentRuntime default dependencies', () => {
 
     const options = aiMock.captured()
     expect(options).toMatchObject({ maxRetries: 0, maxOutputTokens: 8_192 })
-    expect(typeof options?.system).toBe('string')
+    expect(options?.system).toEqual({
+      role: 'system',
+      content: expect.any(String),
+      providerOptions: { anthropic: { cacheControl: { type: 'ephemeral' } } }
+    })
     expect(aiMock.stepCountIs).toHaveBeenCalledWith(25)
 
     const onError = options?.onError

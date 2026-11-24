@@ -174,40 +174,52 @@ export function buildModelMessages(
   return result
 }
 
-/** Add an Anthropic cache breakpoint to the last user turn. */
+/** Add an Anthropic cache breakpoint to the last user or tool message. */
 export function applyAnthropicCache(messages: ModelMessage[]): ModelMessage[] {
-  let index = -1
-  for (let cursor = messages.length - 1; cursor >= 0; cursor -= 1) {
-    if (messages[cursor].role === 'user') {
-      index = cursor
-      break
-    }
-  }
+  let index = messages.length - 1
+  while (index >= 0 && messages[index].role === 'system') index -= 1
   if (index < 0) return messages
   const target = messages[index]
-  if (target.role !== 'user') return messages
   const cacheOptions = {
     anthropic: { cacheControl: { type: 'ephemeral' } }
   } as TextPart['providerOptions']
 
-  if (typeof target.content === 'string') {
-    const next = {
-      ...target,
-      content: [{ type: 'text' as const, text: target.content, providerOptions: cacheOptions }]
+  if (target.role === 'user') {
+    if (typeof target.content === 'string') {
+      const next = {
+        ...target,
+        content: [{ type: 'text' as const, text: target.content, providerOptions: cacheOptions }]
+      }
+      return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
     }
-    return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
+
+    const content = [...target.content]
+    for (let cursor = content.length - 1; cursor >= 0; cursor -= 1) {
+      const part = content[cursor]
+      if (part.type !== 'text') continue
+      content[cursor] = {
+        ...part,
+        providerOptions: { ...part.providerOptions, ...cacheOptions }
+      }
+      const next = { ...target, content }
+      return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
+    }
+    return messages
   }
 
-  const content = [...target.content]
-  for (let cursor = content.length - 1; cursor >= 0; cursor -= 1) {
-    const part = content[cursor]
-    if (part.type !== 'text') continue
-    content[cursor] = {
-      ...part,
-      providerOptions: { ...part.providerOptions, ...cacheOptions }
+  if (target.role === 'tool') {
+    const content = [...target.content]
+    for (let cursor = content.length - 1; cursor >= 0; cursor -= 1) {
+      const part = content[cursor]
+      if (part.type !== 'tool-result') continue
+      content[cursor] = {
+        ...part,
+        providerOptions: { ...part.providerOptions, ...cacheOptions }
+      } as ToolResultPart
+      const next = { ...target, content }
+      return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
     }
-    const next = { ...target, content }
-    return [...messages.slice(0, index), next, ...messages.slice(index + 1)]
   }
+
   return messages
 }

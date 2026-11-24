@@ -183,6 +183,34 @@ describe('AgentSettings', () => {
     expect(screen.getByText('Last reason: HTTP 503')).toBeInTheDocument()
   })
 
+  it('shows prompt cache metrics', async () => {
+    mock = createApiMock({
+      info: {
+        workspacePath: '/tmp/workspace',
+        appVersion: '0.1.0',
+        instructionFiles: [],
+        lspServers: [],
+        formatters: [],
+        cacheMetrics: {
+          requests: 2,
+          inputTokens: 150,
+          cacheReadTokens: 70,
+          cacheWriteTokens: 20,
+          hitRate: 70 / 150,
+          savedTokens: 70
+        }
+      }
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+
+    render(<AgentSettings />)
+
+    expect(await screen.findByText('Prompt cache')).toBeInTheDocument()
+    expect(
+      screen.getByText('2 requests · 47% hit · 70 read / 20 written tokens')
+    ).toBeInTheDocument()
+  })
+
   it('shows the organization policy and its rules', async () => {
     mock = createApiMock({
       info: {
