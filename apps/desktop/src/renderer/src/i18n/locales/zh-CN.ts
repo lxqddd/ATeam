@@ -60,6 +60,17 @@ const zhCN = {
     cacheMetricsEmpty: '当前 Agent 进程还没有缓存使用记录。',
     cacheMetricsSummary:
       '{{requests}} 次请求 · 命中率 {{rate}}% · 读取 {{read}} / 写入 {{write}} tokens',
+    environmentSettings: '环境信息',
+    environmentSettingsDescription: '可选的环境信息，会写入 system prompt。',
+    environmentTimezone: '时区',
+    environmentNotes: '环境备注',
+    systemPromptOverride: 'System prompt 覆盖',
+    systemPromptHint: '替换模型族的基础 prompt；环境、权限与指令部分仍会追加。',
+    systemPromptTooLong: 'System prompt 覆盖不能超过 20,000 个字符。',
+    environmentHint: '时区使用 IANA 名称，例如 Asia/Shanghai；备注会追加到 prompt 的环境块。',
+    saveEnvironment: '保存环境信息',
+    environmentInvalidTimezone: '未知时区，请使用 IANA 名称，例如 Asia/Shanghai。',
+    environmentNotesTooLong: '环境备注不能超过 4,000 个字符。',
     formatterOverrides: '格式化器覆盖',
     formatterOverridesDescription:
       '每行一个覆盖：扩展名=格式化器，或 扩展名=none 关闭该类型的格式化。',

@@ -42,7 +42,7 @@
 | R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件                                   | 完整配置矩阵端到端测试                                                                 |
 | R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                                                                                     |
 | R-P0-3 LLM 重试       | 完成     | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无                                                                                     |
-| R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                                                                                                                                | 完整模型专用 prompt 文件、MCP instructions 权限过滤、XML 转义、时区、运行时测试        |
+| R-P0-4 提示词与上下文 | 完成     | 分模型 prompt 文件、项目/全局 prompt 覆盖、环境块（模型/目录/Git/平台/时区/日期/备注）、MCP instructions 按可用工具与 agent 权限过滤、XML 转义、提示词快照与运行时测试                                                                                             | 无                                                                                     |
 | R-P0-5 推理与缓存     | 完成     | 同模型 reasoning providerMetadata 回放、跨模型丢弃、provider transform 层、Anthropic system/末条消息缓存断点、OpenAI promptCacheKey、缓存命中率与节省指标、旧消息模型迁移、端到端测试                                                                              | 无                                                                                     |
 | R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配、基础单元测试                                                                                                                                                                                   | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略、集成测试 |
 | R-P0-7 Plan 工作流    | 基本完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示、基础测试                                                                                                                                                                        | 当前轮内切换工具集、计划文件 UI、build 切换提醒、按模式隐藏 plan_exit、端到端测试      |
@@ -54,7 +54,6 @@
 **P0 收尾**
 
 - [ ] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
-- [ ] R-P0-4：完整的分模型 prompt 文件；MCP instructions 按 agent 权限精细过滤；MCP server 名称与 instructions 的 XML 转义；本地时区日期与可配置环境信息；MCP instructions 运行时测试
 - [ ] R-P0-6：tree-sitter 或等价 bash / PowerShell / cmd 解析；扩大 arity 表；参数级外部目录提取；危险命令额外保护；权限规则覆盖同类命令的集成测试
 - [ ] R-P0-7：`plan_exit` 后当前轮立即切换 build 工具集；计划文件查看入口与计划状态 UI；plan → build 切换提醒；按模式隐藏 `plan_exit`；端到端测试
 
@@ -113,11 +112,11 @@
 
 #### R-P0-4 提示词与上下文
 
-- [ ] 完整的分模型 prompt 文件，而不是单行 model guidance
-- [ ] MCP instructions 按 agent 工具权限精细过滤
-- [ ] MCP server 名称与 instructions 的 XML 转义
-- [ ] 本地时区日期与可配置环境信息
-- [ ] MCP server instructions 捕获与注入的运行时测试
+- [x] 完整的分模型 prompt 文件，而不是单行 model guidance
+- [x] MCP instructions 按 agent 工具权限精细过滤
+- [x] MCP server 名称与 instructions 的 XML 转义
+- [x] 本地时区日期与可配置环境信息
+- [x] MCP server instructions 捕获与注入的运行时测试
 
 #### R-P0-5 推理与缓存
 
@@ -218,17 +217,19 @@
 
 #### R-P0-4 系统提示词与上下文构建
 
-**现状**：system prompt 基本固定（[policy.ts](../packages/agent-core/src/runtime/policy.ts)），仅拼接 AGENTS.md、references、skills；不按模型选择提示词，不包含模型 ID、Git 仓库状态、日期、MCP server instructions。
+**现状（2026-11-24）**：新增 Anthropic / OpenAI / Gemini / Kimi / 通用五套完整基础 prompt（[prompts](../packages/agent-core/src/runtime/prompts/index.ts)），按模型 ID / provider 选择；全局或项目可通过 `systemPrompt` 替换基础 prompt。环境块包含工作目录、Git 标记、平台、时区、本地日期、模型与可配置备注（`environment.timezone` / `environment.notes`）。MCP server instructions 只在对应工具仍对当前 agent 可用且未被 agent 权限拒绝时注入，server 名称与正文均做 XML 转义。references / skills / instructions 的拼接顺序保持不变，instructions 路径去重沿用现有加载器。
 
 **OpenCode 参考**：`packages/opencode/src/session/system.ts` 按模型选择 Anthropic / GPT / Codex / Gemini / Kimi / Trinity 等提示词，并注入模型信息、工作目录、Git 状态、平台、日期、References 和 MCP instructions；`session/reminders.ts` 负责 plan/build 切换提醒。
 
 **待办**：
 
-- [ ] 按 provider/model 选择不同基础 system prompt，并允许项目覆盖
-- [ ] 注入模型 ID、工作区、Git 仓库标记、平台、日期等环境块
-- [ ] 将启用 MCP server 的 instructions 注入 system prompt，并按 agent 权限过滤
-- [ ] 保持 references / skills / instructions 的现有拼接顺序，补充去重与 token 预算
-- [ ] 为提示词快照增加测试，避免模型差异悄悄回退
+- [x] 按 provider/model 选择不同基础 system prompt，并允许项目覆盖
+- [x] 注入模型 ID、工作区、Git 仓库标记、平台、本地时区日期与可配置环境信息
+- [x] 将启用 MCP server 的 instructions 注入 system prompt，并按 agent 工具与权限过滤
+- [x] 保持 references / skills / instructions 的现有拼接顺序；instructions 路径去重沿用现有加载器
+- [x] 为提示词快照增加测试，避免模型差异悄悄回退
+
+**后续（P1）**：references / skills / instructions 的 token 预算与截断策略。
 
 **验收**：不同模型获得适配的提示词；Agent 知道当前模型、仓库、日期与 MCP server 使用说明。
 
@@ -460,7 +461,7 @@
 
 1. **R-P0-1 配置收尾**（小）——补完整配置矩阵端到端测试（R-P0-2 插件 OAuth 自动刷新已完成）。
 2. **R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试与 R-P0-5 推理/缓存已完成，继续改善长任务可靠性。
-3. **R-P0-4 提示词 + R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——补齐日常编码体验。
+3. **R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文已完成，补齐日常编码体验。
 4. **第二轮 P1 剩余项**（按使用频率取舍）。
 5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 

@@ -442,6 +442,16 @@ export interface AgentConfigDocument {
   commands?: Record<string, CommandConfigInput> | CommandConfigInput[]
   skills?: string[]
   retry?: RetryConfigInput
+  environment?: AgentEnvironmentConfig
+  /** Replaces the model-family base prompt; environment and permission sections still apply. */
+  systemPrompt?: string
+}
+
+export interface AgentEnvironmentConfig {
+  /** IANA timezone used for the date in the system prompt; defaults to the host timezone. */
+  timezone?: string
+  /** Extra notes appended to the system prompt environment block. */
+  notes?: string
 }
 
 export interface RetryConfig {
@@ -468,6 +478,10 @@ export interface AgentConfig {
   formatters: boolean
   /** Effective retry policy; always filled by the config loader. */
   retry?: RetryConfig
+  /** System prompt environment overrides. */
+  environment?: AgentEnvironmentConfig
+  /** Project or global replacement for the model-family base prompt. */
+  systemPrompt?: string
   references?: AgentReference[]
   /** File extension (e.g. .ts) to formatter id, or "none" to disable formatting. */
   formatterOverrides: Record<string, string>

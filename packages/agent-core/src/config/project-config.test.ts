@@ -194,6 +194,24 @@ describe('layered document fields', () => {
     expect(config.plugins).toEqual([path.join(root, 'plugin.ts')])
     expect(config.skills).toEqual([path.join(root, 'project-skills')])
   })
+
+  it('merges project environment settings over global values', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({
+        environment: { timezone: 'UTC', notes: 'Global note' },
+        systemPrompt: 'Global prompt'
+      })
+    )
+    await fs.writeFile(
+      path.join(directory, 'repo', 'ateam.json'),
+      JSON.stringify({ environment: { timezone: 'Asia/Shanghai' }, systemPrompt: 'Project prompt' })
+    )
+
+    const config = await readAgentConfig(userData, workspace)
+    expect(config.environment).toEqual({ timezone: 'Asia/Shanghai', notes: 'Global note' })
+    expect(config.systemPrompt).toBe('Project prompt')
+  })
 })
 describe('partial server overrides', () => {
   it('deep-merges project LSP entries over global entries', async () => {

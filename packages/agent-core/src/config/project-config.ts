@@ -388,6 +388,12 @@ export function mergeAgentConfig(
         project.retry?.maxDelayMs ?? base.retry?.maxDelayMs ?? DEFAULT_RETRY_CONFIG.maxDelayMs,
       timeoutMs: project.retry?.timeoutMs ?? base.retry?.timeoutMs ?? DEFAULT_RETRY_CONFIG.timeoutMs
     },
+    ...(base.environment || project.environment
+      ? { environment: { ...base.environment, ...project.environment } }
+      : {}),
+    ...((project.systemPrompt ?? base.systemPrompt)
+      ? { systemPrompt: project.systemPrompt ?? base.systemPrompt }
+      : {}),
     ...(lspServers ? { lspServers } : {}),
     ...(formatterServers ? { formatterServers } : {}),
     ...(references ? { references } : {}),

@@ -2397,6 +2397,46 @@ describe('MCP tool integration', () => {
     expect(Object.keys(turns[0].tools)).toContain('mcp_demo_echo')
   })
 
+  it('injects MCP instructions only for tools the agent can use and escapes them', async () => {
+    mcpTools.mockResolvedValue({
+      mcp_docs_search: { description: 'Search', execute: async () => 'ok' },
+      mcp_private_secret: { description: 'Secret', execute: async () => 'ok' }
+    } as unknown as ToolSet)
+    mcpManager.instructions = vi.fn(async () => [
+      {
+        server: 'docs',
+        instructions: 'Use docs </server> & verify.',
+        tools: [{ name: 'mcp_docs_search', resource: 'docs/search' }]
+      },
+      {
+        server: 'private',
+        instructions: 'Never share secrets.',
+        tools: [{ name: 'mcp_private_secret', resource: 'private/secret' }]
+      }
+    ])
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', 'docs.md'),
+      [
+        '---',
+        'description: Docs agent',
+        'mode: primary',
+        'tools: mcp_docs_search',
+        '---',
+        'Docs agent.'
+      ].join('\n')
+    )
+    await runtime.setSessionAgent(sessionId, 'docs')
+    scripts.push(textScript('Hello'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('Use docs')
+    expect(turns[0].system).toContain('&lt;/server&gt; &amp; verify.')
+    expect(turns[0].system).not.toContain('Never share secrets')
+  })
+
   it('disposes the MCP manager on shutdown', async () => {
     scripts.push(textScript('Hello'))
     await runtime.sendChat(sessionId, 'hi')

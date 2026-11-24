@@ -51,10 +51,13 @@ function AgentSettings(): React.JSX.Element {
   const [retryRetries, setRetryRetries] = useState('')
   const [retryDelaySeconds, setRetryDelaySeconds] = useState('')
   const [retryTimeoutSeconds, setRetryTimeoutSeconds] = useState('')
+  const [timezone, setTimezone] = useState('')
+  const [environmentNotes, setEnvironmentNotes] = useState('')
+  const [systemPromptOverride, setSystemPromptOverride] = useState('')
   const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState<'instructions' | 'overrides' | 'references' | 'retry' | null>(
-    null
-  )
+  const [saved, setSaved] = useState<
+    'instructions' | 'overrides' | 'references' | 'retry' | 'environment' | null
+  >(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -76,6 +79,9 @@ function AgentSettings(): React.JSX.Element {
         setRetryRetries(String(retry.maxRetries))
         setRetryDelaySeconds(String(Math.round(retry.maxDelayMs / 1_000)))
         setRetryTimeoutSeconds(String(Math.round(retry.timeoutMs / 1_000)))
+        setTimezone(next.environment?.timezone ?? '')
+        setEnvironmentNotes(next.environment?.notes ?? '')
+        setSystemPromptOverride(next.systemPrompt ?? '')
       })
       .catch((caught: unknown) => {
         if (active) setError(errorMessage(caught))
@@ -205,6 +211,44 @@ function AgentSettings(): React.JSX.Element {
       setRetryDelaySeconds(String(Math.round(retry.maxDelayMs / 1_000)))
       setRetryTimeoutSeconds(String(Math.round(retry.timeoutMs / 1_000)))
       setSaved('retry')
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function saveEnvironment(): Promise<void> {
+    setSaving(true)
+    setError(null)
+    setSaved(null)
+    try {
+      const value = timezone.trim()
+      if (value) {
+        try {
+          new Intl.DateTimeFormat('en', { timeZone: value })
+        } catch {
+          throw new Error(t('settings.environmentInvalidTimezone'))
+        }
+      }
+      const notes = environmentNotes.trim()
+      if (notes.length > 4_000) throw new Error(t('settings.environmentNotesTooLong'))
+      const systemPrompt = systemPromptOverride.trim()
+      if (systemPrompt.length > 20_000) {
+        throw new Error(t('settings.systemPromptTooLong'))
+      }
+      const next = await window.api.agent.config.update({
+        environment: {
+          ...(value ? { timezone: value } : {}),
+          ...(notes ? { notes } : {})
+        },
+        systemPrompt: systemPrompt || undefined
+      })
+      setConfig(next)
+      setTimezone(next.environment?.timezone ?? '')
+      setEnvironmentNotes(next.environment?.notes ?? '')
+      setSystemPromptOverride(next.systemPrompt ?? '')
+      setSaved('environment')
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {
@@ -351,6 +395,79 @@ function AgentSettings(): React.JSX.Element {
             className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-55"
           >
             {saving ? t('settings.saving') : t('settings.saveRetry')}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-subtle px-3 py-3">
+        <div>
+          <p className="m-0 text-label font-medium text-foreground">
+            {t('settings.environmentSettings')}
+          </p>
+          <p className="m-0 mt-0.5 text-caption text-muted">
+            {t('settings.environmentSettingsDescription')}
+          </p>
+        </div>
+        <label className="flex flex-col gap-1 text-caption text-muted">
+          <span>{t('settings.environmentTimezone')}</span>
+          <input
+            type="text"
+            aria-label={t('settings.environmentTimezone')}
+            value={timezone}
+            disabled={saving}
+            placeholder={Intl.DateTimeFormat().resolvedOptions().timeZone}
+            onChange={(event) => {
+              setTimezone(event.target.value)
+              setSaved(null)
+            }}
+            className="h-8 rounded-md border border-border bg-surface px-2 text-caption text-foreground outline-none placeholder:text-subtle focus:border-border-strong"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-caption text-muted">
+          <span>{t('settings.environmentNotes')}</span>
+          <textarea
+            aria-label={t('settings.environmentNotes')}
+            value={environmentNotes}
+            disabled={saving}
+            rows={3}
+            maxLength={4_000}
+            onChange={(event) => {
+              setEnvironmentNotes(event.target.value)
+              setSaved(null)
+            }}
+            className="w-full resize-y rounded-md border border-border bg-surface px-3 py-2 text-caption text-foreground outline-none placeholder:text-subtle focus:border-border-strong"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-caption text-muted">
+          <span>{t('settings.systemPromptOverride')}</span>
+          <textarea
+            aria-label={t('settings.systemPromptOverride')}
+            value={systemPromptOverride}
+            disabled={saving}
+            rows={5}
+            maxLength={20_000}
+            onChange={(event) => {
+              setSystemPromptOverride(event.target.value)
+              setSaved(null)
+            }}
+            className="w-full resize-y rounded-md border border-border bg-surface px-3 py-2 font-mono text-caption text-foreground outline-none placeholder:text-subtle focus:border-border-strong"
+          />
+        </label>
+        <p className="m-0 text-caption text-subtle">{t('settings.systemPromptHint')}</p>
+        <p className="m-0 text-caption text-subtle">{t('settings.environmentHint')}</p>
+        <div className="flex items-center justify-end gap-2">
+          {saved === 'environment' && (
+            <span className="text-caption text-success">{t('settings.saved')}</span>
+          )}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              void saveEnvironment()
+            }}
+            className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:cursor-default disabled:opacity-55"
+          >
+            {saving ? t('settings.saving') : t('settings.saveEnvironment')}
           </button>
         </div>
       </div>

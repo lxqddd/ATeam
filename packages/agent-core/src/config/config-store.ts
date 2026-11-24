@@ -43,6 +43,8 @@ function cloneConfig(config: AgentConfig): AgentConfig {
     formatters: config.formatters,
     formatterOverrides: { ...config.formatterOverrides },
     ...(config.retry ? { retry: { ...config.retry } } : {}),
+    ...(config.environment ? { environment: { ...config.environment } } : {}),
+    ...(config.systemPrompt ? { systemPrompt: config.systemPrompt } : {}),
     ...(config.references ? { references: config.references.map((ref) => ({ ...ref })) } : {}),
     ...(config.permissionRules
       ? { permissionRules: config.permissionRules.map((rule) => ({ ...rule })) }
@@ -244,6 +246,8 @@ export class AgentConfigStore {
     }
     if ('formatterOverrides' in patch) next.formatterOverrides = patch.formatterOverrides
     if ('retry' in patch && patch.retry) next.retry = patch.retry
+    if ('environment' in patch) next.environment = patch.environment
+    if ('systemPrompt' in patch) next.systemPrompt = patch.systemPrompt
     if ('references' in patch) next.references = patch.references
     if ('skills' in patch) next.skills = patch.skills
     if ('plugins' in patch) next.plugins = patch.plugins

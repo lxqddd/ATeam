@@ -17,6 +17,7 @@ interface FakeClientOptions {
   resources?: McpResourceDefinition[]
   call?: (name: string, args: Record<string, unknown>) => Promise<McpToolCallResult>
   connectError?: Error
+  instructions?: string
 }
 
 function makeClient(options: FakeClientOptions = {}): {
@@ -28,6 +29,7 @@ function makeClient(options: FakeClientOptions = {}): {
     connect: vi.fn(async () => {
       if (options.connectError) throw options.connectError
     }),
+    ...(options.instructions ? { instructions: () => options.instructions } : {}),
     listTools: vi.fn(async () => options.tools ?? []),
     listPrompts: vi.fn(async () => options.prompts ?? []),
     listResources: vi.fn(async () => options.resources ?? []),
@@ -120,6 +122,26 @@ describe('McpManager tools', () => {
     await manager.setTransientServers([])
     expect(await manager.servers()).toEqual([])
     expect(client.close).toHaveBeenCalled()
+    await manager.dispose()
+  })
+
+  it('reports instructions with the generated tool names', async () => {
+    const { client } = makeClient({
+      tools: [{ name: 'search' }],
+      instructions: 'Search before answering.'
+    })
+    const manager = createManager(() => client)
+    await manager.setTransientServers([{ name: 'docs', type: 'local', command: 'node' }])
+
+    await manager.tools(context)
+
+    await expect(manager.instructions()).resolves.toEqual([
+      {
+        server: 'docs',
+        instructions: 'Search before answering.',
+        tools: [{ name: 'mcp_docs_search', resource: 'docs/search' }]
+      }
+    ])
     await manager.dispose()
   })
 

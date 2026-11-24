@@ -1,5 +1,6 @@
 import type {
   AgentConfigDocument,
+  AgentEnvironmentConfig,
   AgentReference,
   CommandConfigInput,
   ConfigDiagnostic,
@@ -95,6 +96,35 @@ function boundedInteger(
     'warning'
   )
   return undefined
+}
+
+function normalizeEnvironment(
+  value: unknown,
+  source: string,
+  diagnostics: ConfigDiagnostic[]
+): AgentEnvironmentConfig | undefined {
+  if (!isRecord(value)) {
+    diagnostic(diagnostics, source, '$.environment', 'environment must be an object')
+    return undefined
+  }
+  const environment: AgentEnvironmentConfig = {}
+  if (typeof value.timezone === 'string' && value.timezone.trim()) {
+    const timezone = value.timezone.trim()
+    try {
+      new Intl.DateTimeFormat('en', { timeZone: timezone })
+      environment.timezone = timezone
+    } catch {
+      diagnostic(diagnostics, source, '$.environment.timezone', 'unknown timezone')
+    }
+  } else if (value.timezone !== undefined) {
+    diagnostic(diagnostics, source, '$.environment.timezone', 'timezone must be a string')
+  }
+  if (typeof value.notes === 'string' && value.notes.trim()) {
+    environment.notes = value.notes.trim().slice(0, 4_000)
+  } else if (value.notes !== undefined) {
+    diagnostic(diagnostics, source, '$.environment.notes', 'notes must be a string')
+  }
+  return Object.keys(environment).length > 0 ? environment : undefined
 }
 
 function normalizeRetry(
@@ -644,6 +674,15 @@ export function normalizeAgentConfigDocument(
   if (value.retry !== undefined) {
     const retry = normalizeRetry(value.retry, source, diagnostics)
     if (retry) document.retry = retry
+  }
+  if (value.environment !== undefined) {
+    const environment = normalizeEnvironment(value.environment, source, diagnostics)
+    if (environment) document.environment = environment
+  }
+  if (typeof value.systemPrompt === 'string' && value.systemPrompt.trim()) {
+    document.systemPrompt = value.systemPrompt.trim().slice(0, 20_000)
+  } else if (value.systemPrompt !== undefined) {
+    diagnostic(diagnostics, source, '$.systemPrompt', 'systemPrompt must be a string')
   }
   return { document, diagnostics }
 }

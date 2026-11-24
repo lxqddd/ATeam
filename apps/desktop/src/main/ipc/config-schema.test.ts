@@ -33,6 +33,27 @@ describe('agentConfigPatchSchema', () => {
     ).toEqual({ retry: { maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 30_000 } })
   })
 
+  it('keeps environment settings', () => {
+    expect(
+      agentConfigPatchSchema.parse({
+        environment: { timezone: 'Asia/Shanghai', notes: 'Use bun.' }
+      })
+    ).toEqual({ environment: { timezone: 'Asia/Shanghai', notes: 'Use bun.' } })
+  })
+
+  it('keeps a system prompt override', () => {
+    expect(agentConfigPatchSchema.parse({ systemPrompt: 'You are a reviewer.' })).toEqual({
+      systemPrompt: 'You are a reviewer.'
+    })
+    expect(() => agentConfigPatchSchema.parse({ systemPrompt: 'x'.repeat(20_001) })).toThrow()
+  })
+
+  it('rejects environment notes that are too long', () => {
+    expect(() =>
+      agentConfigPatchSchema.parse({ environment: { notes: 'x'.repeat(4_001) } })
+    ).toThrow()
+  })
+
   it('rejects retry settings outside their bounds', () => {
     expect(() => agentConfigPatchSchema.parse({ retry: { maxRetries: 11 } })).toThrow()
     expect(() => agentConfigPatchSchema.parse({ retry: { maxDelayMs: -1 } })).toThrow()

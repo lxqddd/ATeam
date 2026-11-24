@@ -5,6 +5,7 @@ import type {
   PermissionRule,
   PermissionRuleAction
 } from '@ateam/shared'
+import { modelPrompt } from './prompts'
 
 export function modePermissionRules(
   mode: PermissionMode,
@@ -88,25 +89,34 @@ export interface SystemPromptInput {
   model?: ModelRef | null
   platform?: string
   date?: Date
+  timezone?: string
+  environmentNotes?: string
+  /** Replaces the model-family base prompt. */
+  basePrompt?: string
   gitRepository?: boolean
   mcpInstructions?: Array<{ server: string; instructions: string }>
 }
 
-function modelGuidance(model: ModelRef | null | undefined): string {
-  const id = model?.modelId.toLowerCase() ?? ''
-  if (id.includes('claude')) {
-    return 'Claude guidance: keep reasoning focused, use tools deliberately, and avoid repeating tool output in the final answer.'
+function localDate(date: Date, timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(date)
+  } catch {
+    return date.toISOString().slice(0, 10)
   }
-  if (id.includes('gpt') || id.includes('codex') || id.includes('o1') || id.includes('o3')) {
-    return 'GPT guidance: prefer structured, minimal edits and short verification steps; do not over-explain completed work.'
-  }
-  if (id.includes('gemini')) {
-    return 'Gemini guidance: be explicit about assumptions, keep tool calls small, and verify file edits before summarizing.'
-  }
-  if (id.includes('kimi') || id.includes('moonshot')) {
-    return 'Kimi guidance: keep context focused, make incremental edits, and verify each change with a targeted tool call.'
-  }
-  return 'Model guidance: keep tool calls focused, verify changes, and report only confirmed results.'
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
 }
 
 export function buildSystemPrompt(input: SystemPromptInput): string {
@@ -118,33 +128,38 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
         : input.permissionMode === 'auto'
           ? 'File writes, edits, and shell commands are pre-approved and run without asking. Still act carefully and stay inside the workspace.'
           : 'write, edit, and shell require explicit user approval and may be denied; respect the decision and explain it.'
-  const date = (input.date ?? new Date()).toISOString().slice(0, 10)
+  const timezone =
+    input.timezone?.trim() || Intl.DateTimeFormat().resolvedOptions().timeZone || 'unknown'
+  const date = localDate(input.date ?? new Date(), timezone)
   const model = input.model ? `${input.model.providerId}/${input.model.modelId}` : 'unknown'
-  const sections = [
-    'You are ATeam, a concise and reliable coding agent running on the user desktop.',
+  const prompt = modelPrompt(input.model)
+  const basePrompt = input.basePrompt?.trim() || prompt.prompt
+  const env = [
     '<env>',
     `  Working directory: ${input.workspacePath}`,
     `  Is directory a git repo: ${input.gitRepository ? 'yes' : 'no'}`,
     `  Platform: ${input.platform ?? process.platform}`,
+    `  Timezone: ${timezone}`,
     `  Today's date: ${date}`,
-    `  Model: ${model}`,
-    '</env>',
-    'Use the available tools to inspect and modify files. Read, list, and grep are allowed automatically.',
-    permission,
-    modelGuidance(input.model),
-    'Prefer small, verifiable changes. Do not claim that you changed a file unless a tool result confirms it.',
-    'For multi-step work, keep the todo list up to date with the todowrite tool.',
-    'Use exact unique matches for edit. Keep shell commands non-interactive and scoped to the workspace.',
-    'Answer in the language the user used.'
+    `  Model: ${model}`
   ]
+  const notes = input.environmentNotes?.trim()
+  if (notes) {
+    env.push('  Environment notes:')
+    for (const line of notes.split('\n')) env.push(`    ${line}`)
+  }
+  env.push('</env>')
+  const sections = [basePrompt, env.join('\n'), permission]
   if (input.mcpInstructions && input.mcpInstructions.length > 0) {
     sections.push('<mcp_instructions>')
     for (const item of input.mcpInstructions) {
-      sections.push(`  <server name="${item.server}">`)
-      for (const line of item.instructions.split('\n')) sections.push(`    ${line}`)
+      sections.push(`  <server name="${escapeXml(item.server)}">`)
+      for (const line of item.instructions.split('\n')) {
+        sections.push(`    ${escapeXml(line)}`)
+      }
       sections.push('  </server>')
     }
     sections.push('</mcp_instructions>')
   }
-  return sections.join('\n')
+  return sections.join('\n\n')
 }

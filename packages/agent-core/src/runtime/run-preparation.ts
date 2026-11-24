@@ -25,6 +25,7 @@ import type { SessionRecord } from '../sessions/sessions-store'
 import { skillsPrompt } from '../skills'
 import { filterToolsForModel, type ToolContext } from '../tools'
 import { buildSystemPrompt } from './policy'
+import { filterMcpInstructions, type McpInstructionEntry } from './mcp-instructions'
 import { buildToolContext, type ToolContextHost } from './tool-context'
 import type { Run } from './types'
 
@@ -129,7 +130,7 @@ export async function prepareRun(
   )
   const baseTools = host.createTools(toolContext)
   let mcpTools: ToolSet = {}
-  let mcpInstructions: Array<{ server: string; instructions: string }> = []
+  let mcpInstructions: McpInstructionEntry[] = []
   try {
     const mcpManager = host.mcp(run.workspace)
     mcpTools = await mcpManager.tools(toolContext)
@@ -171,6 +172,12 @@ export async function prepareRun(
     }
   )
   toolContext.codeModeTools = () => tools
+  const mcpInstructionSections = filterMcpInstructions({
+    instructions: mcpInstructions,
+    availableTools: new Set(Object.keys(tools)),
+    permissionMode: current.session.permissionMode ?? 'ask',
+    agent
+  })
 
   const systemSections = [
     systemWithInstructions(
@@ -180,11 +187,10 @@ export async function prepareRun(
           permissionMode: current.session.permissionMode ?? 'ask',
           model: target,
           gitRepository: await host.isGitRepository(run.workspace),
-          mcpInstructions:
-            (current.session.permissionMode ?? 'ask') === 'plan' ||
-            agent?.permissions.some((rule) => rule.action === 'mcp' && rule.effect === 'deny')
-              ? []
-              : mcpInstructions
+          timezone: run.config.environment?.timezone,
+          environmentNotes: run.config.environment?.notes,
+          basePrompt: run.config.systemPrompt,
+          mcpInstructions: mcpInstructionSections
         }),
         current.session.compaction?.summary
       ),

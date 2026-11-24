@@ -30,9 +30,16 @@ export interface McpToolContext {
   storeOutput?: (toolCallId: string, output: string) => Promise<{ output: string; path?: string }>
 }
 
+export interface McpServerInstructions {
+  server: string
+  instructions: string
+  /** Tools exposed to the model, with the permission resource used for the mcp action. */
+  tools: Array<{ name: string; resource: string }>
+}
+
 export interface McpManagerLike {
   tools(context: McpToolContext): Promise<ToolSet>
-  instructions?(): Promise<Array<{ server: string; instructions: string }>>
+  instructions?(): Promise<McpServerInstructions[]>
   servers(): Promise<McpServerConfig[]>
   statuses(options?: { probe?: boolean }): Promise<McpServerStatus[]>
   prompts(): Promise<McpPromptSummary[]>
@@ -75,6 +82,8 @@ interface McpManagerOptions {
 interface Connection {
   client: McpClientLike
   tools: McpToolDefinition[] | null
+  /** MCP tool name to the generated model-facing tool name. */
+  toolNames: Map<string, string>
 }
 
 const PROJECT_SERVER_TIMESTAMP = '1970-01-01T00:00:00.000Z'
@@ -243,17 +252,23 @@ export class McpManager implements McpManagerLike {
     return configs.map((config) => this.statusesById.get(config.id) ?? idleStatus(config))
   }
 
-  async instructions(): Promise<Array<{ server: string; instructions: string }>> {
+  async instructions(): Promise<McpServerInstructions[]> {
     await this.ready
     if (this.disposed) return []
-    const result: Array<{ server: string; instructions: string }> = []
+    const result: McpServerInstructions[] = []
     for (const config of this.configs()) {
       if (!config.enabled) continue
       const entry = await this.connectionFor(config)
-      const instructions = entry?.client.instructions?.()
-      if (instructions?.trim()) {
-        result.push({ server: config.name, instructions: instructions.trim() })
-      }
+      if (!entry) continue
+      const instructions = entry.client.instructions?.()?.trim()
+      if (!instructions) continue
+      const tools = (entry.tools ?? [])
+        .map((definition) => ({
+          name: entry.toolNames.get(definition.name) ?? '',
+          resource: `${config.name}/${definition.name}`
+        }))
+        .filter((tool) => tool.name)
+      result.push({ server: config.name, instructions, tools })
     }
     return result
   }
@@ -272,6 +287,7 @@ export class McpManager implements McpManagerLike {
       if (!entry.tools) {
         try {
           entry.tools = await entry.client.listTools()
+          entry.toolNames.clear()
           this.setStatus(config, {
             state: 'connected',
             toolCount: entry.tools.length,
@@ -290,6 +306,7 @@ export class McpManager implements McpManagerLike {
           `mcp_${sanitizeSegment(config.name)}_${sanitizeSegment(definition.name)}`,
           used
         )
+        entry.toolNames.set(definition.name, name)
         result[name] = this.buildTool(config, entry, definition, name, context)
       }
     }
@@ -523,10 +540,11 @@ export class McpManager implements McpManagerLike {
       await client.close().catch(() => undefined)
       return null
     }
-    const entry: Connection = { client, tools }
+    const entry: Connection = { client, tools, toolNames: new Map() }
     this.connections.set(config.id, entry)
     client.onToolsChanged(() => {
       entry.tools = null
+      entry.toolNames.clear()
     })
     this.setStatus(config, {
       state: 'connected',

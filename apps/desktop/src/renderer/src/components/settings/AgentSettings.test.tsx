@@ -154,6 +154,37 @@ describe('AgentSettings', () => {
     )
   })
 
+  it('loads and saves environment settings', async () => {
+    vi.mocked(mock.api.agent.config.get).mockResolvedValue({
+      ...DEFAULTS,
+      environment: { timezone: 'Asia/Shanghai', notes: 'Use bun.' }
+    })
+    vi.mocked(mock.api.agent.config.update).mockResolvedValue({
+      ...DEFAULTS,
+      environment: { timezone: 'UTC', notes: 'Use pnpm.' }
+    })
+    const user = userEvent.setup()
+    render(<AgentSettings />)
+
+    const timezone = await screen.findByLabelText('Timezone')
+    expect(timezone).toHaveValue('Asia/Shanghai')
+    expect(screen.getByLabelText('Environment notes')).toHaveValue('Use bun.')
+
+    await user.clear(timezone)
+    await user.type(timezone, 'UTC')
+    const notes = screen.getByLabelText('Environment notes')
+    await user.clear(notes)
+    await user.type(notes, 'Use pnpm.')
+    await user.click(screen.getByRole('button', { name: 'Save environment' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.config.update).toHaveBeenCalledWith({
+        environment: { timezone: 'UTC', notes: 'Use pnpm.' },
+        systemPrompt: undefined
+      })
+    )
+  })
+
   it('shows retry metrics', async () => {
     mock = createApiMock({
       info: {

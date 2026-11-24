@@ -24,6 +24,11 @@ const retryPatchSchema = z.object({
   timeoutMs: z.number().int().min(0).max(3_600_000).optional()
 })
 
+const environmentPatchSchema = z.object({
+  timezone: z.string().max(100).optional(),
+  notes: z.string().max(4_000).optional()
+})
+
 export const agentConfigPatchSchema = z.object({
   snapshots: z.boolean().optional(),
   instructions: z.array(z.string().max(2_000)).max(50).optional(),
@@ -31,5 +36,7 @@ export const agentConfigPatchSchema = z.object({
   formatters: z.boolean().optional(),
   formatterOverrides: z.record(z.string().max(16), z.string().max(40)).optional(),
   references: z.array(referenceSchema).max(50).optional(),
-  retry: retryPatchSchema.optional()
+  retry: retryPatchSchema.optional(),
+  environment: environmentPatchSchema.optional(),
+  systemPrompt: z.string().max(20_000).optional()
 })

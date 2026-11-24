@@ -121,6 +121,43 @@ describe('AgentConfigStore', () => {
     })
   })
 
+  it('normalizes environment settings', async () => {
+    const updated = await store.update({
+      environment: { timezone: 'Asia/Shanghai', notes: ' Use bun for scripts. ' }
+    })
+
+    expect(updated.environment).toEqual({
+      timezone: 'Asia/Shanghai',
+      notes: 'Use bun for scripts.'
+    })
+    const reloaded = new AgentConfigStore(directory)
+    await reloaded.init()
+    expect(reloaded.get().environment).toEqual(updated.environment)
+  })
+
+  it('normalizes a system prompt override', async () => {
+    const updated = await store.update({ systemPrompt: '  You are a reviewer.  ' })
+
+    expect(updated.systemPrompt).toBe('You are a reviewer.')
+    const reloaded = new AgentConfigStore(directory)
+    await reloaded.init()
+    expect(reloaded.get().systemPrompt).toBe('You are a reviewer.')
+
+    const cleared = await store.update({ systemPrompt: undefined })
+    expect(cleared.systemPrompt).toBeUndefined()
+  })
+
+  it('drops an invalid environment timezone', async () => {
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(
+      file,
+      JSON.stringify({ environment: { timezone: 'Not/AZone', notes: 'keep me' } })
+    )
+
+    expect((await readAgentConfig(directory)).environment).toEqual({ notes: 'keep me' })
+  })
+
   it('ignores invalid config files', async () => {
     const file = path.join(directory, 'agent', 'config.json')
     await fs.mkdir(path.dirname(file), { recursive: true })

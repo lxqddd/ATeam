@@ -65,6 +65,19 @@ const enUS = {
     cacheMetricsEmpty: 'No prompt cache usage recorded in this agent process.',
     cacheMetricsSummary:
       '{{requests}} requests · {{rate}}% hit · {{read}} read / {{write}} written tokens',
+    environmentSettings: 'Environment',
+    environmentSettingsDescription: 'Optional environment details included in the system prompt.',
+    environmentTimezone: 'Timezone',
+    environmentNotes: 'Environment notes',
+    systemPromptOverride: 'System prompt override',
+    systemPromptHint:
+      'Replaces the model-family base prompt. Environment, permission and instruction sections still apply.',
+    systemPromptTooLong: 'The system prompt override must be 20,000 characters or less.',
+    environmentHint:
+      'Use an IANA timezone such as Asia/Shanghai. Notes are appended to the prompt environment block.',
+    saveEnvironment: 'Save environment',
+    environmentInvalidTimezone: 'Unknown timezone. Use an IANA name such as Asia/Shanghai.',
+    environmentNotesTooLong: 'Environment notes must be 4,000 characters or less.',
     formatterOverrides: 'Formatter overrides',
     formatterOverridesDescription:
       'One override per line: extension=formatter, or extension=none to disable formatting.',
