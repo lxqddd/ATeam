@@ -78,6 +78,7 @@ vi.mock('@ateam/agent-core/references', () => ({
 
 vi.mock('../../providers/runtime-config', () => ({
   refreshExpiringProviderAuth: vi.fn(async () => false),
+  refreshExpiringPluginAuth: vi.fn(async () => false),
   runtimeModelsWithOAuth: vi.fn((config: unknown) => config)
 }))
 

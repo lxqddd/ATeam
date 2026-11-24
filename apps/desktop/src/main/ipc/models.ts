@@ -8,6 +8,7 @@ import {
   type ModelTestResult,
   type ModelUpdateInput,
   type ModelsConfigPublic,
+  type PluginAuthResult,
   type ProviderAuthRecord,
   type ProviderCreateInput,
   type ProviderOAuthStatus,
@@ -22,7 +23,11 @@ import type { ModelCatalogStore } from '../providers/catalog-store'
 import type { ModelConfigStore } from '../settings/model-config-store'
 import type { ProviderAuthStore } from '../providers/provider-auth-store'
 import { authorizeProvider } from '../providers/oauth-flow'
-import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../providers/runtime-config'
+import {
+  refreshExpiringPluginAuth,
+  refreshExpiringProviderAuth,
+  runtimeModelsWithOAuth
+} from '../providers/runtime-config'
 import type { TrustedSender } from './trusted-sender'
 
 const providerTypeSchema = z.enum(['anthropic', 'openai', 'google', 'openai-compatible'])
@@ -96,6 +101,22 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
         }
       })
     return syncChain
+  }
+
+  const refreshTokens = async (): Promise<void> => {
+    // Keep these sequential: both helpers persist to the same auth.json.
+    await refreshExpiringProviderAuth(providerAuthStore)
+    await refreshExpiringPluginAuth(providerAuthStore, async (provider, credentials) => {
+      if (!manager.isReady()) return null
+      try {
+        return await manager.request<PluginAuthResult | null>('plugins.refreshAuth', {
+          provider,
+          credentials
+        })
+      } catch {
+        return null
+      }
+    })
   }
 
   const handle = (channel: string, handler: (payload: unknown) => unknown): void => {
@@ -220,7 +241,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
 
   handle(MODEL_CHANNELS.providerModels, async (payload): Promise<AvailableModel[]> => {
     const { id } = idPayloadSchema.parse(payload)
-    await refreshExpiringProviderAuth(providerAuthStore)
+    await refreshTokens()
     const provider = runtimeModelsWithOAuth(
       modelsStore.runtimeConfig(),
       providerAuthStore
@@ -262,7 +283,7 @@ export function registerModelsIpc(options: ModelsIpcOptions): void {
     if (!manager.isReady()) {
       return { ok: false, message: 'The agent is not running.' }
     }
-    await refreshExpiringProviderAuth(providerAuthStore)
+    await refreshTokens()
     await sync()
     try {
       return await manager.request<ModelTestResult>('models.test', { providerId, modelId })

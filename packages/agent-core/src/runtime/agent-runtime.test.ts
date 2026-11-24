@@ -3289,6 +3289,67 @@ describe('project provider and MCP configuration', () => {
     })
   })
 
+  it('refreshes plugin oauth credentials on demand', async () => {
+    const pluginPath = path.join(directory, 'oauth-refresh-plugin.mjs')
+    await fs.writeFile(
+      pluginPath,
+      `export default () => ({
+        name: '@acme/oauth',
+        auth: {
+          provider: 'acme',
+          methods: [{
+            type: 'oauth',
+            label: 'Browser login',
+            authorize: () => ({ status: 'failed' }),
+            refresh: (credentials) => ({
+              status: 'success',
+              credentials: {
+                type: 'oauth',
+                accessToken: 'access-2',
+                refreshToken: credentials.refreshToken,
+                expiresAt: 42
+              }
+            })
+          }]
+        }
+      })`
+    )
+    const configDirectory = path.join(directory, 'agent')
+    await fs.mkdir(configDirectory, { recursive: true })
+    await fs.writeFile(
+      path.join(configDirectory, 'config.json'),
+      JSON.stringify({ snapshots: true, instructions: [], plugins: [pluginPath] })
+    )
+    const workspace = path.join(directory, 'workspace')
+
+    await expect(
+      runtime.refreshPluginAuth(workspace, 'acme', {
+        type: 'oauth',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1'
+      })
+    ).resolves.toEqual({
+      status: 'success',
+      provider: 'acme',
+      credentials: {
+        type: 'oauth',
+        accessToken: 'access-2',
+        refreshToken: 'refresh-1',
+        expiresAt: 42
+      }
+    })
+    await expect(
+      runtime.refreshPluginAuth(workspace, 'unknown', { type: 'oauth', accessToken: 'access-1' })
+    ).resolves.toBeNull()
+    await expect(
+      runtime.refreshPluginAuth(undefined, 'acme', {
+        type: 'oauth',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1'
+      })
+    ).resolves.toMatchObject({ status: 'success', provider: 'acme' })
+  })
+
   it('resolves project provider models for a run', async () => {
     await fs.writeFile(
       path.join(directory, 'workspace', 'ateam.json'),
@@ -3373,5 +3434,39 @@ describe('project provider and MCP configuration', () => {
     expect(runtime.listSessions().find((session) => session.id === sessionId)?.model).toEqual(
       projectModel
     )
+  })
+  it('reloads project config and emits config.changed', async () => {
+    const workspace = path.join(directory, 'workspace')
+    await fs.writeFile(path.join(workspace, 'ateam.json'), JSON.stringify({ snapshots: false }))
+
+    await runtime.reloadConfig(workspace)
+    const envelope = await sink.next('config.changed')
+
+    expect(envelope.event).toMatchObject({
+      type: 'config.changed',
+      workspace
+    })
+  })
+  it('applies project instruction changes after an active reload', async () => {
+    const workspace = path.join(directory, 'workspace')
+    await fs.mkdir(path.join(workspace, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(workspace, 'docs', 'rules.md'), 'OLD_PROJECT_RULE')
+    await fs.writeFile(
+      path.join(workspace, 'ateam.json'),
+      JSON.stringify({ instructions: ['docs/rules.md'] })
+    )
+
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+    expect(turns[0].system).toContain('OLD_PROJECT_RULE')
+
+    await fs.writeFile(path.join(workspace, 'docs', 'rules.md'), 'NEW_PROJECT_RULE')
+    await runtime.reloadConfig(workspace)
+
+    scripts.push(textScript('two'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+    expect(turns[1].system).toContain('NEW_PROJECT_RULE')
   })
 })

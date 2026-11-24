@@ -99,7 +99,7 @@ function ModelsPage(): React.JSX.Element {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [tests, setTests] = useState<Record<string, TestState>>({})
   const [oauthStatuses, setOauthStatuses] = useState<ProviderOAuthStatus[]>([])
-  const { sessions, selectedSessionId } = useChatStore()
+  const { sessions, selectedSessionId, configRevision } = useChatStore()
   const directory =
     sessions.find((session) => session.id === selectedSessionId)?.directory ?? undefined
 
@@ -123,7 +123,7 @@ function ModelsPage(): React.JSX.Element {
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, configRevision])
 
   async function apply(operation: () => Promise<ModelsConfigPublic>): Promise<void> {
     setMutationError(null)

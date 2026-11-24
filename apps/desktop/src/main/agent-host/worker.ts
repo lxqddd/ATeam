@@ -172,6 +172,9 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().addPermissionRule(request.params)
     case 'permissions.removeRule':
       return requireRuntime().removePermissionRule(request.params.id)
+    case 'config.reload':
+      await requireRuntime().reloadConfig(request.params?.workspace)
+      return null
     case 'mcp.list': {
       const runtime = requireRuntime()
       return {
@@ -210,6 +213,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         request.params.workspace,
         request.params.requestId,
         request.params.code
+      )
+    case 'plugins.refreshAuth':
+      return requireRuntime().refreshPluginAuth(
+        request.params.workspace,
+        request.params.provider,
+        request.params.credentials
       )
     case 'models.test':
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)

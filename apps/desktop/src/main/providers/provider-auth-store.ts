@@ -53,6 +53,20 @@ export interface ProviderAuthStoreLike {
   runtimeAuth?(): RuntimeProviderAuth[]
 }
 
+export type PluginOAuthCredentials = Extract<PluginAuthCredentials, { type: 'oauth' }>
+
+export interface PluginOAuthRecord {
+  providerId: string
+  credentials: PluginOAuthCredentials
+}
+
+/** Credentials a plugin owns and must refresh itself, without a token endpoint. */
+export interface PluginOAuthStore {
+  pluginOAuthRecords(): PluginOAuthRecord[]
+  pluginOAuthRecord(providerId: string): PluginOAuthRecord | null
+  setPluginOAuthTokens(providerId: string, credentials: PluginOAuthCredentials): Promise<void>
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
@@ -86,6 +100,19 @@ function parseEntry(value: unknown): StoredEntry | null {
   if (scope) entry.scope = scope
   if (!access && !clientSecret && !tokenEndpoint && !clientId) return null
   return entry
+}
+
+function oauthCredentials(entry: OAuthEntry, accessToken: string): PluginOAuthCredentials {
+  return {
+    type: 'oauth',
+    accessToken,
+    ...(entry.refresh ? { refreshToken: entry.refresh } : {}),
+    ...(entry.expires !== undefined ? { expiresAt: entry.expires } : {}),
+    ...(entry.tokenEndpoint ? { tokenEndpoint: entry.tokenEndpoint } : {}),
+    ...(entry.clientId ? { clientId: entry.clientId } : {}),
+    ...(entry.clientSecret ? { clientSecret: entry.clientSecret } : {}),
+    ...(entry.scope ? { scope: entry.scope } : {})
+  }
 }
 
 function legacyDecrypt(value: string): string | null {
@@ -176,6 +203,47 @@ export class ProviderAuthStore implements ProviderAuthStoreLike {
       })
     }
     return auths
+  }
+
+  pluginOAuthRecords(): PluginOAuthRecord[] {
+    const records: PluginOAuthRecord[] = []
+    for (const providerId of Object.keys(this.entries)) {
+      const record = this.pluginOAuthRecord(providerId)
+      if (record) records.push(record)
+    }
+    return records
+  }
+
+  pluginOAuthRecord(providerId: string): PluginOAuthRecord | null {
+    const entry = this.entries[providerId]
+    if (entry?.type !== 'oauth' || !entry.access) return null
+    // Records with a complete generic OAuth client are refreshed over HTTP instead.
+    if (entry.tokenEndpoint && entry.clientId) return null
+    return { providerId, credentials: oauthCredentials(entry, entry.access) }
+  }
+
+  async setPluginOAuthTokens(
+    providerId: string,
+    credentials: PluginOAuthCredentials
+  ): Promise<void> {
+    const existing = this.entries[providerId]
+    const entry: OAuthEntry = existing?.type === 'oauth' ? { ...existing } : { type: 'oauth' }
+    entry.access = credentials.accessToken
+    if (credentials.refreshToken !== undefined) {
+      if (credentials.refreshToken) entry.refresh = credentials.refreshToken
+      else delete entry.refresh
+    }
+    if (credentials.expiresAt !== undefined && credentials.expiresAt !== null) {
+      entry.expires = credentials.expiresAt
+    } else if (credentials.expiresAt === null) {
+      delete entry.expires
+    }
+    if (credentials.tokenEndpoint) entry.tokenEndpoint = credentials.tokenEndpoint
+    if (credentials.clientId) entry.clientId = credentials.clientId
+    if (credentials.clientSecret) entry.clientSecret = credentials.clientSecret
+    if (credentials.scope) entry.scope = credentials.scope
+    this.entries[providerId] = entry
+    await this.persist()
   }
 
   async removeApiKey(providerId: string): Promise<void> {

@@ -37,15 +37,15 @@
 
 ### 第二轮 P0 实现进度（2026-11-24）
 
-| 项目                  | 状态     | 已实现                                                                                                                                                                                                                        | 仍待补齐                                                                               |
-| --------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑            | 配置变更主动刷新、配置端到端测试                                                       |
-| R-P0-2 插件系统       | 基本完成 | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录 | 插件 OAuth 无 token endpoint 时的自动刷新                                              |
-| R-P0-3 LLM 重试       | 基础完成 | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态、基础测试                                                                                                                                     | 流中断重试、可配置策略、重试原因 UI、重试指标、AI SDK 流式错误测试                     |
-| R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                                                                                           | 完整模型专用 prompt 文件、MCP instructions 权限过滤、XML 转义、时区、运行时测试        |
-| R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、跨模型丢弃、Anthropic cache control、OpenAI promptCacheKey、单元测试                                                                                                                  | provider transform 层、system/tool 缓存断点、缓存指标、旧消息迁移、端到端测试          |
-| R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配、基础单元测试                                                                                                                                              | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略、集成测试 |
-| R-P0-7 Plan 工作流    | 基本完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示、基础测试                                                                                                                                   | 当前轮内切换工具集、计划文件 UI、build 切换提醒、按模式隐藏 plan_exit、端到端测试      |
+| 项目                  | 状态     | 已实现                                                                                                                                                                                                                                                             | 仍待补齐                                                                               |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件                                   | 完整配置矩阵端到端测试                                                                 |
+| R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                                                                                     |
+| R-P0-3 LLM 重试       | 基础完成 | 429/5xx/网络重试、Retry-After、指数退避+抖动、最大次数、可中止等待、UI 重试状态、基础测试                                                                                                                                                                          | 流中断重试、可配置策略、重试原因 UI、重试指标、AI SDK 流式错误测试                     |
+| R-P0-4 提示词与上下文 | 基础完成 | 模型族提示、环境块（模型/目录/Git/平台/日期）、MCP instructions 注入、plan 模式提示                                                                                                                                                                                | 完整模型专用 prompt 文件、MCP instructions 权限过滤、XML 转义、时区、运行时测试        |
+| R-P0-5 推理与缓存     | 基础完成 | 同模型 reasoning providerMetadata 回放、跨模型丢弃、Anthropic cache control、OpenAI promptCacheKey、单元测试                                                                                                                                                       | provider transform 层、system/tool 缓存断点、缓存指标、旧消息迁移、端到端测试          |
+| R-P0-6 Shell arity    | 基础完成 | 单命令 arity 前缀、始终允许生成 `命令前缀 *`、复合命令保持精确匹配、基础单元测试                                                                                                                                                                                   | tree-sitter/PowerShell 解析、更大 arity 表、参数级外部目录提取、危险命令策略、集成测试 |
+| R-P0-7 Plan 工作流    | 基本完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示、基础测试                                                                                                                                                                        | 当前轮内切换工具集、计划文件 UI、build 切换提醒、按模式隐藏 plan_exit、端到端测试      |
 
 ### 当前剩余 TODO（2026-11-24）
 
@@ -53,8 +53,7 @@
 
 **P0 收尾**
 
-- [ ] R-P0-1：配置变更后的主动刷新策略；配置来源、冲突覆盖与坏配置降级的端到端测试（来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
-- [ ] R-P0-2：插件 OAuth 没有 token endpoint 时的自动刷新（当前由插件自行刷新）
+- [ ] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
 - [ ] R-P0-3：响应开始后的流中断重试；可配置最大次数 / 退避上限 / 总超时；重试原因与最终失败原因 UI；重试指标；AI SDK 解析错误与流式错误测试
 - [ ] R-P0-4：完整的分模型 prompt 文件；MCP instructions 按 agent 权限精细过滤；MCP server 名称与 instructions 的 XML 转义；本地时区日期与可配置环境信息；MCP instructions 运行时测试
 - [ ] R-P0-5：provider transform 层；system / tool 结果缓存断点；缓存命中率与节省指标；旧消息缺少 `model` 字段的迁移策略；reasoning metadata 端到端测试
@@ -79,9 +78,9 @@
 - [x] 支持项目级自定义 formatter 命令，而不只是内置 formatter 覆盖
 - [x] 支持在 `ateam.json` 中定义 commands / skills，而不只依赖资源目录
 - [x] 项目 MCP server 进入设置页展示与 OAuth 授权流程（项目 server 只读展示）
-- [ ] 配置变更后的主动刷新 / 会话刷新策略（当前在下一次运行时读取，设置页修改后不会主动通知会话）
+- [x] 配置变更后的主动刷新 / 会话刷新策略（config.reload + config.changed 事件；运行中的 workspace 延迟到下一轮应用）
 - [x] 项目 instructions 相对路径按项目根解析，而不是固定按 workspace
-- [ ] 增加配置来源、冲突覆盖、坏配置降级的端到端测试（已有 project-config / config-store 单元测试）
+- [ ] 增加配置来源、冲突覆盖、坏配置降级的完整端到端测试（已有 project-config/config-store 单元测试、项目配置编辑器测试和主动刷新运行时测试）
 
 #### R-P0-2 插件系统
 
@@ -101,7 +100,7 @@
 - [x] 插件加载、hook 顺序、失败隔离、shell env 的运行时测试
 - [x] hook 异常隔离：转换/权限/环境/tool hook 抛错只记录警告，后续插件与工具执行继续
 - [x] 插件登录状态展示与退出登录
-- [ ] 插件 OAuth 无 token endpoint 时的自动刷新（当前由插件自行刷新）
+- [x] 插件 OAuth 无 token endpoint 时的自动刷新（插件声明 `refresh` 回调，主进程在过期前调用并持久化）
 
 #### R-P0-3 LLM 重试
 
@@ -195,11 +194,10 @@
 - [x] system prompt 变换、工具参数/结果回写 UI
 - [x] 加载失败隔离、hook 异常隔离、启用/禁用、设置页展示与加载错误
 - [x] 声明式 auth 方法 UI、pending OAuth、凭据写入 `auth.json`、登录状态与退出登录
+- [x] 插件 OAuth 无 token endpoint 时的自动刷新（插件声明 `refresh` 回调，主进程在过期前调用并持久化）
 - [x] 插件发现、hook 顺序、工具注册、权限覆盖、失败隔离、shell env 测试
 
-**仍待**：
-
-- [ ] 插件 OAuth 没有 token endpoint 时的自动刷新（当前由插件自行刷新）
+**仍待**：无。
 
 **验收**：第三方插件可以注册工具并参与权限、提示词、认证与工具执行流程，且插件故障不影响主流程。
 
@@ -460,7 +458,7 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P0-1 配置收尾 + R-P0-2 OAuth 刷新**（小）——补配置主动刷新/端到端测试，以及无 token endpoint 的插件 OAuth 刷新。
+1. **R-P0-1 配置收尾**（小）——补完整配置矩阵端到端测试（R-P0-2 插件 OAuth 自动刷新已完成）。
 2. **R-P0-3 重试收尾 + R-P0-5 推理/缓存 + R-P1-2 max steps + R-P1-1 steering**（小到中等）——直接改善长任务可靠性。
 3. **R-P0-4 提示词 + R-P0-6 shell arity + R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——补齐日常编码体验。
 4. **第二轮 P1 剩余项**（按使用频率取舍）。

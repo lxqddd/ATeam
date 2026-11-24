@@ -700,6 +700,7 @@ export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'
 
 export type AgentEvent =
   | { type: 'agent.status'; status: AgentStatus }
+  | { type: 'config.changed'; workspace: string }
   | { type: 'session.upsert'; session: SessionMeta }
   | { type: 'session.deleted'; sessionId: string }
   | { type: 'message.upsert'; message: ChatMessage }

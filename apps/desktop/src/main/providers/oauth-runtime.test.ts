@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ProviderAuthRecord } from '@ateam/shared'
+import type { PluginAuthResult, ProviderAuthRecord } from '@ateam/shared'
 
 const safeStorage = vi.hoisted(() => ({
   isEncryptionAvailable: vi.fn(() => true),
@@ -12,7 +12,12 @@ const safeStorage = vi.hoisted(() => ({
 vi.mock('electron', () => ({ safeStorage }))
 
 import { ProviderAuthStore } from './provider-auth-store'
-import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from './runtime-config'
+import type { PluginOAuthCredentials } from './provider-auth-store'
+import {
+  refreshExpiringPluginAuth,
+  refreshExpiringProviderAuth,
+  runtimeModelsWithOAuth
+} from './runtime-config'
 
 const RECORD: ProviderAuthRecord = {
   providerId: 'provider-1',
@@ -109,6 +114,97 @@ describe('provider runtime helpers', () => {
     )
 
     expect(injected.providers[0].apiKey).toBe('plugin-access')
+  })
+
+  it('lists plugin oauth records that need a plugin-side refresh', async () => {
+    await store.set(RECORD)
+    await store.setPluginCredentials('provider-2', {
+      type: 'oauth',
+      accessToken: 'plugin-access',
+      refreshToken: 'plugin-refresh',
+      expiresAt: 123
+    })
+
+    expect(store.pluginOAuthRecords()).toEqual([
+      {
+        providerId: 'provider-2',
+        credentials: {
+          type: 'oauth',
+          accessToken: 'plugin-access',
+          refreshToken: 'plugin-refresh',
+          expiresAt: 123
+        }
+      }
+    ])
+    expect(store.pluginOAuthRecord('provider-1')).toBeNull()
+  })
+
+  it('refreshes expiring plugin oauth tokens', async () => {
+    await store.setPluginCredentials('provider-1', {
+      type: 'oauth',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      expiresAt: Date.now() + 10_000
+    })
+    const refresh = vi.fn(
+      async (provider: string, credentials: PluginOAuthCredentials): Promise<PluginAuthResult> => ({
+        status: 'success',
+        provider,
+        credentials: {
+          ...credentials,
+          accessToken: 'access-2',
+          expiresAt: Date.now() + 3_600_000
+        }
+      })
+    )
+
+    await expect(refreshExpiringPluginAuth(store, refresh)).resolves.toBe(true)
+    expect(refresh).toHaveBeenCalledWith(
+      'provider-1',
+      expect.objectContaining({ accessToken: 'access-1', refreshToken: 'refresh-1' })
+    )
+    expect(store.pluginOAuthRecord('provider-1')?.credentials).toMatchObject({
+      accessToken: 'access-2',
+      refreshToken: 'refresh-1'
+    })
+  })
+
+  it('keeps plugin tokens that are still fresh', async () => {
+    await store.setPluginCredentials('provider-1', {
+      type: 'oauth',
+      accessToken: 'access-1',
+      expiresAt: Date.now() + 3_600_000
+    })
+    const refresh = vi.fn(async (): Promise<PluginAuthResult | null> => null)
+
+    await expect(refreshExpiringPluginAuth(store, refresh)).resolves.toBe(false)
+    expect(refresh).not.toHaveBeenCalled()
+  })
+
+  it('does not restore plugin tokens removed while refreshing', async () => {
+    await store.setPluginCredentials('provider-1', {
+      type: 'oauth',
+      accessToken: 'access-1',
+      expiresAt: Date.now() + 10_000
+    })
+    let release: (value: PluginAuthResult) => void = () => undefined
+    const refresh = vi.fn(
+      () =>
+        new Promise<PluginAuthResult>((resolve) => {
+          release = resolve
+        })
+    )
+    const pending = refreshExpiringPluginAuth(store, refresh)
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalled())
+    await store.clearCredentials('provider-1')
+    release({
+      status: 'success',
+      provider: 'provider-1',
+      credentials: { type: 'oauth', accessToken: 'access-2', expiresAt: Date.now() + 3_600_000 }
+    })
+
+    await expect(pending).resolves.toBe(false)
+    expect(store.pluginOAuthRecord('provider-1')).toBeNull()
   })
 
   it('refreshes expiring tokens', async () => {

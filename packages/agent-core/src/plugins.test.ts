@@ -451,6 +451,82 @@ describe('PluginRegistry', () => {
     )
   })
 
+  it('refreshes oauth credentials through the matching plugin method', async () => {
+    const refresh = vi.fn(async (credentials: { refreshToken?: string | null }) => ({
+      status: 'success' as const,
+      credentials: {
+        type: 'oauth' as const,
+        accessToken: 'access-2',
+        refreshToken: credentials.refreshToken,
+        expiresAt: 1_800_000_100_000
+      }
+    }))
+    const registry = new PluginRegistry([
+      {
+        auth: {
+          provider: 'acme',
+          methods: [
+            {
+              type: 'oauth',
+              label: 'Browser login',
+              authorize: async () => ({ status: 'failed' }),
+              refresh
+            }
+          ]
+        }
+      }
+    ])
+
+    await expect(
+      registry.refreshAuth('acme', {
+        type: 'oauth',
+        accessToken: 'access-1',
+        refreshToken: 'refresh-1',
+        expiresAt: 1_800_000_000_000
+      })
+    ).resolves.toEqual({
+      status: 'success',
+      provider: 'acme',
+      credentials: {
+        type: 'oauth',
+        accessToken: 'access-2',
+        refreshToken: 'refresh-1',
+        expiresAt: 1_800_000_100_000
+      }
+    })
+    expect(refresh).toHaveBeenCalledWith({
+      type: 'oauth',
+      accessToken: 'access-1',
+      refreshToken: 'refresh-1',
+      expiresAt: 1_800_000_000_000
+    })
+  })
+
+  it('ignores refresh for providers without an oauth refresh hook', async () => {
+    const registry = new PluginRegistry([
+      {
+        auth: {
+          provider: 'acme',
+          methods: [
+            {
+              type: 'oauth',
+              label: 'Browser login',
+              authorize: async () => ({ status: 'failed' })
+            }
+          ]
+        }
+      }
+    ])
+
+    await expect(
+      registry.refreshAuth('acme', { type: 'oauth', accessToken: 'access-1' })
+    ).resolves.toBeNull()
+    await expect(
+      registry.refreshAuth('other', { type: 'oauth', accessToken: 'access-1' })
+    ).resolves.toBeNull()
+    await expect(registry.refreshAuth('acme', { type: 'api', key: 'key' })).resolves.toBeNull()
+  })
+
   it('rejects unsafe auth redirects', async () => {
     const registry = new PluginRegistry([
       {

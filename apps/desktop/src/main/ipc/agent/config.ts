@@ -14,7 +14,7 @@ import type { AgentIpcContext } from './context'
 
 /** Registers persisted agent configuration channels. */
 export function registerConfigHandlers(ctx: AgentIpcContext): void {
-  const { handle, configStore, configReady } = ctx
+  const { handle, configStore, configReady, manager } = ctx
 
   handle(AGENT_CHANNELS.agentConfig, async (): Promise<AgentConfig> => {
     await configReady
@@ -24,7 +24,9 @@ export function registerConfigHandlers(ctx: AgentIpcContext): void {
   handle(AGENT_CHANNELS.agentConfigUpdate, async (payload): Promise<AgentConfig> => {
     const patch = agentConfigPatchSchema.parse(payload)
     await configReady
-    return configStore.update(patch)
+    const updated = await configStore.update(patch)
+    await manager.request('config.reload').catch(() => undefined)
+    return updated
   })
 
   handle(AGENT_CHANNELS.agentConfigResolve, async (payload): Promise<EffectiveAgentConfig> => {
@@ -44,6 +46,7 @@ export function registerConfigHandlers(ctx: AgentIpcContext): void {
     const { directory, content } = projectConfigUpdateSchema.parse(payload)
     const workspace = ctx.requestedDirectory(directory) ?? ctx.workspacePath
     await writeProjectConfigFile(workspace, content)
+    await manager.request('config.reload', { workspace }).catch(() => undefined)
     return readProjectConfigFile(workspace)
   })
 }

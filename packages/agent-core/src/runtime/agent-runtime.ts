@@ -19,6 +19,7 @@ import type {
   PermissionRequest,
   PermissionRule,
   PermissionRuleInput,
+  PluginAuthCredentials,
   PluginAuthMethodInfo,
   PluginAuthResult,
   QuestionAnswer,
@@ -185,6 +186,22 @@ export class AgentRuntime {
     })
   }
 
+  async reloadConfig(workspace?: string): Promise<void> {
+    const targets = new Set<string>()
+    if (workspace) targets.add(workspace)
+    else {
+      targets.add(this.options.workspacePath)
+      for (const session of this.store.list()) targets.add(this.sessionWorkspace(session.id))
+    }
+    for (const target of targets) {
+      const busy = [...this.runs.values()].some(
+        (run) => path.resolve(run.workspace) === path.resolve(target)
+      )
+      await this.rememberWorkspaceConfig(target, !busy)
+      this.events.emit({ type: 'config.changed', workspace: target })
+    }
+  }
+
   async init(): Promise<void> {
     await fs.mkdir(this.options.workspacePath, { recursive: true })
     await this.store.init()
@@ -277,6 +294,31 @@ export class AgentRuntime {
     const effective = await this.applyWorkspaceConfig(workspace)
     const plugins = await this.workspaceServices.plugins(effective.config, workspace)
     return plugins.completeAuth(requestId, { code })
+  }
+
+  /**
+   * Refresh plugin OAuth credentials. Without an explicit workspace, try the default
+   * workspace and every workspace that currently has sessions.
+   */
+  async refreshPluginAuth(
+    workspace: string | undefined,
+    provider: string,
+    credentials: PluginAuthCredentials
+  ): Promise<PluginAuthResult | null> {
+    const targets = new Set<string>()
+    if (workspace) {
+      targets.add(workspace)
+    } else {
+      targets.add(this.options.workspacePath)
+      for (const session of this.store.list()) targets.add(this.sessionWorkspace(session.id))
+    }
+    for (const target of targets) {
+      const effective = await this.applyWorkspaceConfig(target)
+      const plugins = await this.workspaceServices.plugins(effective.config, target)
+      const result = await plugins.refreshAuth(provider, credentials)
+      if (result) return result
+    }
+    return null
   }
 
   setProviderAuth(auths: RuntimeProviderAuth[]): void {

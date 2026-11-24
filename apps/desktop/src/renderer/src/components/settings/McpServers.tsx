@@ -65,7 +65,7 @@ function McpServers(): React.JSX.Element {
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthScope, setOauthScope] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
-  const { sessions, selectedSessionId } = useChatStore()
+  const { sessions, selectedSessionId, configRevision } = useChatStore()
   const directory =
     sessions.find((session) => session.id === selectedSessionId)?.directory ?? undefined
 
@@ -97,7 +97,7 @@ function McpServers(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [reloadKey, directory])
+  }, [reloadKey, directory, configRevision])
 
   function resetForm(): void {
     setEditingId(null)

@@ -1,13 +1,18 @@
 import { app, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import fsSync from 'node:fs'
 import path from 'node:path'
+import type { PluginAuthResult } from '@ateam/shared'
 import type { AgentManager } from '../../agent-host/agent-manager'
 import { AgentConfigStore } from '@ateam/agent-core/config'
 import { PluginStore } from '@ateam/agent-core'
 import { hasProjectReferences, resolveReferences } from '@ateam/agent-core/references'
 import type { McpAuthStore } from '../../credentials/mcp-auth-store'
 import type { ProviderAuthStore } from '../../providers/provider-auth-store'
-import { refreshExpiringProviderAuth, runtimeModelsWithOAuth } from '../../providers/runtime-config'
+import {
+  refreshExpiringPluginAuth,
+  refreshExpiringProviderAuth,
+  runtimeModelsWithOAuth
+} from '../../providers/runtime-config'
 import type { ModelConfigStore } from '../../settings/model-config-store'
 import type { WebSearchConfigStore } from '../../settings/websearch-config-store'
 import type { TrustedSender } from '../trusted-sender'
@@ -48,8 +53,22 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
   const { manager, modelsStore, providerAuthStore, isTrustedSender } = options
 
   const refreshProviderTokens = async (): Promise<void> => {
-    const changed = await refreshExpiringProviderAuth(providerAuthStore)
-    if (!changed) return
+    // Keep these sequential: both helpers persist to the same auth.json.
+    const providerChanged = await refreshExpiringProviderAuth(providerAuthStore)
+    const pluginChanged = await refreshExpiringPluginAuth(
+      providerAuthStore,
+      async (provider, credentials) => {
+        try {
+          return await manager.request<PluginAuthResult | null>('plugins.refreshAuth', {
+            provider,
+            credentials
+          })
+        } catch {
+          return null
+        }
+      }
+    )
+    if (!providerChanged && !pluginChanged) return
     await manager.setProviderAuth(providerAuthStore.runtimeAuth())
     await manager.setModels(runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore))
   }

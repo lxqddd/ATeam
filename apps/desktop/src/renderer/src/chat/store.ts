@@ -31,6 +31,7 @@ export interface ChatStoreState {
   commands: CommandDefinition[]
   sessions: SessionMeta[]
   selectedSessionId: string | null
+  configRevision: number
   messagesBySession: Record<string, ChatMessage[] | undefined>
   loadedBySession: Record<string, boolean>
   loadErrorsBySession?: Record<string, string>
@@ -84,6 +85,7 @@ export class ChatStore {
     commands: [],
     sessions: [],
     selectedSessionId: null,
+    configRevision: 0,
     messagesBySession: {},
     loadedBySession: {},
     loadErrorsBySession: {},
@@ -534,6 +536,9 @@ export class ChatStore {
 
   private applyEvent(event: AgentEvent): void {
     switch (event.type) {
+      case 'config.changed':
+        this.setState({ configRevision: this.state.configRevision + 1 })
+        break
       case 'agent.status':
         this.applyStatus(event.status)
         break

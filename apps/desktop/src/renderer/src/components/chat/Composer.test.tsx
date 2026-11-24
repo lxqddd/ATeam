@@ -103,7 +103,8 @@ function baseState(): ChatStoreState {
     actionError: null,
     restarting: false,
     revertPrompt: null,
-    changesPanel: null
+    changesPanel: null,
+    configRevision: 0
   }
 }
 

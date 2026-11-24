@@ -1,6 +1,10 @@
-import type { ProviderAuthRecord, RuntimeModelsConfig } from '@ateam/shared'
+import type { PluginAuthResult, ProviderAuthRecord, RuntimeModelsConfig } from '@ateam/shared'
 import { refreshProviderAuth } from './oauth-flow'
-import type { ProviderAuthStoreLike } from './provider-auth-store'
+import type {
+  PluginOAuthCredentials,
+  PluginOAuthStore,
+  ProviderAuthStoreLike
+} from './provider-auth-store'
 
 /** Replace OAuth provider keys with stored access tokens before the worker config update. */
 export function runtimeModelsWithOAuth(
@@ -47,6 +51,34 @@ export async function refreshExpiringProviderAuth(
       const current = authStore.get(record.providerId)
       if (!current || current.accessToken !== record.accessToken) continue
       await authStore.set(refreshed)
+      changed = true
+    } catch {
+      /* keep the existing token; the provider will report an auth error */
+    }
+  }
+  return changed
+}
+
+/** Refresh plugin-owned OAuth tokens that are about to expire. */
+export async function refreshExpiringPluginAuth(
+  authStore: PluginOAuthStore,
+  refresh: (
+    provider: string,
+    credentials: PluginOAuthCredentials
+  ) => Promise<PluginAuthResult | null>,
+  now = Date.now()
+): Promise<boolean> {
+  let changed = false
+  for (const record of authStore.pluginOAuthRecords()) {
+    const expiresAt = record.credentials.expiresAt
+    if (!expiresAt) continue
+    if (expiresAt - now > 60_000) continue
+    try {
+      const result = await refresh(record.providerId, record.credentials)
+      if (result?.status !== 'success' || result.credentials.type !== 'oauth') continue
+      const current = authStore.pluginOAuthRecord(record.providerId)
+      if (!current || current.credentials.accessToken !== record.credentials.accessToken) continue
+      await authStore.setPluginOAuthTokens(record.providerId, result.credentials)
       changed = true
     } catch {
       /* keep the existing token; the provider will report an auth error */

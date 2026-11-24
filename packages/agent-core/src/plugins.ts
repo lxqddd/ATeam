@@ -51,6 +51,10 @@ export interface PluginAuthMethod {
   authorize: (input: {
     answers: Record<string, string>
   }) => PluginAuthOutcome | Promise<PluginAuthOutcome>
+  /** Renew expiring OAuth credentials; omit when the plugin has its own refresh loop. */
+  refresh?: (
+    credentials: Extract<PluginAuthCredentials, { type: 'oauth' }>
+  ) => PluginAuthOutcome | Promise<PluginAuthOutcome>
 }
 
 export interface PluginAuthHook {
@@ -183,6 +187,28 @@ export class PluginRegistry {
       return {
         status: 'failed',
         message: error instanceof Error ? error.message : 'Authorization failed.'
+      }
+    }
+  }
+
+  async refreshAuth(
+    provider: string,
+    credentials: PluginAuthCredentials
+  ): Promise<PluginAuthResult | null> {
+    if (credentials.type !== 'oauth') return null
+    const entry = this.authEntries().find(
+      (candidate) =>
+        candidate.info.provider === provider &&
+        candidate.info.type === 'oauth' &&
+        typeof candidate.method.refresh === 'function'
+    )
+    if (!entry?.method.refresh) return null
+    try {
+      return this.normalizeAuthOutcome(await entry.method.refresh(credentials), provider, false)
+    } catch (error) {
+      return {
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Token refresh failed.'
       }
     }
   }

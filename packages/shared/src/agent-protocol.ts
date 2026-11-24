@@ -2,6 +2,7 @@ import type {
   McpServerInput,
   MessageAttachment,
   PermissionRuleInput,
+  PluginAuthCredentials,
   QuestionAnswer,
   RuntimeWebSearchConfig,
   SessionSettings
@@ -44,6 +45,7 @@ export type WorkerRequest =
       method: 'setWebSearch'
       params: { config: RuntimeWebSearchConfig | null }
     }
+  | { id: string; method: 'config.reload'; params?: { workspace?: string } }
   | { id: string; method: 'agents.list'; params?: { workspace?: string } }
   | { id: string; method: 'commands.list'; params?: { workspace?: string } }
   | {
@@ -168,6 +170,15 @@ export type WorkerRequest =
       id: string
       method: 'plugins.completeAuth'
       params: { workspace: string; requestId: string; code?: string }
+    }
+  | {
+      id: string
+      method: 'plugins.refreshAuth'
+      params: {
+        workspace?: string
+        provider: string
+        credentials: PluginAuthCredentials
+      }
     }
   | {
       id: string

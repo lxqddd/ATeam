@@ -35,7 +35,7 @@ function sourceClass(source: ConfigFieldSource): string {
 
 function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId } = useChatStore()
+  const { sessions, selectedSessionId, configRevision } = useChatStore()
   const selected = sessions.find((session) => session.id === selectedSessionId)
   const directory = selected?.directory ?? defaultDirectory
   const [resolved, setResolved] = useState<EffectiveAgentConfig | null>(null)
@@ -62,7 +62,7 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
     return () => {
       active = false
     }
-  }, [directory])
+  }, [directory, configRevision])
 
   useEffect(() => {
     let active = true
@@ -77,7 +77,7 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
     return () => {
       active = false
     }
-  }, [directory])
+  }, [directory, configRevision])
 
   async function saveProjectConfig(): Promise<void> {
     setSaving(true)
