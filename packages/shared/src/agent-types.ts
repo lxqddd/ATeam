@@ -696,6 +696,10 @@ export interface McpServerConfig {
   headers: Record<string, string>
   env: Record<string, string>
   enabled: boolean
+  /** Per-request timeout in milliseconds; null uses the client default. */
+  timeout?: number | null
+  /** Working directory for local servers; relative paths resolve from the workspace. */
+  cwd?: string | null
   oauthClientId?: string | null
   oauthScope?: string | null
   oauthRedirectUri?: string | null
@@ -714,6 +718,8 @@ export interface McpServerInput {
   headers?: Record<string, string>
   env?: Record<string, string>
   enabled?: boolean
+  timeout?: number | null
+  cwd?: string | null
   oauthClientId?: string | null
   oauthScope?: string | null
   oauthRedirectUri?: string | null

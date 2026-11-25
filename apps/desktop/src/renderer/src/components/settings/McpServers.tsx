@@ -62,6 +62,8 @@ function McpServers(): React.JSX.Element {
   const [headersText, setHeadersText] = useState('')
   const [envText, setEnvText] = useState('')
   const [enabled, setEnabled] = useState(true)
+  const [timeoutText, setTimeoutText] = useState('')
+  const [cwd, setCwd] = useState('')
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthScope, setOauthScope] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
@@ -109,6 +111,8 @@ function McpServers(): React.JSX.Element {
     setHeadersText('')
     setEnvText('')
     setEnabled(true)
+    setTimeoutText('')
+    setCwd('')
     setOauthClientId('')
     setOauthScope('')
     setOauthRedirectUri('')
@@ -132,6 +136,8 @@ function McpServers(): React.JSX.Element {
         .join('\n')
     )
     setEnabled(server.enabled)
+    setTimeoutText(server.timeout ? String(server.timeout) : '')
+    setCwd(server.cwd ?? '')
     setOauthClientId(server.oauthClientId ?? '')
     setOauthScope(server.oauthScope ?? '')
     setOauthRedirectUri(server.oauthRedirectUri ?? '')
@@ -147,6 +153,8 @@ function McpServers(): React.JSX.Element {
       headers: type === 'remote' ? parseKeyValue(headersText, ':') : {},
       env: type === 'local' ? parseKeyValue(envText, '=') : {},
       enabled,
+      timeout: timeoutText.trim() ? Number(timeoutText.trim()) : null,
+      cwd: type === 'local' ? cwd.trim() || null : null,
       oauthClientId: type === 'remote' ? oauthClientId.trim() || null : null,
       oauthScope: type === 'remote' ? oauthScope.trim() || null : null,
       oauthRedirectUri: type === 'remote' ? oauthRedirectUri.trim() || null : null
@@ -465,6 +473,16 @@ function McpServers(): React.JSX.Element {
                 className="w-full resize-y rounded-md border border-border bg-surface px-2 py-1.5 font-mono text-caption text-foreground outline-none placeholder:text-subtle"
               />
             </label>
+            <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-caption text-muted">
+              {t('settings.mcpCwd')}
+              <input
+                aria-label={t('settings.mcpCwd')}
+                value={cwd}
+                onChange={(event) => setCwd(event.target.value)}
+                placeholder={t('settings.mcpCwdPlaceholder')}
+                className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-label text-foreground outline-none placeholder:text-subtle"
+              />
+            </label>
           </>
         ) : (
           <>
@@ -521,6 +539,21 @@ function McpServers(): React.JSX.Element {
             </label>
           </>
         )}
+
+        <label className="flex min-w-[160px] flex-col gap-1 text-caption text-muted">
+          {t('settings.mcpTimeout')}
+          <input
+            type="number"
+            aria-label={t('settings.mcpTimeout')}
+            value={timeoutText}
+            onChange={(event) => setTimeoutText(event.target.value)}
+            min={100}
+            max={600000}
+            step={100}
+            placeholder={t('settings.mcpTimeoutPlaceholder')}
+            className="h-8 rounded-md border border-border bg-surface px-2 font-mono text-label text-foreground outline-none placeholder:text-subtle"
+          />
+        </label>
 
         <label className="flex h-8 items-center gap-1.5 text-caption text-muted">
           <input

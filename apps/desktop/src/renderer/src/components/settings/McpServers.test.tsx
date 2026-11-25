@@ -96,12 +96,33 @@ describe('McpServers', () => {
         headers: {},
         env: {},
         enabled: true,
+        timeout: null,
+        cwd: null,
         oauthClientId: null,
         oauthScope: null,
         oauthRedirectUri: null
       })
     )
     expect(mock.api.agent.mcp.list).toHaveBeenCalledTimes(2)
+  })
+
+  it('submits timeout and working directory for local servers', async () => {
+    const user = userEvent.setup()
+    vi.mocked(mock.api.agent.mcp.list).mockResolvedValue({ servers: [], statuses: [] })
+    vi.mocked(mock.api.agent.mcp.add).mockResolvedValue({ ...SERVER, id: 'new-server' })
+
+    render(<McpServers />)
+    await user.type(await screen.findByLabelText('Name'), 'demo')
+    await user.type(screen.getByLabelText('Command'), 'node')
+    await user.type(screen.getByLabelText('Timeout (ms)'), '5000')
+    await user.type(screen.getByLabelText('Working directory'), 'servers')
+    await user.click(screen.getByRole('button', { name: 'Add server' }))
+
+    await waitFor(() =>
+      expect(mock.api.agent.mcp.add).toHaveBeenCalledWith(
+        expect.objectContaining({ timeout: 5000, cwd: 'servers' })
+      )
+    )
   })
 
   it('adds a remote server with headers', async () => {

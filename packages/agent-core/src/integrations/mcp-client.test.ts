@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   McpClient,
   createHttpTransport,
+  createSseTransport,
   createStdioTransport,
   parseJsonLines,
   type McpJsonRpcMessage,
@@ -253,6 +254,27 @@ describe('McpClient', () => {
       result: { contents: [{ uri: 'file:///a.txt', text: 'hello' }] }
     })
     await expect(contents).resolves.toEqual([{ uri: 'file:///a.txt', text: 'hello' }])
+
+    const templates = client.listResourceTemplates()
+    await vi.waitFor(() => expect(transport.requests()).toHaveLength(4))
+    expect(transport.requests()[3].method).toBe('resources/templates/list')
+    transport.emit({
+      jsonrpc: '2.0',
+      id: transport.requests()[3].id,
+      result: {
+        resourceTemplates: [
+          { uriTemplate: 'file:///{path}', name: 'Files', description: 'Any file' }
+        ]
+      }
+    })
+    await expect(templates).resolves.toEqual([
+      {
+        uriTemplate: 'file:///{path}',
+        name: 'Files',
+        description: 'Any file',
+        mimeType: undefined
+      }
+    ])
   })
 })
 
@@ -502,6 +524,103 @@ describe('createHttpTransport', () => {
         error: { code: -32000, message: expect.stringContaining('ECONNREFUSED') }
       }
     ])
+  })
+})
+
+describe('createSseTransport', () => {
+  function controlledStream(): {
+    body: ReadableStream<Uint8Array>
+    push: (text: string) => void
+    close: () => void
+  } {
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null
+    const body = new ReadableStream<Uint8Array>({
+      start(next) {
+        controller = next
+      }
+    })
+    return {
+      body,
+      push: (text) => controller?.enqueue(new TextEncoder().encode(text)),
+      close: () => controller?.close()
+    }
+  }
+
+  it('announces an endpoint, posts JSON-RPC and streams messages', async () => {
+    const stream = controlledStream()
+    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
+      if (init?.method === 'GET') {
+        stream.push('event: endpoint\ndata: /messages?sessionId=abc\n\n')
+        return new Response(stream.body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+      }
+      const body = JSON.parse(String(init?.body)) as McpJsonRpcMessage
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { ok: true } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      })
+    })
+    const transport = createSseTransport({
+      url: 'https://example.com/sse',
+      headers: { Authorization: 'Bearer token' },
+      fetch: fetchMock
+    })
+    const received: McpJsonRpcMessage[] = []
+    const closed: Error[] = []
+    transport.onMessage((message) => received.push(message))
+    transport.onClose((error) => closed.push(error))
+
+    await transport.start()
+    await transport.send({ jsonrpc: '2.0', id: 1, method: 'ping' })
+
+    expect(fetchMock.mock.calls[0][1]?.method).toBe('GET')
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      Accept: 'text/event-stream',
+      Authorization: 'Bearer token'
+    })
+    expect(fetchMock.mock.calls[1][0]).toBe('https://example.com/messages?sessionId=abc')
+    expect(fetchMock.mock.calls[1][1]?.method).toBe('POST')
+    expect(fetchMock.mock.calls[1][1]?.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer token'
+    })
+    expect(received).toEqual([{ jsonrpc: '2.0', id: 1, result: { ok: true } }])
+
+    stream.push('event: message\ndata: {"jsonrpc":"2.0","id":9,"result":{"n":1}}\n\n')
+    await vi.waitFor(() =>
+      expect(received).toContainEqual({ jsonrpc: '2.0', id: 9, result: { n: 1 } })
+    )
+    stream.close()
+    await vi.waitFor(() => expect(closed).toHaveLength(1))
+    expect(closed[0].message).toContain('closed')
+  })
+
+  it('rejects when the server never announces an endpoint', async () => {
+    const stream = controlledStream()
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(stream.body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' }
+        })
+    )
+    const transport = createSseTransport({
+      url: 'https://example.com/sse',
+      fetch: fetchMock,
+      endpointTimeoutMs: 20
+    })
+
+    await expect(transport.start()).rejects.toThrow('endpoint was not announced')
+    stream.close()
+  })
+
+  it('rejects when the event stream cannot be opened', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response('nope', { status: 500 }))
+    const transport = createSseTransport({ url: 'https://example.com/sse', fetch: fetchMock })
+
+    await expect(transport.start()).rejects.toThrow('HTTP 500')
   })
 })
 

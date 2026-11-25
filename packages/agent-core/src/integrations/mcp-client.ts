@@ -50,6 +50,13 @@ export interface McpResourceDefinition {
   mimeType?: string
 }
 
+export interface McpResourceTemplateDefinition {
+  uriTemplate: string
+  name?: string
+  description?: string
+  mimeType?: string
+}
+
 export interface McpResourceContent {
   uri: string
   mimeType?: string
@@ -62,6 +69,7 @@ export interface McpClientLike {
   listTools(): Promise<McpToolDefinition[]>
   listPrompts(): Promise<McpPromptDefinition[]>
   listResources(): Promise<McpResourceDefinition[]>
+  listResourceTemplates?(): Promise<McpResourceTemplateDefinition[]>
   callTool(name: string, args: Record<string, unknown>): Promise<McpToolCallResult>
   getPrompt(name: string, args?: Record<string, string>): Promise<string>
   readResource(uri: string): Promise<McpResourceContent[]>
@@ -309,9 +317,235 @@ export function createHttpTransport(options: {
   }
 }
 
+/**
+ * Legacy HTTP+SSE transport (protocol revisions before Streamable HTTP): a GET request opens
+ * an event stream whose first `endpoint` event announces where JSON-RPC messages are POSTed.
+ */
+export function createSseTransport(options: {
+  url: string
+  headers?: Record<string, string>
+  fetch?: typeof fetch
+  maxSseBytes?: number
+  endpointTimeoutMs?: number
+  maxRequestMs?: number
+}): McpTransport {
+  const fetchImpl = options.fetch ?? fetch
+  const maxSseBytes = options.maxSseBytes ?? 10 * 1024 * 1024
+  const endpointTimeoutMs = options.endpointTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  const maxRequestMs = options.maxRequestMs ?? 10 * 60_000
+  let endpoint: string | null = null
+  let started = false
+  let closed = false
+  let streamController: AbortController | null = null
+  const controllers = new Set<AbortController>()
+  const messageHandlers: Array<(message: McpJsonRpcMessage) => void> = []
+  const closeHandlers: Array<(error: Error) => void> = []
+
+  const emit = (message: McpJsonRpcMessage): void => {
+    for (const handler of messageHandlers) handler(message)
+  }
+
+  const emitError = (id: number | string, message: string): void => {
+    emit({ jsonrpc: '2.0', id, error: { code: -32000, message } })
+  }
+
+  const emitClose = (error: Error): void => {
+    if (closed) return
+    closed = true
+    for (const handler of closeHandlers) handler(error)
+  }
+
+  const emitPayload = (data: string): void => {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (Array.isArray(parsed)) {
+      for (const entry of parsed) emit(entry as McpJsonRpcMessage)
+    } else {
+      emit(parsed as McpJsonRpcMessage)
+    }
+  }
+
+  const resolveEndpoint = (value: string): string => {
+    try {
+      return new URL(value, options.url).toString()
+    } catch {
+      return value
+    }
+  }
+
+  return {
+    async start(): Promise<void> {
+      if (started) return
+      started = true
+      const controller = new AbortController()
+      streamController = controller
+      const headers: Record<string, string> = {
+        Accept: 'text/event-stream',
+        ...(options.headers ?? {})
+      }
+      let response: Response
+      try {
+        response = await fetchImpl(options.url, {
+          method: 'GET',
+          headers,
+          signal: controller.signal
+        })
+      } catch (error) {
+        throw error instanceof Error ? error : new Error(String(error))
+      }
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        throw new Error(
+          `HTTP ${response.status}${text.trim() ? `: ${text.trim().slice(0, 500)}` : ''}`
+        )
+      }
+      if (!response.body) throw new Error('MCP SSE response has no body')
+
+      await new Promise<void>((resolve, reject) => {
+        let settled = false
+        const finish = (error?: Error): void => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          if (error) reject(error)
+          else resolve()
+        }
+        const timer = setTimeout(() => {
+          controller.abort()
+          finish(new Error(`MCP SSE endpoint was not announced within ${endpointTimeoutMs}ms`))
+        }, endpointTimeoutMs)
+
+        void consumeSseEvents(
+          response.body as ReadableStream<Uint8Array>,
+          (event, data) => {
+            if (event === 'endpoint') {
+              if (!endpoint) {
+                endpoint = resolveEndpoint(data)
+                finish()
+              }
+              return
+            }
+            if (event && event !== 'message') return
+            emitPayload(data)
+          },
+          maxSseBytes
+        )
+          .then(() => {
+            finish(new Error('MCP SSE stream closed before an endpoint was announced'))
+            emitClose(new Error('MCP SSE stream closed'))
+          })
+          .catch((error: unknown) => {
+            const failure = error instanceof Error ? error : new Error(String(error))
+            finish(failure)
+            emitClose(failure)
+          })
+      })
+    },
+
+    async send(message: McpJsonRpcMessage): Promise<void> {
+      if (closed) throw new Error('MCP transport is closed')
+      const target = endpoint
+      if (!target) throw new Error('MCP SSE endpoint is not available')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...(options.headers ?? {})
+      }
+      const controller = new AbortController()
+      controllers.add(controller)
+      let timedOut = false
+      const timer = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, maxRequestMs)
+      const failure = (error: unknown): string =>
+        timedOut
+          ? `MCP request timed out after ${maxRequestMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error)
+
+      try {
+        let response: Response
+        try {
+          response = await fetchImpl(target, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(message),
+            signal: controller.signal
+          })
+        } catch (error) {
+          if (message.id !== undefined) emitError(message.id, failure(error))
+          return
+        }
+        if (!response.ok) {
+          const text = await response.text().catch(() => '')
+          if (message.id !== undefined) {
+            emitError(
+              message.id,
+              `HTTP ${response.status}${text.trim() ? `: ${text.trim().slice(0, 500)}` : ''}`
+            )
+          }
+          return
+        }
+        const contentType = response.headers.get('content-type') ?? ''
+        if (contentType.includes('application/json')) {
+          const text = await response.text().catch(() => '')
+          if (text.trim()) emitPayload(text)
+          return
+        }
+        await response.text().catch(() => undefined)
+      } finally {
+        clearTimeout(timer)
+        controllers.delete(controller)
+      }
+    },
+
+    onMessage(handler: (message: McpJsonRpcMessage) => void): void {
+      messageHandlers.push(handler)
+    },
+
+    onClose(handler: (error: Error) => void): void {
+      closeHandlers.push(handler)
+    },
+
+    async close(): Promise<void> {
+      if (closed) return
+      closed = true
+      streamController?.abort()
+      streamController = null
+      for (const controller of controllers) controller.abort()
+      controllers.clear()
+    }
+  }
+}
+
 async function consumeSse(
   body: ReadableStream<Uint8Array>,
   emit: (message: McpJsonRpcMessage) => void,
+  maxBytes: number
+): Promise<void> {
+  await consumeSseEvents(
+    body,
+    (event, data) => {
+      if (event && event !== 'message') return
+      try {
+        emit(JSON.parse(data) as McpJsonRpcMessage)
+      } catch {
+        /* ignore malformed events */
+      }
+    },
+    maxBytes
+  )
+}
+
+async function consumeSseEvents(
+  body: ReadableStream<Uint8Array>,
+  emit: (event: string, data: string) => void,
   maxBytes: number
 ): Promise<void> {
   const reader = body.getReader()
@@ -324,17 +558,15 @@ async function consumeSse(
       if (boundary === -1) return
       const rawEvent = buffer.slice(0, boundary)
       buffer = buffer.slice(boundary + 2)
-      const data = rawEvent
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trimStart())
-        .join('\n')
-      if (!data) continue
-      try {
-        emit(JSON.parse(data) as McpJsonRpcMessage)
-      } catch {
-        /* ignore malformed events */
+      let event = ''
+      const dataLines: string[] = []
+      for (const line of rawEvent.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
       }
+      const data = dataLines.join('\n')
+      if (!data) continue
+      emit(event, data)
     }
   }
 
@@ -487,6 +719,34 @@ export class McpClient implements McpClientLike {
       if (!cursor) break
     }
     return resources
+  }
+
+  async listResourceTemplates(): Promise<McpResourceTemplateDefinition[]> {
+    const templates: McpResourceTemplateDefinition[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 100; page += 1) {
+      const result = (await this.request('resources/templates/list', cursor ? { cursor } : {})) as {
+        resourceTemplates?: Array<{
+          uriTemplate?: unknown
+          name?: unknown
+          description?: unknown
+          mimeType?: unknown
+        }>
+        nextCursor?: unknown
+      }
+      for (const template of result?.resourceTemplates ?? []) {
+        if (!template || typeof template.uriTemplate !== 'string') continue
+        templates.push({
+          uriTemplate: template.uriTemplate,
+          name: typeof template.name === 'string' ? template.name : undefined,
+          description: typeof template.description === 'string' ? template.description : undefined,
+          mimeType: typeof template.mimeType === 'string' ? template.mimeType : undefined
+        })
+      }
+      cursor = typeof result?.nextCursor === 'string' ? result.nextCursor : undefined
+      if (!cursor) break
+    }
+    return templates
   }
 
   async readResource(uri: string): Promise<McpResourceContent[]> {

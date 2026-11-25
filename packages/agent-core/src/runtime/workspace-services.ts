@@ -372,12 +372,18 @@ export class WorkspaceServices {
         ? resources.filter((resource) => resource.server.toLowerCase() === server.toLowerCase())
         : resources
       if (filtered.length === 0) return 'No MCP resources available.'
+      const hasTemplates = filtered.some((resource) => resource.template)
       return [
         'MCP resources:',
         ...filtered.map((resource) => {
-          const details = [resource.name, resource.mimeType].filter(Boolean).join(', ')
+          const details = [resource.template ? 'template' : '', resource.name, resource.mimeType]
+            .filter(Boolean)
+            .join(', ')
           return `- ${resource.server}: ${resource.uri}${details ? ` (${details})` : ''}`
-        })
+        }),
+        ...(hasTemplates
+          ? ['Templates use {placeholders}; expand them to a concrete URI before reading.']
+          : [])
       ].join('\n')
     } catch (error) {
       return `Error: ${errorMessage(error)}`

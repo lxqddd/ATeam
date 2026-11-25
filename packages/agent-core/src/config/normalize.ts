@@ -333,6 +333,41 @@ function normalizeMcpServers(
     }
     const headers = stringRecord(entry.headers)
     const env = stringRecord(entry.env)
+    const timeout =
+      typeof entry.timeout === 'number' &&
+      Number.isInteger(entry.timeout) &&
+      entry.timeout >= 100 &&
+      entry.timeout <= 600_000
+        ? entry.timeout
+        : undefined
+    if (entry.timeout !== undefined && timeout === undefined) {
+      diagnostic(
+        diagnostics,
+        source,
+        `${path}[${index}].timeout`,
+        'MCP timeout must be an integer between 100 and 600000 milliseconds'
+      )
+    }
+    if (type === 'remote' && entry.cwd !== undefined) {
+      diagnostic(
+        diagnostics,
+        source,
+        `${path}[${index}].cwd`,
+        'MCP working directory is only supported for local servers'
+      )
+    }
+    const cwdCandidate =
+      type === 'local' && typeof entry.cwd === 'string' ? entry.cwd.trim() : undefined
+    const validCwd =
+      cwdCandidate !== undefined &&
+      cwdCandidate.length > 0 &&
+      cwdCandidate.length <= 2_000 &&
+      !cwdCandidate.includes('\u0000') &&
+      !cwdCandidate.includes('\r') &&
+      !cwdCandidate.includes('\n')
+    if (cwdCandidate !== undefined && !validCwd) {
+      diagnostic(diagnostics, source, `${path}[${index}].cwd`, 'MCP working directory is invalid')
+    }
     servers.push({
       name: entry.name.trim(),
       type,
@@ -342,6 +377,8 @@ function normalizeMcpServers(
       ...(Object.keys(headers).length > 0 ? { headers } : {}),
       ...(Object.keys(env).length > 0 ? { env } : {}),
       ...(typeof entry.enabled === 'boolean' ? { enabled: entry.enabled } : {}),
+      ...(timeout !== undefined ? { timeout } : {}),
+      ...(validCwd && cwdCandidate !== undefined ? { cwd: cwdCandidate } : {}),
       ...(typeof entry.oauthClientId === 'string' ? { oauthClientId: entry.oauthClientId } : {}),
       ...(typeof entry.oauthScope === 'string' ? { oauthScope: entry.oauthScope } : {}),
       ...(typeof entry.oauthRedirectUri === 'string'

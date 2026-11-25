@@ -33,7 +33,8 @@ export function createMcpPromptTool(context: ToolContext): Tool {
 
 export function createMcpResourceTool(context: ToolContext): Tool {
   return tool({
-    description: 'List MCP resources, or read one resource by server and URI. Omit uri to list.',
+    description:
+      'List MCP resources and resource templates, or read one resource by server and URI. Omit uri to list.',
     inputSchema: z.object({
       server: z.string().optional().describe('MCP server name'),
       uri: z.string().optional().describe('Resource URI to read')

@@ -65,6 +65,45 @@ describe('McpStore', () => {
     })
   })
 
+  it('stores per-server timeout and working directory', async () => {
+    const local = await store.add({
+      name: 'local',
+      type: 'local',
+      command: 'node',
+      timeout: 5_000,
+      cwd: ' packages/app '
+    })
+    expect(local).toMatchObject({ timeout: 5_000, cwd: 'packages/app' })
+
+    const remote = await store.add({
+      name: 'remote',
+      type: 'remote',
+      url: 'https://example.com/mcp',
+      timeout: 2_000,
+      cwd: '/ignored'
+    })
+    expect(remote).toMatchObject({ timeout: 2_000, cwd: null })
+
+    const cleared = await store.update(local.id, { timeout: null, cwd: null })
+    expect(cleared).toMatchObject({ timeout: null, cwd: null })
+
+    const reloaded = new McpStore(directory)
+    await reloaded.init()
+    expect(reloaded.list().find((server) => server.name === 'local')).toMatchObject({
+      timeout: null,
+      cwd: null
+    })
+  })
+
+  it('rejects invalid timeouts and working directories', async () => {
+    await expect(
+      store.add({ name: 'fast', type: 'local', command: 'node', timeout: 10 })
+    ).rejects.toThrow('between 100 and 600000')
+    await expect(
+      store.add({ name: 'bad-cwd', type: 'local', command: 'node', cwd: 'a\nb' })
+    ).rejects.toThrow('invalid characters')
+  })
+
   it('requires a command for local servers', async () => {
     await expect(store.add({ name: 'local', type: 'local' })).rejects.toThrow(
       'Local MCP servers require a command'

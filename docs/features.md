@@ -118,7 +118,7 @@
 | `skill`              | 按名称加载 Skill 全文与附带资源清单                                | `skill`     |
 | `subagent`           | 委派子任务到子代理（可后台运行）                                   | `subagent`  |
 | `mcp_prompt`         | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`       |
-| `mcp_resource`       | 列出 / 读取 MCP resources                                          | `mcp`       |
+| `mcp_resource`       | 列出 / 读取 MCP resources 与 resource templates                    | `mcp`       |
 | `lsp_hover`          | 查询符号的类型与文档                                               | `lsp`       |
 | `lsp_definition`     | 查询符号定义位置                                                   | `lsp`       |
 | `lsp_references`     | 查询符号的全部引用（含声明）                                       | `lsp`       |
@@ -180,12 +180,13 @@
 
 ## 9. MCP（Model Context Protocol）
 
-- 配置存储与设置页：新增 / 编辑 / 启停 / 删除 / 状态探测；本地服务器记录命令、参数、环境变量，远程服务器记录 URL 与自定义 headers。
-- 传输：本地 stdio（按行 JSON-RPC）与远程 Streamable HTTP（JSON / SSE、`Mcp-Session-Id` 复用、错误转 JSON-RPC 错误）。
-- 连接后读取 tools / prompts / resources；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
+- 配置存储与设置页：新增 / 编辑 / 启停 / 删除 / 状态探测；本地服务器记录命令、参数、环境变量与可选工作目录（相对 workspace），远程服务器记录 URL 与自定义 headers；两类服务器都可设置请求超时（100–600000ms，留空用默认 30s）。
+- 传输：本地 stdio（按行 JSON-RPC）；远程优先 Streamable HTTP（JSON / SSE、`Mcp-Session-Id` 复用），连接失败时自动回退到旧版 HTTP+SSE（`endpoint` 事件 + POST）并记住成功的传输方式，后续连接先走该方式；鉴权失败不触发回退，仍走 token 刷新流程。
+- 连接后读取 tools / prompts / resources / resource templates；工具注册为 `mcp_<server>_<tool>`，执行前走 `mcp` 权限动作（资源为 `server/tool`）。
 - 工具列表变更自动刷新；单个服务器失败不影响其他服务器，下次运行或状态探测时重连。
 - OAuth：远程服务器支持授权发现（`WWW-Authenticate` / well-known）、动态客户端注册、PKCE S256、本地浏览器回调与 token 自动刷新；token 以明文保存在 `agent/mcp-auth.json`（文件权限 0600），设置页可授权 / 重新授权 / 退出登录，并可为需要预注册的服务器填写 OAuth Client ID、Scope 与回调地址。
-- prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），在会话工作目录对应的 MCP 连接上展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources（资源为 `server/prompts/<name>`、`server/resources/<uri>`）。
+- prompts 会作为斜杠命令出现在输入框菜单（命令发现最多等待 3 秒），在会话工作目录对应的 MCP 连接上展开并返回渲染后的提示词；展开失败会在输入框显示错误而不是发送原始模板；`mcp_prompt` / `mcp_resource` 工具供 Agent 列出与读取 prompts / resources / resource templates（资源为 `server/prompts/<name>`、`server/resources/<uri>`；模板以 `(template)` 标记，展开 `{placeholder}` 后按具体 URI 读取）。
+- server instructions 会按当前 agent 的可用工具与 `mcp` 权限过滤后注入 system prompt（plan 模式不注入）。
 - 状态为“需要授权”时，设置页提供 OAuth 授权入口；token 过期会在下次连接时自动刷新并持久化。
 
 ## 10. LSP 诊断与自动格式化

@@ -392,19 +392,21 @@
 
 **验收**：多语言项目能自动使用合适 LSP，Agent 可查询引用、实现与符号。
 
-#### R-P1-7 MCP 细节
+#### R-P1-7 MCP 细节（已完成，2026-11-25）
 
-**现状**：已实现 stdio / Streamable HTTP、OAuth、prompts/resources 与工具刷新（[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)）；缺少 server instructions 注入、resource templates、SSE transport fallback、per-server timeout/cwd 配置。
+**现状**：stdio、Streamable HTTP 与旧版 HTTP+SSE 回退、OAuth（含 per-server client id / scope / redirect）、server instructions 注入、prompts / resources / resource templates、per-server timeout 与 cwd 均已实现（[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)、[mcp-client.ts](../packages/agent-core/src/integrations/mcp-client.ts)、[mcp-store.ts](../packages/agent-core/src/integrations/mcp-store.ts)）。
 
 **OpenCode 参考**：`mcp/index.ts` 注入 server instructions，支持 resources / resourceTemplates、StreamableHTTP 与 SSE 两种远程传输回退、per-server timeout/cwd/OAuth 配置，以及按 agent 权限过滤工具。
 
 **待办**：
 
-- [ ] 将 server instructions 注入 system prompt，并按 agent 工具权限过滤
-- [ ] 支持 resource templates 的列出与读取
-- [ ] 远程连接失败时回退到 SSE transport
-- [ ] 增加 per-server timeout、cwd、OAuth client 配置
-- [ ] 测试 instructions、templates、传输回退与超时
+- [x] 将 server instructions 注入 system prompt，并按 agent 工具权限过滤（`filterMcpInstructions`：plan 模式、工具可用性与 `mcp` deny 规则）
+- [x] 支持 resource templates 的列出与读取（`resources/templates/list` 分页列出，`(template)` 标记并提示展开占位符后读取具体 URI）
+- [x] 远程连接失败时回退到 SSE transport（HTTP 失败后尝试旧版 SSE；成功后记住优先传输方式；鉴权失败先刷新 token，不回退）
+- [x] 增加 per-server timeout、cwd、OAuth client 配置（timeout 100–600000ms，cwd 仅本地并相对 workspace 解析；OAuth 字段此前已完成）
+- [x] 测试 instructions、templates、传输回退与超时（`mcp.test.ts`、`mcp-client.test.ts`、`mcp-store.test.ts`、`project-config.test.ts`、`workspace-services.test.ts`）
+
+**边界**：默认请求超时仍为 30s；SSE 回退覆盖所有非鉴权连接失败，HTTP 与 SSE 都会尝试后仍失败才标记 `failed`；resource templates 没有独立的读取方法，按 MCP 规范展开为具体 URI 后调用 `resources/read`；设置页与项目 `mcp` 配置都支持 timeout / cwd。
 
 **验收**：MCP server 的使用说明能被 Agent 看到，旧 SSE server 也能连接。
 
@@ -469,7 +471,7 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P1-1 Steering、R-P1-2 max steps 已完成，继续补齐日常编码体验。
+1. **R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P1-1 Steering、R-P1-2 max steps、R-P1-6 LSP、R-P1-7 MCP 已完成，继续补齐日常编码体验。
 2. **R-P1-3 会话级回滚 / unrevert / diff**（中等偏大）——依赖快照与消息存储，可在编码体验项之后做。
 3. **第二轮 P1 剩余项**（按使用频率取舍）。
 4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。

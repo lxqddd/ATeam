@@ -15,6 +15,9 @@ const MAX_ARG_LENGTH = 2_000
 const MAX_MAP_ENTRIES = 100
 const MAX_HEADER_VALUE = 4_000
 const MAX_ENV_VALUE = 8_000
+const MAX_TIMEOUT_MS = 600_000
+const MIN_TIMEOUT_MS = 100
+const MAX_CWD_LENGTH = 2_000
 
 function mcpFile(userDataPath: string): string {
   return path.join(userDataPath, 'agent', 'mcp.json')
@@ -117,6 +120,34 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function normalizeTimeout(
+  value: number | null | undefined,
+  existing?: number | null
+): number | null {
+  const raw = value === undefined ? existing : value
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) {
+    throw new Error('MCP timeout must be an integer number of milliseconds')
+  }
+  if (raw < MIN_TIMEOUT_MS || raw > MAX_TIMEOUT_MS) {
+    throw new Error(`MCP timeout must be between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}ms`)
+  }
+  return raw
+}
+
+function normalizeCwd(value: string | null | undefined, existing?: string | null): string | null {
+  const raw = value === undefined ? existing : value
+  if (raw === undefined || raw === null) return null
+  if (typeof raw !== 'string') throw new Error('MCP working directory must be a string')
+  const text = raw.trim()
+  if (!text) return null
+  if (text.length > MAX_CWD_LENGTH) throw new Error('MCP working directory is too long')
+  if (text.includes('\u0000') || text.includes('\r') || text.includes('\n')) {
+    throw new Error('MCP working directory contains invalid characters')
+  }
+  return text
+}
+
 type NormalizedServer = Omit<McpServerConfig, 'id' | 'createdAt' | 'updatedAt'>
 
 function normalizeInput(
@@ -158,6 +189,8 @@ function normalizeInput(
         MAX_ENV_VALUE
       ),
       enabled,
+      timeout: normalizeTimeout(input.timeout, existing?.timeout),
+      cwd: normalizeCwd(input.cwd, existing?.cwd),
       oauthClientId: null,
       oauthScope: null,
       oauthRedirectUri: null
@@ -180,6 +213,8 @@ function normalizeInput(
     ),
     env: {},
     enabled,
+    timeout: normalizeTimeout(input.timeout, existing?.timeout),
+    cwd: null,
     oauthClientId: normalizeOAuthField(input.oauthClientId, existing?.oauthClientId, 300),
     oauthScope: normalizeOAuthField(input.oauthScope, existing?.oauthScope, 500),
     oauthRedirectUri: normalizeOAuthRedirect(input.oauthRedirectUri, existing?.oauthRedirectUri)
@@ -264,7 +299,9 @@ export class McpStore {
         url: input.url !== undefined ? input.url : existing.url,
         headers: input.headers ?? existing.headers,
         env: input.env ?? existing.env,
-        enabled: input.enabled ?? existing.enabled
+        enabled: input.enabled ?? existing.enabled,
+        timeout: input.timeout === undefined ? existing.timeout : input.timeout,
+        cwd: input.cwd === undefined ? existing.cwd : input.cwd
       },
       existing
     )

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import path from 'node:path'
 import { jsonSchema, tool, type JSONSchema7, type ToolSet } from 'ai'
 import type {
   McpAuthRecord,
@@ -10,6 +11,7 @@ import type {
 import {
   McpClient,
   createHttpTransport,
+  createSseTransport,
   createStdioTransport,
   type McpClientLike,
   type McpToolDefinition
@@ -66,13 +68,23 @@ export interface McpResourceSummary {
   server: string
   uri: string
   name?: string
+  description?: string
   mimeType?: string
+  /** True when the entry came from `resources/templates/list`; uri is then a URI template. */
+  template?: boolean
 }
+
+/** Which remote transport a client was built for; SSE is the legacy HTTP+SSE fallback. */
+export type McpRemoteTransport = 'http' | 'sse'
 
 interface McpManagerOptions {
   userDataPath: string
   workspace: string
-  createClient?: (config: McpServerConfig, headers: Record<string, string>) => McpClientLike
+  createClient?: (
+    config: McpServerConfig,
+    headers: Record<string, string>,
+    transport?: McpRemoteTransport
+  ) => McpClientLike
   auth?: McpAuthRecord[]
   onAuthUpdated?: (auth: McpAuthRecord) => void
   fetch?: typeof fetch
@@ -99,6 +111,8 @@ function projectConfigs(inputs: McpServerInput[]): McpServerConfig[] {
     headers: server.headers ?? {},
     env: server.env ?? {},
     enabled: server.enabled !== false,
+    timeout: server.timeout ?? null,
+    cwd: server.cwd ?? null,
     ...(server.oauthClientId ? { oauthClientId: server.oauthClientId } : {}),
     ...(server.oauthScope ? { oauthScope: server.oauthScope } : {}),
     ...(server.oauthRedirectUri ? { oauthRedirectUri: server.oauthRedirectUri } : {}),
@@ -163,6 +177,7 @@ export class McpManager implements McpManagerLike {
   private readonly generations = new Map<string, number>()
   private readonly statusesById = new Map<string, McpServerStatus>()
   private authByServer = new Map<string, McpAuthRecord>()
+  private readonly preferSse = new Set<string>()
   private project: McpServerConfig[] = []
   private transient: McpServerConfig[] = []
   private transientEpoch = 0
@@ -191,6 +206,7 @@ export class McpManager implements McpManagerLike {
     this.transientEpoch += 1
     for (const config of this.transient) {
       this.invalidate(config.id)
+      this.preferSse.delete(config.id)
       const entry = this.connections.get(config.id)
       this.connections.delete(config.id)
       this.statusesById.delete(config.id)
@@ -207,6 +223,8 @@ export class McpManager implements McpManagerLike {
       headers: input.headers ?? {},
       env: input.env ?? {},
       enabled: true,
+      timeout: input.timeout ?? null,
+      cwd: input.cwd ?? null,
       createdAt: now,
       updatedAt: now
     }))
@@ -228,11 +246,13 @@ export class McpManager implements McpManagerLike {
     for (const server of next) {
       const old = previous.get(server.id)
       if (old && JSON.stringify(old) === JSON.stringify(server)) continue
+      this.preferSse.delete(server.id)
       await this.closeConnection(server.id)
       this.statusesById.delete(server.id)
     }
     for (const id of previous.keys()) {
       if (next.some((server) => server.id === id)) continue
+      this.preferSse.delete(id)
       await this.closeConnection(id)
       this.statusesById.delete(id)
     }
@@ -364,7 +384,21 @@ export class McpManager implements McpManagerLike {
           server: config.name,
           uri: resource.uri,
           name: resource.name,
+          description: resource.description,
           mimeType: resource.mimeType
+        })
+      }
+      const templates = entry.client.listResourceTemplates
+        ? await entry.client.listResourceTemplates().catch(() => [])
+        : []
+      for (const template of templates) {
+        summaries.push({
+          server: config.name,
+          uri: template.uriTemplate,
+          name: template.name,
+          description: template.description,
+          mimeType: template.mimeType,
+          template: true
         })
       }
     }
@@ -407,6 +441,7 @@ export class McpManager implements McpManagerLike {
       throw new Error('MCP_SERVER_MANAGED_BY_CONFIG')
     }
     const updated = await this.store.update(id, input)
+    this.preferSse.delete(id)
     await this.closeConnection(id)
     this.statusesById.delete(id)
     return updated
@@ -418,6 +453,7 @@ export class McpManager implements McpManagerLike {
       throw new Error('MCP_SERVER_MANAGED_BY_CONFIG')
     }
     await this.closeConnection(id)
+    this.preferSse.delete(id)
     this.statusesById.delete(id)
     return this.store.remove(id)
   }
@@ -489,42 +525,69 @@ export class McpManager implements McpManagerLike {
     await this.refreshAuthIfNeeded(config.id)
     if (!this.current(config.id, generation)) return null
     this.setStatus(config, { state: 'connecting', error: null })
-    const client = this.createClient(config)
-    try {
-      return await stale(await this.establish(config, client, generation))
-    } catch (error) {
-      await client.close().catch(() => undefined)
-      if (!this.current(config.id, generation)) return null
-      const authFailure = config.type === 'remote' && isAuthFailure(error)
-      if (authFailure && (await this.refreshAuth(config.id))) {
+
+    let lastError: unknown = new Error('MCP server is unavailable')
+    for (const transport of this.remoteTransports(config)) {
+      let client = this.createClient(config, transport)
+      try {
+        const entry = await this.establish(config, client, generation)
+        if (entry === null) return null
+        const active = await stale(entry)
+        if (active === null) return null
+        this.rememberTransport(config, transport)
+        return active
+      } catch (error) {
+        await client.close().catch(() => undefined)
         if (!this.current(config.id, generation)) return null
-        const retry = this.createClient(config)
+        lastError = error
+        if (config.type !== 'remote' || !isAuthFailure(error)) continue
+        // Auth failures are transport-independent: refresh once, retry the same transport.
+        if (!(await this.refreshAuth(config.id))) {
+          this.fail(config, 'auth-required', error)
+          return null
+        }
+        if (!this.current(config.id, generation)) return null
+        client = this.createClient(config, transport)
         try {
-          return await stale(await this.establish(config, retry, generation))
+          const entry = await this.establish(config, client, generation)
+          if (entry === null) return null
+          const active = await stale(entry)
+          if (active === null) return null
+          this.rememberTransport(config, transport)
+          return active
         } catch (retryError) {
-          await retry.close().catch(() => undefined)
+          await client.close().catch(() => undefined)
           if (this.current(config.id, generation)) {
-            this.setStatus(config, {
-              state: isAuthFailure(retryError) ? 'auth-required' : 'failed',
-              toolCount: 0,
-              promptCount: 0,
-              resourceCount: 0,
-              error: errorMessage(retryError)
-            })
+            this.fail(config, isAuthFailure(retryError) ? 'auth-required' : 'failed', retryError)
           }
           return null
         }
       }
-      if (!this.current(config.id, generation)) return null
-      this.setStatus(config, {
-        state: authFailure ? 'auth-required' : 'failed',
-        toolCount: 0,
-        promptCount: 0,
-        resourceCount: 0,
-        error: errorMessage(error)
-      })
-      return null
     }
+    if (!this.current(config.id, generation)) return null
+    this.fail(config, 'failed', lastError)
+    return null
+  }
+
+  private remoteTransports(config: McpServerConfig): McpRemoteTransport[] {
+    if (config.type !== 'remote') return ['http']
+    return this.preferSse.has(config.id) ? ['sse', 'http'] : ['http', 'sse']
+  }
+
+  private rememberTransport(config: McpServerConfig, transport: McpRemoteTransport): void {
+    if (config.type !== 'remote') return
+    if (transport === 'sse') this.preferSse.add(config.id)
+    else this.preferSse.delete(config.id)
+  }
+
+  private fail(config: McpServerConfig, state: 'failed' | 'auth-required', error: unknown): void {
+    this.setStatus(config, {
+      state,
+      toolCount: 0,
+      promptCount: 0,
+      resourceCount: 0,
+      error: errorMessage(error)
+    })
   }
 
   private async establish(
@@ -534,8 +597,11 @@ export class McpManager implements McpManagerLike {
   ): Promise<Connection | null> {
     await client.connect()
     const tools = await client.listTools()
-    const prompts = await client.listPrompts().catch(() => [])
-    const resources = await client.listResources().catch(() => [])
+    const [prompts, resources, templates] = await Promise.all([
+      client.listPrompts().catch(() => []),
+      client.listResources().catch(() => []),
+      client.listResourceTemplates ? client.listResourceTemplates().catch(() => []) : []
+    ])
     if (!this.current(config.id, generation)) {
       await client.close().catch(() => undefined)
       return null
@@ -550,7 +616,7 @@ export class McpManager implements McpManagerLike {
       state: 'connected',
       toolCount: tools.length,
       promptCount: prompts.length,
-      resourceCount: resources.length,
+      resourceCount: resources.length + templates.length,
       error: null
     })
     return entry
@@ -579,19 +645,39 @@ export class McpManager implements McpManagerLike {
     }
   }
 
-  private createClient(config: McpServerConfig): McpClientLike {
+  private createClient(
+    config: McpServerConfig,
+    remoteTransport: McpRemoteTransport = 'http'
+  ): McpClientLike {
     const headers = this.authHeaders(config)
-    if (this.options.createClient) return this.options.createClient(config, headers)
+    if (this.options.createClient)
+      return this.options.createClient(config, headers, remoteTransport)
+    const timeout = config.timeout ?? undefined
     const transport =
       config.type === 'local'
         ? createStdioTransport({
             command: config.command ?? '',
             args: config.args,
-            cwd: this.options.workspace,
+            cwd: config.cwd
+              ? path.resolve(this.options.workspace, config.cwd)
+              : this.options.workspace,
             env: config.env
           })
-        : createHttpTransport({ url: config.url ?? '', headers, fetch: this.options.fetch })
-    return new McpClient({ name: config.name, transport })
+        : remoteTransport === 'sse'
+          ? createSseTransport({
+              url: config.url ?? '',
+              headers,
+              fetch: this.options.fetch,
+              endpointTimeoutMs: timeout,
+              maxRequestMs: timeout
+            })
+          : createHttpTransport({
+              url: config.url ?? '',
+              headers,
+              fetch: this.options.fetch,
+              maxRequestMs: timeout
+            })
+    return new McpClient({ name: config.name, transport, requestTimeoutMs: timeout })
   }
 
   private authHeaders(config: McpServerConfig): Record<string, string> {
@@ -672,6 +758,7 @@ export type {
   McpPromptDefinition,
   McpResourceContent,
   McpResourceDefinition,
+  McpResourceTemplateDefinition,
   McpToolCallResult,
   McpToolDefinition
 } from './mcp-client'

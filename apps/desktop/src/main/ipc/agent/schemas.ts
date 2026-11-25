@@ -34,6 +34,8 @@ export const mcpServerInputSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   env: z.record(z.string(), z.string()).optional(),
   enabled: z.boolean().optional(),
+  timeout: z.number().int().min(100).max(600_000).nullable().optional(),
+  cwd: z.string().max(2_000).nullable().optional(),
   oauthClientId: z.string().max(300).nullable().optional(),
   oauthScope: z.string().max(500).nullable().optional(),
   oauthRedirectUri: z.string().max(2_000).nullable().optional()

@@ -3,11 +3,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EffectiveAgentConfig } from '@ateam/shared'
+import type { McpResourceSummary } from '../integrations/mcp'
 import { WorkspaceServices } from './workspace-services'
 
 let directory: string
 let workspace: string
 let services: WorkspaceServices
+let mcpResources: McpResourceSummary[]
 
 function effective(skills: string[]): EffectiveAgentConfig {
   return {
@@ -52,6 +54,7 @@ beforeEach(async () => {
   )
   workspace = path.join(directory, 'workspace')
   await fs.mkdir(workspace, { recursive: true })
+  mcpResources = []
   services = new WorkspaceServices({
     userDataPath: path.join(directory, 'user-data'),
     defaultWorkspacePath: workspace,
@@ -61,7 +64,7 @@ beforeEach(async () => {
       servers: async () => [],
       statuses: async () => [],
       prompts: async () => [],
-      resources: async () => [],
+      resources: async () => mcpResources,
       getPrompt: async () => '',
       readResource: async () => '',
       addServer: async () => {
@@ -115,5 +118,35 @@ describe('WorkspaceServices config cache', () => {
 
     await services.applyConfig(workspace, effective([second]))
     expect((await services.skillsFor(workspace)).map((skill) => skill.name)).toEqual(['two'])
+  })
+})
+
+describe('WorkspaceServices MCP resources', () => {
+  it('marks resource templates and explains placeholders', async () => {
+    mcpResources = [
+      { server: 'demo', uri: 'demo://readme', name: 'readme' },
+      {
+        server: 'demo',
+        uri: 'demo://files/{path}',
+        name: 'files',
+        mimeType: 'text/plain',
+        template: true
+      }
+    ]
+
+    await expect(services.listMcpResources()).resolves.toBe(
+      [
+        'MCP resources:',
+        '- demo: demo://readme (readme)',
+        '- demo: demo://files/{path} (template, files, text/plain)',
+        'Templates use {placeholders}; expand them to a concrete URI before reading.'
+      ].join('\n')
+    )
+  })
+
+  it('filters by server and reports an empty list', async () => {
+    mcpResources = [{ server: 'demo', uri: 'demo://readme' }]
+
+    await expect(services.listMcpResources('other')).resolves.toBe('No MCP resources available.')
   })
 })

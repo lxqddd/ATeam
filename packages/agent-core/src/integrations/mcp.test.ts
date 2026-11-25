@@ -3,10 +3,12 @@ import os from 'node:os'
 import path from 'node:path'
 import type { ToolSet } from 'ai'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { McpManager, type McpClientLike, type McpToolContext } from './mcp'
+import type { McpServerConfig } from '@ateam/shared'
+import { McpManager, type McpClientLike, type McpRemoteTransport, type McpToolContext } from './mcp'
 import type {
   McpPromptDefinition,
   McpResourceDefinition,
+  McpResourceTemplateDefinition,
   McpToolCallResult,
   McpToolDefinition
 } from './mcp-client'
@@ -15,6 +17,7 @@ interface FakeClientOptions {
   tools?: McpToolDefinition[]
   prompts?: McpPromptDefinition[]
   resources?: McpResourceDefinition[]
+  templates?: McpResourceTemplateDefinition[]
   call?: (name: string, args: Record<string, unknown>) => Promise<McpToolCallResult>
   connectError?: Error
   instructions?: string
@@ -33,6 +36,9 @@ function makeClient(options: FakeClientOptions = {}): {
     listTools: vi.fn(async () => options.tools ?? []),
     listPrompts: vi.fn(async () => options.prompts ?? []),
     listResources: vi.fn(async () => options.resources ?? []),
+    ...(options.templates
+      ? { listResourceTemplates: vi.fn(async () => options.templates ?? []) }
+      : {}),
     getPrompt: vi.fn(async () => ''),
     readResource: vi.fn(async () => []),
     callTool: vi.fn(
@@ -80,7 +86,13 @@ afterEach(async () => {
   await fs.rm(directory, { recursive: true, force: true })
 })
 
-function createManager(createClient: (config: unknown) => McpClientLike): McpManager {
+function createManager(
+  createClient: (
+    config: McpServerConfig,
+    headers: Record<string, string>,
+    transport?: McpRemoteTransport
+  ) => McpClientLike
+): McpManager {
   return new McpManager({ userDataPath: directory, workspace: directory, createClient })
 }
 
@@ -453,6 +465,114 @@ describe('McpManager prompts and resources', () => {
     )
     await expect(manager.readResource('demo', 'demo://readme')).resolves.toBe('resource body')
     await expect(manager.getPrompt('missing', 'greet')).rejects.toThrow('UNKNOWN_MCP_SERVER')
+    await manager.dispose()
+  })
+
+  it('lists resource templates and counts them in status', async () => {
+    const manager = new McpManager({
+      userDataPath: directory,
+      workspace: directory,
+      createClient: () =>
+        ({
+          ...clientWithExtras(),
+          listResourceTemplates: async () => [
+            { uriTemplate: 'demo://files/{path}', name: 'files', mimeType: 'text/plain' }
+          ]
+        }) as McpClientLike
+    })
+    await manager.addServer({ name: 'demo', type: 'local', command: 'node' })
+
+    await expect(manager.resources()).resolves.toEqual([
+      {
+        server: 'demo',
+        uri: 'demo://readme',
+        name: 'readme',
+        description: undefined,
+        mimeType: undefined
+      },
+      {
+        server: 'demo',
+        uri: 'demo://files/{path}',
+        name: 'files',
+        description: undefined,
+        mimeType: 'text/plain',
+        template: true
+      }
+    ])
+    await expect(manager.statuses()).resolves.toEqual([
+      expect.objectContaining({ state: 'connected', resourceCount: 2 })
+    ])
+    await manager.dispose()
+  })
+})
+
+describe('McpManager remote transports', () => {
+  it('falls back to legacy SSE when Streamable HTTP fails', async () => {
+    const transports: Array<McpRemoteTransport | undefined> = []
+    const failing = makeClient({ connectError: new Error('HTTP 404: not found') }).client
+    const working = makeClient({ tools: [{ name: 'echo' }] }).client
+    const manager = createManager((_config, _headers, transport) => {
+      transports.push(transport)
+      return transport === 'http' ? failing : working
+    })
+    await manager.addServer({ name: 'legacy', type: 'remote', url: 'https://example.com/sse' })
+
+    const statuses = await manager.statuses({ probe: true })
+
+    expect(transports).toEqual(['http', 'sse'])
+    expect(failing.close).toHaveBeenCalled()
+    expect(statuses).toEqual([
+      expect.objectContaining({ state: 'connected', toolCount: 1, error: null })
+    ])
+    await manager.dispose()
+  })
+
+  it('prefers SSE on later connections after it succeeds', async () => {
+    const transports: Array<McpRemoteTransport | undefined> = []
+    const manager = createManager((_config, _headers, transport) => {
+      transports.push(transport)
+      return transport === 'http'
+        ? makeClient({ connectError: new Error('HTTP 404: not found') }).client
+        : makeClient().client
+    })
+    await manager.addServer({ name: 'legacy', type: 'remote', url: 'https://example.com/sse' })
+    await manager.statuses({ probe: true })
+
+    await manager.setMcpAuth([])
+    await manager.statuses({ probe: true })
+
+    expect(transports).toEqual(['http', 'sse', 'sse'])
+    await manager.dispose()
+  })
+
+  it('does not fall back on auth failures', async () => {
+    const transports: Array<McpRemoteTransport | undefined> = []
+    const manager = createManager((_config, _headers, transport) => {
+      transports.push(transport)
+      return makeClient({ connectError: new Error('HTTP 401: unauthorized') }).client
+    })
+    await manager.addServer({ name: 'secure', type: 'remote', url: 'https://example.com/sse' })
+
+    const statuses = await manager.statuses({ probe: true })
+
+    expect(transports).toEqual(['http'])
+    expect(statuses).toEqual([expect.objectContaining({ state: 'auth-required' })])
+    await manager.dispose()
+  })
+
+  it('passes per-server timeout and cwd to the client factory', async () => {
+    let seen: McpServerConfig | null = null
+    const manager = createManager((config) => {
+      seen = config
+      return makeClient().client
+    })
+    await manager.setProjectServers([
+      { name: 'timed', type: 'local', command: 'node', timeout: 2_500, cwd: 'sub' }
+    ])
+
+    await manager.statuses({ probe: true })
+
+    expect(seen).toMatchObject({ timeout: 2_500, cwd: 'sub' })
     await manager.dispose()
   })
 })

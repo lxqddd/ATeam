@@ -38,7 +38,14 @@ describe('project config', () => {
         { "action": "shell", "resource": "git push *", "effect": "deny" }
       ],
       "mcp": [
-        { "name": "docs", "type": "local", "command": "node", "args": ["server.js"] }
+        {
+          "name": "docs",
+          "type": "local",
+          "command": "node",
+          "args": ["server.js"],
+          "timeout": 5000,
+          "cwd": "servers"
+        }
       ],
     }`)
 
@@ -47,7 +54,13 @@ describe('project config', () => {
     expect(config.permissions).toEqual([
       { action: 'shell', resource: 'git push *', effect: 'deny', sessionId: null }
     ])
-    expect(config.mcp?.[0]).toMatchObject({ name: 'docs', type: 'local', command: 'node' })
+    expect(config.mcp?.[0]).toMatchObject({
+      name: 'docs',
+      type: 'local',
+      command: 'node',
+      timeout: 5000,
+      cwd: 'servers'
+    })
   })
 
   it('discovers the config at the git root from a nested workspace', async () => {
@@ -192,15 +205,26 @@ describe('layered document fields', () => {
       JSON.stringify({
         lsp: { broken: 'bad' },
         providers: { 'provider-1': { apiKey: 'super-secret' } },
-        skills: ['https://example.com/skill']
+        skills: ['https://example.com/skill'],
+        mcp: [{ name: 'bad', type: 'local', command: 'node', timeout: 5, cwd: '' }]
       }),
       '/repo/ateam.json'
     )
 
     expect((parsed.document.providers as Record<string, unknown>)['provider-1']).toEqual({})
+    const servers = parsed.document.mcp as unknown as Array<Record<string, unknown>>
+    expect(servers[0]).toMatchObject({ name: 'bad', command: 'node' })
+    expect(servers[0].timeout).toBeUndefined()
+    expect(servers[0].cwd).toBeUndefined()
     expect(JSON.stringify(parsed)).not.toContain('super-secret')
     expect(parsed.diagnostics.map((entry) => entry.path)).toEqual(
-      expect.arrayContaining(['$.lsp.broken', '$.providers.provider-1.apiKey', '$.skills'])
+      expect.arrayContaining([
+        '$.lsp.broken',
+        '$.providers.provider-1.apiKey',
+        '$.skills',
+        '$.mcp[0].timeout',
+        '$.mcp[0].cwd'
+      ])
     )
   })
 
