@@ -21,7 +21,7 @@
 - 模型请求遇 429、5xx、网络错误或已建立响应后的流中断时自动退避重试；默认 4 次重试（共 5 次尝试），可在设置 → Agent 调整最大重试次数、最大等待与响应超时。聊天中展示重试次数、等待时间与原因，重试耗尽时显示最终失败原因；设置页展示重试次数、成功率与平均等待。
 - 推理模型的 reasoning 与 provider metadata 仅在同一模型下回放（包括仅含 `providerMetadata` 的 redacted thinking），跨模型自动丢弃；Anthropic 在 system 与最新 user / tool 消息上设置 prompt cache 断点，OpenAI 使用会话级 prompt cache key。设置页展示缓存请求数、命中率、缓存读取 / 写入与节省 token；旧消息缺少模型元数据时按启动时的会话模型补齐。
 - system prompt 按 Claude / GPT / Gemini / Kimi / 通用模型选择完整基础提示，可用 `systemPrompt` 整体覆盖；环境块包含模型、工作目录、Git 标记、平台、本地时区日期与可配置备注。MCP server instructions 仅注入当前 agent 可用且未被权限拒绝的服务器，server 名称与正文进行 XML 转义。
-- 每轮最多 25 个模型步骤（Agent 可覆盖），达到上限以 `max-steps` 结束。
+- 每轮最多 25 个模型步骤（Agent 可覆盖）；最后一步禁用工具并要求模型总结已完成工作、未完成事项与建议下一步，run 以 `max-steps` 结束，消息下方提示可继续发送消息。
 
 ### 1.3 会话分叉（Fork）
 

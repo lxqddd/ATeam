@@ -199,12 +199,15 @@ function contextErrorScript(): Script {
   }
 }
 
-function maxStepsScript(steps: number): Script {
+function maxStepsScript(steps: number, finishReason: 'stop' | 'tool-calls' = 'stop'): Script {
   return async function* () {
-    for (let index = 0; index < steps; index += 1) {
+    for (let index = 0; index < steps - 1; index += 1) {
       yield part({ type: 'finish-step' })
     }
-    yield part({ type: 'finish', finishReason: 'tool-calls', totalUsage: {} })
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'summary of work' })
+    yield part({ type: 'finish-step' })
+    yield part({ type: 'finish', finishReason, totalUsage: {} })
   }
 }
 
@@ -1126,13 +1129,59 @@ describe('AgentRuntime', () => {
     expect(assistantMessages()[1].parts).toEqual([{ type: 'text', text: 'recovered' }])
   })
 
-  it('reports max-steps when the tool step limit is reached', async () => {
+  it('reports max-steps and keeps the forced summary when the step limit is reached', async () => {
     scripts.push(maxStepsScript(25))
 
     await runtime.sendChat(sessionId, 'hi')
     const finished = await sink.next('run.finished')
 
     expect(finished.event).toMatchObject({ status: 'max-steps' })
+    expect(assistantMessages().at(-1)?.parts).toEqual([{ type: 'text', text: 'summary of work' }])
+  })
+
+  it('uses the agent step limit for the max-steps outcome', async () => {
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', 'limited.md'),
+      [
+        '---',
+        'description: Limited',
+        'mode: primary',
+        'steps: 3',
+        '---',
+        'Agent instructions.'
+      ].join('\n')
+    )
+    await runtime.setSessionAgent(sessionId, 'limited')
+    scripts.push(maxStepsScript(3))
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(turns[0].maxSteps).toBe(3)
+    expect(finished.event).toMatchObject({ status: 'max-steps' })
+  })
+
+  it('completes normally below the agent step limit', async () => {
+    await fs.mkdir(path.join(directory, 'agent', 'agents'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'agents', 'limited.md'),
+      [
+        '---',
+        'description: Limited',
+        'mode: primary',
+        'steps: 3',
+        '---',
+        'Agent instructions.'
+      ].join('\n')
+    )
+    await runtime.setSessionAgent(sessionId, 'limited')
+    scripts.push(maxStepsScript(2, 'tool-calls'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
   })
 
   it('rejects concurrent sends before the first run starts', async () => {

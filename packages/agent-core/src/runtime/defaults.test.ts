@@ -103,6 +103,36 @@ describe('AgentRuntime default dependencies', () => {
     if (typeof onError === 'function') onError()
   })
 
+  it('forces a summary on the last allowed step of a turn', async () => {
+    await runtime.sendChat(sessionId, 'hi')
+
+    await vi.waitFor(() =>
+      expect(envelopes.some((entry) => entry.event.type === 'run.finished')).toBe(true)
+    )
+    const options = aiMock.captured()
+    const prepareStep = options?.prepareStep as
+      | ((input: {
+          stepNumber: number
+          messages: Array<{ role: string; content: unknown }>
+        }) =>
+          { toolChoice?: string; messages?: Array<{ role: string; content: unknown }> } | undefined)
+      | undefined
+    expect(typeof prepareStep).toBe('function')
+    if (!prepareStep) return
+
+    const first: Array<{ role: string; content: unknown }> = [{ role: 'user', content: 'hi' }]
+    expect(prepareStep({ stepNumber: 23, messages: first })).toBeUndefined()
+
+    const last = prepareStep({ stepNumber: 24, messages: first })
+    expect(last?.toolChoice).toBe('none')
+    expect(last?.messages).toHaveLength(2)
+    expect(last?.messages?.at(-1)).toMatchObject({
+      role: 'user',
+      content: expect.stringContaining('MAXIMUM STEPS REACHED')
+    })
+    expect(first).toHaveLength(1)
+  })
+
   it('tests model connections with generateText', async () => {
     const ok = await runtime.testModel('provider-1', 'model-1')
     expect(ok).toMatchObject({ ok: true, message: 'Connection succeeded' })

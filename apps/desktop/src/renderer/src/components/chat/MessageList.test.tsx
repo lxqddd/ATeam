@@ -180,7 +180,8 @@ describe('MessageList', () => {
       runOutcomes: { a1: 'max-steps' }
     })
 
-    expect(screen.getByText(/Maximum tool steps reached/)).toBeInTheDocument()
+    expect(screen.getByText(/Maximum steps reached/)).toBeInTheDocument()
+    expect(screen.getByText(/summarized its progress/)).toBeInTheDocument()
   })
 
   it('shows an empty-content notice', () => {

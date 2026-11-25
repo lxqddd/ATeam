@@ -30,6 +30,24 @@ describe('AssistantMessage', () => {
   })
 })
 
+describe('run outcome', () => {
+  it('explains the step limit after the agent summarizes', () => {
+    const message = makeMessage({ parts: [makeTextPart('summary of work')] })
+    render(
+      <AssistantMessage
+        message={message}
+        permissions={[]}
+        outcome="max-steps"
+        isLast
+        sessionRunning={false}
+      />
+    )
+
+    expect(screen.getByText(/Maximum steps reached/)).toBeInTheDocument()
+    expect(screen.getByText(/summarized its progress/)).toBeInTheDocument()
+  })
+})
+
 describe('forking', () => {
   it('forks from a message', async () => {
     const userEvent = (await import('@testing-library/user-event')).default

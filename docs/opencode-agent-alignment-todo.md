@@ -47,7 +47,7 @@
 | R-P0-6 Shell arity    | 完成 | 引号/转义感知 bash / PowerShell / cmd 解析、控制操作符与重定向、参数级外部路径、动态路径保护、扩展 arity 表与全局选项、危险命令 auto 询问、集成测试                                                                                                                | 无       |
 | R-P0-7 Plan 工作流    | 完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、自动切换 build agent 并续跑、计划文件查看/复制路径、切换提醒、按模式隐藏 plan_exit、端到端测试                                                                                                               | 无       |
 
-### 当前剩余 TODO（2026-11-24）
+### 当前剩余 TODO（2026-11-25）
 
 > 已完成的 P0 事项保留在下方审计清单中用于追溯；本节只列仍需实现或补测的项。P1/P2 的完整描述见后文。
 
@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：max steps 收尾、part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、LSP 矩阵与自定义 server、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
+- [ ] P1：part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、LSP 矩阵与自定义 server、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -310,16 +310,18 @@
 
 #### R-P1-2 Max steps 收尾
 
-**现状**：达到步数上限后直接结束并提示用户继续（`chat.stepLimitHint`），没有强制模型总结。
+**现状（2026-11-25）**：已完成。`streamText` 通过 `prepareStep`（[max-steps.ts](../packages/agent-core/src/runtime/max-steps.ts)）在最后一步注入 `MAX_STEPS_PROMPT` 并设置 `toolChoice: 'none'`，工具定义保留以复用 provider 的 prompt cache；模型被要求以文本总结已完成工作、未完成事项与建议下一步。run outcome 改为按“已执行步数 ≥ Agent 自身 `maxSteps`（默认 25）”判定，即使最后一步的 `finishReason` 为 `stop` 也会标记 `max-steps`；UI 提示说明 Agent 已总结进度、可继续发送消息。
 
 **OpenCode 参考**：最后一步禁用工具并注入 `MAX_STEPS_PROMPT`，要求模型总结已完成工作与下一步。
 
 **待办**：
 
-- [ ] 达到上限前禁用工具，注入总结指令
-- [ ] 区分“正常完成”与“步数耗尽”的 outcome
-- [ ] 输出中保留未完成事项与建议下一步
-- [ ] 测试边界步数、总结内容与 UI 提示
+- [x] 达到上限前禁用工具，注入总结指令
+- [x] 区分“正常完成”与“步数耗尽”的 outcome
+- [x] 输出中保留未完成事项与建议下一步
+- [x] 测试边界步数、总结内容与 UI 提示
+
+**仍待 / 边界**：`max-steps` outcome 只存在于渲染层内存（与重试状态一致），重载会话后不再显示提示条，但总结文本已持久化在消息中；忽略 `toolChoice: 'none'` 的供应商仍会在最后一步发起工具调用，run 在该步后结束且没有文本总结。
 
 **验收**：步数耗尽时得到可继续工作的结构化总结，而不是半截输出。
 
@@ -465,8 +467,8 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P1-2 max steps**（小到中等）——R-P1-1 Steering 已完成，继续改善长任务可靠性。
-2. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文、R-P0-6 shell arity、R-P0-7 plan 工作流已完成，补齐日常编码体验。
+1. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P1-1 Steering、R-P1-2 max steps 已完成，继续补齐日常编码体验。
+2. **R-P1-3 会话级回滚 / unrevert / diff**（中等偏大）——依赖快照与消息存储，可在编码体验项之后做。
 3. **第二轮 P1 剩余项**（按使用频率取舍）。
 4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 

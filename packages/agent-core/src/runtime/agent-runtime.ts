@@ -118,7 +118,6 @@ interface TurnStreamState {
   reasoningParts: Map<string, number>
   usage?: TokenUsage
   lastStepUsage?: TokenUsage
-  finishReason: string
 }
 
 export class AgentRuntime {
@@ -1545,7 +1544,6 @@ export class AgentRuntime {
           await this.recordStepSnapshot(run, message)
           break
         case 'finish':
-          state.finishReason = part.finishReason
           state.usage = usageFrom(part.totalUsage)
           break
         case 'error':
@@ -1907,8 +1905,7 @@ export class AgentRuntime {
 
     const state: TurnStreamState = {
       textParts: new Map(),
-      reasoningParts: new Map(),
-      finishReason: ''
+      reasoningParts: new Map()
     }
     let runTarget: ModelRef | null = null
     let prepareCompaction = false
@@ -2037,7 +2034,6 @@ export class AgentRuntime {
           this.retryMetrics.recordRetry(retry)
           state.usage = undefined
           state.lastStepUsage = undefined
-          state.finishReason = ''
           state.textParts.clear()
           state.reasoningParts.clear()
           this.resetAssistantMessage(run, message, retry)
@@ -2063,8 +2059,11 @@ export class AgentRuntime {
       await this.store.setStatus(run.sessionId, 'idle')
       this.events.emitSession(run.sessionId)
       await this.maybeGenerateTitle(run, model, message)
+      // The last allowed step is forced into a text-only summary by the turn's
+      // prepareStep handler, so its finishReason is 'stop'; derive the outcome
+      // from the step count against the agent's own limit instead.
       const outcome: RunOutcome =
-        state.finishReason === 'tool-calls' && run.steps >= MAX_STEPS ? 'max-steps' : 'completed'
+        run.steps >= (agent?.maxSteps ?? MAX_STEPS) ? 'max-steps' : 'completed'
       this.events.emit({
         type: 'run.finished',
         sessionId: run.sessionId,

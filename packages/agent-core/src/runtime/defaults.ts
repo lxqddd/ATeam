@@ -6,6 +6,7 @@ import { fetchWebContent } from '../integrations/webfetch'
 import { searchWeb } from '../integrations/websearch'
 import { createLanguageModel as createDefaultLanguageModel } from '../providers'
 import { createTools as createDefaultTools } from '../tools'
+import { createStepLimitHandler } from './max-steps'
 import { MAX_STEPS, type AgentRuntimeDependencies } from './types'
 
 async function generateSummary(input: {
@@ -41,32 +42,38 @@ async function generateTitle(input: { model: LanguageModel; prompt: string }): P
 export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
   createLanguageModel: createDefaultLanguageModel,
   createTools: createDefaultTools,
-  createTurn: (input) => ({
-    stream: streamText({
-      model: input.model,
-      system: input.systemProviderOptions
-        ? {
-            role: 'system' as const,
-            content: input.system,
-            providerOptions: input.systemProviderOptions as Parameters<
-              typeof streamText
-            >[0]['providerOptions']
-          }
-        : input.system,
-      messages: input.messages,
-      tools: input.tools,
-      stopWhen: input.shouldStop
-        ? [stepCountIs(input.maxSteps ?? MAX_STEPS), () => input.shouldStop?.() === true]
-        : stepCountIs(input.maxSteps ?? MAX_STEPS),
-      abortSignal: input.abortSignal,
-      reasoning: input.reasoning ?? undefined,
-      temperature: input.temperature,
-      maxRetries: 0,
-      maxOutputTokens: input.maxOutputTokens ?? 8_192,
-      providerOptions: input.providerOptions as Parameters<typeof streamText>[0]['providerOptions'],
-      onError: () => undefined
-    }).stream
-  }),
+  createTurn: (input) => {
+    const maxSteps = input.maxSteps ?? MAX_STEPS
+    return {
+      stream: streamText({
+        model: input.model,
+        system: input.systemProviderOptions
+          ? {
+              role: 'system' as const,
+              content: input.system,
+              providerOptions: input.systemProviderOptions as Parameters<
+                typeof streamText
+              >[0]['providerOptions']
+            }
+          : input.system,
+        messages: input.messages,
+        tools: input.tools,
+        stopWhen: input.shouldStop
+          ? [stepCountIs(maxSteps), () => input.shouldStop?.() === true]
+          : stepCountIs(maxSteps),
+        prepareStep: createStepLimitHandler(maxSteps),
+        abortSignal: input.abortSignal,
+        reasoning: input.reasoning ?? undefined,
+        temperature: input.temperature,
+        maxRetries: 0,
+        maxOutputTokens: input.maxOutputTokens ?? 8_192,
+        providerOptions: input.providerOptions as Parameters<
+          typeof streamText
+        >[0]['providerOptions'],
+        onError: () => undefined
+      }).stream
+    }
+  },
   generateSummary,
   generateTitle,
   loadInstructions,

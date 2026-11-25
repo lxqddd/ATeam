@@ -543,7 +543,7 @@ const enUS = {
     permissionDenied: 'Denied',
     scrollToBottom: 'Scroll to latest',
     stopped: 'Generation stopped',
-    maxSteps: 'Maximum tool steps reached',
+    maxSteps: 'Maximum steps reached',
     agentStarting: 'Agent is starting…',
     agentError: 'The agent could not start',
     restartAgent: 'Restart agent',
@@ -572,7 +572,8 @@ const enUS = {
     planCopied: 'Copied',
     planSwitched: 'Plan approved · continuing with the build agent.',
     redactedReasoning: 'Redacted reasoning',
-    stepLimitHint: 'This run reached the tool-call limit. Send another message to continue.',
+    stepLimitHint:
+      'This run reached its step limit. The agent summarized its progress; send another message to continue.',
     agentStoppedHint: 'The agent is not running. Past messages are still available.',
     projectConfiguration: 'Project configuration',
     projectProviders: 'Project providers',
