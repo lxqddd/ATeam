@@ -111,6 +111,9 @@ export function createPlanExitTool(context: ToolContext): Tool {
     inputSchema: z.object({}),
     execute: async (_input, options) => {
       if (!context.exitPlan) return 'Error: plan mode is not active.'
+      if (context.planReady && !(await context.planReady())) {
+        return 'The plan file is missing or empty. Write the complete plan before calling plan_exit.'
+      }
       if (!context.askQuestion) return 'Error: questions are not available.'
       const answer = await context.askQuestion(
         {

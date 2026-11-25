@@ -75,6 +75,17 @@ describe('changed files', () => {
     expect(screen.getByText('Plan approved · continuing with the build agent.')).toBeInTheDocument()
   })
 
+  it('shows a label for redacted reasoning without text', () => {
+    const message = makeMessage({
+      parts: [
+        { type: 'reasoning', text: '', providerMetadata: { anthropic: { redactedData: 'x' } } }
+      ]
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
+
+    expect(screen.getByText('Redacted reasoning')).toBeInTheDocument()
+  })
+
   it('shows the last retry reason when retries are exhausted', () => {
     const message = makeMessage({
       parts: [],

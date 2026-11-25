@@ -341,6 +341,14 @@ export class PluginRegistry {
     return result
   }
 
+  async applyConfig(config: AgentConfig): Promise<void> {
+    for (const [index, hook] of this.hooks.entries()) {
+      const apply = hook.config
+      if (!apply) continue
+      await this.safeHook(index, 'config', () => apply(config))
+    }
+  }
+
   async transformSystem(
     input: { sessionId: string; model: string },
     output: { system: string }
@@ -630,7 +638,6 @@ export async function loadPlugins(
       const loaded = (await (factory as PluginFactory)(context)) as PluginHooks | undefined
       if (!loaded || typeof loaded !== 'object') throw new Error('plugin returned no hooks')
       loaded.name = loaded.name ?? spec
-      if (loaded.config) await loaded.config(context.config)
       hooks.push(loaded)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

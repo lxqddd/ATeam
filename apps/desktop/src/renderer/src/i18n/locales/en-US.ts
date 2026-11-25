@@ -562,6 +562,7 @@ const enUS = {
     planCopyPath: 'Copy path',
     planCopied: 'Copied',
     planSwitched: 'Plan approved · continuing with the build agent.',
+    redactedReasoning: 'Redacted reasoning',
     stepLimitHint: 'This run reached the tool-call limit. Send another message to continue.',
     agentStoppedHint: 'The agent is not running. Past messages are still available.',
     projectConfiguration: 'Project configuration',

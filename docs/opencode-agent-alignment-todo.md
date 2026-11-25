@@ -96,6 +96,7 @@
 - [x] hook 异常隔离：转换/权限/环境/tool hook 抛错只记录警告，后续插件与工具执行继续
 - [x] 插件登录状态展示与退出登录
 - [x] 插件 OAuth 无 token endpoint 时的自动刷新（插件声明 `refresh` 回调，主进程在过期前调用并持久化）
+- [x] 插件 `config` hook 在每轮加载 instructions / skills / references 前应用
 
 #### R-P0-3 LLM 重试
 
@@ -126,6 +127,7 @@
 - [x] 缓存命中率与节省 token 指标
 - [x] 旧消息缺少 `model` 字段时的兼容策略与迁移
 - [x] 供应商 reasoning metadata 的端到端测试
+- [x] redacted thinking 的 providerMetadata 回放（无文本 reasoning）
 
 #### R-P0-6 Shell arity
 
@@ -144,6 +146,8 @@
 - [x] plan → build 切换提醒（build switch reminder）
 - [x] 按模式隐藏 `plan_exit`，避免 build / 子代理调用
 - [x] plan_exit、计划文件权限与切换 agent 的端到端测试
+- [x] plan_exit 校验计划文件非空
+- [x] build 回合重试时重新注入计划执行提示
 
 ### 第二轮 P0：核心运行时与配置
 
@@ -190,6 +194,7 @@
 - [x] 加载失败隔离、hook 异常隔离、启用/禁用、设置页展示与加载错误
 - [x] 声明式 auth 方法 UI、pending OAuth、凭据写入 `auth.json`、登录状态与退出登录
 - [x] 插件 OAuth 无 token endpoint 时的自动刷新（插件声明 `refresh` 回调，主进程在过期前调用并持久化）
+- [x] 插件 `config` hook 在每轮加载 instructions / skills / references 前应用
 - [x] 插件发现、hook 顺序、工具注册、权限覆盖、失败隔离、shell env 测试
 
 **仍待**：无。

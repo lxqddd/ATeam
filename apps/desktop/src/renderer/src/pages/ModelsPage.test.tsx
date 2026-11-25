@@ -782,7 +782,10 @@ describe('ModelsPage edge cases', () => {
         providers: 'project',
         plugins: 'default',
         commands: 'default',
-        skills: 'default'
+        skills: 'default',
+        retry: 'default',
+        environment: 'default',
+        systemPrompt: 'default'
       }
     })
 

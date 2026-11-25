@@ -38,7 +38,10 @@ function effective(skills: string[]): EffectiveAgentConfig {
       providers: 'default',
       plugins: 'default',
       commands: 'default',
-      skills: skills.length > 0 ? 'project' : 'default'
+      skills: skills.length > 0 ? 'project' : 'default',
+      retry: 'default',
+      environment: 'default',
+      systemPrompt: 'default'
     }
   }
 }

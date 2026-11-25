@@ -856,6 +856,7 @@ export class AgentRuntime {
       const config = effective.config
       const models = await this.modelsForWorkspace(workspace, config)
       resolveModelRef(models, record.session.model ?? models.defaultModel)
+      const continuationPrompt = await this.planContinuationPrompt(sessionId)
       const assistant = makeAssistantMessage(sessionId)
       if (config.snapshots) {
         assistant.snapshotBefore = await this.createSnapshotId(
@@ -867,7 +868,7 @@ export class AgentRuntime {
       if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
       await this.store.appendMessage(sessionId, assistant)
       await this.store.setStatus(sessionId, 'running')
-      this.beginRun(sessionId, assistant, new Set([last.id]), config, models)
+      this.beginRun(sessionId, assistant, new Set([last.id]), config, models, continuationPrompt)
     } finally {
       this.starting.delete(sessionId)
     }
@@ -1169,10 +1170,36 @@ export class AgentRuntime {
     }
   }
 
+  private async planFileReady(run: Run): Promise<boolean> {
+    try {
+      const content = await fs.readFile(path.resolve(run.workspace, this.planFilePath(run)), 'utf8')
+      return content.trim().length > 0
+    } catch {
+      return false
+    }
+  }
+
+  private async planContinuationPrompt(sessionId: string): Promise<string | undefined> {
+    const record = this.store.get(sessionId)
+    if (!record || record.session.agent !== 'build') return undefined
+    const workspace = this.sessionWorkspace(sessionId)
+    const relative = this.planPathForSession(sessionId)
+    try {
+      const content = await fs.readFile(path.resolve(workspace, relative), 'utf8')
+      if (!content.trim()) return undefined
+      return `The user approved the plan saved at ${relative}. Read it and implement it now.`
+    } catch {
+      return undefined
+    }
+  }
+
   private async exitPlan(run: Run): Promise<string> {
     const record = this.record(run.sessionId)
     if ((record.session.permissionMode ?? 'ask') !== 'plan') {
       throw new Error('NOT_IN_PLAN_MODE')
+    }
+    if (!(await this.planFileReady(run))) {
+      throw new Error('PLAN_NOT_READY')
     }
     const withAgent = await this.store.setAgent(run.sessionId, 'build')
     if (!withAgent) throw new Error('SESSION_NOT_FOUND')
@@ -1200,7 +1227,8 @@ export class AgentRuntime {
     const config = effective.config
     const models = await this.modelsForWorkspace(workspace, config)
     resolveModelRef(models, record.session.model ?? models.defaultModel)
-    if (this.sessionBusy(sessionId)) return
+    const continuationPrompt = await this.planContinuationPrompt(sessionId)
+    if (!continuationPrompt || this.sessionBusy(sessionId)) return
     const assistant = makeAssistantMessage(sessionId)
     if (config.snapshots) {
       assistant.snapshotBefore = await this.createSnapshotId(
@@ -1212,14 +1240,7 @@ export class AgentRuntime {
     if (!this.store.get(sessionId)) return
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
-    this.beginRun(
-      sessionId,
-      assistant,
-      undefined,
-      config,
-      models,
-      `The user approved the plan saved at ${this.planFilePath(previous)}. Read it and implement it now.`
-    )
+    this.beginRun(sessionId, assistant, undefined, config, models, continuationPrompt)
   }
 
   private historyMessages(run: Run, assistantMessageId: string): ChatMessage[] {
@@ -1677,6 +1698,7 @@ export class AgentRuntime {
       askQuestion: (run, input, toolCallId) =>
         this.permissionService.askQuestion(run, input, toolCallId),
       exitPlan: (run) => this.exitPlan(run),
+      planReady: (run) => this.planFileReady(run),
       listMcpPrompts: (server, workspace) =>
         this.workspaceServices.listMcpPrompts(server, workspace),
       getMcpPrompt: (server, prompt, args, workspace) =>

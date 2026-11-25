@@ -46,6 +46,7 @@ export class WorkspaceServices {
   private readonly formatterCaches = new Map<string, Promise<FormatterDefinition[]>>()
   private readonly skillCaches = new Map<string, Promise<SkillDefinition[]>>()
   private readonly pluginCaches = new Map<string, Promise<PluginRegistry>>()
+  private readonly configuredPlugins = new WeakSet<AgentConfig>()
   private readonly pluginStore: PluginStore
   private readonly mcpManagers = new Map<string, McpManagerLike>()
   private readonly configs = new Map<string, EffectiveAgentConfig>()
@@ -139,7 +140,12 @@ export class WorkspaceServices {
       })
       this.pluginCaches.set(key, cached)
     }
-    return cached
+    const registry = await cached
+    if (!this.configuredPlugins.has(config)) {
+      this.configuredPlugins.add(config)
+      await registry.applyConfig(config)
+    }
+    return registry
   }
 
   mcp(workspace?: string): McpManagerLike {

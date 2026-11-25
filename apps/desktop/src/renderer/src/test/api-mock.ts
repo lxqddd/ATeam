@@ -316,7 +316,10 @@ export function createApiMock(
             providers: 'default',
             plugins: 'default',
             commands: 'default',
-            skills: 'default'
+            skills: 'default',
+            retry: 'default',
+            environment: 'default',
+            systemPrompt: 'default'
           }
         }))
       },

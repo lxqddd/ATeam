@@ -662,6 +662,9 @@ export interface ConfigProvenance {
   plugins: ConfigFieldSource
   commands: ConfigFieldSource
   skills: ConfigFieldSource
+  retry: ConfigFieldSource
+  environment: ConfigFieldSource
+  systemPrompt: ConfigFieldSource
 }
 
 export interface EffectiveAgentConfig {

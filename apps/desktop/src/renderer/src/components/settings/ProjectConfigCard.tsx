@@ -21,7 +21,10 @@ const FIELD_KEYS: Array<keyof ConfigProvenance> = [
   'providers',
   'plugins',
   'commands',
-  'skills'
+  'skills',
+  'retry',
+  'environment',
+  'systemPrompt'
 ]
 
 function sourceClass(source: ConfigFieldSource): string {
@@ -140,7 +143,14 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
     providers: Object.keys(config.providers ?? {}).join(', ') || '—',
     plugins: String(config.plugins?.length ?? 0),
     commands: (config.commands ?? []).map((command) => command.name).join(', ') || '—',
-    skills: (config.skills ?? []).length > 0 ? String(config.skills?.length) : '—'
+    skills: (config.skills ?? []).length > 0 ? String(config.skills?.length) : '—',
+    retry: config.retry
+      ? `${config.retry.maxRetries} · ${config.retry.maxDelayMs}ms · ${config.retry.timeoutMs}ms`
+      : '—',
+    environment: config.environment
+      ? [config.environment.timezone, config.environment.notes].filter(Boolean).join(' · ') || '—'
+      : '—',
+    systemPrompt: config.systemPrompt ? t('settings.enabled') : '—'
   }
   const labels: Record<keyof ConfigProvenance, string> = {
     snapshots: t('settings.snapshots'),
@@ -154,7 +164,10 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
     providers: t('settings.configuredProviders'),
     plugins: t('settings.plugins'),
     commands: t('settings.configuredCommands'),
-    skills: t('settings.configuredSkills')
+    skills: t('settings.configuredSkills'),
+    retry: t('settings.retrySettings'),
+    environment: t('settings.environmentSettings'),
+    systemPrompt: t('settings.systemPromptOverride')
   }
   const sourceLabels: Record<ConfigFieldSource, string> = {
     global: t('settings.sourceGlobal'),

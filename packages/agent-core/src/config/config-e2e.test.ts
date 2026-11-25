@@ -111,7 +111,10 @@ describe('layered project configuration end to end', () => {
       providers: 'merged',
       commands: 'merged',
       skills: 'merged',
-      references: 'merged'
+      references: 'merged',
+      retry: 'global',
+      environment: 'merged',
+      systemPrompt: 'project'
     })
 
     expect(config.snapshots).toBe(false)

@@ -112,7 +112,11 @@ function AssistantMessage({
                     {t('chat.thinking')}
                   </summary>
                   <div className="mt-2">
-                    <MarkdownBlock text={part.text} />
+                    {part.text ? (
+                      <MarkdownBlock text={part.text} />
+                    ) : (
+                      <p className="m-0 text-caption text-muted">{t('chat.redactedReasoning')}</p>
+                    )}
                   </div>
                 </details>
               )

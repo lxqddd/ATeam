@@ -169,6 +169,58 @@ describe('buildModelMessages', () => {
     ])
   })
 
+  it('replays redacted reasoning that has no text', () => {
+    const message = makeMessage({
+      model: { providerId: 'anthropic', modelId: 'claude-x' },
+      parts: [
+        {
+          type: 'reasoning',
+          text: '',
+          providerMetadata: { anthropic: { redactedData: 'opaque-data' } }
+        },
+        makeTextPart('answer')
+      ]
+    })
+
+    expect(
+      buildModelMessages([message], undefined, {
+        currentModel: { providerId: 'anthropic', modelId: 'claude-x' }
+      })
+    ).toEqual([
+      {
+        role: 'assistant',
+        content: [
+          {
+            type: 'reasoning',
+            text: '',
+            providerOptions: { anthropic: { redactedData: 'opaque-data' } }
+          },
+          { type: 'text', text: 'answer' }
+        ]
+      }
+    ])
+  })
+
+  it('drops empty reasoning without redacted data', () => {
+    const message = makeMessage({
+      model: { providerId: 'anthropic', modelId: 'claude-x' },
+      parts: [
+        {
+          type: 'reasoning',
+          text: '',
+          providerMetadata: { anthropic: { signature: 'sig-1' } }
+        },
+        makeTextPart('answer')
+      ]
+    })
+
+    expect(
+      buildModelMessages([message], undefined, {
+        currentModel: { providerId: 'anthropic', modelId: 'claude-x' }
+      })
+    ).toEqual([{ role: 'assistant', content: [{ type: 'text', text: 'answer' }] }])
+  })
+
   it('drops reasoning metadata for a different model', () => {
     const message = makeMessage({
       model: { providerId: 'anthropic', modelId: 'claude-x' },

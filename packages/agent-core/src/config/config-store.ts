@@ -158,6 +158,20 @@ function computeProvenance(
       (globalDocument.skills?.length ?? 0) > 0,
       (project.skills?.length ?? 0) > 0,
       true
+    ),
+    retry: fieldSource(
+      Boolean(globalDocument.retry && Object.keys(globalDocument.retry).length > 0),
+      Boolean(project.retry && Object.keys(project.retry).length > 0),
+      true
+    ),
+    environment: fieldSource(
+      Boolean(globalDocument.environment && Object.keys(globalDocument.environment).length > 0),
+      Boolean(project.environment && Object.keys(project.environment).length > 0),
+      true
+    ),
+    systemPrompt: fieldSource(
+      globalDocument.systemPrompt !== undefined,
+      project.systemPrompt !== undefined
     )
   }
 }

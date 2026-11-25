@@ -7,12 +7,21 @@ import type {
   ToolCallPart,
   ToolResultPart
 } from 'ai'
-import type { AttachmentKind, ChatMessage, ModelRef } from '@ateam/shared'
+import type { AttachmentKind, ChatMessage, MessagePart, ModelRef } from '@ateam/shared'
 
 interface ReasoningContentPart {
   type: 'reasoning'
   text: string
   providerOptions?: Record<string, unknown>
+}
+
+function replayableReasoning(part: MessagePart & { type: 'reasoning' }): boolean {
+  if (!part.providerMetadata) return false
+  if (part.text.trim()) return true
+  // Anthropic redacted thinking has no text and only carries providerMetadata.
+  return Object.values(part.providerMetadata).some(
+    (value) => value !== null && typeof value === 'object' && 'redactedData' in value
+  )
 }
 
 export interface AttachmentPayload {
@@ -98,7 +107,7 @@ export function buildModelMessages(
 
     for (const part of message.parts) {
       if (part.type === 'reasoning') {
-        if (!sameModel || !part.providerMetadata || !part.text.trim()) continue
+        if (!sameModel || !replayableReasoning(part)) continue
         assistantContent.push({
           type: 'reasoning',
           text: part.text,

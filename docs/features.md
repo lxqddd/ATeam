@@ -18,7 +18,7 @@
 - 文本、推理过程、工具调用与工具输出均以增量事件推送；Markdown 渲染，工具行展示输入、输出与状态。
 - 支持停止（中断当前运行）、重试最后一条失败 / 中断消息、错误信息持久化。
 - 模型请求遇 429、5xx、网络错误或已建立响应后的流中断时自动退避重试；默认 4 次重试（共 5 次尝试），可在设置 → Agent 调整最大重试次数、最大等待与响应超时。聊天中展示重试次数、等待时间与原因，重试耗尽时显示最终失败原因；设置页展示重试次数、成功率与平均等待。
-- 推理模型的 reasoning 与 provider metadata 仅在同一模型下回放，跨模型自动丢弃；Anthropic 在 system 与最新 user / tool 消息上设置 prompt cache 断点，OpenAI 使用会话级 prompt cache key。设置页展示缓存请求数、命中率、缓存读取 / 写入与节省 token；旧消息缺少模型元数据时按启动时的会话模型补齐。
+- 推理模型的 reasoning 与 provider metadata 仅在同一模型下回放（包括仅含 `providerMetadata` 的 redacted thinking），跨模型自动丢弃；Anthropic 在 system 与最新 user / tool 消息上设置 prompt cache 断点，OpenAI 使用会话级 prompt cache key。设置页展示缓存请求数、命中率、缓存读取 / 写入与节省 token；旧消息缺少模型元数据时按启动时的会话模型补齐。
 - system prompt 按 Claude / GPT / Gemini / Kimi / 通用模型选择完整基础提示，可用 `systemPrompt` 整体覆盖；环境块包含模型、工作目录、Git 标记、平台、本地时区日期与可配置备注。MCP server instructions 仅注入当前 agent 可用且未被权限拒绝的服务器，server 名称与正文进行 XML 转义。
 - 每轮最多 25 个模型步骤（Agent 可覆盖），达到上限以 `max-steps` 结束。
 
@@ -87,7 +87,7 @@
 ### 3.3 Plan 工作流
 
 - plan agent 将计划写入工作区 `.ateam/plans/<session>.md`；只有该文件允许写入，其他文件、shell 与 MCP 仍被拒绝。
-- `plan_exit` 先询问是否切换：确认后切换到 build agent、权限模式恢复为 `ask`，当前 plan 回合在下一次模型步骤停止，并自动开始新的 build 回合读取计划并实现；拒绝则留在 plan 模式。
+- `plan_exit` 先询问是否切换：确认后切换到 build agent、权限模式恢复为 `ask`，当前 plan 回合在下一次模型步骤停止，并自动开始新的 build 回合读取计划并实现；计划文件缺失或为空时不会切换，build 回合失败后重试会重新注入计划执行提示；拒绝则留在 plan 模式。
 - `plan_exit` 只在 plan agent + plan 模式下暴露；build 与子代理不会获得该工具。
 - 聊天头部提供计划按钮，可查看计划内容并复制绝对路径；plan_exit 成功后显示切换提醒。
 
@@ -147,7 +147,7 @@
 - “始终允许”持久化到 `agent/permissions.json`，重启后仍生效；设置页可查看与删除。
 - 多资源操作（如 shell 命令中的多个路径）任一命中 `deny` 即拒绝。
 - shell 命令使用引号、转义感知的 bash / PowerShell / cmd 解析，按 `;`、`|`、`&&`、`||`、`&` 与换行分段；重定向目标、`--flag=value` 与普通参数中的绝对 / 父级相对路径都参与 `external_directory` 判定，变量展开路径视为不安全并触发确认。
-- `sudo`、`rm -rf /`、`mkfs`、`dd if=`、强制 push、管道执行脚本、`Invoke-Expression`、`cmd /c` 等危险命令在 `auto` 模式下仍需要显式 allow 规则或一次确认；`plan` 模式继续拒绝 shell。
+- `sudo`、`rm -rf /`、`rm -rf .` / `.git`、`git clean -fdx`、`find -delete`、`mkfs`、`dd if=`、强制 push、管道执行 shell / Python / Node、`Invoke-Expression`、`cmd /c` 等危险命令在 `auto` 模式下仍需要显式 allow 规则或一次确认；`plan` 模式继续拒绝 shell。
 - “始终允许”对单条命令按 arity 生成可复用前缀（如 `git status *`、`npm run dev *`），并支持 `git -C repo status`、`kubectl --context prod get pods` 等全局选项位于子命令前的常见形式。
 
 ## 6. 项目规则与自定义指令
@@ -282,6 +282,7 @@ models/                  # 供应商 / 模型配置
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 内置流程不实现这类非公开认证。插件可以声明 `auth` 方法与提示项，由设置页动态渲染登录表单并调用插件自己的 `authorize` 流程；OAuth 方法还可声明 `refresh` 回调，未提供 token endpoint 的插件凭据会在过期前由主进程自动刷新并写回 `auth.json`。
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
+- 缓存成本仍按 input token 统一价格估算，未区分 cache read/write 价格；缓存指标只统计聊天模型请求，标题、压缩与模型测试不计入。
 - 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示、原始项目配置编辑和完整配置矩阵 E2E；结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入选择器、项目权限规则来源 UI、文件监听热更新仍待补齐；运行中的配置更新会通过 `config.changed` 主动刷新 UI 与缓存。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 - 桌面安装包尚未配置代码签名与公证（macOS `notarize: false`）；正式分发前需提供证书、公证凭据并调整 `electron-builder.yml`。

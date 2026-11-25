@@ -544,6 +544,7 @@ const zhCN = {
     planCopyPath: '复制路径',
     planCopied: '已复制',
     planSwitched: '计划已确认 · 已切换到 build agent 继续执行。',
+    redactedReasoning: '已隐藏的推理内容',
     stepLimitHint: '本次运行已达到工具调用上限，可以继续发送消息。',
     agentStoppedHint: 'Agent 未在运行，会话记录仍可查看。',
     projectConfiguration: '项目配置',

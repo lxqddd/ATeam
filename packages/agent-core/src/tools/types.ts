@@ -53,6 +53,7 @@ export interface ToolContext {
   readTodos?: () => Promise<string>
   askQuestion?: (input: QuestionInput, toolCallId: string) => Promise<string>
   exitPlan?: () => Promise<string>
+  planReady?: () => Promise<boolean>
   listMcpPrompts?: (server?: string) => Promise<string>
   getMcpPrompt?: (server: string, prompt: string, args?: Record<string, string>) => Promise<string>
   listMcpResources?: (server?: string) => Promise<string>

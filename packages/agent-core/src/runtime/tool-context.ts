@@ -46,6 +46,7 @@ export interface ToolContextHost {
   readTodos(run: Run): Promise<string>
   askQuestion(run: Run, input: QuestionInput, toolCallId: string): Promise<string>
   exitPlan(run: Run): Promise<string>
+  planReady(run: Run): Promise<boolean>
   listMcpPrompts(server: string | undefined, workspace: string): Promise<string>
   getMcpPrompt(
     server: string,
@@ -134,6 +135,7 @@ export function buildToolContext(host: ToolContextHost, input: ToolContextInput)
     readTodos: async () => host.readTodos(run),
     askQuestion: (questionInput, toolCallId) => host.askQuestion(run, questionInput, toolCallId),
     exitPlan: () => host.exitPlan(run),
+    planReady: () => host.planReady(run),
     listMcpPrompts: (server) => host.listMcpPrompts(server, run.workspace),
     getMcpPrompt: (server, prompt, args) => host.getMcpPrompt(server, prompt, args, run.workspace),
     listMcpResources: (server) => host.listMcpResources(server, run.workspace),

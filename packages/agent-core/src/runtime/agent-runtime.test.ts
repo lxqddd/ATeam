@@ -1862,6 +1862,35 @@ describe('AgentRuntime', () => {
     expect(turns[0].system).toContain('PLUGIN_MARKER')
   })
 
+  it('applies plugin config hooks before instructions load on every run', async () => {
+    const workspace = path.join(directory, 'workspace')
+    const pluginPath = path.join(directory, 'config-plugin.mjs')
+    await fs.writeFile(
+      pluginPath,
+      `export default () => ({
+        name: '@acme/config',
+        config: (config) => {
+          config.instructions = [...(config.instructions ?? []), 'hook-rule.md']
+        }
+      })`
+    )
+    await fs.writeFile(path.join(workspace, 'hook-rule.md'), 'CONFIG_HOOK_RULE')
+    await fs.mkdir(path.join(directory, 'agent'), { recursive: true })
+    await fs.writeFile(
+      path.join(directory, 'agent', 'config.json'),
+      JSON.stringify({ snapshots: true, instructions: [], plugins: [pluginPath] })
+    )
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+    expect(turns[0].system).toContain('CONFIG_HOOK_RULE')
+
+    scripts.push(textScript('two'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+    expect(turns[1].system).toContain('CONFIG_HOOK_RULE')
+  })
+
   it('injects discovered instruction files into the system prompt', async () => {
     instructionFiles = [
       { path: '/repo/AGENTS.md', content: 'Run bun test before committing' },
@@ -2592,6 +2621,9 @@ describe('agent selection', () => {
       reasoningEffort: null,
       permissionMode: 'plan'
     })
+    const planDirectory = path.join(directory, 'workspace', '.ateam', 'plans')
+    await fs.mkdir(planDirectory, { recursive: true })
+    await fs.writeFile(path.join(planDirectory, `${sessionId}.md`), '# Plan\n\nImplement it.')
     scripts.push(planExitScript())
     scripts.push(textScript('implemented'))
 
@@ -2612,6 +2644,47 @@ describe('agent selection', () => {
     const session = runtime.listSessions()[0]
     expect(session.agent).toBe('build')
     expect(session.permissionMode).toBe('ask')
+  })
+
+  it('keeps plan mode when the plan file is missing', async () => {
+    await runtime.setSessionAgent(sessionId, 'plan')
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'plan'
+    })
+    scripts.push(planExitScript())
+
+    await runtime.sendChat(sessionId, 'plan the work')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'failed' })
+    expect(runtime.listSessions()[0].agent).toBe('plan')
+    expect(runtime.listSessions()[0].permissionMode).toBe('plan')
+  })
+
+  it('restores the plan continuation prompt when retrying a build run', async () => {
+    await runtime.setSessionAgent(sessionId, 'plan')
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'plan'
+    })
+    const planDirectory = path.join(directory, 'workspace', '.ateam', 'plans')
+    await fs.mkdir(planDirectory, { recursive: true })
+    await fs.writeFile(path.join(planDirectory, `${sessionId}.md`), '# Plan\n\nImplement it.')
+    scripts.push(planExitScript())
+    scripts.push(errorScript('boom'))
+
+    await runtime.sendChat(sessionId, 'plan the work')
+    await sink.next('run.finished')
+    await sink.next('run.finished')
+
+    scripts.push(textScript('retried'))
+    await runtime.retryChat(sessionId)
+    await sink.next('run.finished')
+
+    expect(JSON.stringify(turns[2].messages)).toContain(
+      'The user approved the plan saved at .ateam/plans'
+    )
   })
 
   it('reads the session plan file', async () => {

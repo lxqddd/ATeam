@@ -98,6 +98,8 @@ export async function prepareRun(
 ): Promise<PreparedRun> {
   const { run, agent, target, resolvedTarget, variant, nativeCompaction, contextWindow } = input
   const current = host.record(run.sessionId)
+  const plugins = await host.plugins(run.config, run.workspace)
+  run.plugins = plugins
   const instructions = [
     ...(await host.loadInstructions({
       workspacePath: run.workspace,
@@ -116,8 +118,6 @@ export async function prepareRun(
     skills,
     loadedInstructionPaths
   })
-  const plugins = await host.plugins(run.config, run.workspace)
-  run.plugins = plugins
   const pluginTools = await plugins.tools(
     {
       workspace: run.workspace,
