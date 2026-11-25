@@ -21,7 +21,7 @@ function ChatView(): React.JSX.Element {
     questions,
     subagentResults,
     runOutcomes,
-    backgroundResults,
+    backgroundTasksBySession,
     changesPanel
   } = useChatStore()
 
@@ -37,9 +37,9 @@ function ChatView(): React.JSX.Element {
   const sessionSubagents = subagentResults.filter(
     (result) => result.parentSessionId === selectedSessionId
   )
-  const sessionBackground = backgroundResults.filter(
-    (result) => result.sessionId === selectedSessionId
-  )
+  const sessionBackground = selectedSessionId
+    ? (backgroundTasksBySession[selectedSessionId] ?? [])
+    : []
 
   const emptyState = (
     <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6">
@@ -108,7 +108,7 @@ function ChatView(): React.JSX.Element {
         />
       )}
 
-      <BackgroundNotices results={sessionBackground} />
+      <BackgroundNotices tasks={sessionBackground} />
       <SubagentNotices
         results={sessionSubagents}
         onDismiss={(toolCallId) => chatStore.dismissSubagentResult(toolCallId)}

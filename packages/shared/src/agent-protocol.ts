@@ -121,6 +121,8 @@ export type WorkerRequest =
       }
     }
   | { id: string; method: 'chat.queue.remove'; params: { sessionId: string; id: string } }
+  | { id: string; method: 'background.list'; params?: { sessionId?: string } }
+  | { id: string; method: 'background.cancel'; params: { taskId: string } }
   | { id: string; method: 'permissions.list'; params?: undefined }
   | {
       id: string

@@ -8,6 +8,7 @@ import type {
   AgentConfig,
   AgentDefinition,
   AgentMetricsSnapshot,
+  BackgroundTaskInfo,
   CacheMetricsSnapshot,
   ChatMessage,
   ChatRetryStatus,
@@ -80,6 +81,13 @@ import {
 } from '../worktrees'
 import { CompactionService } from './compaction-service'
 import { CacheMetricsCollector } from './cache-metrics'
+import {
+  BackgroundTaskRegistry,
+  backgroundTaskId,
+  formatBackgroundResult,
+  formatBackgroundTaskList,
+  makeBackgroundResultMessage
+} from './background-tasks'
 import { DEFAULT_DEPENDENCIES } from './defaults'
 import { isContextLengthError } from './helpers'
 import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
@@ -128,6 +136,11 @@ export class AgentRuntime {
   private readonly runs = new Map<string, Run>()
   private readonly starting = new Set<string>()
   private readonly queues = new Map<string, QueuedMessage[]>()
+  private readonly backgroundTasks = new BackgroundTaskRegistry()
+  /** Sessions whose next idle moment should start a run for injected background results. */
+  private readonly pendingBackgroundWake = new Set<string>()
+  /** Sessions where the user stopped or cancelled work and nothing may auto-start. */
+  private readonly backgroundSilenced = new Set<string>()
   private closed = false
   private models: RuntimeModelsConfig
   private providerAuth: RuntimeProviderAuth[]
@@ -665,6 +678,7 @@ export class AgentRuntime {
       run.abort.abort()
       this.permissionService.rejectPendingForRun(run)
     }
+    this.disposeBackgroundSession(id)
     const children = this.store.list().filter((session) => session.parentId === id)
     for (const child of children) {
       this.queues.delete(child.id)
@@ -673,6 +687,7 @@ export class AgentRuntime {
         childRun.abort.abort()
         this.permissionService.rejectPendingForRun(childRun)
       }
+      this.disposeBackgroundSession(child.id)
       const childRecord = this.store.get(child.id)
       await this.store.delete(child.id)
       await this.permissionRules.removeForSession(child.id)
@@ -750,6 +765,7 @@ export class AgentRuntime {
     if (!content && attachments.length === 0) throw new Error('EMPTY_MESSAGE')
     const record = this.store.get(sessionId)
     if (!record) throw new Error('SESSION_NOT_FOUND')
+    this.backgroundSilenced.delete(sessionId)
     this.reserveSession(sessionId)
 
     try {
@@ -793,6 +809,7 @@ export class AgentRuntime {
     models: RuntimeModelsConfig,
     continuationPrompt?: string
   ): void {
+    this.pendingBackgroundWake.delete(sessionId)
     this.events.emit({ type: 'message.upsert', message: structuredClone(assistant) })
     this.events.emitSession(sessionId)
     this.events.emit({
@@ -835,6 +852,8 @@ export class AgentRuntime {
   }
 
   stopChat(sessionId: string): void {
+    this.backgroundSilenced.add(sessionId)
+    this.pendingBackgroundWake.delete(sessionId)
     if (this.queues.delete(sessionId)) this.emitQueue(sessionId)
     const run = this.runs.get(sessionId)
     if (!run) return
@@ -854,6 +873,7 @@ export class AgentRuntime {
     const attachments = input.attachments ?? []
     if (!content && attachments.length === 0) throw new Error('EMPTY_MESSAGE')
     if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
+    this.backgroundSilenced.delete(sessionId)
     const item: QueuedMessage = {
       id: randomUUID(),
       sessionId,
@@ -936,6 +956,7 @@ export class AgentRuntime {
   async retryChat(sessionId: string): Promise<void> {
     const record = this.store.get(sessionId)
     if (!record) throw new Error('SESSION_NOT_FOUND')
+    this.backgroundSilenced.delete(sessionId)
     this.reserveSession(sessionId)
 
     try {
@@ -1019,6 +1040,9 @@ export class AgentRuntime {
   async shutdown(): Promise<void> {
     this.closed = true
     this.queues.clear()
+    this.backgroundTasks.cancelAll()
+    this.pendingBackgroundWake.clear()
+    this.backgroundSilenced.clear()
     for (const run of this.runs.values()) {
       run.abort.abort()
       this.permissionService.rejectPendingForRun(run)
@@ -1108,11 +1132,26 @@ export class AgentRuntime {
     run: Run,
     info: {
       parentSessionId: string
+      parentMessageId: string
       toolCallId: string
       agentId: string
+      description: string
       cleanup: () => void
     }
   ): void {
+    const taskId = backgroundTaskId(info.parentSessionId, info.toolCallId)
+    this.publishBackgroundTask(
+      this.backgroundTasks.start({
+        id: taskId,
+        kind: 'subagent',
+        sessionId: info.parentSessionId,
+        toolCallId: info.toolCallId,
+        ownerMessageId: info.parentMessageId,
+        title: info.description,
+        childSessionId: run.sessionId,
+        cancel: () => run.abort.abort()
+      })
+    )
     void this.runAgent(run)
       .catch(() => undefined)
       .finally(() => {
@@ -1139,7 +1178,212 @@ export class AgentRuntime {
           status,
           result: result.slice(0, 2_000)
         })
+        const finished = this.backgroundTasks.complete(taskId, {
+          state:
+            status === 'completed'
+              ? 'completed'
+              : status === 'interrupted'
+                ? 'cancelled'
+                : 'failed',
+          ...(result ? { result } : {}),
+          ...(status === 'failed'
+            ? { error: message?.error ?? 'The subagent did not finish.' }
+            : {})
+        })
+        if (finished) {
+          this.publishBackgroundTask(finished)
+          this.deliverBackgroundResult(finished)
+        }
       })
+  }
+
+  private publishBackgroundTask(task: BackgroundTaskInfo): void {
+    this.events.emit({ type: 'background.updated', sessionId: task.sessionId, task })
+  }
+
+  /**
+   * Appends a synthetic user message carrying the task result and, when the
+   * parent session is idle, starts a continuation run so the agent can react.
+   */
+  private deliverBackgroundResult(task: BackgroundTaskInfo): void {
+    if (this.closed || task.state === 'cancelled') return
+    if (this.backgroundTasks.isConsumed(task.id)) return
+    const record = this.store.get(task.sessionId)
+    if (!record || record.session.hidden) return
+    const taskRecord = this.backgroundTasks.record(task.id)
+    this.backgroundTasks.consume(task.id)
+    const message = makeBackgroundResultMessage(task)
+    void this.store
+      .appendMessage(task.sessionId, message)
+      .then(() => {
+        this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
+        this.events.emitSession(task.sessionId)
+        this.maybeWakeForBackground(task.sessionId, taskRecord?.ownerMessageId)
+      })
+      .catch(() => undefined)
+  }
+
+  private maybeWakeForBackground(sessionId: string, ownerMessageId?: string): void {
+    if (this.backgroundSilenced.has(sessionId) || this.closed) return
+    if (ownerMessageId && !this.shouldWakeForBackground(sessionId, ownerMessageId)) return
+    const record = this.store.get(sessionId)
+    if (!record || record.session.hidden) return
+    if (this.sessionBusy(sessionId)) {
+      this.pendingBackgroundWake.add(sessionId)
+      return
+    }
+    if ((this.queues.get(sessionId)?.length ?? 0) > 0) {
+      this.drainQueue(sessionId)
+      return
+    }
+    setTimeout(() => {
+      void this.startBackgroundContinuation(sessionId).catch((error) => {
+        console.warn('[runtime] failed to start the background continuation', error)
+      })
+    }, 0)
+  }
+
+  /** True when the run that started the task finished normally and nothing was stopped. */
+  private shouldWakeForBackground(sessionId: string, ownerMessageId: string): boolean {
+    if (this.backgroundSilenced.has(sessionId) || this.closed) return false
+    const record = this.store.get(sessionId)
+    if (!record || record.session.hidden) return false
+    const owner = record.messages.find((message) => message.id === ownerMessageId)
+    return !owner || owner.status === 'complete'
+  }
+
+  private async startBackgroundContinuation(sessionId: string): Promise<void> {
+    if (this.closed || this.backgroundSilenced.has(sessionId)) return
+    if (this.sessionBusy(sessionId)) return
+    const record = this.store.get(sessionId)
+    if (!record || record.session.hidden) return
+    if ((this.queues.get(sessionId)?.length ?? 0) > 0) {
+      this.drainQueue(sessionId)
+      return
+    }
+    this.reserveSession(sessionId)
+    try {
+      const workspace = this.sessionWorkspace(sessionId)
+      const effective = await this.applyWorkspaceConfig(workspace)
+      const config = effective.config
+      const models = await this.modelsForWorkspace(workspace, config)
+      resolveModelRef(models, record.session.model ?? models.defaultModel)
+      if (this.backgroundSilenced.has(sessionId)) return
+      const assistant = makeAssistantMessage(sessionId)
+      if (config.snapshots) {
+        assistant.snapshotBefore = await this.createSnapshotId(
+          sessionId,
+          workspace,
+          await this.resolveRunReferences(config, workspace)
+        )
+      }
+      if (!this.store.get(sessionId)) return
+      await this.store.appendMessage(sessionId, assistant)
+      await this.store.setStatus(sessionId, 'running')
+      this.beginRun(sessionId, assistant, undefined, config, models)
+    } finally {
+      this.starting.delete(sessionId)
+    }
+  }
+
+  private disposeBackgroundSession(sessionId: string): void {
+    for (const task of this.backgroundTasks.running(sessionId)) this.backgroundTasks.cancel(task.id)
+    this.backgroundTasks.clearSession(sessionId)
+    this.pendingBackgroundWake.delete(sessionId)
+    this.backgroundSilenced.delete(sessionId)
+  }
+
+  private finishShellBackground(
+    run: Run,
+    info: {
+      toolCallId: string
+      command: string
+      exitCode: number | null
+      outputPath: string | null
+    }
+  ): void {
+    const taskId = backgroundTaskId(run.sessionId, info.toolCallId)
+    void this.readBackgroundOutput(info.outputPath).then((output) => {
+      const state = info.exitCode === 0 ? 'completed' : 'failed'
+      const finished = this.backgroundTasks.complete(taskId, {
+        state,
+        exitCode: info.exitCode,
+        ...(output ? { result: output } : {}),
+        ...(state === 'failed'
+          ? { error: `The command exited with code ${info.exitCode ?? 'unknown'}.` }
+          : {})
+      })
+      this.events.emit({
+        type: 'background.finished',
+        sessionId: run.sessionId,
+        messageId: run.messageId,
+        toolCallId: info.toolCallId,
+        command: info.command,
+        exitCode: info.exitCode,
+        outputPath: info.outputPath
+      })
+      if (!finished) return
+      this.publishBackgroundTask(finished)
+      this.deliverBackgroundResult(finished)
+    })
+  }
+
+  private async readBackgroundOutput(outputPath: string | null): Promise<string | undefined> {
+    if (!outputPath) return undefined
+    try {
+      const output = await fs.readFile(outputPath, 'utf8')
+      return output.trim() ? output : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private backgroundTaskList(run: Run): string {
+    return formatBackgroundTaskList(this.backgroundTasks.list(run.sessionId))
+  }
+
+  private async backgroundTaskWait(run: Run, taskId: string, timeoutMs: number): Promise<string> {
+    const target = this.backgroundTasks.get(taskId)
+    if (!target || target.sessionId !== run.sessionId) {
+      return `Error: unknown background task: ${taskId}`
+    }
+    const task = await this.backgroundTasks.wait(taskId, timeoutMs, run.abort.signal)
+    if (!task) {
+      const current = this.backgroundTasks.get(taskId)
+      return current
+        ? `Background task ${taskId} is still running (${current.title}).`
+        : `Error: unknown background task: ${taskId}`
+    }
+    this.backgroundTasks.consume(taskId)
+    return formatBackgroundResult(task)
+  }
+
+  private backgroundTaskCancel(run: Run, taskId: string): string {
+    const task = this.backgroundTasks.get(taskId)
+    if (!task || task.sessionId !== run.sessionId) {
+      return `Error: unknown background task: ${taskId}`
+    }
+    this.backgroundTasks.consume(taskId)
+    if (!this.backgroundTasks.cancel(taskId)) {
+      return `Background task ${taskId} already finished (${task.state}).`
+    }
+    const info = this.backgroundTasks.get(taskId)
+    if (info) this.publishBackgroundTask(info)
+    return `Cancelled background task ${taskId}.`
+  }
+
+  listBackgroundTasks(sessionId?: string): BackgroundTaskInfo[] {
+    return this.backgroundTasks.list(sessionId)
+  }
+
+  cancelBackgroundTask(taskId: string): boolean {
+    const task = this.backgroundTasks.get(taskId)
+    if (!task) return false
+    this.backgroundTasks.consume(taskId)
+    if (!this.backgroundTasks.cancel(taskId)) return false
+    const info = this.backgroundTasks.get(taskId)
+    if (info) this.publishBackgroundTask(info)
+    return true
   }
 
   private messageCost(
@@ -1775,13 +2019,24 @@ export class AgentRuntime {
       toolOutputPath: (sessionId, toolCallId) => this.toolOutputs.pathFor(sessionId, toolCallId),
       appendToolOutput: (run, toolCallId, delta) =>
         appendToolOutput(this.events, this.assistantFor(run), run, toolCallId, delta),
-      emitBackgroundFinished: (run, info) =>
-        this.events.emit({
-          type: 'background.finished',
+      registerBackgroundShell: (run, info) => {
+        const task = this.backgroundTasks.start({
+          id: backgroundTaskId(run.sessionId, info.toolCallId),
+          kind: 'shell',
           sessionId: run.sessionId,
-          messageId: run.messageId,
-          ...info
-        }),
+          toolCallId: info.toolCallId,
+          ownerMessageId: run.messageId,
+          title: info.title,
+          outputPath: info.outputPath,
+          cancel: info.cancel
+        })
+        this.publishBackgroundTask(task)
+      },
+      emitBackgroundFinished: (run, info) => this.finishShellBackground(run, info),
+      listBackgroundTasks: (run) => this.backgroundTaskList(run),
+      waitBackgroundTask: (run, taskId, timeoutMs) =>
+        this.backgroundTaskWait(run, taskId, timeoutMs),
+      cancelBackgroundTask: (run, taskId) => this.backgroundTaskCancel(run, taskId),
       formatFiles: (run, files) =>
         this.workspaceServices.formatFiles(run.workspace, files, run.config.formatterOverrides),
       diagnoseFiles: (run, files) => this.workspaceServices.diagnoseFiles(run.workspace, files),
@@ -2146,7 +2401,16 @@ export class AgentRuntime {
       if (prepareCompaction) this.compaction.schedulePreparedCompaction(run.sessionId)
       this.events.emitSession(run.sessionId)
       void this.workspaceServices.releaseWorkspace(run.workspace)
+      const wokenByBackground = this.pendingBackgroundWake.delete(run.sessionId)
+      const queued = (this.queues.get(run.sessionId)?.length ?? 0) > 0
       this.drainQueue(run.sessionId)
+      if (wokenByBackground && !queued) {
+        setTimeout(() => {
+          void this.startBackgroundContinuation(run.sessionId).catch((error) => {
+            console.warn('[runtime] failed to start the background continuation', error)
+          })
+        }, 0)
+      }
     }
   }
 }

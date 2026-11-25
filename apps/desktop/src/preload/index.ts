@@ -82,6 +82,11 @@ const api: AteamApi = {
       removeQueued: (sessionId, id) =>
         ipcRenderer.invoke(AGENT_CHANNELS.chatQueueRemove, { sessionId, id })
     },
+    background: {
+      list: (sessionId) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.backgroundTasksList, sessionId ? { sessionId } : {}),
+      cancel: (taskId) => ipcRenderer.invoke(AGENT_CHANNELS.backgroundTaskCancel, { taskId })
+    },
     permissions: {
       list: () => ipcRenderer.invoke(AGENT_CHANNELS.permissionsList),
       reply: (requestId, decision) =>

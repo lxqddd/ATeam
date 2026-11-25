@@ -3680,9 +3680,10 @@ describe('background subagents and sampling', () => {
     ).rejects.toThrow('INVALID_VARIANT')
   })
 
-  it('runs subagents in the background and reports completion', async () => {
+  it('runs subagents in the background and continues with the result', async () => {
     scripts.push(subagentCallScript({ prompt: 'Explore src', agent: 'explore', background: true }))
     scripts.push(textScript('background result'))
+    scripts.push(textScript('used background result'))
 
     await runtime.sendChat(sessionId, 'delegate')
     await sink.next('run.finished')
@@ -3699,6 +3700,231 @@ describe('background subagents and sampling', () => {
     })
     expect(finished.event.result).toContain('background result')
     expect(runtime.listSessions()).toHaveLength(1)
+
+    const taskId = `${sessionId}:call-sub`
+    await vi.waitFor(() =>
+      expect(assistantMessages().at(-1)?.parts).toEqual([
+        { type: 'text', text: 'used background result' }
+      ])
+    )
+    const injected = runtime
+      .messages(sessionId)
+      .messages.find((message) => message.synthetic?.taskId === taskId)
+    expect(injected?.synthetic).toMatchObject({ kind: 'subagent', state: 'completed' })
+    expect(JSON.stringify(turns[2].messages)).toContain('<background-result')
+    expect(JSON.stringify(turns[2].messages)).toContain('background result')
+    expect(runtime.listBackgroundTasks(sessionId)).toEqual([
+      expect.objectContaining({ id: taskId, kind: 'subagent', state: 'completed' })
+    ])
+  })
+})
+
+function backgroundTaskContext(): ToolContext {
+  if (!toolContext) throw new Error('tool context not initialized')
+  return toolContext
+}
+
+function startBackgroundShell(
+  context: ToolContext,
+  options: {
+    toolCallId: string
+    title?: string
+    outputPath?: string | null
+    cancel?: () => void
+  }
+): void {
+  context.backgroundTaskStart?.({
+    toolCallId: options.toolCallId,
+    kind: 'shell',
+    title: options.title ?? 'echo hi',
+    outputPath: options.outputPath ?? null,
+    cancel: options.cancel ?? (() => undefined)
+  })
+}
+
+function finishBackgroundShell(
+  context: ToolContext,
+  options: {
+    toolCallId?: string
+    command?: string
+    exitCode?: number | null
+    outputPath?: string | null
+  } = {}
+): void {
+  context.onBackgroundFinished?.({
+    toolCallId: options.toolCallId ?? 'call-bg',
+    command: options.command ?? 'echo hi',
+    exitCode: options.exitCode ?? 0,
+    outputPath: options.outputPath ?? null
+  })
+}
+
+describe('background task results', () => {
+  it('injects a finished shell task and continues the run with it', async () => {
+    const outputPath = path.join(directory, 'shell-bg.log')
+    await fs.writeFile(outputPath, 'shell finished output')
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'run a command')
+    await sink.next('run.finished')
+
+    const context = backgroundTaskContext()
+    startBackgroundShell(context, { toolCallId: 'call-bg', title: 'make build', outputPath })
+    expect(runtime.listBackgroundTasks(sessionId)).toEqual([
+      expect.objectContaining({
+        id: `${sessionId}:call-bg`,
+        kind: 'shell',
+        title: 'make build',
+        state: 'running'
+      })
+    ])
+
+    scripts.push(textScript('continued with shell output'))
+    finishBackgroundShell(context, {
+      toolCallId: 'call-bg',
+      command: 'make build',
+      outputPath
+    })
+
+    await vi.waitFor(() => expect(turns).toHaveLength(2))
+    await sink.next('run.finished')
+    await vi.waitFor(() =>
+      expect(assistantMessages().at(-1)?.parts).toEqual([
+        { type: 'text', text: 'continued with shell output' }
+      ])
+    )
+
+    const taskId = `${sessionId}:call-bg`
+    const messages = runtime.messages(sessionId).messages
+    const injectedIndex = messages.findIndex((message) => message.synthetic?.taskId === taskId)
+    expect(injectedIndex).toBeGreaterThan(0)
+    expect(messages[injectedIndex].synthetic).toMatchObject({
+      kind: 'shell',
+      state: 'completed',
+      title: 'make build'
+    })
+    expect(JSON.stringify(turns[1].messages)).toContain('<background-result')
+    expect(JSON.stringify(turns[1].messages)).toContain('shell finished output')
+    expect(runtime.listBackgroundTasks(sessionId)).toEqual([
+      expect.objectContaining({ id: taskId, state: 'completed', exitCode: 0 })
+    ])
+  })
+
+  it('defers the continuation until a busy run finishes', async () => {
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'first')
+    await sink.next('run.finished')
+
+    const context = backgroundTaskContext()
+    startBackgroundShell(context, { toolCallId: 'call-bg' })
+
+    scripts.push(pausableTextScript())
+    await runtime.sendChat(sessionId, 'second')
+    await vi.waitFor(() => expect(resumeTurn).not.toBeNull())
+    expect(turns).toHaveLength(2)
+
+    finishBackgroundShell(context, { toolCallId: 'call-bg' })
+    const taskId = `${sessionId}:call-bg`
+    await vi.waitFor(() =>
+      expect(
+        runtime.messages(sessionId).messages.some((message) => message.synthetic?.taskId === taskId)
+      ).toBe(true)
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(turns).toHaveLength(2)
+
+    scripts.push(textScript('continued after busy'))
+    resumeTurn?.()
+    resumeTurn = null
+
+    await vi.waitFor(() => expect(turns).toHaveLength(3))
+    await vi.waitFor(() =>
+      expect(assistantMessages().at(-1)?.parts).toEqual([
+        { type: 'text', text: 'continued after busy' }
+      ])
+    )
+    expect(JSON.stringify(turns[2].messages)).toContain('<background-result')
+  })
+
+  it('injects results but does not restart after the user stops the run', async () => {
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'long task')
+    await vi.waitFor(() => expect(turns).toHaveLength(1))
+
+    const context = backgroundTaskContext()
+    startBackgroundShell(context, { toolCallId: 'call-bg' })
+
+    runtime.stopChat(sessionId)
+    const stopped = await sink.next('run.finished')
+    expect(stopped.event).toMatchObject({ status: 'interrupted' })
+
+    finishBackgroundShell(context, { toolCallId: 'call-bg' })
+    const taskId = `${sessionId}:call-bg`
+    await vi.waitFor(() =>
+      expect(
+        runtime.messages(sessionId).messages.some((message) => message.synthetic?.taskId === taskId)
+      ).toBe(true)
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(turns).toHaveLength(1)
+    expect(assistantMessages()).toHaveLength(1)
+  })
+
+  it('does not inject or continue for a cancelled task', async () => {
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.finished')
+
+    const context = backgroundTaskContext()
+    const cancel = vi.fn()
+    startBackgroundShell(context, { toolCallId: 'call-bg', cancel })
+    const taskId = `${sessionId}:call-bg`
+
+    expect(runtime.cancelBackgroundTask(taskId)).toBe(true)
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(runtime.listBackgroundTasks(sessionId)).toEqual([
+      expect.objectContaining({ id: taskId, state: 'cancelled' })
+    ])
+
+    finishBackgroundShell(context, { toolCallId: 'call-bg', exitCode: null })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(
+      runtime.messages(sessionId).messages.some((message) => message.synthetic?.taskId === taskId)
+    ).toBe(false)
+    expect(turns).toHaveLength(1)
+  })
+
+  it('lets tools wait on a task without also injecting its result', async () => {
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.finished')
+
+    const context = backgroundTaskContext()
+    startBackgroundShell(context, { toolCallId: 'call-a', title: 'task a' })
+    startBackgroundShell(context, { toolCallId: 'call-b', title: 'task b' })
+    const taskId = `${sessionId}:call-a`
+
+    const list = context.listBackgroundTasks?.() ?? ''
+    expect(list).toContain(`${sessionId}:call-a`)
+    expect(list).toContain('running')
+
+    if (!context.waitBackgroundTask) throw new Error('wait is unavailable')
+    const waiting = context.waitBackgroundTask(taskId, 10_000)
+    finishBackgroundShell(context, { toolCallId: 'call-a', command: 'task a' })
+
+    await expect(waiting).resolves.toContain('<background-result')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(
+      runtime.messages(sessionId).messages.some((message) => message.synthetic?.taskId === taskId)
+    ).toBe(false)
+
+    const cancelled = context.cancelBackgroundTask?.(`${sessionId}:call-b`)
+    expect(cancelled).toContain('Cancelled')
+    expect(runtime.listBackgroundTasks(sessionId)).toEqual([
+      expect.objectContaining({ id: taskId, state: 'completed' }),
+      expect.objectContaining({ id: `${sessionId}:call-b`, state: 'cancelled' })
+    ])
   })
 })
 

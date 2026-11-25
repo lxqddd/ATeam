@@ -34,6 +34,10 @@ let storeOutput: Mock<NonNullable<ToolContext['storeOutput']>>
 let onToolOutput: Mock<NonNullable<ToolContext['onToolOutput']>>
 let backgroundOutputPath: Mock<NonNullable<ToolContext['backgroundOutputPath']>>
 let onBackgroundFinished: Mock<NonNullable<ToolContext['onBackgroundFinished']>>
+let backgroundTaskStart: Mock<NonNullable<ToolContext['backgroundTaskStart']>>
+let listBackgroundTasks: Mock<NonNullable<ToolContext['listBackgroundTasks']>>
+let waitBackgroundTask: Mock<NonNullable<ToolContext['waitBackgroundTask']>>
+let cancelBackgroundTask: Mock<NonNullable<ToolContext['cancelBackgroundTask']>>
 let formatFiles: Mock<NonNullable<ToolContext['formatFiles']>>
 let diagnoseFiles: Mock<NonNullable<ToolContext['diagnoseFiles']>>
 let runSubagent: Mock<NonNullable<ToolContext['runSubagent']>>
@@ -77,6 +81,10 @@ beforeEach(async () => {
   onToolOutput = vi.fn()
   backgroundOutputPath = vi.fn(async () => path.join(directory, 'bg.log'))
   onBackgroundFinished = vi.fn()
+  backgroundTaskStart = vi.fn()
+  listBackgroundTasks = vi.fn(() => 'Background tasks: none')
+  waitBackgroundTask = vi.fn(async () => 'Background task s1:call-1 completed')
+  cancelBackgroundTask = vi.fn(() => 'Cancelled background task s1:call-1.')
   formatFiles = vi.fn(async () => '')
   diagnoseFiles = vi.fn(async () => '')
   runSubagent = vi.fn(async () => 'child result')
@@ -133,6 +141,10 @@ beforeEach(async () => {
     onToolOutput,
     backgroundOutputPath,
     onBackgroundFinished,
+    backgroundTaskStart,
+    listBackgroundTasks,
+    waitBackgroundTask,
+    cancelBackgroundTask,
     formatFiles,
     diagnoseFiles,
     runSubagent,
@@ -767,11 +779,30 @@ describe('shell tool', () => {
     })
 
     expect(result).toContain('Started background command')
+    expect(backgroundTaskStart).toHaveBeenCalledWith({
+      toolCallId: 'call-1',
+      kind: 'shell',
+      title: 'printf background-output',
+      outputPath: path.join(directory, 'bg.log'),
+      cancel: expect.any(Function)
+    })
     await vi.waitFor(() => expect(onBackgroundFinished).toHaveBeenCalled())
     const info = onBackgroundFinished.mock.calls[0][0]
     expect(info.exitCode).toBe(0)
     expect(info.outputPath).toBe(path.join(directory, 'bg.log'))
     expect(await fs.readFile(info.outputPath ?? '', 'utf8')).toContain('background-output')
+  })
+
+  it('cancels a running background command', async () => {
+    if (process.platform === 'win32') return
+    await execute(tools.shell, { command: 'sleep 5', background: true })
+    const started = backgroundTaskStart.mock.calls[0][0]
+    started.cancel()
+
+    await vi.waitFor(() => expect(onBackgroundFinished).toHaveBeenCalled())
+    const info = onBackgroundFinished.mock.calls[0][0]
+    expect(info.command).toBe('sleep 5')
+    expect(info.exitCode).not.toBe(0)
   })
 
   it('does not run commands when permission is denied', async () => {
@@ -808,6 +839,60 @@ describe('shell tool', () => {
     if (process.platform === 'win32') return
     const result = await execute(tools.shell, { command: 'sleep 5', timeoutMs: 1_000 })
     expect(result).toContain('[command timed out after 1000ms]')
+  })
+})
+
+describe('background_tasks tool', () => {
+  it('lists background tasks', async () => {
+    await expect(execute(tools.background_tasks, { action: 'list' })).resolves.toBe(
+      'Background tasks: none'
+    )
+  })
+
+  it('waits for a task', async () => {
+    await expect(
+      execute(tools.background_tasks, { action: 'wait', taskId: 's1:call-1', timeoutMs: 5_000 })
+    ).resolves.toBe('Background task s1:call-1 completed')
+    expect(waitBackgroundTask).toHaveBeenCalledWith('s1:call-1', 5_000)
+  })
+
+  it('defaults the wait timeout to one minute', async () => {
+    await execute(tools.background_tasks, { action: 'wait', taskId: 's1:call-1' })
+    expect(waitBackgroundTask).toHaveBeenCalledWith('s1:call-1', 60_000)
+  })
+
+  it('cancels a task', async () => {
+    await expect(
+      execute(tools.background_tasks, { action: 'cancel', taskId: 's1:call-1' })
+    ).resolves.toBe('Cancelled background task s1:call-1.')
+    expect(cancelBackgroundTask).toHaveBeenCalledWith('s1:call-1')
+  })
+
+  it('requires a task id for wait and cancel', async () => {
+    await expect(execute(tools.background_tasks, { action: 'wait' })).resolves.toContain(
+      'taskId is required'
+    )
+    await expect(execute(tools.background_tasks, { action: 'cancel' })).resolves.toContain(
+      'taskId is required'
+    )
+  })
+
+  it('reports when background tasks are unavailable', async () => {
+    const context: ToolContext = { ...baseContext }
+    delete context.listBackgroundTasks
+    delete context.waitBackgroundTask
+    delete context.cancelBackgroundTask
+    const limited = createTools(context)
+
+    await expect(execute(limited.background_tasks, { action: 'list' })).resolves.toContain(
+      'not available'
+    )
+    await expect(
+      execute(limited.background_tasks, { action: 'wait', taskId: 's1:call-1' })
+    ).resolves.toContain('not available')
+    await expect(
+      execute(limited.background_tasks, { action: 'cancel', taskId: 's1:call-1' })
+    ).resolves.toContain('not available')
   })
 })
 

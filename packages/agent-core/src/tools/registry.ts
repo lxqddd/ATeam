@@ -1,4 +1,5 @@
 import type { ToolSet } from 'ai'
+import { createBackgroundTasksTool } from './background'
 import {
   createBrowserClickTool,
   createBrowserCloseTool,
@@ -68,6 +69,7 @@ export function createTools(context: ToolContext): ToolSet {
     write: createWriteTool(context),
     edit: createEditTool(context),
     shell: createShellTool(context),
+    background_tasks: createBackgroundTasksTool(context),
     subagent: createSubagentTool(context),
     websearch: createWebSearchTool(context),
     webfetch: createWebFetchTool(context),

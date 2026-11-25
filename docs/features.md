@@ -96,10 +96,17 @@
 
 - `subagent` 工具创建隐藏子会话，在独立上下文中运行指定子 Agent，完成后把结果与子会话 id 返回主对话。
 - 传 `sessionId` 可继续已有子会话；子会话的权限请求上抛到父会话审批；禁止子代理再嵌套（深度 1）。
-- 支持后台运行：工具立即返回子会话 id，完成后主会话收到 `subagent.finished` 通知（可在提示条中查看结果并关闭）。
+- 支持后台运行：工具立即返回子会话 id；任务完成后结果以结构化合成消息注入父会话，父会话空闲时自动继续一轮让 Agent 基于结果工作；父会话忙时在当前回合结束后继续，用户停止会话后只注入不重启。
 - 子代理发起的 Question 会以父会话身份展示，回答后继续子代理执行。
 - 隐藏子会话不出现在会话列表、不向 UI 推送事件（完成通知除外）；删除父会话级联清理。
 - `subagent` 工具纳入权限动作 `subagent`，资源为请求的 Agent 名称，默认允许。
+
+### 3.5 后台任务
+
+- 后台 shell 与后台子代理共用任务注册表：类型（shell / subagent）、状态（running / completed / failed / cancelled）、输出、退出码、子会话 id 与取消句柄。
+- `background_tasks` 工具提供 `list` / `wait` / `cancel`；`wait` 返回结构化结果并消费该任务，避免完成时重复注入。
+- 任务完成时追加合成 `background-result` 消息并自动续跑；取消的任务不注入结果；删除会话或关闭运行时取消该会话的全部后台任务。
+- 聊天顶部提示条展示运行中的后台任务并可取消；完成的合成结果在对话流中展示，包含类型、标题、状态与输出（失败时高亮）。
 
 ## 4. 工具集
 
@@ -112,11 +119,12 @@
 | `write`              | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`     |
 | `edit`               | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`      |
 | `patch`              | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`      |
-| `shell`              | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`     |
+| `shell`              | 执行命令，超时、流式输出、后台运行与任务跟踪                       | `shell`     |
 | `webfetch`           | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`  |
 | `websearch`          | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch` |
 | `skill`              | 按名称加载 Skill 全文与附带资源清单                                | `skill`     |
 | `subagent`           | 委派子任务到子代理（可后台运行）                                   | `subagent`  |
+| `background_tasks`   | 列出 / 等待 / 取消后台任务                                         | 不需要审批  |
 | `mcp_prompt`         | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`       |
 | `mcp_resource`       | 列出 / 读取 MCP resources 与 resource templates                    | `mcp`       |
 | `lsp_hover`          | 查询符号的类型与文档                                               | `lsp`       |

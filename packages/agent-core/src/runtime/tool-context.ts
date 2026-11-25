@@ -27,6 +27,15 @@ export interface ToolContextHost {
   ): Promise<{ output: string; path?: string }>
   toolOutputPath(sessionId: string, toolCallId: string): Promise<string>
   appendToolOutput(run: Run, toolCallId: string, delta: string): void
+  registerBackgroundShell(
+    run: Run,
+    info: {
+      toolCallId: string
+      title: string
+      outputPath: string | null
+      cancel: () => void
+    }
+  ): void
   emitBackgroundFinished(
     run: Run,
     info: {
@@ -36,6 +45,9 @@ export interface ToolContextHost {
       outputPath: string | null
     }
   ): void
+  listBackgroundTasks(run: Run): string
+  waitBackgroundTask(run: Run, taskId: string, timeoutMs: number): Promise<string>
+  cancelBackgroundTask(run: Run, taskId: string): string
   formatFiles(run: Run, files: string[]): Promise<string>
   diagnoseFiles(run: Run, files: string[]): Promise<string>
   lspHover(run: Run, file: string, line: number, character: number): Promise<string>
@@ -118,7 +130,11 @@ export function buildToolContext(host: ToolContextHost, input: ToolContextInput)
       run.plugins ? run.plugins.shellEnv(run.workspace, run.sessionId) : Promise.resolve({}),
     onToolOutput: (toolCallId, delta) => host.appendToolOutput(run, toolCallId, delta),
     backgroundOutputPath: (toolCallId) => host.toolOutputPath(run.sessionId, toolCallId),
+    backgroundTaskStart: (info) => host.registerBackgroundShell(run, info),
     onBackgroundFinished: (info) => host.emitBackgroundFinished(run, info),
+    listBackgroundTasks: () => host.listBackgroundTasks(run),
+    waitBackgroundTask: (taskId, timeoutMs) => host.waitBackgroundTask(run, taskId, timeoutMs),
+    cancelBackgroundTask: (taskId) => host.cancelBackgroundTask(run, taskId),
     formatFiles: run.config.formatters ? (files) => host.formatFiles(run, files) : undefined,
     diagnoseFiles: run.config.lsp ? (files) => host.diagnoseFiles(run, files) : undefined,
     lspHover: run.config.lsp

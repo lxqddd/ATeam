@@ -35,8 +35,10 @@ export interface SubagentHost {
     run: Run,
     info: {
       parentSessionId: string
+      parentMessageId: string
       toolCallId: string
       agentId: string
+      description: string
       cleanup: () => void
     }
   ): void
@@ -113,8 +115,10 @@ export async function runSubagentTask(
   if (input.background) {
     host.startBackground(childRun, {
       parentSessionId: parent.sessionId,
+      parentMessageId: parent.messageId,
       toolCallId,
       agentId: agent.id,
+      description: (input.description ?? input.prompt).trim().slice(0, 120),
       cleanup: () => parent.abort.signal.removeEventListener('abort', onAbort)
     })
     return `[subagent ${agent.id} · session ${sessionId}] running in background`

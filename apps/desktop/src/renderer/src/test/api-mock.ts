@@ -5,6 +5,7 @@ import type {
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
+  BackgroundTaskInfo,
   EffectiveAgentConfig,
   PluginAuthMethodState,
   PluginAuthResult,
@@ -248,6 +249,10 @@ export function createApiMock(
           createdAt: new Date().toISOString()
         })),
         removeQueued: vi.fn(async () => true)
+      },
+      background: {
+        list: vi.fn(async () => [] as BackgroundTaskInfo[]),
+        cancel: vi.fn(async () => true)
       },
       permissions: {
         list: vi.fn(async () => permissions.map((permission) => ({ ...permission }))),

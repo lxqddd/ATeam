@@ -1,8 +1,20 @@
 import { app } from 'electron'
-import { AGENT_CHANNELS, type MessagesSnapshot, type QueuedMessage } from '@ateam/shared'
+import {
+  AGENT_CHANNELS,
+  type BackgroundTaskInfo,
+  type MessagesSnapshot,
+  type QueuedMessage
+} from '@ateam/shared'
 import { attachmentDirectory, isPathInsideDirectory } from '@ateam/agent-core/attachments'
 import type { AgentIpcContext } from './context'
-import { chatQueueRemoveSchema, chatSendSchema, chatSteerSchema, sessionIdSchema } from './schemas'
+import {
+  backgroundCancelSchema,
+  backgroundListSchema,
+  chatQueueRemoveSchema,
+  chatSendSchema,
+  chatSteerSchema,
+  sessionIdSchema
+} from './schemas'
 
 /** Registers message listing and chat turn controls. */
 export function registerChatHandlers(ctx: AgentIpcContext): void {
@@ -56,5 +68,15 @@ export function registerChatHandlers(ctx: AgentIpcContext): void {
   handle(AGENT_CHANNELS.chatQueueRemove, async (payload): Promise<boolean> => {
     const input = chatQueueRemoveSchema.parse(payload)
     return manager.request('chat.queue.remove', input)
+  })
+
+  handle(AGENT_CHANNELS.backgroundTasksList, async (payload): Promise<BackgroundTaskInfo[]> => {
+    const input = backgroundListSchema.parse(payload ?? {})
+    return manager.request('background.list', input)
+  })
+
+  handle(AGENT_CHANNELS.backgroundTaskCancel, async (payload): Promise<boolean> => {
+    const { taskId } = backgroundCancelSchema.parse(payload)
+    return manager.request('background.cancel', { taskId })
   })
 }

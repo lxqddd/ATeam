@@ -136,6 +136,14 @@ export const chatQueueRemoveSchema = z.object({
   id: idSchema
 })
 
+export const backgroundListSchema = z.object({
+  sessionId: idSchema.optional()
+})
+
+export const backgroundCancelSchema = z.object({
+  taskId: idSchema
+})
+
 export const attachmentImportSchema = z.object({
   sessionId: idSchema,
   name: z.string().min(1).max(300),

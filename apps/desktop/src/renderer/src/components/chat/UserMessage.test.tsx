@@ -40,6 +40,48 @@ describe('UserMessage', () => {
     expect(screen.getByText('11 B')).toBeInTheDocument()
   })
 
+  it('renders a synthetic background result instead of a user bubble', () => {
+    const message = makeMessage({
+      role: 'user',
+      parts: [makeTextPart('raw background block')]
+    })
+    message.synthetic = {
+      source: 'background-task',
+      taskId: 's1:call-1',
+      kind: 'shell',
+      state: 'completed',
+      title: 'make build',
+      body: 'build output\nExit code: 0'
+    }
+
+    render(<UserMessage message={message} />)
+
+    expect(screen.getByTestId('background-result-message')).toBeInTheDocument()
+    expect(screen.getByText('Background command')).toBeInTheDocument()
+    expect(screen.getByText('make build')).toBeInTheDocument()
+    expect(screen.getByText('completed')).toBeInTheDocument()
+    expect(screen.getByText(/build output/)).toBeInTheDocument()
+    expect(screen.queryByText('raw background block')).not.toBeInTheDocument()
+  })
+
+  it('marks failed synthetic results', () => {
+    const message = makeMessage({ role: 'user', parts: [makeTextPart('failed block')] })
+    message.synthetic = {
+      source: 'background-task',
+      taskId: 's1:call-2',
+      kind: 'subagent',
+      state: 'failed',
+      title: 'Explore src',
+      body: 'The subagent did not finish.'
+    }
+
+    render(<UserMessage message={message} />)
+
+    expect(screen.getByText('Background subagent')).toBeInTheDocument()
+    expect(screen.getByText('failed')).toBeInTheDocument()
+    expect(screen.getByText('The subagent did not finish.')).toBeInTheDocument()
+  })
+
   it('shows image thumbnails when previews are available', async () => {
     vi.mocked(window.api.agent.attachments.preview).mockResolvedValueOnce(
       'data:image/png;base64,AQID'

@@ -31,6 +31,8 @@ export const AGENT_CHANNELS = {
   chatRetry: 'ateam:agent:chat:retry',
   chatSteer: 'ateam:agent:chat:steer',
   chatQueueRemove: 'ateam:agent:chat:queue:remove',
+  backgroundTasksList: 'ateam:agent:background-tasks:list',
+  backgroundTaskCancel: 'ateam:agent:background-tasks:cancel',
   permissionsList: 'ateam:agent:permissions:list',
   permissionReply: 'ateam:agent:permissions:reply',
   questionsList: 'ateam:agent:questions:list',

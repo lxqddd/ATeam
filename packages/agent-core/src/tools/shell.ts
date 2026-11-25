@@ -52,9 +52,35 @@ export function createShellTool(context: ToolContext): Tool {
               outputPath
             })
           }
+          const kill = (): void => {
+            try {
+              if (process.platform !== 'win32' && child.pid) {
+                process.kill(-child.pid, 'SIGTERM')
+                const timer = setTimeout(() => {
+                  try {
+                    if (child.pid) process.kill(-child.pid, 'SIGKILL')
+                  } catch {
+                    /* already gone */
+                  }
+                }, 2_000)
+                timer.unref()
+              } else {
+                child.kill('SIGTERM')
+              }
+            } catch {
+              /* already gone */
+            }
+          }
           child.on('error', () => finish(null))
           child.on('close', (code) => finish(code))
           child.unref()
+          context.backgroundTaskStart?.({
+            toolCallId: options.toolCallId,
+            kind: 'shell',
+            title: command,
+            outputPath,
+            cancel: kill
+          })
           return `Started background command (pid ${child.pid ?? 'unknown'}).${
             outputPath ? ` Output: ${outputPath}` : ''
           }`

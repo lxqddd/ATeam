@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   AgentDefinition,
+  BackgroundTaskInfo,
   CommandDefinition,
   MessagesSnapshot,
   QueuedMessage,
@@ -187,33 +188,57 @@ describe('ChatStore sessions', () => {
     expect(part).toMatchObject({ type: 'tool', output: 'ab' })
   })
 
-  it('tracks and dismisses background command results', async () => {
+  it('tracks background tasks from events and cancels them', async () => {
     mock.sessions.push(makeSession({ id: 's1' }))
     await store.init()
 
-    mock.emit({
-      type: 'background.finished',
+    const running: BackgroundTaskInfo = {
+      id: 's1:call-1',
+      kind: 'shell',
       sessionId: 's1',
-      messageId: 'a1',
       toolCallId: 'call-1',
-      command: 'sleep 1',
-      exitCode: 0,
+      title: 'sleep 1',
+      state: 'running',
+      startedAt: '2026-01-02T00:00:00.000Z',
       outputPath: '/tmp/bg.log'
+    }
+    mock.emit({ type: 'background.updated', sessionId: 's1', task: running })
+
+    expect(store.getSnapshot().backgroundTasksBySession.s1).toEqual([running])
+
+    const finished: BackgroundTaskInfo = {
+      ...running,
+      state: 'completed',
+      exitCode: 0,
+      finishedAt: '2026-01-02T00:00:01.000Z'
+    }
+    mock.emit({ type: 'background.updated', sessionId: 's1', task: finished })
+
+    expect(store.getSnapshot().backgroundTasksBySession.s1).toEqual([finished])
+
+    await store.cancelBackgroundTask('s1:call-1')
+    expect(mock.api.agent.background.cancel).toHaveBeenCalledWith('s1:call-1')
+  })
+
+  it('hydrates background tasks for the selected session', async () => {
+    mock.sessions.push(makeSession({ id: 's1' }))
+    const task: BackgroundTaskInfo = {
+      id: 's1:call-1',
+      kind: 'subagent',
+      sessionId: 's1',
+      toolCallId: 'call-1',
+      title: 'review the diff',
+      state: 'running',
+      startedAt: '2026-01-02T00:00:00.000Z',
+      childSessionId: 'child-1'
+    }
+    vi.mocked(mock.api.agent.background.list).mockResolvedValue([task])
+
+    await store.init()
+
+    await vi.waitFor(() => {
+      expect(store.getSnapshot().backgroundTasksBySession.s1).toEqual([task])
     })
-
-    expect(store.getSnapshot().backgroundResults).toEqual([
-      {
-        sessionId: 's1',
-        messageId: 'a1',
-        toolCallId: 'call-1',
-        command: 'sleep 1',
-        exitCode: 0,
-        outputPath: '/tmp/bg.log'
-      }
-    ])
-
-    store.dismissBackgroundResult('call-1')
-    expect(store.getSnapshot().backgroundResults).toEqual([])
   })
 
   it('undoes and redoes the selected session', async () => {

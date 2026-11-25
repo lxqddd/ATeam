@@ -6,7 +6,7 @@ import type {
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
-  BackgroundResult,
+  BackgroundTaskInfo,
   ChatMessage,
   CommandDefinition,
   MessagesSnapshot,
@@ -41,7 +41,7 @@ export interface ChatStoreState {
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   runOutcomes: Record<string, RunOutcome>
-  backgroundResults: BackgroundResult[]
+  backgroundTasksBySession: Record<string, BackgroundTaskInfo[] | undefined>
   subagentResults: SubagentResult[]
   actionError: string | null
   restarting: boolean
@@ -66,6 +66,7 @@ function eventSessionId(event: AgentEvent): string | null {
     case 'run.finished':
     case 'chat.queue':
     case 'background.finished':
+    case 'background.updated':
       return event.sessionId
     case 'permission.asked':
       return event.permission.sessionId
@@ -97,7 +98,7 @@ export class ChatStore {
     permissions: [],
     questions: [],
     runOutcomes: {},
-    backgroundResults: [],
+    backgroundTasksBySession: {},
     subagentResults: [],
     actionError: null,
     restarting: false,
@@ -235,6 +236,7 @@ export class ChatStore {
         void this.refreshAgents(session?.directory ?? undefined)
         void this.refreshCommands(session?.directory ?? undefined)
       }
+      if (selected) void this.loadBackgroundTasks(selected)
       if (selected && !this.state.loadedBySession[selected]) {
         await this.loadMessages(selected)
       }
@@ -291,9 +293,35 @@ export class ChatStore {
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
     void this.refreshAgents(session?.directory ?? undefined)
     void this.refreshCommands(session?.directory ?? undefined)
+    void this.loadBackgroundTasks(sessionId)
     if (!this.state.loadedBySession[sessionId]) {
       void this.loadMessages(sessionId)
     }
+  }
+
+  async loadBackgroundTasks(sessionId: string): Promise<void> {
+    try {
+      const tasks = await window.api.agent.background.list(sessionId)
+      const current = this.state.backgroundTasksBySession[sessionId] ?? []
+      const merged = [...tasks]
+      for (const task of current) {
+        const index = merged.findIndex((candidate) => candidate.id === task.id)
+        if (index < 0) merged.push(task)
+        else merged[index] = task
+      }
+      this.setState({
+        backgroundTasksBySession: {
+          ...this.state.backgroundTasksBySession,
+          [sessionId]: merged
+        }
+      })
+    } catch {
+      /* background tasks are unavailable until the agent is ready */
+    }
+  }
+
+  async cancelBackgroundTask(taskId: string): Promise<void> {
+    await window.api.agent.background.cancel(taskId)
   }
 
   async createSession(directory?: string | null): Promise<SessionMeta> {
@@ -303,6 +331,7 @@ export class ChatStore {
       selectedSessionId: session.id,
       messagesBySession: { ...this.state.messagesBySession, [session.id]: [] },
       loadedBySession: { ...this.state.loadedBySession, [session.id]: true },
+      backgroundTasksBySession: { ...this.state.backgroundTasksBySession, [session.id]: [] },
       actionError: null,
       changesPanel: null
     })
@@ -406,14 +435,6 @@ export class ChatStore {
     })
   }
 
-  dismissBackgroundResult(toolCallId: string): void {
-    this.setState({
-      backgroundResults: this.state.backgroundResults.filter(
-        (result) => result.toolCallId !== toolCallId
-      )
-    })
-  }
-
   async send(text: string, attachments: MessageAttachment[] = []): Promise<void> {
     const content = text.trim()
     if (!content && attachments.length === 0) return
@@ -506,7 +527,7 @@ export class ChatStore {
         questions: [],
         runOutcomes: {},
         queuesBySession: {},
-        backgroundResults: [],
+        backgroundTasksBySession: {},
         subagentResults: [],
         revertPrompt: null
       })
@@ -714,23 +735,17 @@ export class ChatStore {
         })
         break
       }
-      case 'background.finished':
+      case 'background.updated': {
+        const tasks = this.state.backgroundTasksBySession[event.sessionId] ?? []
+        const next = [...tasks.filter((task) => task.id !== event.task.id), event.task]
         this.setState({
-          backgroundResults: [
-            ...this.state.backgroundResults.filter(
-              (result) => result.toolCallId !== event.toolCallId
-            ),
-            {
-              sessionId: event.sessionId,
-              messageId: event.messageId,
-              toolCallId: event.toolCallId,
-              command: event.command,
-              exitCode: event.exitCode,
-              outputPath: event.outputPath
-            }
-          ].slice(-20)
+          backgroundTasksBySession: {
+            ...this.state.backgroundTasksBySession,
+            [event.sessionId]: next
+          }
         })
         break
+      }
       default:
         break
     }
@@ -761,15 +776,18 @@ export class ChatStore {
     const messagesBySession = { ...this.state.messagesBySession }
     const loadedBySession = { ...this.state.loadedBySession }
     const queuesBySession = { ...this.state.queuesBySession }
+    const backgroundTasksBySession = { ...this.state.backgroundTasksBySession }
     delete messagesBySession[sessionId]
     delete loadedBySession[sessionId]
     delete queuesBySession[sessionId]
+    delete backgroundTasksBySession[sessionId]
     this.setState({
       sessions,
       selectedSessionId: selected,
       messagesBySession,
       loadedBySession,
       queuesBySession,
+      backgroundTasksBySession,
       changesPanel: null
     })
     if (selected && selected !== previousSelected) {

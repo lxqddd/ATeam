@@ -13,6 +13,7 @@ import type {
   AgentEventEnvelope,
   AgentInfo,
   AgentStatus,
+  BackgroundTaskInfo,
   CommandDefinition,
   McpAuthStatus,
   McpServerConfig,
@@ -95,6 +96,10 @@ export interface AgentBridge {
       attachments?: MessageAttachment[]
     }) => Promise<QueuedMessage>
     removeQueued: (sessionId: string, id: string) => Promise<boolean>
+  }
+  background: {
+    list: (sessionId?: string) => Promise<BackgroundTaskInfo[]>
+    cancel: (taskId: string) => Promise<boolean>
   }
   permissions: {
     list: () => Promise<PermissionRequest[]>

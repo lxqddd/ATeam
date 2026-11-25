@@ -38,12 +38,23 @@ export interface ToolContext {
   onToolOutput?: (toolCallId: string, delta: string) => void
   shellEnv?: () => Promise<Record<string, string>>
   backgroundOutputPath?: (toolCallId: string) => Promise<string>
+  /** Registers a background command so tools and the UI can list, wait on and cancel it. */
+  backgroundTaskStart?: (info: {
+    toolCallId: string
+    kind: 'shell'
+    title: string
+    outputPath: string | null
+    cancel: () => void
+  }) => void
   onBackgroundFinished?: (info: {
     toolCallId: string
     command: string
     exitCode: number | null
     outputPath: string | null
   }) => void
+  listBackgroundTasks?: () => string
+  waitBackgroundTask?: (taskId: string, timeoutMs: number) => Promise<string>
+  cancelBackgroundTask?: (taskId: string) => string
   formatFiles?: (files: string[]) => Promise<string>
   diagnoseFiles?: (files: string[]) => Promise<string>
   runSubagent?: (input: SubagentInput, toolCallId: string) => Promise<string>

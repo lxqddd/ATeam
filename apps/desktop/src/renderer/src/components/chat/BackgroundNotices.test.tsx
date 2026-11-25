@@ -1,49 +1,54 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { BackgroundResult } from '@ateam/shared'
+import type { BackgroundTaskInfo } from '@ateam/shared'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import BackgroundNotices from './BackgroundNotices'
 
 const chatMocks = vi.hoisted(() => ({
-  dismissBackgroundResult: vi.fn()
+  cancelBackgroundTask: vi.fn(async () => undefined)
 }))
 
 vi.mock('../../chat/store', () => ({ chatStore: chatMocks }))
 
-const result: BackgroundResult = {
+const task: BackgroundTaskInfo = {
+  id: 's1:call-1',
+  kind: 'shell',
   sessionId: 's1',
-  messageId: 'a1',
   toolCallId: 'call-1',
-  command: 'sleep 1',
-  exitCode: 0,
+  title: 'sleep 1',
+  state: 'running',
+  startedAt: '2026-01-02T00:00:00.000Z',
   outputPath: '/tmp/bg.log'
 }
 
 beforeEach(() => {
-  chatMocks.dismissBackgroundResult.mockClear()
+  chatMocks.cancelBackgroundTask.mockClear()
 })
 
 describe('BackgroundNotices', () => {
-  it('renders finished background commands', () => {
-    render(<BackgroundNotices results={[result]} />)
+  it('renders running background tasks', () => {
+    render(<BackgroundNotices tasks={[task]} />)
 
-    expect(screen.getByText('Background command finished')).toBeInTheDocument()
+    expect(screen.getByText('Background command running')).toBeInTheDocument()
     expect(screen.getByText('sleep 1')).toBeInTheDocument()
-    expect(screen.getByText('Exit code 0')).toBeInTheDocument()
-    expect(screen.getByText('/tmp/bg.log')).toBeInTheDocument()
   })
 
-  it('dismisses a background result', async () => {
+  it('cancels a running task', async () => {
     const user = userEvent.setup()
-    render(<BackgroundNotices results={[result]} />)
+    render(<BackgroundNotices tasks={[task]} />)
 
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
 
-    expect(chatMocks.dismissBackgroundResult).toHaveBeenCalledWith('call-1')
+    expect(chatMocks.cancelBackgroundTask).toHaveBeenCalledWith('s1:call-1')
   })
 
-  it('renders nothing without results', () => {
-    const { container } = render(<BackgroundNotices results={[]} />)
+  it('hides finished tasks', () => {
+    const { container } = render(<BackgroundNotices tasks={[{ ...task, state: 'completed' }]} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('renders nothing without tasks', () => {
+    const { container } = render(<BackgroundNotices tasks={[]} />)
     expect(container).toBeEmptyDOMElement()
   })
 })

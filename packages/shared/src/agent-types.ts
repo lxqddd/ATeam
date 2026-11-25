@@ -214,6 +214,8 @@ export interface ChatMessage {
   snapshotAfter?: string
   snapshotSteps?: MessageSnapshotStep[]
   changedFiles?: string[]
+  /** Set when the runtime injected this message instead of the user. */
+  synthetic?: SyntheticMessageInfo
 }
 
 export type PermissionAction =
@@ -849,6 +851,7 @@ export type AgentEvent =
   | { type: 'run.started'; sessionId: string; messageId: string; startedAt: string }
   | { type: 'chat.queue'; sessionId: string; items: QueuedMessage[] }
   | ({ type: 'background.finished' } & BackgroundResult)
+  | { type: 'background.updated'; sessionId: string; task: BackgroundTaskInfo }
   | ({ type: 'subagent.finished' } & SubagentResult)
   | {
       type: 'run.finished'
@@ -890,4 +893,39 @@ export interface SubagentResult {
   agentId: string
   status: 'completed' | 'failed' | 'interrupted'
   result: string
+}
+
+export type BackgroundTaskKind = 'shell' | 'subagent'
+
+export type BackgroundTaskState = 'running' | 'completed' | 'failed' | 'cancelled'
+
+/** Public snapshot of one background task managed by the runtime. */
+export interface BackgroundTaskInfo {
+  /** Tool call that started the task; unique within a session. */
+  id: string
+  kind: BackgroundTaskKind
+  sessionId: string
+  toolCallId: string
+  /** Human-readable label: the shell command or subagent description. */
+  title: string
+  state: BackgroundTaskState
+  startedAt: string
+  finishedAt?: string
+  exitCode?: number | null
+  /** Where the full shell output was captured, when available. */
+  outputPath?: string | null
+  /** Truncated result body injected into the parent conversation. */
+  result?: string
+  error?: string
+  childSessionId?: string
+}
+
+/** Runtime-injected message metadata rendered as a notice instead of a user bubble. */
+export interface SyntheticMessageInfo {
+  source: 'background-task'
+  taskId: string
+  kind: BackgroundTaskKind
+  state: Exclude<BackgroundTaskState, 'running'>
+  title: string
+  body: string
 }

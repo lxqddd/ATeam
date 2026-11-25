@@ -164,6 +164,10 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       })
     case 'chat.queue.remove':
       return requireRuntime().removeQueuedMessage(request.params.sessionId, request.params.id)
+    case 'background.list':
+      return requireRuntime().listBackgroundTasks(request.params?.sessionId)
+    case 'background.cancel':
+      return requireRuntime().cancelBackgroundTask(request.params.taskId)
     case 'permissions.list':
       return requireRuntime().permissions()
     case 'permission.reply':

@@ -108,7 +108,7 @@ function baseState(): ChatStoreState {
     permissions: [],
     questions: [],
     runOutcomes: {},
-    backgroundResults: [],
+    backgroundTasksBySession: {},
     subagentResults: [],
     actionError: null,
     restarting: false,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { ChatMessage, MessageAttachment } from '@ateam/shared'
+import { useTranslation } from 'react-i18next'
+import type { ChatMessage, MessageAttachment, SyntheticMessageInfo } from '@ateam/shared'
 
 interface UserMessageProps {
   message: ChatMessage
@@ -53,7 +54,50 @@ function AttachmentChip({
   )
 }
 
+function SyntheticMessage({ synthetic }: { synthetic: SyntheticMessageInfo }): React.JSX.Element {
+  const { t } = useTranslation()
+  const failed = synthetic.state === 'failed'
+
+  return (
+    <div className="flex justify-center px-2" data-testid="background-result-message">
+      <div
+        className={`w-full max-w-[min(640px,92%)] rounded-lg border px-3 py-2 text-caption ${
+          failed
+            ? 'border-danger/30 bg-danger/5 text-danger'
+            : 'border-border-subtle bg-background-subtle text-muted'
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium text-foreground">
+            {t(
+              synthetic.kind === 'shell'
+                ? 'chat.backgroundKindShell'
+                : 'chat.backgroundKindSubagent'
+            )}
+          </span>
+          <span className="min-w-0 truncate" title={synthetic.title}>
+            {synthetic.title}
+          </span>
+          <span className="ml-auto flex-none text-subtle">
+            {t(
+              synthetic.state === 'failed'
+                ? 'chat.backgroundStateFailed'
+                : 'chat.backgroundStateCompleted'
+            )}
+          </span>
+        </div>
+        {synthetic.body && (
+          <pre className="mt-1.5 mb-0 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.55] text-muted">
+            {synthetic.body}
+          </pre>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function UserMessage({ message, sessionId }: UserMessageProps): React.JSX.Element {
+  if (message.synthetic) return <SyntheticMessage synthetic={message.synthetic} />
   const text = message.parts
     .filter((part) => part.type === 'text')
     .map((part) => part.text)
