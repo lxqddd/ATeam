@@ -103,28 +103,32 @@
 
 ## 4. 工具集
 
-| 工具             | 作用                                                               | 权限 action |
-| ---------------- | ------------------------------------------------------------------ | ----------- |
-| `read`           | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本   | `read`      |
-| `list`           | 列目录（深度限制）                                                 | `list`      |
-| `grep`           | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep     | `grep`      |
-| `glob`           | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`      |
-| `write`          | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`     |
-| `edit`           | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`      |
-| `patch`          | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`      |
-| `shell`          | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`     |
-| `webfetch`       | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`  |
-| `websearch`      | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch` |
-| `skill`          | 按名称加载 Skill 全文与附带资源清单                                | `skill`     |
-| `subagent`       | 委派子任务到子代理（可后台运行）                                   | `subagent`  |
-| `mcp_prompt`     | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`       |
-| `mcp_resource`   | 列出 / 读取 MCP resources                                          | `mcp`       |
-| `lsp_hover`      | 查询符号的类型与文档                                               | `read`      |
-| `lsp_definition` | 查询符号定义位置                                                   | `read`      |
-| `todowrite`      | 替换会话任务列表                                                   | 不需要审批  |
-| `todoread`       | 读取任务列表                                                       | 不需要审批  |
-| `question`       | 向用户提出结构化问题                                               | 不需要审批  |
-| MCP 工具         | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`       |
+| 工具                 | 作用                                                               | 权限 action |
+| -------------------- | ------------------------------------------------------------------ | ----------- |
+| `read`               | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本   | `read`      |
+| `list`               | 列目录（深度限制）                                                 | `list`      |
+| `grep`               | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep     | `grep`      |
+| `glob`               | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`      |
+| `write`              | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`     |
+| `edit`               | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`      |
+| `patch`              | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`      |
+| `shell`              | 执行命令，超时、流式输出、后台运行与完成通知                       | `shell`     |
+| `webfetch`           | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`  |
+| `websearch`          | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch` |
+| `skill`              | 按名称加载 Skill 全文与附带资源清单                                | `skill`     |
+| `subagent`           | 委派子任务到子代理（可后台运行）                                   | `subagent`  |
+| `mcp_prompt`         | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`       |
+| `mcp_resource`       | 列出 / 读取 MCP resources                                          | `mcp`       |
+| `lsp_hover`          | 查询符号的类型与文档                                               | `lsp`       |
+| `lsp_definition`     | 查询符号定义位置                                                   | `lsp`       |
+| `lsp_references`     | 查询符号的全部引用（含声明）                                       | `lsp`       |
+| `lsp_implementation` | 查询接口 / 抽象符号的实现位置                                      | `lsp`       |
+| `lsp_symbols`        | 列出文件符号，或按名称搜索工作区符号                               | `lsp`       |
+| `lsp_call_hierarchy` | 查询函数的入向 / 出向调用层级                                      | `lsp`       |
+| `todowrite`          | 替换会话任务列表                                                   | 不需要审批  |
+| `todoread`           | 读取任务列表                                                       | 不需要审批  |
+| `question`           | 向用户提出结构化问题                                               | 不需要审批  |
+| MCP 工具             | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`       |
 
 - 大输出统一截断（200k 字符），再经输出存储落盘（30k 展示上限，完整内容保存在 `agent/tool-outputs/`）。
 - 工作区外路径先触发 `external_directory` 审批；只读工具默认允许。
@@ -186,9 +190,12 @@
 
 ## 10. LSP 诊断与自动格式化
 
-- 内置语言服务器：TypeScript、Go、Python、Rust、C/C++；按工作区复用客户端，不可用时静默跳过。会话迁移或删除后，不再被任何会话使用的工作区会立即释放对应 LSP、格式化器与 Skills 缓存。
+- 内置语言服务器矩阵覆盖 TypeScript / JavaScript、Go、Python、Rust、C/C++、YAML、Bash、JSON、CSS、HTML、Vue、Svelte、Astro、PHP、Prisma、TOML、Lua、Kotlin、Ruby、Dart、Swift、Zig 与 GraphQL；按 server + 项目根复用客户端，不可用时静默跳过。会话迁移或删除后，不再被任何会话使用的工作区会立即释放对应 LSP、格式化器与 Skills 缓存。
+- root 检测：从文件所在目录向上查找 `tsconfig.json`、`go.mod`、`pyproject.toml` 等 marker，最近的命中目录作为 LSP root；工作区外文件与无 marker 的 server 回退到工作区。
+- 项目级自定义：`ateam.json(c)` 的 `lsp` 可按 server id 覆盖 command / extensions / env / initialization，并支持 `rootMarkers`、`npmPackages` 与 `disabled`。
+- 可选自动安装：配置 `lspInstall: true` 后，首次使用缺少可执行文件的 npm server 会安装到 `agent/lsp/<serverId>`；安装失败或超时（120 秒）静默回退为不可用，可用性检测本身不会触发安装。
 - read / write / edit / patch 后附带诊断（最多 20 条，含行号、级别、来源与代码），便于 Agent 自我修正。
-- `lsp_hover` / `lsp_definition` 工具可在指定行列查询类型、文档与定义位置。
+- LSP 工具：`lsp_hover` / `lsp_definition` / `lsp_references` / `lsp_implementation` / `lsp_symbols`（文件符号或工作区符号搜索）/ `lsp_call_hierarchy`（incoming / outgoing / both），统一使用独立 `lsp` 权限动作。
 - 格式化器发现：prettier、biome、gofmt、rustfmt、ruff（配置文件、package.json 依赖、pyproject `[tool.ruff]`）；写入后自动执行，失败只提示、不影响工具结果。
 - 设置页可按扩展名覆盖格式化器（例如 `.ts=biome`），或设为 `none` 关闭该类型的自动格式化。
 - 设置页提供开关与检测状态（可用语言服务器 / 检测到的格式化器）。
@@ -282,7 +289,7 @@ models/                  # 供应商 / 模型配置
 
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 内置流程不实现这类非公开认证。插件可以声明 `auth` 方法与提示项，由设置页动态渲染登录表单并调用插件自己的 `authorize` 流程；OAuth 方法还可声明 `refresh` 回调，未提供 token endpoint 的插件凭据会在过期前由主进程自动刷新并写回 `auth.json`。
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
-- ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
+- ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件，可在配置中开启 npm 按需安装（见第 10 节）。
 - 缓存成本仍按 input token 统一价格估算，未区分 cache read/write 价格；缓存指标只统计聊天模型请求，标题、压缩与模型测试不计入。
 - 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示、原始项目配置编辑和完整配置矩阵 E2E；结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入选择器、项目权限规则来源 UI、文件监听热更新仍待补齐；运行中的配置更新会通过 `config.changed` 主动刷新 UI 与缓存。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。

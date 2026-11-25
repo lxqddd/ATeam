@@ -1,7 +1,7 @@
 # ATeam Agent 对齐 OpenCode TODO List
 
 > 对比基准：OpenCode `master`（2026-11-22 复审）与 ATeam `master` 当前实现；第一轮记录基于 2026-11-21 的 `dev` 文档。
-> 最近更新：2026-11-24（插件系统收尾，校正 P0 已完成项）。
+> 最近更新：2026-11-25（R-P1-6 LSP 工具与服务矩阵完成）。
 > 范围：Agent 核心能力（会话、工具、权限、上下文、扩展、运行时接口），不包含主题、打包等桌面外观；CLI/TUI/IDE 等接口差距在第二轮 P2 单列。
 > 标记：`[x]` 已完成，`[ ]` 待办。优先级：**P0** 必须、**P1** 重要、**P2** 后续。
 
@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、LSP 矩阵与自定义 server、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
+- [ ] P1：part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -375,18 +375,20 @@
 
 #### R-P1-6 LSP 工具与服务矩阵
 
-**现状**：仅 5 个内置服务器（[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)），只暴露 `lsp_hover` / `lsp_definition`，不能配置自定义 server，也不会自动安装。
+**现状（2026-11-25）**：已完成。内置矩阵扩展到 TypeScript / JavaScript、Go、Python、Rust、C/C++、YAML、Bash、JSON、CSS、HTML、Vue、Svelte、Astro、PHP、Prisma、TOML、Lua、Kotlin、Ruby、Dart、Swift、Zig、GraphQL（[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)）；`resolveLspRoot` 从文件目录向上查找 server 的 root marker，客户端按 `server + root` 复用；`ateam.json(c)` 的 `lsp` 支持 command / extensions / env / initialization / `rootMarkers` / `npmPackages` / `disabled`；`lspInstall: true` 时缺失的 npm server 安装到 `agent/lsp/<serverId>`，失败或超时（120 秒）静默回退。工具新增 `lsp_references`、`lsp_implementation`、`lsp_symbols`（文件 / 工作区符号）与 `lsp_call_hierarchy`（incoming / outgoing / both），并新增独立 `lsp` 权限动作替代复用 `read`。
 
 **OpenCode 参考**：`lsp/server.ts` 覆盖 20+ 语言服务器，支持 npm 自动安装、root marker、自定义配置；LSP 工具支持 references、implementation、documentSymbol、workspaceSymbol、callHierarchy 等操作。
 
 **待办**：
 
-- [ ] 扩展语言服务器矩阵与 root marker 检测
-- [ ] 支持项目级自定义 LSP server 配置与覆盖
-- [ ] 可选自动安装（npm）与安装失败回退
-- [ ] 扩展 LSP 工具操作：references / implementation / symbols / call hierarchy
-- [ ] 增加独立 `lsp` 权限 action，替代复用 `read`
-- [ ] 测试 server 选择、root 解析、操作结果与权限
+- [x] 扩展语言服务器矩阵与 root marker 检测
+- [x] 支持项目级自定义 LSP server 配置与覆盖
+- [x] 可选自动安装（npm）与安装失败回退
+- [x] 扩展 LSP 工具操作：references / implementation / symbols / call hierarchy
+- [x] 增加独立 `lsp` 权限 action，替代复用 `read`
+- [x] 测试 server 选择、root 解析、操作结果与权限
+
+**仍待 / 边界**：自动安装仅在配置显式开启时执行，且只支持 npm 包（不含 go / rustup / pip 等安装器）；安装使用系统 `npm`，离线或权限受限时静默不可用；同一 server 的并发首次查询可能重复创建客户端（后续可按 root 版本化缓存）；设置页尚无 LSP 矩阵与安装状态展示。
 
 **验收**：多语言项目能自动使用合适 LSP，Agent 可查询引用、实现与符号。
 

@@ -6,6 +6,7 @@ import type {
   TodoInput,
   WebFetchFormat
 } from '@ateam/shared'
+import type { LspCallDirection } from '../integrations/lsp'
 
 export const MAX_TOOL_OUTPUT = 200_000
 export const MAX_READ_LINES = 2_000
@@ -62,6 +63,16 @@ export interface ToolContext {
   globTimeoutMs?: number
   lspHover?: (file: string, line: number, character: number) => Promise<string>
   lspDefinition?: (file: string, line: number, character: number) => Promise<string>
+  lspReferences?: (file: string, line: number, character: number) => Promise<string>
+  lspImplementation?: (file: string, line: number, character: number) => Promise<string>
+  lspDocumentSymbols?: (file: string) => Promise<string>
+  lspWorkspaceSymbols?: (query: string, file: string) => Promise<string>
+  lspCallHierarchy?: (
+    file: string,
+    line: number,
+    character: number,
+    direction: LspCallDirection
+  ) => Promise<string>
   worktreeCreate?: (input: { name: string; base?: string | null }) => Promise<string>
   worktreeList?: () => Promise<string>
   worktreeRemove?: (path: string, force: boolean) => Promise<string>

@@ -175,6 +175,7 @@ const enUS = {
     permissionActionMcp: 'MCP tool',
     permissionActionWebfetch: 'Fetch web page',
     permissionActionWebsearch: 'Web search',
+    permissionActionLsp: 'LSP query',
     permissionActionPlugin: 'Plugin tool',
     permissionActionSubagent: 'Subagent',
     permissionActionSkill: 'Load skill',

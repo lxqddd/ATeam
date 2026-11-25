@@ -176,6 +176,7 @@ export const permissionRuleInputSchema = z.object({
     'mcp',
     'webfetch',
     'websearch',
+    'lsp',
     'skill',
     'subagent',
     'plugin',

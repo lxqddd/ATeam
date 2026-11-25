@@ -1789,6 +1789,16 @@ export class AgentRuntime {
         this.workspaceServices.lspHover(run.workspace, file, line, character),
       lspDefinition: (run, file, line, character) =>
         this.workspaceServices.lspDefinition(run.workspace, file, line, character),
+      lspReferences: (run, file, line, character) =>
+        this.workspaceServices.lspReferences(run.workspace, file, line, character),
+      lspImplementation: (run, file, line, character) =>
+        this.workspaceServices.lspImplementation(run.workspace, file, line, character),
+      lspDocumentSymbols: (run, file) =>
+        this.workspaceServices.lspDocumentSymbols(run.workspace, file),
+      lspWorkspaceSymbols: (run, query, file) =>
+        this.workspaceServices.lspWorkspaceSymbols(run.workspace, query, file),
+      lspCallHierarchy: (run, file, line, character, direction) =>
+        this.workspaceServices.lspCallHierarchy(run.workspace, file, line, character, direction),
       runSubagent: (run, input, toolCallId) => this.runSubagent(run, input, toolCallId),
       fetchWebPage: (input) => this.workspaceServices.fetchWebPage(input),
       searchTheWeb: (input) => this.workspaceServices.searchTheWeb(input),

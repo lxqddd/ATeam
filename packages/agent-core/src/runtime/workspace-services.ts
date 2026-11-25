@@ -15,7 +15,12 @@ import {
   formatFile,
   type FormatterDefinition
 } from '../integrations/formatters'
-import { formatDiagnosticReport, LspManager, resolveLspServers } from '../integrations/lsp'
+import {
+  formatDiagnosticReport,
+  LspManager,
+  resolveLspServers,
+  type LspCallDirection
+} from '../integrations/lsp'
 import type { McpManagerLike } from '../integrations/mcp'
 import { formatWebFetchResult } from '../integrations/webfetch'
 import { formatSearchResults } from '../integrations/websearch'
@@ -260,6 +265,42 @@ export class WorkspaceServices {
     return this.lsp(workspace).definition(file, line, character)
   }
 
+  async lspReferences(
+    workspace: string,
+    file: string,
+    line: number,
+    character: number
+  ): Promise<string> {
+    return this.lsp(workspace).references(file, line, character)
+  }
+
+  async lspImplementation(
+    workspace: string,
+    file: string,
+    line: number,
+    character: number
+  ): Promise<string> {
+    return this.lsp(workspace).implementation(file, line, character)
+  }
+
+  async lspDocumentSymbols(workspace: string, file: string): Promise<string> {
+    return this.lsp(workspace).documentSymbols(file)
+  }
+
+  async lspWorkspaceSymbols(workspace: string, query: string, file: string): Promise<string> {
+    return this.lsp(workspace).workspaceSymbols(query, file)
+  }
+
+  async lspCallHierarchy(
+    workspace: string,
+    file: string,
+    line: number,
+    character: number,
+    direction: LspCallDirection
+  ): Promise<string> {
+    return this.lsp(workspace).callHierarchy(file, line, character, direction)
+  }
+
   async diagnoseFiles(workspace: string, files: string[]): Promise<string> {
     try {
       return formatDiagnosticReport(await this.lsp(workspace).diagnostics(files), workspace)
@@ -354,9 +395,12 @@ export class WorkspaceServices {
   private lsp(workspace: string): LspManager {
     let manager = this.lspManagers.get(workspace)
     if (!manager) {
+      const config = this.configs.get(workspace)?.config
       manager = new LspManager({
         workspace,
-        servers: resolveLspServers(this.configs.get(workspace)?.config)
+        servers: resolveLspServers(config),
+        installDirectory: path.join(this.host.userDataPath, 'agent', 'lsp'),
+        autoInstall: config?.lspInstall === true
       })
       this.lspManagers.set(workspace, manager)
     }

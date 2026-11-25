@@ -8,6 +8,7 @@ import type {
   WebFetchFormat
 } from '@ateam/shared'
 import { discoverNestedInstructions, formatInstructions } from '../config/instructions'
+import type { LspCallDirection } from '../integrations/lsp'
 import type { ToolContext } from '../tools'
 import type { Run } from './types'
 
@@ -39,6 +40,17 @@ export interface ToolContextHost {
   diagnoseFiles(run: Run, files: string[]): Promise<string>
   lspHover(run: Run, file: string, line: number, character: number): Promise<string>
   lspDefinition(run: Run, file: string, line: number, character: number): Promise<string>
+  lspReferences(run: Run, file: string, line: number, character: number): Promise<string>
+  lspImplementation(run: Run, file: string, line: number, character: number): Promise<string>
+  lspDocumentSymbols(run: Run, file: string): Promise<string>
+  lspWorkspaceSymbols(run: Run, query: string, file: string): Promise<string>
+  lspCallHierarchy(
+    run: Run,
+    file: string,
+    line: number,
+    character: number,
+    direction: LspCallDirection
+  ): Promise<string>
   runSubagent(run: Run, input: SubagentInput, toolCallId: string): Promise<string>
   fetchWebPage(input: { url: string; format: WebFetchFormat; timeoutMs?: number }): Promise<string>
   searchTheWeb(input: { query: string; count: number }): Promise<string>
@@ -114,6 +126,20 @@ export function buildToolContext(host: ToolContextHost, input: ToolContextInput)
       : undefined,
     lspDefinition: run.config.lsp
       ? (file, line, character) => host.lspDefinition(run, file, line, character)
+      : undefined,
+    lspReferences: run.config.lsp
+      ? (file, line, character) => host.lspReferences(run, file, line, character)
+      : undefined,
+    lspImplementation: run.config.lsp
+      ? (file, line, character) => host.lspImplementation(run, file, line, character)
+      : undefined,
+    lspDocumentSymbols: run.config.lsp ? (file) => host.lspDocumentSymbols(run, file) : undefined,
+    lspWorkspaceSymbols: run.config.lsp
+      ? (query, file) => host.lspWorkspaceSymbols(run, query, file)
+      : undefined,
+    lspCallHierarchy: run.config.lsp
+      ? (file, line, character, direction) =>
+          host.lspCallHierarchy(run, file, line, character, direction)
       : undefined,
     runSubagent: (subagentInput, toolCallId) => host.runSubagent(run, subagentInput, toolCallId),
     fetchWeb: (webInput) => host.fetchWebPage(webInput),

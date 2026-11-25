@@ -227,6 +227,7 @@ export type PermissionAction =
   | 'mcp'
   | 'webfetch'
   | 'websearch'
+  | 'lsp'
   | 'skill'
   | 'subagent'
   | 'plugin'
@@ -392,6 +393,10 @@ export interface LspServerConfigInput {
   disabled?: boolean
   env?: Record<string, string>
   initialization?: Record<string, unknown>
+  /** File or directory names that mark the server's project root. */
+  rootMarkers?: string[]
+  /** npm packages installed on demand when the executable is missing. */
+  npmPackages?: string[]
 }
 
 export interface FormatterConfigInput {
@@ -437,6 +442,7 @@ export interface AgentConfigDocument {
   instructions?: string[]
   lsp?: boolean | Record<string, LspServerConfigInput>
   lspEnabled?: boolean
+  lspInstall?: boolean
   formatters?: boolean | Record<string, FormatterConfigInput>
   formattersEnabled?: boolean
   formatterOverrides?: Record<string, string>
@@ -484,6 +490,8 @@ export interface AgentConfig {
   snapshots: boolean
   instructions: string[]
   lsp: boolean
+  /** Install missing npm language servers on first use; off by default. */
+  lspInstall?: boolean
   formatters: boolean
   /** Effective retry policy; always filled by the config loader. */
   retry?: RetryConfig

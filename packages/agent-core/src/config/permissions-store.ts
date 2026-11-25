@@ -21,6 +21,7 @@ const RULE_ACTIONS = new Set<PermissionRuleAction>([
   'mcp',
   'webfetch',
   'websearch',
+  'lsp',
   'skill',
   'subagent',
   'plugin',

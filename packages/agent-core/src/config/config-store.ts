@@ -26,6 +26,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   snapshots: true,
   instructions: [],
   lsp: true,
+  lspInstall: false,
   formatters: true,
   formatterOverrides: {},
   retry: { ...DEFAULT_RETRY_CONFIG }
@@ -40,6 +41,7 @@ function cloneConfig(config: AgentConfig): AgentConfig {
     snapshots: config.snapshots,
     instructions: [...config.instructions],
     lsp: config.lsp,
+    lspInstall: config.lspInstall,
     formatters: config.formatters,
     formatterOverrides: { ...config.formatterOverrides },
     ...(config.retry ? { retry: { ...config.retry } } : {}),

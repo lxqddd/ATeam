@@ -39,6 +39,10 @@ describe('builtin agents', () => {
       'glob',
       'lsp_hover',
       'lsp_definition',
+      'lsp_references',
+      'lsp_implementation',
+      'lsp_symbols',
+      'lsp_call_hierarchy',
       'write',
       'edit',
       'patch',
@@ -56,7 +60,18 @@ describe('builtin agents', () => {
 
     expect(general).toMatchObject({ mode: 'subagent', tools: null })
     expect(explore).toMatchObject({ mode: 'subagent' })
-    expect(explore?.tools).toEqual(['read', 'list', 'grep', 'glob', 'lsp_hover', 'lsp_definition'])
+    expect(explore?.tools).toEqual([
+      'read',
+      'list',
+      'grep',
+      'glob',
+      'lsp_hover',
+      'lsp_definition',
+      'lsp_references',
+      'lsp_implementation',
+      'lsp_symbols',
+      'lsp_call_hierarchy'
+    ])
   })
 })
 

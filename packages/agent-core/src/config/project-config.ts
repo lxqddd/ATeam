@@ -332,6 +332,7 @@ export function mergeAgentConfig(
 ): AgentConfig {
   const instructions = mergeStrings(base.instructions, project.instructions) ?? []
   const permissionRules = [...(base.permissionRules ?? []), ...(project.permissions ?? [])]
+  const lspInstall = project.lspInstall ?? base.lspInstall
   let lsp = base.lsp
   let lspServers: Record<string, LspServerConfigInput> | undefined = base.lspServers
   if (project.lsp === false) {
@@ -375,6 +376,7 @@ export function mergeAgentConfig(
   return {
     snapshots: project.snapshots ?? base.snapshots,
     lsp,
+    ...(lspInstall !== undefined ? { lspInstall } : {}),
     formatters,
     instructions,
     formatterOverrides: {

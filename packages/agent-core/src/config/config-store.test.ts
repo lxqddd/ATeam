@@ -23,6 +23,7 @@ describe('AgentConfigStore', () => {
       snapshots: true,
       instructions: [],
       lsp: true,
+      lspInstall: false,
       formatters: true,
       formatterOverrides: {},
       retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
@@ -31,6 +32,7 @@ describe('AgentConfigStore', () => {
       snapshots: true,
       instructions: [],
       lsp: true,
+      lspInstall: false,
       formatters: true,
       formatterOverrides: {},
       retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
@@ -48,6 +50,7 @@ describe('AgentConfigStore', () => {
     expect(updated).toEqual({
       snapshots: false,
       lsp: false,
+      lspInstall: false,
       formatters: false,
       instructions: ['AGENTS.md', 'https://example.com/rules.md'],
       formatterOverrides: {},
@@ -167,6 +170,7 @@ describe('AgentConfigStore', () => {
       snapshots: true,
       instructions: [],
       lsp: true,
+      lspInstall: false,
       formatters: true,
       formatterOverrides: {},
       retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }

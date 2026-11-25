@@ -19,6 +19,7 @@ const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'mcp',
   'webfetch',
   'websearch',
+  'lsp',
   'skill',
   'subagent',
   'plugin',

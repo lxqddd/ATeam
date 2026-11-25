@@ -23,7 +23,12 @@ export function modePermissionRules(
     sessionId: null,
     createdAt: ''
   })
-  const reads = [base('read', 'allow'), base('list', 'allow'), base('grep', 'allow')]
+  const reads = [
+    base('read', 'allow'),
+    base('list', 'allow'),
+    base('grep', 'allow'),
+    base('lsp', 'allow')
+  ]
   const external = base('external_directory', 'allow')
   const web = [
     base('webfetch', 'allow'),

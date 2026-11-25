@@ -13,9 +13,14 @@ import {
   encodeLspMessage,
   filePathFromUri,
   fileUri,
+  formatCallHierarchyResult,
   formatDiagnosticReport,
+  formatDocumentSymbols,
+  formatLocationList,
+  formatWorkspaceSymbols,
   languageIdForFile,
   lspServerForFile,
+  resolveLspRoot,
   resolveLspServers,
   type LspChildProcess,
   type LspDiagnostic,
@@ -145,6 +150,77 @@ describe('lsp framing and helpers', () => {
     expect(languageIdForFile('a.tsx')).toBe('typescriptreact')
     expect(languageIdForFile('a.js')).toBe('javascript')
     expect(languageIdForFile('a.go')).toBe('go')
+  })
+
+  it('covers the expanded language server matrix', () => {
+    expect(lspServerForFile('a.yaml')?.id).toBe('yaml')
+    expect(lspServerForFile('a.json')?.id).toBe('json')
+    expect(lspServerForFile('a.css')?.id).toBe('css')
+    expect(lspServerForFile('a.vue')?.id).toBe('vue')
+    expect(lspServerForFile('a.svelte')?.id).toBe('svelte')
+    expect(lspServerForFile('a.astro')?.id).toBe('astro')
+    expect(lspServerForFile('a.php')?.id).toBe('php')
+    expect(lspServerForFile('a.toml')?.id).toBe('toml')
+    expect(lspServerForFile('a.kt')?.id).toBe('kotlin')
+    expect(lspServerForFile('a.rb')?.id).toBe('ruby')
+    expect(lspServerForFile('a.dart')?.id).toBe('dart')
+    expect(lspServerForFile('a.swift')?.id).toBe('swift')
+    expect(lspServerForFile('a.zig')?.id).toBe('zig')
+    expect(languageIdForFile('a.yml')).toBe('yaml')
+    expect(languageIdForFile('a.sh')).toBe('shellscript')
+    expect(languageIdForFile('a.jsonc')).toBe('jsonc')
+  })
+
+  it('reports every built-in server once and keeps root markers', () => {
+    const servers = resolveLspServers()
+    const ids = servers.map((server) => server.id)
+    expect(new Set(ids).size).toBe(ids.length)
+    expect(servers.find((server) => server.id === 'typescript')?.rootMarkers).toContain(
+      'tsconfig.json'
+    )
+    expect(servers.find((server) => server.id === 'pyright')?.npmPackages).toContain('pyright')
+  })
+})
+
+describe('resolveLspRoot', () => {
+  let workspace: string
+  const rooted: LspServerDefinition = {
+    ...TYPESCRIPT,
+    rootMarkers: ['tsconfig.json', 'package.json']
+  }
+
+  beforeEach(async () => {
+    workspace = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-lsp-root-')))
+  })
+
+  afterEach(async () => {
+    await fs.rm(workspace, { recursive: true, force: true })
+  })
+
+  it('uses the nearest root marker at or above the file', async () => {
+    const project = path.join(workspace, 'packages', 'app')
+    await fs.mkdir(path.join(project, 'src'), { recursive: true })
+    await fs.writeFile(path.join(project, 'tsconfig.json'), '{}')
+
+    expect(resolveLspRoot(path.join(project, 'src', 'a.ts'), rooted, workspace)).toBe(project)
+  })
+
+  it('falls back to the workspace without markers', async () => {
+    const src = path.join(workspace, 'src')
+    await fs.mkdir(src, { recursive: true })
+
+    expect(resolveLspRoot(path.join(src, 'a.ts'), rooted, workspace)).toBe(workspace)
+    expect(resolveLspRoot(path.join(src, 'a.ts'), TYPESCRIPT, workspace)).toBe(workspace)
+  })
+
+  it('honours custom markers and never escapes the workspace', async () => {
+    const project = path.join(workspace, 'modules', 'core')
+    await fs.mkdir(project, { recursive: true })
+    await fs.writeFile(path.join(project, '.custom-root'), '')
+    const custom: LspServerDefinition = { ...TYPESCRIPT, rootMarkers: ['.custom-root'] }
+
+    expect(resolveLspRoot(path.join(project, 'a.ts'), custom, workspace)).toBe(project)
+    expect(resolveLspRoot('/elsewhere/project/a.ts', rooted, workspace)).toBe(workspace)
   })
 })
 
@@ -418,6 +494,49 @@ describe('LspManager', () => {
     await expect(manager.availableServers()).resolves.toEqual(['gopls'])
     await manager.dispose()
   })
+
+  it('starts one client per project root', async () => {
+    const project = path.join(workspace, 'packages', 'app')
+    const appFile = path.join(project, 'src', 'a.ts')
+    const rootFile = path.join(workspace, 'b.ts')
+    await fs.mkdir(path.dirname(appFile), { recursive: true })
+    await fs.writeFile(path.join(project, 'tsconfig.json'), '{}')
+    await fs.writeFile(path.join(workspace, 'package.json'), '{}')
+    await Promise.all([fs.writeFile(appFile, 'x'), fs.writeFile(rootFile, 'x')])
+    const servers: FakeServer[] = []
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/hover') {
+            instance.respond(message.id, { contents: 'docs' })
+          }
+        })
+      )
+      servers.push(server)
+      return server as unknown as LspChildProcess
+    })
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => '/bin/typescript-language-server',
+      diagnosticsTimeoutMs: 20
+    })
+
+    await manager.hover(appFile, 1, 1)
+    await manager.hover(rootFile, 1, 1)
+
+    expect(spawn).toHaveBeenCalledTimes(2)
+    const roots = servers.map(
+      (server) =>
+        (
+          server.requests.find((entry) => entry.method === 'initialize')?.params as {
+            rootUri?: string
+          }
+        )?.rootUri
+    )
+    expect(roots).toEqual([fileUri(project), fileUri(workspace)])
+    await manager.dispose()
+  })
 })
 
 describe('formatDiagnosticReport', () => {
@@ -537,5 +656,374 @@ describe('configured LSP manager', () => {
     await expect(manager.hover(file, 1, 1)).resolves.toContain('Custom docs')
     await expect(manager.definition(file, 1, 1)).resolves.toContain('a.foo:1:1')
     await manager.dispose()
+  })
+})
+
+describe('LSP query operations', () => {
+  let workspace: string
+
+  beforeEach(async () => {
+    workspace = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-lsp-ops-')))
+  })
+
+  afterEach(async () => {
+    await fs.rm(workspace, { recursive: true, force: true })
+  })
+
+  it('formats references, implementations, symbols and call hierarchy', async () => {
+    const file = path.join(workspace, 'src', 'a.ts')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, 'function foo(): void {}')
+    const uri = pathToFileURL(file).toString()
+    const range = { start: { line: 4, character: 2 }, end: { line: 4, character: 5 } }
+    const location = { uri, range }
+    const servers: FakeServer[] = []
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/references') {
+            instance.respond(message.id, [location, location])
+          }
+          if (message.method === 'textDocument/implementation') {
+            instance.respond(message.id, location)
+          }
+          if (message.method === 'textDocument/documentSymbol') {
+            instance.respond(message.id, [
+              {
+                name: 'Foo',
+                kind: 5,
+                range,
+                selectionRange: range,
+                children: [
+                  {
+                    name: 'bar',
+                    kind: 6,
+                    range: { start: { line: 1, character: 2 } },
+                    selectionRange: { start: { line: 1, character: 2 } }
+                  }
+                ]
+              }
+            ])
+          }
+          if (message.method === 'workspace/symbol') {
+            instance.respond(message.id, [
+              { name: 'Baz', kind: 12, location, containerName: 'mod' }
+            ])
+          }
+          if (message.method === 'textDocument/prepareCallHierarchy') {
+            instance.respond(message.id, [{ name: 'foo', uri, range, selectionRange: range }])
+          }
+          if (message.method === 'callHierarchy/incomingCalls') {
+            instance.respond(message.id, [{ from: { name: 'caller', uri, range } }])
+          }
+          if (message.method === 'callHierarchy/outgoingCalls') {
+            instance.respond(message.id, [{ to: { name: 'callee', uri, range } }])
+          }
+        })
+      )
+      servers.push(server)
+      return server as unknown as LspChildProcess
+    })
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => '/bin/typescript-language-server',
+      diagnosticsTimeoutMs: 20
+    })
+
+    await expect(manager.references(file, 5, 3)).resolves.toBe('References:\n- src/a.ts:5:3')
+    await expect(manager.implementation(file, 5, 3)).resolves.toBe(
+      'Implementations:\n- src/a.ts:5:3'
+    )
+    await expect(manager.documentSymbols(file)).resolves.toBe(
+      'Symbols in src/a.ts:\n- Foo (class) src/a.ts:5:3\n  - bar (method) src/a.ts:2:3'
+    )
+    await expect(manager.workspaceSymbols('Baz', file)).resolves.toBe(
+      'Workspace symbols for "Baz":\n- mod/Baz (function) src/a.ts:5:3'
+    )
+    const hierarchy = await manager.callHierarchy(file, 5, 3)
+    expect(hierarchy).toContain('Call hierarchy at src/a.ts:5:3:')
+    expect(hierarchy).toContain('Incoming:\n- caller (src/a.ts:5:3)')
+    expect(hierarchy).toContain('Outgoing:\n- callee (src/a.ts:5:3)')
+
+    const requests = servers[0].requests.map((entry) => entry.method)
+    expect(requests.filter((method) => method === 'textDocument/references')).toHaveLength(1)
+    const hierarchyRequests = servers[0].requests.filter((entry) =>
+      entry.method?.startsWith('callHierarchy/')
+    )
+    expect(hierarchyRequests).toHaveLength(2)
+    await manager.dispose()
+  })
+
+  it('limits call hierarchy requests to the requested direction', async () => {
+    const file = path.join(workspace, 'a.ts')
+    await fs.writeFile(file, 'function foo(): void {}')
+    const uri = pathToFileURL(file).toString()
+    const range = { start: { line: 0, character: 0 } }
+    const servers: FakeServer[] = []
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/prepareCallHierarchy') {
+            instance.respond(message.id, [{ name: 'foo', uri, range }])
+          }
+          if (message.method === 'callHierarchy/incomingCalls') {
+            instance.respond(message.id, [{ from: { name: 'caller', uri, range } }])
+          }
+          if (message.method === 'callHierarchy/outgoingCalls') {
+            instance.respond(message.id, [{ to: { name: 'callee', uri, range } }])
+          }
+        })
+      )
+      servers.push(server)
+      return server as unknown as LspChildProcess
+    })
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => '/bin/typescript-language-server',
+      diagnosticsTimeoutMs: 20
+    })
+
+    const result = await manager.callHierarchy(file, 1, 1, 'incoming')
+
+    expect(result).toContain('Incoming:')
+    expect(result).not.toContain('Outgoing:')
+    const methods = servers[0].requests.map((entry) => entry.method)
+    expect(methods).not.toContain('callHierarchy/outgoingCalls')
+    expect(methods.filter((method) => method === 'callHierarchy/incomingCalls')).toHaveLength(1)
+    await manager.dispose()
+  })
+
+  it('returns empty strings for unsupported files and empty results', async () => {
+    const markdown = path.join(workspace, 'README.md')
+    const typescript = path.join(workspace, 'a.ts')
+    await Promise.all([fs.writeFile(markdown, '# docs'), fs.writeFile(typescript, 'x')])
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/references') instance.respond(message.id, [])
+          if (message.method === 'textDocument/implementation') instance.respond(message.id, null)
+          if (message.method === 'textDocument/documentSymbol') instance.respond(message.id, [])
+          if (message.method === 'workspace/symbol') instance.respond(message.id, [])
+          if (message.method === 'textDocument/prepareCallHierarchy') {
+            instance.respond(message.id, null)
+          }
+        })
+      )
+      return server as unknown as LspChildProcess
+    })
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => '/bin/typescript-language-server',
+      diagnosticsTimeoutMs: 20
+    })
+
+    await expect(manager.references(markdown, 1, 1)).resolves.toBe('')
+    await expect(manager.references(typescript, 1, 1)).resolves.toBe('')
+    await expect(manager.implementation(typescript, 1, 1)).resolves.toBe('')
+    await expect(manager.documentSymbols(typescript)).resolves.toBe('')
+    await expect(manager.workspaceSymbols('Nope', typescript)).resolves.toBe('')
+    await expect(manager.callHierarchy(typescript, 1, 1)).resolves.toBe('')
+    await manager.dispose()
+  })
+})
+
+describe('LSP auto-install', () => {
+  let workspace: string
+
+  beforeEach(async () => {
+    workspace = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-lsp-install-')))
+  })
+
+  afterEach(async () => {
+    await fs.rm(workspace, { recursive: true, force: true })
+  })
+
+  it('installs a missing npm server on first use when enabled', async () => {
+    const file = path.join(workspace, 'a.ts')
+    await fs.writeFile(file, 'const x = 1')
+    const spawn = vi.fn<LspSpawn>(() => {
+      const server = new FakeServer(
+        initializing((instance, message) => {
+          if (message.method === 'textDocument/hover') {
+            instance.respond(message.id, { contents: 'Installed docs' })
+          }
+        })
+      )
+      return server as unknown as LspChildProcess
+    })
+    const install = vi.fn(async () => '/bin/installed-language-server')
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => null,
+      autoInstall: true,
+      install,
+      diagnosticsTimeoutMs: 20
+    })
+
+    await expect(manager.hover(file, 1, 1)).resolves.toContain('Installed docs')
+
+    expect(install).toHaveBeenCalledTimes(1)
+    expect(install).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'typescript', npmPackages: expect.any(Array) })
+    )
+    expect(spawn).toHaveBeenCalledTimes(1)
+    await manager.dispose()
+  })
+
+  it('falls back to no LSP when installation fails', async () => {
+    const file = path.join(workspace, 'a.ts')
+    await fs.writeFile(file, 'x')
+    const spawn = vi.fn<LspSpawn>()
+    const install = vi.fn(async () => null)
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => null,
+      autoInstall: true,
+      install,
+      diagnosticsTimeoutMs: 20
+    })
+
+    await expect(manager.hover(file, 1, 1)).resolves.toBe('')
+
+    expect(install).toHaveBeenCalledTimes(1)
+    expect(spawn).not.toHaveBeenCalled()
+    await manager.dispose()
+
+    await expect(manager.references(file, 1, 1)).resolves.toBe('')
+    expect(install).toHaveBeenCalledTimes(1)
+  })
+
+  it('never installs when auto-install is off', async () => {
+    const file = path.join(workspace, 'a.ts')
+    await fs.writeFile(file, 'x')
+    const spawn = vi.fn<LspSpawn>()
+    const install = vi.fn(async () => '/bin/installed-language-server')
+    const manager = new LspManager({
+      workspace,
+      spawn,
+      resolveExecutable: async () => null,
+      install
+    })
+
+    await expect(manager.hover(file, 1, 1)).resolves.toBe('')
+    await expect(manager.availableServers()).resolves.toEqual([])
+
+    expect(install).not.toHaveBeenCalled()
+    expect(spawn).not.toHaveBeenCalled()
+    await manager.dispose()
+  })
+})
+
+describe('LSP result formatting', () => {
+  const workspace = '/work'
+  const uri = pathToFileURL(path.join(workspace, 'src', 'a.ts')).toString()
+
+  it('formats and dedupes locations with a cap', () => {
+    const range = { start: { line: 4, character: 2 } }
+    expect(formatLocationList('References', null, workspace)).toBe('')
+    expect(formatLocationList('References', { uri, range }, workspace)).toBe(
+      'References:\n- src/a.ts:5:3'
+    )
+    expect(
+      formatLocationList(
+        'Definition',
+        [
+          { uri, range },
+          { uri, range }
+        ],
+        workspace
+      )
+    ).toBe('Definition:\n- src/a.ts:5:3')
+
+    const many = Array.from({ length: 105 }, (_, index) => ({
+      uri,
+      range: { start: { line: index, character: 0 } }
+    }))
+    const report = formatLocationList('References', many, workspace)
+    expect(report.split('\n')).toHaveLength(102)
+    expect(report).toContain('[+5 more locations]')
+  })
+
+  it('formats document symbols hierarchically', () => {
+    const result = [
+      {
+        name: 'Widget',
+        kind: 5,
+        selectionRange: { start: { line: 0, character: 0 } },
+        children: [
+          {
+            name: 'render',
+            kind: 6,
+            selectionRange: { start: { line: 2, character: 4 } },
+            children: [
+              { name: 'inner', kind: 13, selectionRange: { start: { line: 3, character: 6 } } }
+            ]
+          }
+        ]
+      }
+    ]
+
+    expect(formatDocumentSymbols(result, path.join(workspace, 'src', 'a.ts'), workspace)).toBe(
+      [
+        'Symbols in src/a.ts:',
+        '- Widget (class) src/a.ts:1:1',
+        '  - render (method) src/a.ts:3:5',
+        '    - inner (variable) src/a.ts:4:7'
+      ].join('\n')
+    )
+    expect(formatDocumentSymbols([], '/work/a.ts', workspace)).toBe('')
+  })
+
+  it('formats workspace symbols with containers and skips entries without locations', () => {
+    const result = [
+      {
+        name: 'helper',
+        kind: 12,
+        containerName: 'utils',
+        location: { uri, range: { start: { line: 9, character: 4 } } }
+      },
+      { name: 'orphan', kind: 13 }
+    ]
+
+    expect(formatWorkspaceSymbols(result, 'help', workspace)).toBe(
+      'Workspace symbols for "help":\n- utils/helper (function) src/a.ts:10:5'
+    )
+    expect(formatWorkspaceSymbols([], 'help', workspace)).toBe('')
+  })
+
+  it('formats call hierarchy sections', () => {
+    const range = { start: { line: 1, character: 2 } }
+    const result = formatCallHierarchyResult(
+      'Call hierarchy at src/a.ts:2:3:',
+      [
+        {
+          label: 'Incoming',
+          items: [
+            { from: { name: 'caller', uri, range } },
+            { from: { name: 'caller', uri, range } }
+          ]
+        },
+        { label: 'Outgoing', items: [{ to: { name: 'callee', uri, range } }] }
+      ],
+      workspace
+    )
+
+    expect(result).toBe(
+      [
+        'Call hierarchy at src/a.ts:2:3:',
+        'Incoming:',
+        '- caller (src/a.ts:2:3)',
+        'Outgoing:',
+        '- callee (src/a.ts:2:3)'
+      ].join('\n')
+    )
+    expect(
+      formatCallHierarchyResult('Heading:', [{ label: 'Incoming', items: [] }], workspace)
+    ).toBe('')
   })
 })

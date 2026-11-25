@@ -118,8 +118,14 @@ describe('project config', () => {
 describe('layered document fields', () => {
   it('parses providers, custom LSP/formatters, commands and skills', () => {
     const document = parseProjectConfigContent(`{
+      "lspInstall": true,
       "lsp": {
-        "deno": { "command": ["deno", "lsp"], "extensions": [".ts"] },
+        "deno": {
+          "command": ["deno", "lsp"],
+          "extensions": [".ts"],
+          "rootMarkers": ["deno.json"],
+          "npmPackages": ["deno-lsp"]
+        },
         "clangd": { "disabled": true }
       },
       "formatters": {
@@ -137,8 +143,14 @@ describe('layered document fields', () => {
       "skills": ["project-skills"]
     }`)
 
+    expect(document.lspInstall).toBe(true)
     expect(document.lsp).toMatchObject({
-      deno: { command: ['deno', 'lsp'], extensions: ['.ts'] },
+      deno: {
+        command: ['deno', 'lsp'],
+        extensions: ['.ts'],
+        rootMarkers: ['deno.json'],
+        npmPackages: ['deno-lsp']
+      },
       clangd: { disabled: true }
     })
     expect(document.formatters).toMatchObject({
@@ -154,6 +166,25 @@ describe('layered document fields', () => {
       review: { template: 'Review $ARGUMENTS', description: 'Review it' }
     })
     expect(document.skills).toEqual(['project-skills'])
+  })
+
+  it('normalizes LSP root markers and npm packages', () => {
+    const document = parseProjectConfigContent(
+      JSON.stringify({
+        lsp: {
+          custom: {
+            command: ['custom-lsp'],
+            extensions: ['.x'],
+            rootMarkers: [' .custom-root ', 'path/to', ''],
+            npmPackages: ['@scope/pkg', 'plain-pkg', 'not valid!']
+          }
+        }
+      })
+    )
+
+    const lsp = document.lsp as Record<string, { rootMarkers?: string[]; npmPackages?: string[] }>
+    expect(lsp.custom.rootMarkers).toEqual(['.custom-root'])
+    expect(lsp.custom.npmPackages).toEqual(['@scope/pkg', 'plain-pkg'])
   })
 
   it('reports invalid fields and never retains literal credentials', () => {
@@ -218,19 +249,62 @@ describe('partial server overrides', () => {
     await fs.writeFile(
       path.join(userData, 'agent', 'config.json'),
       JSON.stringify({
-        lsp: { typescript: { command: ['custom-ts'], extensions: ['.ts'] } }
+        lsp: {
+          typescript: {
+            command: ['custom-ts'],
+            extensions: ['.ts'],
+            rootMarkers: ['tsconfig.json']
+          }
+        }
       })
     )
     await fs.writeFile(
       path.join(directory, 'repo', 'ateam.json'),
-      JSON.stringify({ lsp: { typescript: { extensions: ['.tsx'] } } })
+      JSON.stringify({
+        lsp: { typescript: { extensions: ['.tsx'], npmPackages: ['typescript-language-server'] } }
+      })
     )
 
     const config = await readAgentConfig(userData, workspace)
     expect(config.lspServers?.typescript).toEqual({
       command: ['custom-ts'],
-      extensions: ['.tsx']
+      extensions: ['.tsx'],
+      rootMarkers: ['tsconfig.json'],
+      npmPackages: ['typescript-language-server']
     })
+  })
+})
+
+describe('LSP install setting', () => {
+  it('reads lspInstall from the global config', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({ lspInstall: true })
+    )
+
+    expect((await readAgentConfig(userData, workspace)).lspInstall).toBe(true)
+  })
+
+  it('lets the project config override lspInstall', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({ lspInstall: true })
+    )
+    await fs.writeFile(
+      path.join(directory, 'repo', 'ateam.json'),
+      JSON.stringify({ lspInstall: false })
+    )
+
+    expect((await readAgentConfig(userData, workspace)).lspInstall).toBe(false)
+  })
+
+  it('ignores a non-boolean lspInstall', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({ lspInstall: 'yes' })
+    )
+
+    expect((await readAgentConfig(userData, workspace)).lspInstall).toBe(false)
   })
 })
 

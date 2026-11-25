@@ -28,6 +28,7 @@ const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'mcp',
   'webfetch',
   'websearch',
+  'lsp',
   'skill',
   'subagent',
   'plugin',
@@ -374,9 +375,17 @@ function normalizeLspServers(
       .filter((entry) => /^\.[a-z0-9+]{1,20}$/.test(entry))
     const disabled = raw.disabled === true
     const env = stringRecord(raw.env)
+    const rootMarkers = strings(raw.rootMarkers)
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0 && entry.length <= 100 && !/[/\\]/.test(entry))
+    const npmPackages = strings(raw.npmPackages)
+      .map((entry) => entry.trim())
+      .filter((entry) => /^(@[a-z0-9-_.]+\/)?[a-z0-9-_.]+$/i.test(entry))
     servers[id] = {
       ...(command.length > 0 ? { command } : {}),
       ...(extensions.length > 0 ? { extensions } : {}),
+      ...(rootMarkers.length > 0 ? { rootMarkers } : {}),
+      ...(npmPackages.length > 0 ? { npmPackages } : {}),
       ...(disabled ? { disabled: true } : {}),
       ...(Object.keys(env).length > 0 ? { env } : {}),
       ...(isRecord(raw.initialization) ? { initialization: raw.initialization } : {})
@@ -603,6 +612,7 @@ export function normalizeAgentConfigDocument(
     }
   }
   if (typeof value.lspEnabled === 'boolean') document.lspEnabled = value.lspEnabled
+  if (typeof value.lspInstall === 'boolean') document.lspInstall = value.lspInstall
   if (typeof value.lsp === 'boolean') document.lsp = value.lsp
   else if (isRecord(value.lsp)) {
     const servers = normalizeLspServers(value.lsp, source, '$.lsp', diagnostics)

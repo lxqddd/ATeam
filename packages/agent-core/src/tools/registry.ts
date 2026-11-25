@@ -13,7 +13,14 @@ import {
 } from './browser'
 import { createExecuteTool } from './execute'
 import { createEditTool, createListTool, createReadTool, createWriteTool } from './fs'
-import { createLspDefinitionTool, createLspHoverTool } from './lsp'
+import {
+  createLspCallHierarchyTool,
+  createLspDefinitionTool,
+  createLspHoverTool,
+  createLspImplementationTool,
+  createLspReferencesTool,
+  createLspSymbolsTool
+} from './lsp'
 import { createMcpPromptTool, createMcpResourceTool } from './mcp'
 import { createPatchTool } from './patch'
 import {
@@ -71,6 +78,10 @@ export function createTools(context: ToolContext): ToolSet {
     plan_exit: createPlanExitTool(context),
     lsp_hover: createLspHoverTool(context),
     lsp_definition: createLspDefinitionTool(context),
+    lsp_references: createLspReferencesTool(context),
+    lsp_implementation: createLspImplementationTool(context),
+    lsp_symbols: createLspSymbolsTool(context),
+    lsp_call_hierarchy: createLspCallHierarchyTool(context),
     worktree_create: createWorktreeCreateTool(context),
     worktree_list: createWorktreeListTool(context),
     worktree_remove: createWorktreeRemoveTool(context),

@@ -1,4 +1,5 @@
 import { spawn as nodeSpawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -8,7 +9,12 @@ import { resolveExecutable } from './executables'
 const MAX_DIAGNOSTIC_FILESIZE = 1_000_000
 const DEFAULT_REQUEST_TIMEOUT_MS = 15_000
 const DEFAULT_DIAGNOSTICS_TIMEOUT_MS = 5_000
+const DEFAULT_INSTALL_TIMEOUT_MS = 120_000
 const MAX_REPORTED_DIAGNOSTICS = 20
+const MAX_LOCATION_RESULTS = 100
+const MAX_SYMBOL_RESULTS = 100
+const MAX_CALL_RESULTS = 50
+const MAX_CALL_HIERARCHY_ITEMS = 20
 
 export interface LspDiagnostic {
   line: number
@@ -25,6 +31,10 @@ export interface LspServerDefinition {
   command: readonly string[]
   env?: Record<string, string>
   initialization?: Record<string, unknown>
+  /** Names of files or directories that mark the project root for this server. */
+  rootMarkers?: readonly string[]
+  /** npm packages installed on demand when the executable is missing. */
+  npmPackages?: readonly string[]
 }
 
 export interface LspChildProcess {
@@ -71,7 +81,36 @@ const LANGUAGE_IDS: Record<string, string> = {
   '.cc': 'cpp',
   '.cpp': 'cpp',
   '.cxx': 'cpp',
-  '.hpp': 'cpp'
+  '.hpp': 'cpp',
+  '.hh': 'cpp',
+  '.hxx': 'cpp',
+  '.yaml': 'yaml',
+  '.yml': 'yaml',
+  '.sh': 'shellscript',
+  '.bash': 'shellscript',
+  '.zsh': 'shellscript',
+  '.json': 'json',
+  '.jsonc': 'jsonc',
+  '.css': 'css',
+  '.scss': 'scss',
+  '.less': 'less',
+  '.html': 'html',
+  '.htm': 'html',
+  '.vue': 'vue',
+  '.svelte': 'svelte',
+  '.astro': 'astro',
+  '.php': 'php',
+  '.prisma': 'prisma',
+  '.toml': 'toml',
+  '.lua': 'lua',
+  '.kt': 'kotlin',
+  '.kts': 'kotlin',
+  '.rb': 'ruby',
+  '.dart': 'dart',
+  '.swift': 'swift',
+  '.zig': 'zig',
+  '.graphql': 'graphql',
+  '.gql': 'graphql'
 }
 
 export function resolveLspServers(config?: AgentConfig): readonly LspServerDefinition[] {
@@ -84,10 +123,14 @@ export function resolveLspServers(config?: AgentConfig): readonly LspServerDefin
     const existing = servers.get(id)
     const command = input.command && input.command.length > 0 ? input.command : existing?.command
     if (!command || command.length === 0) continue
+    const rootMarkers = input.rootMarkers ?? existing?.rootMarkers
+    const npmPackages = input.npmPackages ?? existing?.npmPackages
     servers.set(id, {
       id,
       command,
       extensions: input.extensions ?? existing?.extensions ?? [],
+      ...(rootMarkers && rootMarkers.length > 0 ? { rootMarkers } : {}),
+      ...(npmPackages && npmPackages.length > 0 ? { npmPackages } : {}),
       ...(input.env ? { env: input.env } : {}),
       ...(input.initialization ? { initialization: input.initialization } : {})
     })
@@ -99,15 +142,153 @@ export const LSP_SERVERS: readonly LspServerDefinition[] = [
   {
     id: 'typescript',
     extensions: ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'],
-    command: ['typescript-language-server', '--stdio']
+    command: ['typescript-language-server', '--stdio'],
+    rootMarkers: ['tsconfig.json', 'jsconfig.json', 'package.json'],
+    npmPackages: ['typescript-language-server', 'typescript']
   },
-  { id: 'gopls', extensions: ['.go'], command: ['gopls'] },
-  { id: 'pyright', extensions: ['.py', '.pyi'], command: ['pyright-langserver', '--stdio'] },
-  { id: 'rust-analyzer', extensions: ['.rs'], command: ['rust-analyzer'] },
+  {
+    id: 'gopls',
+    extensions: ['.go'],
+    command: ['gopls'],
+    rootMarkers: ['go.work', 'go.mod']
+  },
+  {
+    id: 'pyright',
+    extensions: ['.py', '.pyi'],
+    command: ['pyright-langserver', '--stdio'],
+    rootMarkers: [
+      'pyrightconfig.json',
+      'pyproject.toml',
+      'setup.py',
+      'setup.cfg',
+      'requirements.txt',
+      'Pipfile'
+    ],
+    npmPackages: ['pyright']
+  },
+  {
+    id: 'rust-analyzer',
+    extensions: ['.rs'],
+    command: ['rust-analyzer'],
+    rootMarkers: ['Cargo.toml', 'rust-toolchain.toml']
+  },
   {
     id: 'clangd',
-    extensions: ['.c', '.h', '.cc', '.cpp', '.cxx', '.hpp'],
-    command: ['clangd']
+    extensions: ['.c', '.h', '.cc', '.cpp', '.cxx', '.hpp', '.hh', '.hxx'],
+    command: ['clangd'],
+    rootMarkers: ['compile_commands.json', 'compile_flags.txt', '.clangd', 'CMakeLists.txt']
+  },
+  {
+    id: 'yaml',
+    extensions: ['.yaml', '.yml'],
+    command: ['yaml-language-server', '--stdio'],
+    npmPackages: ['yaml-language-server']
+  },
+  {
+    id: 'bash',
+    extensions: ['.sh', '.bash', '.zsh'],
+    command: ['bash-language-server', 'start'],
+    npmPackages: ['bash-language-server']
+  },
+  {
+    id: 'json',
+    extensions: ['.json', '.jsonc'],
+    command: ['vscode-json-language-server', '--stdio'],
+    npmPackages: ['vscode-langservers-extracted']
+  },
+  {
+    id: 'css',
+    extensions: ['.css', '.scss', '.less'],
+    command: ['vscode-css-language-server', '--stdio'],
+    npmPackages: ['vscode-langservers-extracted']
+  },
+  {
+    id: 'html',
+    extensions: ['.html', '.htm'],
+    command: ['vscode-html-language-server', '--stdio'],
+    npmPackages: ['vscode-langservers-extracted']
+  },
+  {
+    id: 'vue',
+    extensions: ['.vue'],
+    command: ['vue-language-server', '--stdio'],
+    rootMarkers: ['package.json'],
+    npmPackages: ['@vue/language-server']
+  },
+  {
+    id: 'svelte',
+    extensions: ['.svelte'],
+    command: ['svelteserver', '--stdio'],
+    rootMarkers: ['package.json'],
+    npmPackages: ['svelte-language-server']
+  },
+  {
+    id: 'astro',
+    extensions: ['.astro'],
+    command: ['astro-ls', '--stdio'],
+    rootMarkers: ['package.json'],
+    npmPackages: ['@astrojs/language-server']
+  },
+  {
+    id: 'php',
+    extensions: ['.php'],
+    command: ['intelephense', '--stdio'],
+    rootMarkers: ['composer.json'],
+    npmPackages: ['intelephense']
+  },
+  {
+    id: 'prisma',
+    extensions: ['.prisma'],
+    command: ['prisma-language-server', '--stdio'],
+    rootMarkers: ['package.json', 'schema.prisma'],
+    npmPackages: ['@prisma/language-server']
+  },
+  {
+    id: 'toml',
+    extensions: ['.toml'],
+    command: ['taplo', 'lsp', 'stdio'],
+    npmPackages: ['@taplo/cli']
+  },
+  {
+    id: 'lua',
+    extensions: ['.lua'],
+    command: ['lua-language-server']
+  },
+  {
+    id: 'kotlin',
+    extensions: ['.kt', '.kts'],
+    command: ['kotlin-language-server'],
+    rootMarkers: ['settings.gradle.kts', 'settings.gradle', 'build.gradle.kts', 'build.gradle']
+  },
+  {
+    id: 'ruby',
+    extensions: ['.rb'],
+    command: ['ruby-lsp'],
+    rootMarkers: ['Gemfile']
+  },
+  {
+    id: 'dart',
+    extensions: ['.dart'],
+    command: ['dart', 'language-server'],
+    rootMarkers: ['pubspec.yaml']
+  },
+  {
+    id: 'swift',
+    extensions: ['.swift'],
+    command: ['sourcekit-lsp'],
+    rootMarkers: ['Package.swift']
+  },
+  {
+    id: 'zig',
+    extensions: ['.zig'],
+    command: ['zls'],
+    rootMarkers: ['build.zig']
+  },
+  {
+    id: 'graphql',
+    extensions: ['.graphql', '.gql'],
+    command: ['graphql-lsp', 'server', '--method', 'stream'],
+    npmPackages: ['graphql-language-service-cli']
   }
 ]
 
@@ -117,6 +298,33 @@ export function lspServerForFile(
 ): LspServerDefinition | null {
   const extension = path.extname(filePath).toLowerCase()
   return servers.find((server) => server.extensions.includes(extension)) ?? null
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+/**
+ * Finds the nearest directory at or above the file that carries one of the
+ * server's root markers, bounded by the workspace. Files outside the workspace
+ * and servers without markers fall back to the workspace root.
+ */
+export function resolveLspRoot(
+  file: string,
+  server: LspServerDefinition,
+  workspace: string
+): string {
+  const root = path.resolve(workspace)
+  const markers = server.rootMarkers ?? []
+  if (markers.length === 0) return root
+  let directory = path.dirname(path.resolve(file))
+  if (!isInside(root, directory)) return root
+  for (;;) {
+    if (markers.some((marker) => existsSync(path.join(directory, marker)))) return directory
+    if (directory === root) return root
+    directory = path.dirname(directory)
+  }
 }
 
 export function languageIdForFile(filePath: string): string {
@@ -198,6 +406,8 @@ export class LspClient {
   constructor(
     private readonly options: {
       workspace: string
+      /** Project root reported to the server; defaults to the workspace. */
+      root?: string
       server: LspServerDefinition
       command: string
       spawn?: LspSpawn
@@ -217,9 +427,10 @@ export class LspClient {
 
   private async launch(): Promise<void> {
     const spawn = this.options.spawn ?? (nodeSpawn as unknown as LspSpawn)
+    const root = this.options.root ?? this.options.workspace
     const [, ...args] = this.options.server.command
     const child = spawn(this.options.command, args, {
-      cwd: this.options.workspace,
+      cwd: root,
       env: this.options.env
     })
     this.child = child
@@ -232,10 +443,8 @@ export class LspClient {
       ...(this.options.server.initialization ?? {}),
       processId: process.pid,
       clientInfo: { name: 'ATeam' },
-      rootUri: fileUri(this.options.workspace),
-      workspaceFolders: [
-        { uri: fileUri(this.options.workspace), name: path.basename(this.options.workspace) }
-      ],
+      rootUri: fileUri(root),
+      workspaceFolders: [{ uri: fileUri(root), name: path.basename(root) }],
       capabilities: {
         textDocument: { synchronization: { didSave: false }, publishDiagnostics: {} },
         workspace: { workspaceFolders: true }
@@ -290,12 +499,67 @@ export class LspClient {
     return this.positionQuery('textDocument/definition', filePath, text, line, character)
   }
 
+  async references(
+    filePath: string,
+    text: string,
+    line: number,
+    character: number
+  ): Promise<unknown> {
+    return this.positionQuery('textDocument/references', filePath, text, line, character, {
+      context: { includeDeclaration: true }
+    })
+  }
+
+  async implementation(
+    filePath: string,
+    text: string,
+    line: number,
+    character: number
+  ): Promise<unknown> {
+    return this.positionQuery('textDocument/implementation', filePath, text, line, character)
+  }
+
+  async prepareCallHierarchy(
+    filePath: string,
+    text: string,
+    line: number,
+    character: number
+  ): Promise<unknown> {
+    return this.positionQuery('textDocument/prepareCallHierarchy', filePath, text, line, character)
+  }
+
+  async documentSymbols(filePath: string, text: string): Promise<unknown> {
+    return this.documentQuery('textDocument/documentSymbol', filePath, text)
+  }
+
+  async workspaceSymbols(query: string): Promise<unknown> {
+    if (this.exited) return null
+    await this.start()
+    if (this.exited) return null
+    return this.request('workspace/symbol', { query })
+  }
+
+  async incomingCalls(item: unknown): Promise<unknown> {
+    if (this.exited) return null
+    await this.start()
+    if (this.exited) return null
+    return this.request('callHierarchy/incomingCalls', { item })
+  }
+
+  async outgoingCalls(item: unknown): Promise<unknown> {
+    if (this.exited) return null
+    await this.start()
+    if (this.exited) return null
+    return this.request('callHierarchy/outgoingCalls', { item })
+  }
+
   private async positionQuery(
     method: string,
     filePath: string,
     text: string,
     line: number,
-    character: number
+    character: number,
+    extra?: Record<string, unknown>
   ): Promise<unknown> {
     if (this.exited) return null
     await this.start()
@@ -308,8 +572,22 @@ export class LspClient {
     }
     return this.request(method, {
       textDocument: { uri },
-      position: { line: Math.max(0, line - 1), character: Math.max(0, character - 1) }
+      position: { line: Math.max(0, line - 1), character: Math.max(0, character - 1) },
+      ...(extra ?? {})
     })
+  }
+
+  private async documentQuery(method: string, filePath: string, text: string): Promise<unknown> {
+    if (this.exited) return null
+    await this.start()
+    if (this.exited) return null
+    let uri: string
+    try {
+      uri = this.syncDocument(filePath, text)
+    } catch {
+      return null
+    }
+    return this.request(method, { textDocument: { uri } })
   }
 
   async dispose(): Promise<void> {
@@ -434,20 +712,38 @@ export class LspClient {
   }
 }
 
+export type LspCallDirection = 'incoming' | 'outgoing' | 'both'
+
 interface LspManagerOptions {
   workspace: string
   spawn?: LspSpawn
   env?: NodeJS.ProcessEnv
-  resolveExecutable?: (bin: string) => Promise<string | null>
+  resolveExecutable?: (bin: string, cwd?: string) => Promise<string | null>
   requestTimeoutMs?: number
   diagnosticsTimeoutMs?: number
   servers?: readonly LspServerDefinition[]
+  /** Directory that receives npm installations of missing servers. */
+  installDirectory?: string
+  /** Install missing npm language servers on first use; off by default. */
+  autoInstall?: boolean
+  /** Replaces the npm installer, mainly for tests. */
+  install?: (server: LspServerDefinition) => Promise<string | null>
+}
+
+interface ResolvedServer {
+  server: LspServerDefinition
+  root: string
+}
+
+function clientKey(server: LspServerDefinition, root: string): string {
+  return `${server.id}\u0000${root}`
 }
 
 export class LspManager {
   private clients = new Map<string, { client: LspClient; ready: Promise<void> }>()
   private failed = new Set<string>()
   private executables = new Map<string, Promise<string | null>>()
+  private installs = new Map<string, Promise<string | null>>()
   private disposed = false
 
   constructor(private readonly options: LspManagerOptions) {}
@@ -455,9 +751,9 @@ export class LspManager {
   async diagnostics(files: string[]): Promise<Map<string, LspDiagnostic[]>> {
     const results = new Map<string, LspDiagnostic[]>()
     for (const file of new Set(files)) {
-      const server = lspServerForFile(file, this.options.servers)
-      if (!server) continue
-      const client = await this.clientFor(server)
+      const resolved = this.serverFor(file)
+      if (!resolved) continue
+      const client = await this.clientFor(resolved)
       if (!client) continue
       const text = await readTextFile(file)
       if (text === null) continue
@@ -467,30 +763,98 @@ export class LspManager {
   }
 
   async hover(file: string, line: number, character: number): Promise<string> {
-    const server = lspServerForFile(file, this.options.servers)
-    if (!server) return ''
+    const result = await this.positionResult(file, (client, text) =>
+      client.hover(file, text, line, character)
+    )
+    return formatHoverResult(result, file, line, character, this.options.workspace)
+  }
+
+  async definition(file: string, line: number, character: number): Promise<string> {
+    const result = await this.positionResult(file, (client, text) =>
+      client.definition(file, text, line, character)
+    )
+    return formatDefinitionResult(result, this.options.workspace)
+  }
+
+  async references(file: string, line: number, character: number): Promise<string> {
+    const result = await this.positionResult(file, (client, text) =>
+      client.references(file, text, line, character)
+    )
+    return formatLocationList('References', result, this.options.workspace)
+  }
+
+  async implementation(file: string, line: number, character: number): Promise<string> {
+    const result = await this.positionResult(file, (client, text) =>
+      client.implementation(file, text, line, character)
+    )
+    return formatLocationList('Implementations', result, this.options.workspace)
+  }
+
+  async documentSymbols(file: string): Promise<string> {
+    const resolved = this.serverFor(file)
+    if (!resolved) return ''
     try {
-      const client = await this.clientFor(server)
+      const client = await this.clientFor(resolved)
       if (!client) return ''
       const text = await readTextFile(file)
       if (text === null) return ''
-      const result = await client.hover(file, text, line, character)
-      return formatHoverResult(result, file, line, character, this.options.workspace)
+      const result = await client.documentSymbols(file, text)
+      return formatDocumentSymbols(result, file, this.options.workspace)
     } catch {
       return ''
     }
   }
 
-  async definition(file: string, line: number, character: number): Promise<string> {
-    const server = lspServerForFile(file, this.options.servers)
-    if (!server) return ''
+  async workspaceSymbols(query: string, file: string): Promise<string> {
+    const resolved = this.serverFor(file)
+    if (!resolved) return ''
     try {
-      const client = await this.clientFor(server)
+      const client = await this.clientFor(resolved)
+      if (!client) return ''
+      const result = await client.workspaceSymbols(query)
+      return formatWorkspaceSymbols(result, query, this.options.workspace)
+    } catch {
+      return ''
+    }
+  }
+
+  async callHierarchy(
+    file: string,
+    line: number,
+    character: number,
+    direction: LspCallDirection = 'both'
+  ): Promise<string> {
+    const resolved = this.serverFor(file)
+    if (!resolved) return ''
+    try {
+      const client = await this.clientFor(resolved)
       if (!client) return ''
       const text = await readTextFile(file)
       if (text === null) return ''
-      const result = await client.definition(file, text, line, character)
-      return formatDefinitionResult(result, this.options.workspace)
+      const prepared = await client.prepareCallHierarchy(file, text, line, character)
+      const items = Array.isArray(prepared) ? prepared : prepared ? [prepared] : []
+      if (items.length === 0) return ''
+      const incoming: unknown[] = []
+      const outgoing: unknown[] = []
+      for (const item of items.slice(0, MAX_CALL_HIERARCHY_ITEMS)) {
+        if (direction !== 'outgoing') {
+          const result = await client.incomingCalls(item)
+          if (Array.isArray(result)) incoming.push(...result)
+        }
+        if (direction !== 'incoming') {
+          const result = await client.outgoingCalls(item)
+          if (Array.isArray(result)) outgoing.push(...result)
+        }
+      }
+      const sections: Array<{ label: 'Incoming' | 'Outgoing'; items: unknown[] }> = []
+      if (direction !== 'outgoing') sections.push({ label: 'Incoming', items: incoming })
+      if (direction !== 'incoming') sections.push({ label: 'Outgoing', items: outgoing })
+      const relative = path.relative(this.options.workspace, file).split(path.sep).join('/')
+      return formatCallHierarchyResult(
+        `Call hierarchy at ${relative}:${line}:${character}:`,
+        sections,
+        this.options.workspace
+      )
     } catch {
       return ''
     }
@@ -510,21 +874,73 @@ export class LspManager {
     this.clients.clear()
   }
 
+  private serverFor(file: string): ResolvedServer | null {
+    const server = lspServerForFile(file, this.options.servers)
+    if (!server) return null
+    return { server, root: resolveLspRoot(file, server, this.options.workspace) }
+  }
+
+  private async positionResult(
+    file: string,
+    run: (client: LspClient, text: string) => Promise<unknown>
+  ): Promise<unknown> {
+    const resolved = this.serverFor(file)
+    if (!resolved) return null
+    try {
+      const client = await this.clientFor(resolved)
+      if (!client) return null
+      const text = await readTextFile(file)
+      if (text === null) return null
+      return await run(client, text)
+    } catch {
+      return null
+    }
+  }
+
+  private resolver(): (bin: string, cwd?: string) => Promise<string | null> {
+    return (
+      this.options.resolveExecutable ??
+      ((bin, cwd) => resolveExecutable(bin, cwd ?? this.options.workspace, this.options.env))
+    )
+  }
+
   private executableFor(server: LspServerDefinition): Promise<string | null> {
     let resolution = this.executables.get(server.id)
     if (!resolution) {
-      const resolve =
-        this.options.resolveExecutable ??
-        ((bin: string) => resolveExecutable(bin, this.options.workspace, this.options.env))
-      resolution = resolve(server.command[0]).catch(() => null)
+      resolution = this.resolver()(server.command[0], this.options.workspace).catch(() => null)
       this.executables.set(server.id, resolution)
     }
     return resolution
   }
 
-  private async clientFor(server: LspServerDefinition): Promise<LspClient | null> {
-    if (this.disposed || this.failed.has(server.id)) return null
-    const existing = this.clients.get(server.id)
+  private executableForClient(server: LspServerDefinition): Promise<string | null> {
+    return this.executableFor(server).then((direct) => direct ?? this.installFor(server))
+  }
+
+  private installFor(server: LspServerDefinition): Promise<string | null> {
+    if (!this.options.autoInstall || this.disposed) return Promise.resolve(null)
+    let installation = this.installs.get(server.id)
+    if (!installation) {
+      installation = (
+        this.options.install ? this.options.install(server) : this.installFromNpm(server)
+      ).catch(() => null)
+      this.installs.set(server.id, installation)
+    }
+    return installation
+  }
+
+  private async installFromNpm(server: LspServerDefinition): Promise<string | null> {
+    const directory = this.options.installDirectory
+    const packages = server.npmPackages ?? []
+    if (!directory || packages.length === 0) return null
+    return installNpmServer(server, directory, this.resolver())
+  }
+
+  private async clientFor(resolved: ResolvedServer): Promise<LspClient | null> {
+    const { server, root } = resolved
+    const key = clientKey(server, root)
+    if (this.disposed || this.failed.has(key)) return null
+    const existing = this.clients.get(key)
     if (existing) {
       try {
         await existing.ready
@@ -534,11 +950,12 @@ export class LspManager {
       return existing.client
     }
 
-    const executable = await this.executableFor(server)
+    const executable = await this.executableForClient(server)
     if (!executable || this.disposed) return null
     const envOverrides = { ...(this.options.env ?? {}), ...(server.env ?? {}) }
     const client = new LspClient({
       workspace: this.options.workspace,
+      root,
       server,
       command: executable,
       spawn: this.options.spawn,
@@ -547,22 +964,74 @@ export class LspManager {
       diagnosticsTimeoutMs: this.options.diagnosticsTimeoutMs
     })
     const ready = client.start()
-    this.clients.set(server.id, { client, ready })
+    this.clients.set(key, { client, ready })
     try {
       await ready
     } catch {
-      this.failed.add(server.id)
-      this.clients.delete(server.id)
+      this.failed.add(key)
+      this.clients.delete(key)
       await client.dispose()
       return null
     }
     if (this.disposed) {
-      this.clients.delete(server.id)
+      this.clients.delete(key)
       await client.dispose()
       return null
     }
     return client
   }
+}
+
+async function installNpmServer(
+  server: LspServerDefinition,
+  directory: string,
+  resolve: (bin: string, cwd?: string) => Promise<string | null>
+): Promise<string | null> {
+  const packages = server.npmPackages ?? []
+  if (packages.length === 0) return null
+  const target = path.join(directory, server.id)
+  try {
+    await fs.mkdir(target, { recursive: true })
+  } catch {
+    return null
+  }
+  const npm = await resolve('npm', target).catch(() => null)
+  if (!npm) return null
+  if (!(await runNpmInstall(npm, target, packages))) return null
+  return resolve(server.command[0], target).catch(() => null)
+}
+
+function runNpmInstall(npm: string, cwd: string, packages: readonly string[]): Promise<boolean> {
+  return new Promise((done) => {
+    let child: LspChildProcess
+    try {
+      child = nodeSpawn(
+        npm,
+        ['install', '--prefix', cwd, '--no-fund', '--no-audit', '--loglevel=error', ...packages],
+        { cwd, env: process.env, stdio: 'ignore' }
+      ) as unknown as LspChildProcess
+    } catch {
+      done(false)
+      return
+    }
+    let settled = false
+    const finish = (ok: boolean): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      done(ok)
+    }
+    const timer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        /* the process may already be gone */
+      }
+      finish(false)
+    }, DEFAULT_INSTALL_TIMEOUT_MS)
+    child.on('exit', (code) => finish(code === 0))
+    child.on('error', () => finish(false))
+  })
 }
 
 async function readTextFile(file: string): Promise<string | null> {
@@ -608,40 +1077,214 @@ export function formatHoverResult(
   return `Hover at ${relative}:${line}:${character}:\n${text.slice(0, 4_000)}`
 }
 
-export function formatDefinitionResult(result: unknown, workspace: string): string {
+interface LspLocationPoint {
+  file: string
+  line: number
+  character: number
+}
+
+function relativePath(workspace: string, file: string): string {
+  return path.relative(workspace, file).split(path.sep).join('/')
+}
+
+function toLocationPoint(value: unknown): LspLocationPoint | null {
+  if (!value || typeof value !== 'object') return null
+  const entry = value as {
+    uri?: unknown
+    targetUri?: unknown
+    range?: { start?: { line?: unknown; character?: unknown } }
+    targetSelectionRange?: { start?: { line?: unknown; character?: unknown } }
+    targetRange?: { start?: { line?: unknown; character?: unknown } }
+  }
+  const uri =
+    typeof entry.uri === 'string'
+      ? entry.uri
+      : typeof entry.targetUri === 'string'
+        ? entry.targetUri
+        : null
+  if (!uri) return null
+  let file: string
+  try {
+    file = fileURLToPath(uri)
+  } catch {
+    return null
+  }
+  const range = entry.range ?? entry.targetSelectionRange ?? entry.targetRange
+  const line = typeof range?.start?.line === 'number' ? range.start.line + 1 : 1
+  const character = typeof range?.start?.character === 'number' ? range.start.character + 1 : 1
+  return { file, line, character }
+}
+
+export function formatLocationList(label: string, result: unknown, workspace: string): string {
   const entries = Array.isArray(result) ? result : result ? [result] : []
   const locations: string[] = []
+  const seen = new Set<string>()
   for (const entry of entries) {
-    if (!entry || typeof entry !== 'object') continue
-    const location = entry as {
-      uri?: unknown
-      targetUri?: unknown
-      range?: { start?: { line?: unknown; character?: unknown } }
-      targetSelectionRange?: { start?: { line?: unknown; character?: unknown } }
-      targetRange?: { start?: { line?: unknown; character?: unknown } }
-    }
-    const uri =
-      typeof location.uri === 'string'
-        ? location.uri
-        : typeof location.targetUri === 'string'
-          ? location.targetUri
-          : null
-    if (!uri) continue
-    let file: string
-    try {
-      file = fileURLToPath(uri)
-    } catch {
-      continue
-    }
-    const range = location.range ?? location.targetSelectionRange ?? location.targetRange
-    const line = typeof range?.start?.line === 'number' ? range.start.line + 1 : 1
-    const character = typeof range?.start?.character === 'number' ? range.start.character + 1 : 1
-    locations.push(
-      `${path.relative(workspace, file).split(path.sep).join('/')}:${line}:${character}`
-    )
+    const point = toLocationPoint(entry)
+    if (!point) continue
+    const formatted = `${relativePath(workspace, point.file)}:${point.line}:${point.character}`
+    if (seen.has(formatted)) continue
+    seen.add(formatted)
+    locations.push(formatted)
   }
   if (locations.length === 0) return ''
-  return `Definition:\n${[...new Set(locations)].map((entry) => `- ${entry}`).join('\n')}`
+  const shown = locations.slice(0, MAX_LOCATION_RESULTS)
+  const extra =
+    locations.length > shown.length ? `\n[+${locations.length - shown.length} more locations]` : ''
+  return `${label}:\n${shown.map((entry) => `- ${entry}`).join('\n')}${extra}`
+}
+
+export function formatDefinitionResult(result: unknown, workspace: string): string {
+  return formatLocationList('Definition', result, workspace)
+}
+
+export function symbolKindLabel(kind: unknown): string {
+  const labels: Record<number, string> = {
+    1: 'file',
+    2: 'module',
+    3: 'namespace',
+    4: 'package',
+    5: 'class',
+    6: 'method',
+    7: 'property',
+    8: 'field',
+    9: 'constructor',
+    10: 'enum',
+    11: 'interface',
+    12: 'function',
+    13: 'variable',
+    14: 'constant',
+    15: 'string',
+    16: 'number',
+    17: 'boolean',
+    18: 'array',
+    19: 'object',
+    20: 'key',
+    21: 'null',
+    22: 'enum member',
+    23: 'struct',
+    24: 'event',
+    25: 'operator',
+    26: 'type parameter'
+  }
+  return typeof kind === 'number' ? (labels[kind] ?? 'symbol') : 'symbol'
+}
+
+interface SymbolLike {
+  name?: unknown
+  kind?: unknown
+  range?: { start?: { line?: unknown; character?: unknown } }
+  selectionRange?: { start?: { line?: unknown; character?: unknown } }
+  location?: unknown
+  children?: unknown
+  containerName?: unknown
+}
+
+function symbolPosition(symbol: SymbolLike, file: string): LspLocationPoint | null {
+  if (symbol.location) return toLocationPoint(symbol.location)
+  const range = symbol.selectionRange ?? symbol.range
+  if (!range) return null
+  const line = typeof range.start?.line === 'number' ? range.start.line + 1 : 1
+  const character = typeof range.start?.character === 'number' ? range.start.character + 1 : 1
+  return { file, line, character }
+}
+
+export function formatDocumentSymbols(result: unknown, file: string, workspace: string): string {
+  const symbols = Array.isArray(result) ? result : []
+  if (symbols.length === 0) return ''
+  const lines: string[] = []
+  let total = 0
+  const walk = (entries: unknown[], depth: number): void => {
+    for (const entry of entries) {
+      if (!entry || typeof entry !== 'object') continue
+      const symbol = entry as SymbolLike
+      total += 1
+      if (lines.length < MAX_SYMBOL_RESULTS) {
+        const name = typeof symbol.name === 'string' ? symbol.name : '<unnamed>'
+        const point = symbolPosition(symbol, file)
+        const suffix = point
+          ? ` ${relativePath(workspace, point.file)}:${point.line}:${point.character}`
+          : ''
+        lines.push(`${'  '.repeat(depth)}- ${name} (${symbolKindLabel(symbol.kind)})${suffix}`)
+      }
+      if (depth < 8 && Array.isArray(symbol.children)) walk(symbol.children, depth + 1)
+    }
+  }
+  walk(symbols, 0)
+  if (lines.length === 0) return ''
+  const extra = total > lines.length ? `\n[+${total - lines.length} more symbols]` : ''
+  return `Symbols in ${relativePath(workspace, file)}:\n${lines.join('\n')}${extra}`
+}
+
+export function formatWorkspaceSymbols(result: unknown, query: string, workspace: string): string {
+  const symbols = Array.isArray(result) ? result : []
+  const lines: string[] = []
+  let total = 0
+  for (const entry of symbols) {
+    if (!entry || typeof entry !== 'object') continue
+    const symbol = entry as SymbolLike
+    const point = symbolPosition(symbol, '')
+    if (!point) continue
+    total += 1
+    if (lines.length >= MAX_SYMBOL_RESULTS) continue
+    const name = typeof symbol.name === 'string' ? symbol.name : '<unnamed>'
+    const container =
+      typeof symbol.containerName === 'string' && symbol.containerName
+        ? `${symbol.containerName}/`
+        : ''
+    lines.push(
+      `- ${container}${name} (${symbolKindLabel(symbol.kind)}) ${relativePath(workspace, point.file)}:${point.line}:${point.character}`
+    )
+  }
+  if (lines.length === 0) return ''
+  const extra = total > lines.length ? `\n[+${total - lines.length} more symbols]` : ''
+  return `Workspace symbols for "${query}":\n${lines.join('\n')}${extra}`
+}
+
+export function formatCallHierarchyResult(
+  heading: string,
+  sections: ReadonlyArray<{ label: 'Incoming' | 'Outgoing'; items: unknown[] }>,
+  workspace: string
+): string {
+  const lines: string[] = []
+  for (const section of sections) {
+    const entries: string[] = []
+    const seen = new Set<string>()
+    for (const raw of section.items) {
+      if (!raw || typeof raw !== 'object') continue
+      const call = raw as { from?: unknown; to?: unknown }
+      const item = (section.label === 'Incoming' ? call.from : call.to) as
+        | {
+            name?: unknown
+            uri?: unknown
+            range?: { start?: { line?: unknown; character?: unknown } }
+          }
+        | undefined
+      if (!item || typeof item.uri !== 'string') continue
+      let file: string
+      try {
+        file = fileURLToPath(item.uri)
+      } catch {
+        continue
+      }
+      const line = typeof item.range?.start?.line === 'number' ? item.range.start.line + 1 : 1
+      const character =
+        typeof item.range?.start?.character === 'number' ? item.range.start.character + 1 : 1
+      const name = typeof item.name === 'string' ? item.name : '(anonymous)'
+      const formatted = `${name} (${relativePath(workspace, file)}:${line}:${character})`
+      if (seen.has(formatted)) continue
+      seen.add(formatted)
+      entries.push(formatted)
+    }
+    if (entries.length === 0) continue
+    lines.push(`${section.label}:`)
+    for (const entry of entries.slice(0, MAX_CALL_RESULTS)) lines.push(`- ${entry}`)
+    if (entries.length > MAX_CALL_RESULTS) {
+      lines.push(`[+${entries.length - MAX_CALL_RESULTS} more calls]`)
+    }
+  }
+  if (lines.length === 0) return ''
+  return `${heading}\n${lines.join('\n')}`
 }
 
 export function formatDiagnosticReport(

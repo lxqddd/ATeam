@@ -17,7 +17,18 @@ import type { ToolSet } from 'ai'
 
 const MAX_STEPS_LIMIT = 100
 const MODES: readonly AgentMode[] = ['primary', 'subagent', 'all']
-const READ_TOOLS = ['read', 'list', 'grep', 'glob', 'lsp_hover', 'lsp_definition']
+const READ_TOOLS = [
+  'read',
+  'list',
+  'grep',
+  'glob',
+  'lsp_hover',
+  'lsp_definition',
+  'lsp_references',
+  'lsp_implementation',
+  'lsp_symbols',
+  'lsp_call_hierarchy'
+]
 const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'read',
   'list',
@@ -30,6 +41,7 @@ const RULE_ACTIONS: readonly PermissionRuleAction[] = [
   'mcp',
   'webfetch',
   'websearch',
+  'lsp',
   'skill',
   'subagent',
   'plugin',

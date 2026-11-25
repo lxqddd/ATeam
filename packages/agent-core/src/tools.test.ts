@@ -49,6 +49,11 @@ let listMcpResources: Mock<NonNullable<ToolContext['listMcpResources']>>
 let readMcpResource: Mock<NonNullable<ToolContext['readMcpResource']>>
 let lspHover: Mock<NonNullable<ToolContext['lspHover']>>
 let lspDefinition: Mock<NonNullable<ToolContext['lspDefinition']>>
+let lspReferences: Mock<NonNullable<ToolContext['lspReferences']>>
+let lspImplementation: Mock<NonNullable<ToolContext['lspImplementation']>>
+let lspDocumentSymbols: Mock<NonNullable<ToolContext['lspDocumentSymbols']>>
+let lspWorkspaceSymbols: Mock<NonNullable<ToolContext['lspWorkspaceSymbols']>>
+let lspCallHierarchy: Mock<NonNullable<ToolContext['lspCallHierarchy']>>
 let worktreeCreate: Mock<NonNullable<ToolContext['worktreeCreate']>>
 let worktreeList: Mock<NonNullable<ToolContext['worktreeList']>>
 let worktreeRemove: Mock<NonNullable<ToolContext['worktreeRemove']>>
@@ -87,6 +92,11 @@ beforeEach(async () => {
   readMcpResource = vi.fn(async () => 'resource body')
   lspHover = vi.fn(async () => 'hover text')
   lspDefinition = vi.fn(async () => 'definition text')
+  lspReferences = vi.fn(async () => 'references text')
+  lspImplementation = vi.fn(async () => 'implementation text')
+  lspDocumentSymbols = vi.fn(async () => 'document symbols')
+  lspWorkspaceSymbols = vi.fn(async () => 'workspace symbols')
+  lspCallHierarchy = vi.fn(async () => 'call hierarchy')
   worktreeCreate = vi.fn(async (input: { name: string }) => `Worktree ready: /tmp/${input.name}`)
   worktreeList = vi.fn(async () => 'Worktrees:\n- /tmp/project (main, main)')
   worktreeRemove = vi.fn(async () => 'Removed worktree /tmp/wt')
@@ -138,6 +148,11 @@ beforeEach(async () => {
     readMcpResource,
     lspHover,
     lspDefinition,
+    lspReferences,
+    lspImplementation,
+    lspDocumentSymbols,
+    lspWorkspaceSymbols,
+    lspCallHierarchy,
     worktreeCreate,
     worktreeList,
     worktreeRemove,
@@ -380,7 +395,7 @@ describe('lsp tools', () => {
     await expect(
       execute(tools.lsp_hover, { path: 'src/a.ts', line: 3, character: 5 })
     ).resolves.toBe('hover text')
-    expect(askPermission).toHaveBeenCalledWith('read', 'src/a.ts', 'lsp_hover', 'call-1')
+    expect(askPermission).toHaveBeenCalledWith('lsp', 'src/a.ts', 'lsp_hover', 'call-1')
     expect(lspHover).toHaveBeenCalledWith(path.join(directory, 'src/a.ts'), 3, 5)
 
     await expect(
@@ -389,12 +404,91 @@ describe('lsp tools', () => {
     expect(lspDefinition).toHaveBeenCalledWith(path.join(directory, 'src/a.ts'), 2, 1)
   })
 
+  it('queries references, implementations, symbols and call hierarchy', async () => {
+    await fs.mkdir(path.join(directory, 'src'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'src', 'a.ts'), 'const x = 1')
+    const target = path.join(directory, 'src', 'a.ts')
+
+    await expect(
+      execute(tools.lsp_references, { path: 'src/a.ts', line: 3, character: 5 })
+    ).resolves.toBe('references text')
+    expect(askPermission).toHaveBeenCalledWith('lsp', 'src/a.ts', 'lsp_references', 'call-1')
+    expect(lspReferences).toHaveBeenCalledWith(target, 3, 5)
+
+    await expect(execute(tools.lsp_implementation, { path: 'src/a.ts', line: 2 })).resolves.toBe(
+      'implementation text'
+    )
+    expect(askPermission).toHaveBeenCalledWith('lsp', 'src/a.ts', 'lsp_implementation', 'call-1')
+    expect(lspImplementation).toHaveBeenCalledWith(target, 2, 1)
+
+    await expect(execute(tools.lsp_symbols, { path: 'src/a.ts' })).resolves.toBe('document symbols')
+    expect(lspDocumentSymbols).toHaveBeenCalledWith(target)
+
+    await expect(execute(tools.lsp_symbols, { path: 'src/a.ts', query: 'Foo' })).resolves.toBe(
+      'workspace symbols'
+    )
+    expect(lspWorkspaceSymbols).toHaveBeenCalledWith('Foo', target)
+
+    await expect(
+      execute(tools.lsp_call_hierarchy, { path: 'src/a.ts', line: 4, character: 2 })
+    ).resolves.toBe('call hierarchy')
+    expect(askPermission).toHaveBeenCalledWith('lsp', 'src/a.ts', 'lsp_call_hierarchy', 'call-1')
+    expect(lspCallHierarchy).toHaveBeenCalledWith(target, 4, 2, 'both')
+
+    await execute(tools.lsp_call_hierarchy, {
+      path: 'src/a.ts',
+      line: 4,
+      direction: 'incoming'
+    })
+    expect(lspCallHierarchy).toHaveBeenLastCalledWith(target, 4, 1, 'incoming')
+  })
+
+  it('validates symbols input', async () => {
+    await expect(execute(tools.lsp_symbols, {})).resolves.toBe(
+      'Error: pass a path to list file symbols or a query to search the workspace.'
+    )
+    await expect(execute(tools.lsp_symbols, { query: 'Foo' })).resolves.toBe(
+      'Error: pass a path belonging to the language so a server can be chosen.'
+    )
+    expect(lspDocumentSymbols).not.toHaveBeenCalled()
+    expect(lspWorkspaceSymbols).not.toHaveBeenCalled()
+  })
+
+  it('stops when the lsp permission is denied', async () => {
+    await fs.mkdir(path.join(directory, 'src'), { recursive: true })
+    await fs.writeFile(path.join(directory, 'src', 'a.ts'), 'const x = 1')
+    askPermission.mockResolvedValue(false)
+
+    await expect(execute(tools.lsp_references, { path: 'src/a.ts', line: 1 })).resolves.toBe(
+      'Permission denied; the query was not run.'
+    )
+    expect(lspReferences).not.toHaveBeenCalled()
+  })
+
   it('reports unavailable LSP support', async () => {
-    const limited = createTools({ ...baseContext, lspHover: undefined, lspDefinition: undefined })
+    const limited = createTools({
+      ...baseContext,
+      lspHover: undefined,
+      lspDefinition: undefined,
+      lspReferences: undefined,
+      lspImplementation: undefined,
+      lspDocumentSymbols: undefined,
+      lspWorkspaceSymbols: undefined,
+      lspCallHierarchy: undefined
+    })
 
     await expect(
       execute(limited.lsp_hover, { path: 'src/a.ts', line: 1, character: 1 })
     ).resolves.toBe('Error: LSP is not available.')
+    await expect(execute(limited.lsp_references, { path: 'src/a.ts', line: 1 })).resolves.toBe(
+      'Error: LSP is not available.'
+    )
+    await expect(execute(limited.lsp_symbols, { path: 'src/a.ts' })).resolves.toBe(
+      'Error: LSP is not available.'
+    )
+    await expect(execute(limited.lsp_call_hierarchy, { path: 'src/a.ts', line: 1 })).resolves.toBe(
+      'Error: LSP is not available.'
+    )
   })
 })
 
