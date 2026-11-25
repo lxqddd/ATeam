@@ -37,23 +37,23 @@
 
 ### 第二轮 P0 实现进度（2026-11-24）
 
-| 项目                  | 状态     | 已实现                                                                                                                                                                                                                                                             | 仍待补齐               |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
-| R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件                                   | 完整配置矩阵端到端测试 |
-| R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                     |
-| R-P0-3 LLM 重试       | 完成     | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无                     |
-| R-P0-4 提示词与上下文 | 完成     | 分模型 prompt 文件、项目/全局 prompt 覆盖、环境块（模型/目录/Git/平台/时区/日期/备注）、MCP instructions 按可用工具与 agent 权限过滤、XML 转义、提示词快照与运行时测试                                                                                             | 无                     |
-| R-P0-5 推理与缓存     | 完成     | 同模型 reasoning providerMetadata 回放、跨模型丢弃、provider transform 层、Anthropic system/末条消息缓存断点、OpenAI promptCacheKey、缓存命中率与节省指标、旧消息模型迁移、端到端测试                                                                              | 无                     |
-| R-P0-6 Shell arity    | 完成     | 引号/转义感知 bash / PowerShell / cmd 解析、控制操作符与重定向、参数级外部路径、动态路径保护、扩展 arity 表与全局选项、危险命令 auto 询问、集成测试                                                                                                                | 无                     |
-| R-P0-7 Plan 工作流    | 完成     | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、自动切换 build agent 并续跑、计划文件查看/复制路径、切换提醒、按模式隐藏 plan_exit、端到端测试                                                                                                               | 无                     |
+| 项目                  | 状态 | 已实现                                                                                                                                                                                                                                                             | 仍待补齐 |
+| --------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
+| R-P0-1 分层配置       | 完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件、完整配置矩阵端到端测试           | 无       |
+| R-P0-2 插件系统       | 完成 | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无       |
+| R-P0-3 LLM 重试       | 完成 | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无       |
+| R-P0-4 提示词与上下文 | 完成 | 分模型 prompt 文件、项目/全局 prompt 覆盖、环境块（模型/目录/Git/平台/时区/日期/备注）、MCP instructions 按可用工具与 agent 权限过滤、XML 转义、提示词快照与运行时测试                                                                                             | 无       |
+| R-P0-5 推理与缓存     | 完成 | 同模型 reasoning providerMetadata 回放、跨模型丢弃、provider transform 层、Anthropic system/末条消息缓存断点、OpenAI promptCacheKey、缓存命中率与节省指标、旧消息模型迁移、端到端测试                                                                              | 无       |
+| R-P0-6 Shell arity    | 完成 | 引号/转义感知 bash / PowerShell / cmd 解析、控制操作符与重定向、参数级外部路径、动态路径保护、扩展 arity 表与全局选项、危险命令 auto 询问、集成测试                                                                                                                | 无       |
+| R-P0-7 Plan 工作流    | 完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、自动切换 build agent 并续跑、计划文件查看/复制路径、切换提醒、按模式隐藏 plan_exit、端到端测试                                                                                                               | 无       |
 
 ### 当前剩余 TODO（2026-11-24）
 
 > 已完成的 P0 事项保留在下方审计清单中用于追溯；本节只列仍需实现或补测的项。P1/P2 的完整描述见后文。
 
-**P0 收尾**
+**P0**
 
-- [ ] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
+- [x] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
 
 **P1 / P2**
 
@@ -75,7 +75,7 @@
 - [x] 项目 MCP server 进入设置页展示与 OAuth 授权流程（项目 server 只读展示）
 - [x] 配置变更后的主动刷新 / 会话刷新策略（config.reload + config.changed 事件；运行中的 workspace 延迟到下一轮应用）
 - [x] 项目 instructions 相对路径按项目根解析，而不是固定按 workspace
-- [ ] 增加配置来源、冲突覆盖、坏配置降级的完整端到端测试（已有 project-config/config-store 单元测试、项目配置编辑器测试和主动刷新运行时测试）
+- [x] 增加配置来源、冲突覆盖、坏配置降级的完整端到端测试（覆盖分层合并、路径锚定、项目编辑、运行时 providers / MCP / instructions / commands / skills、坏配置降级与主动刷新）
 
 #### R-P0-2 插件系统
 
@@ -150,6 +150,8 @@
 > 本节保留 2026-11-22 的初始方案与验收记录；部分条目的 checkboxes 未随实现同步更新。当前状态以“第二轮 P0 实现进度”“当前剩余 TODO”和“第二轮 P0 审计遗留”为准。
 
 #### R-P0-1 分层配置模型（ATeam 自有格式）
+
+**进度（2026-11-25）**：全局/项目分层合并、字段级覆盖、JSONC、路径锚定、诊断降级、来源展示与项目配置编辑均已完成，并由 `config-e2e` 覆盖完整矩阵；本节保留初始方案供追溯。
 
 **现状**：ATeam 只读取 `userData/agent/config.json`（[config-store.ts](../packages/agent-core/src/config/config-store.ts)），项目侧仅支持 `.opencode/agent|command|skill` 目录与 `references.json`；没有项目级 provider、MCP、LSP、formatter、permission、plugin 配置。
 
@@ -456,11 +458,10 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P0-1 配置收尾**（小）——补完整配置矩阵端到端测试（R-P0-2 插件 OAuth 自动刷新已完成）。
-2. **R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试与 R-P0-5 推理/缓存已完成，继续改善长任务可靠性。
-3. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文、R-P0-6 shell arity、R-P0-7 plan 工作流已完成，补齐日常编码体验。
-4. **第二轮 P1 剩余项**（按使用频率取舍）。
-5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
+1. **R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试与 R-P0-5 推理/缓存已完成，继续改善长任务可靠性。
+2. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文、R-P0-6 shell arity、R-P0-7 plan 工作流已完成，补齐日常编码体验。
+3. **第二轮 P1 剩余项**（按使用频率取舍）。
+4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 
 ## 第一轮 P0：可靠性、安全与编辑质量（已完成）
 

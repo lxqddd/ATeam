@@ -690,6 +690,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.useRealTimers()
+  vi.unstubAllEnvs()
   await runtime.shutdown()
   await fs.rm(directory, { recursive: true, force: true })
 })
@@ -3701,6 +3702,106 @@ describe('project provider and MCP configuration', () => {
     expect(mcpManagerInput?.projectServers).toEqual([
       { name: 'project-docs', type: 'local', command: 'node' }
     ])
+  })
+
+  it('applies the complete layered config matrix and survives a broken project config', async () => {
+    const workspace = path.join(directory, 'workspace')
+    const globalDirectory = path.join(directory, 'agent')
+    await fs.mkdir(globalDirectory, { recursive: true })
+    await fs.writeFile(
+      path.join(globalDirectory, 'config.json'),
+      JSON.stringify({
+        snapshots: true,
+        instructions: ['global-rules.md'],
+        lsp: { 'global-ts': { command: ['global-lsp'], extensions: ['.ts'] } },
+        formatters: {
+          'global-fmt': { command: ['global-fmt', '$FILE'], extensions: ['.g'] }
+        },
+        permissions: [{ action: 'shell', resource: 'rm *', effect: 'deny' }],
+        commands: { 'global-review': { template: 'Global review' } }
+      })
+    )
+    await fs.writeFile(path.join(workspace, 'global-rules.md'), 'GLOBAL_RULE_MARKER')
+    await fs.mkdir(path.join(workspace, 'docs'), { recursive: true })
+    await fs.writeFile(path.join(workspace, 'docs', 'rules.md'), 'PROJECT_RULE_MARKER')
+    await fs.mkdir(path.join(workspace, 'skills', 'demo'), { recursive: true })
+    await fs.writeFile(
+      path.join(workspace, 'skills', 'demo', 'SKILL.md'),
+      ['---', 'name: demo', 'description: Demo skill', '---', 'Demo body.'].join('\n')
+    )
+    const projectConfig = {
+      instructions: ['docs/rules.md'],
+      lsp: { 'project-ts': { command: ['project-lsp'], extensions: ['.ts'] } },
+      formatters: {
+        'project-fmt': { command: ['project-fmt', '$FILE'], extensions: ['.p'] }
+      },
+      mcp: [{ name: 'project-mcp', type: 'local', command: 'node', args: ['server.js'] }],
+      providers: {
+        'project-provider': {
+          type: 'openai-compatible',
+          baseURL: 'https://project.example',
+          apiKeyEnv: 'ATEAM_TEST_PROJECT_KEY',
+          models: { 'project-model': { name: 'Project', contextWindow: 8_192 } }
+        }
+      },
+      commands: { review: { template: 'Review $ARGUMENTS' } },
+      skills: ['skills'],
+      agents: [{ name: 'project-reviewer', description: 'Reviewer', mode: 'primary' }]
+    }
+    await fs.writeFile(path.join(workspace, 'ateam.json'), JSON.stringify(projectConfig))
+    vi.stubEnv('ATEAM_TEST_PROJECT_KEY', 'project-key')
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi', {
+      providerId: 'project-provider',
+      modelId: 'project-model'
+    })
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('PROJECT_RULE_MARKER')
+    expect(turns[0].system).toContain('- demo: Demo skill')
+    expect(
+      languageModelModels[0].providers.find((provider) => provider.id === 'project-provider')
+    ).toMatchObject({ baseURL: 'https://project.example', apiKey: 'project-key' })
+    expect(mcpManagerInput?.projectServers).toEqual([
+      { name: 'project-mcp', type: 'local', command: 'node', args: ['server.js'] }
+    ])
+    const commands = await runtime.listCommands(workspace)
+    expect(commands.find((command) => command.name === 'review')?.source).toBe('project')
+    expect(commands.find((command) => command.name === 'global-review')?.source).toBe('user')
+    expect(
+      (await runtime.listAgents(workspace)).find((agent) => agent.id === 'project-reviewer')
+    ).toMatchObject({ source: 'project' })
+
+    await fs.mkdir(path.join(workspace, 'docs2'), { recursive: true })
+    await fs.writeFile(path.join(workspace, 'docs2', 'new.md'), 'NEW_PROJECT_RULE')
+    await fs.writeFile(
+      path.join(workspace, 'ateam.json'),
+      JSON.stringify({
+        ...projectConfig,
+        instructions: ['docs2/new.md'],
+        commands: { ship: { template: 'Ship it' } }
+      })
+    )
+    await runtime.reloadConfig(workspace)
+    await sink.next('config.changed')
+    expect((await runtime.listCommands(workspace)).map((command) => command.name)).toContain('ship')
+    scripts.push(textScript('two'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+    expect(turns[1].system).toContain('NEW_PROJECT_RULE')
+
+    await fs.writeFile(path.join(workspace, 'ateam.json'), '{ broken')
+    await runtime.reloadConfig(workspace)
+    await sink.next('config.changed')
+    await runtime.setSessionModel(sessionId, { providerId: 'provider-1', modelId: 'model-1' })
+    scripts.push(textScript('three'))
+    await runtime.sendChat(sessionId, 'still works')
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(turns[2].system).toContain('GLOBAL_RULE_MARKER')
+    expect(turns[2].system).not.toContain('NEW_PROJECT_RULE')
   })
 
   it('loads project instructions and commands through the effective config', async () => {

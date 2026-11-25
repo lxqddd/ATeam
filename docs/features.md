@@ -282,7 +282,7 @@ models/                  # 供应商 / 模型配置
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 内置流程不实现这类非公开认证。插件可以声明 `auth` 方法与提示项，由设置页动态渲染登录表单并调用插件自己的 `authorize` 流程；OAuth 方法还可声明 `refresh` 回调，未提供 token endpoint 的插件凭据会在过期前由主进程自动刷新并写回 `auth.json`。
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件。
-- 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示和原始项目配置编辑；结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入选择器、项目权限规则来源 UI、文件监听热更新和完整配置矩阵 E2E 仍待补齐；运行中的配置更新会通过 `config.changed` 主动刷新 UI 与缓存。
+- 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示、原始项目配置编辑和完整配置矩阵 E2E；结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入选择器、项目权限规则来源 UI、文件监听热更新仍待补齐；运行中的配置更新会通过 `config.changed` 主动刷新 UI 与缓存。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 - 桌面安装包尚未配置代码签名与公证（macOS `notarize: false`）；正式分发前需提供证书、公证凭据并调整 `electron-builder.yml`。
 
