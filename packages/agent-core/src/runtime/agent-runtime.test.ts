@@ -874,7 +874,27 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
   })
 
-  it('allows risky shell commands in auto mode unless a rule denies them', async () => {
+  it('asks for risky shell commands in auto mode unless a rule allows them', async () => {
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'auto'
+    })
+    toolAction = 'shell'
+    scripts.push(toolScript(['rm -rf /']))
+
+    await runtime.sendChat(sessionId, 'shell')
+    const asked = await sink.next('permission.asked')
+    if (asked.event.type !== 'permission.asked') throw new Error('unexpected event')
+    runtime.replyPermission(asked.event.permission.id, 'once')
+    await sink.next('run.finished')
+
+    expect(toolPart('call-1').output).toBe('done:rm -rf /')
+  })
+
+  it('allows risky shell commands in auto mode when a rule explicitly allows them', async () => {
+    await restartWithRules([
+      { action: 'shell', resource: 'rm *', effect: 'allow', sessionId: null }
+    ])
     await runtime.setSessionSettings(sessionId, {
       reasoningEffort: null,
       permissionMode: 'auto'

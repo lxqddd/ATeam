@@ -164,8 +164,9 @@ export class PermissionService {
     const globalRules = storedRules.filter((rule) => rule.sessionId === null)
     const sessionRules = storedRules.filter((rule) => rule.sessionId !== null)
     const agentRules = agentRulesOverride ?? run.agent?.permissions ?? []
+    const modeRules = modePermissionRules(mode, { planPath: this.host.planFilePath(run) })
     const rules = [
-      ...modePermissionRules(mode, { planPath: this.host.planFilePath(run) }),
+      ...modeRules,
       ...globalRules,
       ...(run.config.permissionRules ?? []).map((rule, index) => ({
         id: `project-${run.sessionId}-${index}`,
@@ -206,12 +207,21 @@ export class PermissionService {
         : []),
       ...(run.policyRules ?? [])
     ]
-    const effect = evaluatePermissionRules(rules, {
+    let effect = evaluatePermissionRules(rules, {
       action,
       resources,
       sessionId: run.sessionId
     })
     if (effect === 'deny') return false
+    if (scan?.risky && mode === 'auto' && effect === 'allow') {
+      // Risky commands need an explicit allow rule even in auto mode.
+      const configured = evaluatePermissionRules(rules.slice(modeRules.length), {
+        action,
+        resources,
+        sessionId: run.sessionId
+      })
+      if (configured !== 'allow') effect = 'ask'
+    }
 
     let externalEffect: PermissionEffect = 'allow'
     const externalPaths = (scan?.externalPaths ?? []).filter(
