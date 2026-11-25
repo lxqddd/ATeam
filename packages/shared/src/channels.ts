@@ -29,6 +29,8 @@ export const AGENT_CHANNELS = {
   chatSend: 'ateam:agent:chat:send',
   chatStop: 'ateam:agent:chat:stop',
   chatRetry: 'ateam:agent:chat:retry',
+  chatSteer: 'ateam:agent:chat:steer',
+  chatQueueRemove: 'ateam:agent:chat:queue:remove',
   permissionsList: 'ateam:agent:permissions:list',
   permissionReply: 'ateam:agent:permissions:reply',
   questionsList: 'ateam:agent:questions:list',

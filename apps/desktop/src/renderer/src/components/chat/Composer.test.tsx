@@ -9,6 +9,15 @@ import { makeSession } from '../../test/factories'
 
 const chatMocks = vi.hoisted(() => ({
   send: vi.fn(async () => undefined),
+  steer: vi.fn(async (text: string, strategy: string) => ({
+    id: 'queued-1',
+    sessionId: 's1',
+    text,
+    strategy,
+    attachments: [],
+    createdAt: '2026-01-01T00:00:00.000Z'
+  })),
+  removeQueued: vi.fn(async () => undefined),
   stop: vi.fn(async () => undefined),
   ensureSession: vi.fn(),
   setSessionModel: vi.fn(async () => undefined),
@@ -95,6 +104,7 @@ function baseState(): ChatStoreState {
     ],
     messagesBySession: {},
     loadedBySession: {},
+    queuesBySession: {},
     permissions: [],
     questions: [],
     runOutcomes: {},
@@ -122,6 +132,8 @@ beforeEach(() => {
   Object.defineProperty(window, 'api', { value: api.api, configurable: true })
   chatMocks.send.mockClear()
   chatMocks.send.mockResolvedValue(undefined)
+  chatMocks.steer.mockClear()
+  chatMocks.removeQueued.mockClear()
   chatMocks.stop.mockClear()
   chatMocks.ensureSession.mockReset()
   chatMocks.setSessionModel.mockReset()
@@ -182,6 +194,74 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Stop' }))
 
     expect(chatMocks.stop).toHaveBeenCalled()
+  })
+
+  it('queues the message after the current step while running', async () => {
+    const state = baseState()
+    state.sessions[0].status = 'running'
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), '补充要求')
+    await user.click(screen.getByRole('button', { name: 'Queue message' }))
+
+    await waitFor(() => expect(chatMocks.steer).toHaveBeenCalledWith('补充要求', 'after-step', []))
+    expect(chatMocks.send).not.toHaveBeenCalled()
+    expect(screen.getByRole('textbox', { name: 'Message ATeam…' })).toHaveValue('')
+  })
+
+  it('interrupts the run on Ctrl+Enter while running', async () => {
+    const state = baseState()
+    state.sessions[0].status = 'running'
+    storeState.current = state
+    renderComposer()
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+
+    fireEvent.change(textarea, { target: { value: '马上改' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
+
+    await waitFor(() => expect(chatMocks.steer).toHaveBeenCalledWith('马上改', 'interrupt', []))
+    expect(chatMocks.send).not.toHaveBeenCalled()
+  })
+
+  it('lists queued messages and removes or edits them', async () => {
+    const state = baseState()
+    state.sessions[0].status = 'running'
+    state.queuesBySession = {
+      s1: [
+        {
+          id: 'q1',
+          sessionId: 's1',
+          text: '排队一',
+          strategy: 'after-step',
+          attachments: [],
+          createdAt: '2026-01-01T00:00:00.000Z'
+        },
+        {
+          id: 'q2',
+          sessionId: 's1',
+          text: '排队二',
+          strategy: 'interrupt',
+          attachments: [],
+          createdAt: '2026-01-01T00:00:01.000Z'
+        }
+      ]
+    }
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    expect(screen.getByTestId('composer-queue')).toBeInTheDocument()
+    expect(screen.getByText('排队一')).toBeInTheDocument()
+    expect(screen.getByText('Interrupt')).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: 'Remove from queue' })[0])
+    await waitFor(() => expect(chatMocks.removeQueued).toHaveBeenCalledWith('s1', 'q1'))
+
+    await user.click(screen.getByRole('button', { name: '排队二' }))
+    await waitFor(() => expect(chatMocks.removeQueued).toHaveBeenCalledWith('s1', 'q2'))
+    expect(screen.getByRole('textbox', { name: 'Message ATeam…' })).toHaveValue('排队二')
   })
 
   it('shows a hint and disables input without models', () => {

@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：运行中 Steering、max steps 收尾、part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、LSP 矩阵与自定义 server、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
+- [ ] P1：max steps 收尾、part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、LSP 矩阵与自定义 server、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -292,17 +292,19 @@
 
 #### R-P1-1 运行中消息排队 / Steering
 
-**现状**：运行中 `sendDisabled` 直接禁止发送（[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)），只能停止或等待。
+**现状（2026-11-25）**：已完成。运行中提交的消息进入会话级队列，支持“当前步骤后插入”（`after-step`，在当前 AI SDK step 边界停止后自动发送）与“立即打断”（`interrupt`，中止当前 run 后自动发送）；排队项在 Composer 上方展示，可编辑（取回输入框并移出队列）或取消；停止按钮会同时清空队列。`chat.steer` / `chat.queue.remove` 协议与 `chat.queue` 事件贯通 agent host、主进程与渲染层，`MessagesSnapshot.queued` 用于重新加载时恢复队列。
 
 **OpenCode 参考**：运行中允许记录 steer 消息并排队，在下一次模型步骤或当前轮结束后处理，支持打断当前生成。
 
 **待办**：
 
-- [ ] 运行中允许输入并发送，进入会话级待处理队列
-- [ ] 定义“立即打断”与“当前步骤后插入”两种策略
-- [ ] UI 展示排队消息，可编辑/取消
-- [ ] 与权限卡、Question、停止逻辑协调
-- [ ] 测试排队、打断、取消、运行结束后自动发送
+- [x] 运行中允许输入并发送，进入会话级待处理队列
+- [x] 定义“立即打断”与“当前步骤后插入”两种策略
+- [x] UI 展示排队消息，可编辑/取消
+- [x] 与权限卡、Question、停止逻辑协调
+- [x] 测试排队、打断、取消、运行结束后自动发送
+
+**仍待 / 边界**：队列仅存在于 agent 进程内存，重启后丢失；运行中暂不支持排队 shell 片段（会提示先停止当前运行）。
 
 **验收**：长任务运行中用户可以补充要求，而不必停止后重新开始。
 
@@ -463,7 +465,7 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试与 R-P0-5 推理/缓存已完成，继续改善长任务可靠性。
+1. **R-P1-2 max steps**（小到中等）——R-P1-1 Steering 已完成，继续改善长任务可靠性。
 2. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文、R-P0-6 shell arity、R-P0-7 plan 工作流已完成，补齐日常编码体验。
 3. **第二轮 P1 剩余项**（按使用频率取舍）。
 4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。

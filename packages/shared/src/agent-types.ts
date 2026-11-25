@@ -790,6 +790,18 @@ export interface SkillDefinition {
 
 export type RunOutcome = 'completed' | 'failed' | 'interrupted' | 'max-steps'
 
+/** How a message queued during a run is delivered. */
+export type SteerStrategy = 'after-step' | 'interrupt'
+
+export interface QueuedMessage {
+  id: string
+  sessionId: string
+  text: string
+  strategy: SteerStrategy
+  attachments: MessageAttachment[]
+  createdAt: string
+}
+
 export type AgentEvent =
   | { type: 'agent.status'; status: AgentStatus }
   | { type: 'config.changed'; workspace: string }
@@ -821,6 +833,7 @@ export type AgentEvent =
       decision: PermissionDecision
     }
   | { type: 'run.started'; sessionId: string; messageId: string; startedAt: string }
+  | { type: 'chat.queue'; sessionId: string; items: QueuedMessage[] }
   | ({ type: 'background.finished' } & BackgroundResult)
   | ({ type: 'subagent.finished' } & SubagentResult)
   | {
@@ -844,6 +857,7 @@ export interface MessagesSnapshot {
   seq: number
   messages: ChatMessage[]
   running: boolean
+  queued?: QueuedMessage[]
 }
 
 export interface BackgroundResult {

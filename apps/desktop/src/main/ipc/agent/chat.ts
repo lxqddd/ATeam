@@ -1,8 +1,8 @@
 import { app } from 'electron'
-import { AGENT_CHANNELS, type MessagesSnapshot } from '@ateam/shared'
+import { AGENT_CHANNELS, type MessagesSnapshot, type QueuedMessage } from '@ateam/shared'
 import { attachmentDirectory, isPathInsideDirectory } from '@ateam/agent-core/attachments'
 import type { AgentIpcContext } from './context'
-import { chatSendSchema, sessionIdSchema } from './schemas'
+import { chatQueueRemoveSchema, chatSendSchema, chatSteerSchema, sessionIdSchema } from './schemas'
 
 /** Registers message listing and chat turn controls. */
 export function registerChatHandlers(ctx: AgentIpcContext): void {
@@ -34,5 +34,27 @@ export function registerChatHandlers(ctx: AgentIpcContext): void {
     const { sessionId } = sessionIdSchema.parse(payload)
     await refreshProviderTokens()
     await manager.request('chat.retry', { sessionId })
+  })
+
+  handle(AGENT_CHANNELS.chatSteer, async (payload): Promise<QueuedMessage> => {
+    const input = chatSteerSchema.parse(payload)
+    await refreshProviderTokens()
+    const directory = attachmentDirectory(app.getPath('userData'), input.sessionId)
+    for (const attachment of input.attachments ?? []) {
+      if (!(await isPathInsideDirectory(directory, attachment.path))) {
+        throw new Error('Invalid attachment path')
+      }
+    }
+    return manager.request('chat.steer', {
+      sessionId: input.sessionId,
+      text: input.text,
+      strategy: input.strategy ?? 'after-step',
+      ...(input.attachments ? { attachments: input.attachments } : {})
+    })
+  })
+
+  handle(AGENT_CHANNELS.chatQueueRemove, async (payload): Promise<boolean> => {
+    const input = chatQueueRemoveSchema.parse(payload)
+    return manager.request('chat.queue.remove', input)
   })
 }

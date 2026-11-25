@@ -255,6 +255,7 @@ let mcpManagerInput: {
 let mcpTools: ReturnType<typeof vi.fn>
 let mcpDispose: ReturnType<typeof vi.fn>
 let resumeTurn: (() => void) | null
+let steerGate: (() => void) | null
 const generateTitle = vi.fn(async () => '')
 let browserRequest: Mock<NonNullable<AgentRuntimeOptions['browserRequest']>>
 
@@ -573,6 +574,31 @@ function pausableTextScript(): Script {
   }
 }
 
+/** Runs one step, then pauses at the step boundary until the test releases it. */
+function steerStepScript(): Script {
+  return async function* (input) {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'working' })
+    yield part({ type: 'finish-step' })
+    await new Promise<void>((resolve) => {
+      steerGate = resolve
+      if (input.abortSignal.aborted) {
+        resolve()
+        return
+      }
+      input.abortSignal.addEventListener('abort', () => resolve(), { once: true })
+    })
+    steerGate = null
+    if (input.abortSignal.aborted) {
+      yield part({ type: 'abort' })
+      return
+    }
+    if (input.shouldStop?.()) return
+    yield part({ type: 'text-delta', id: 't1', text: ' continued' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function stoppableToolScript(): Script {
   return async function* (input) {
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
@@ -631,6 +657,15 @@ function assistantMessages(): ChatMessage[] {
   return runtime.messages(sessionId).messages.filter((message) => message.role === 'assistant')
 }
 
+function userTexts(): string[] {
+  return runtime
+    .messages(sessionId)
+    .messages.filter((message) => message.role === 'user')
+    .flatMap((message) =>
+      message.parts.flatMap((entry) => (entry.type === 'text' ? [entry.text] : []))
+    )
+}
+
 function toolPart(callId: string): Extract<ChatMessage['parts'][number], { type: 'tool' }> {
   const found = assistantMessages()[0].parts.find(
     (entry) => entry.type === 'tool' && entry.toolCallId === callId
@@ -681,6 +716,7 @@ beforeEach(async () => {
     setTransientServers: vi.fn(async () => undefined)
   }
   resumeTurn = null
+  steerGate = null
   generateTitle.mockReset()
   generateTitle.mockResolvedValue('')
   runtime = createRuntime()
@@ -1119,6 +1155,115 @@ describe('AgentRuntime', () => {
 
     runtime.stopChat(sessionId)
     await sink.next('run.finished')
+  })
+
+  it('delivers a steer message at the next step boundary', async () => {
+    scripts.push(steerStepScript())
+    scripts.push(textScript('queued reply'))
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.started')
+    await vi.waitFor(() => expect(steerGate).not.toBeNull())
+
+    const item = runtime.steerChat(sessionId, { text: 'also do this' })
+
+    expect(item.strategy).toBe('after-step')
+    expect(runtime.queuedMessages(sessionId)).toHaveLength(1)
+    const queueEvent = await sink.next('chat.queue')
+    expect(queueEvent.event).toMatchObject({ type: 'chat.queue', sessionId })
+
+    steerGate?.()
+    const first = await sink.next('run.finished')
+    const second = await sink.next('run.finished')
+
+    expect(first.event).toMatchObject({ status: 'completed' })
+    expect(second.event).toMatchObject({ status: 'completed' })
+    expect(runtime.queuedMessages(sessionId)).toEqual([])
+    expect(userTexts()).toEqual(['start', 'also do this'])
+  })
+
+  it('interrupts the active run for an interrupt steer', async () => {
+    scripts.push(stoppableScript())
+    scripts.push(textScript('done'))
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.started')
+
+    const item = runtime.steerChat(sessionId, { text: 'stop now', strategy: 'interrupt' })
+
+    expect(item.strategy).toBe('interrupt')
+    const first = await sink.next('run.finished')
+    expect(first.event).toMatchObject({ status: 'interrupted' })
+    const second = await sink.next('run.finished')
+    expect(second.event).toMatchObject({ status: 'completed' })
+    expect(userTexts()).toEqual(['start', 'stop now'])
+  })
+
+  it('removes a queued message before it is delivered', async () => {
+    scripts.push(steerStepScript())
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.started')
+    await vi.waitFor(() => expect(steerGate).not.toBeNull())
+
+    const item = runtime.steerChat(sessionId, { text: 'never mind' })
+    expect(runtime.removeQueuedMessage(sessionId, item.id)).toBe(true)
+    expect(runtime.removeQueuedMessage(sessionId, item.id)).toBe(false)
+    expect(runtime.queuedMessages(sessionId)).toEqual([])
+
+    steerGate?.()
+    const finished = await sink.next('run.finished')
+
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(sink.count('run.started')).toBe(1)
+    expect(userTexts()).toEqual(['start'])
+  })
+
+  it('clears queued messages when the run is stopped', async () => {
+    scripts.push(stoppableScript())
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.started')
+
+    runtime.steerChat(sessionId, { text: 'queued' })
+    expect(runtime.queuedMessages(sessionId)).toHaveLength(1)
+
+    runtime.stopChat(sessionId)
+
+    expect(runtime.queuedMessages(sessionId)).toEqual([])
+    const finished = await sink.next('run.finished')
+    expect(finished.event).toMatchObject({ status: 'interrupted' })
+    expect(sink.count('run.started')).toBe(1)
+    expect(userTexts()).toEqual(['start'])
+  })
+
+  it('sends a steer message immediately when the session is idle', async () => {
+    scripts.push(textScript('hello'))
+
+    const item = runtime.steerChat(sessionId, { text: 'idle message' })
+
+    expect(item.text).toBe('idle message')
+    const started = await sink.next('run.started')
+    expect(started.event).toMatchObject({ sessionId })
+    const finished = await sink.next('run.finished')
+    expect(finished.event).toMatchObject({ status: 'completed' })
+    expect(userTexts()).toEqual(['idle message'])
+  })
+
+  it('delivers multiple queued messages in order', async () => {
+    scripts.push(steerStepScript())
+    scripts.push(textScript('first reply'))
+    scripts.push(textScript('second reply'))
+    await runtime.sendChat(sessionId, 'start')
+    await sink.next('run.started')
+    await vi.waitFor(() => expect(steerGate).not.toBeNull())
+
+    runtime.steerChat(sessionId, { text: 'first queued' })
+    runtime.steerChat(sessionId, { text: 'second queued' })
+
+    steerGate?.()
+    await sink.next('run.finished')
+    await sink.next('run.finished')
+    const last = await sink.next('run.finished')
+
+    expect(last.event).toMatchObject({ status: 'completed' })
+    expect(userTexts()).toEqual(['start', 'first queued', 'second queued'])
   })
 
   it('denies a pending permission after the timeout', async () => {

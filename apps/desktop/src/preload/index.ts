@@ -77,7 +77,10 @@ const api: AteamApi = {
     chat: {
       send: (input) => ipcRenderer.invoke(AGENT_CHANNELS.chatSend, input),
       stop: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.chatStop, { sessionId }),
-      retry: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.chatRetry, { sessionId })
+      retry: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.chatRetry, { sessionId }),
+      steer: (input) => ipcRenderer.invoke(AGENT_CHANNELS.chatSteer, input),
+      removeQueued: (sessionId, id) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.chatQueueRemove, { sessionId, id })
     },
     permissions: {
       list: () => ipcRenderer.invoke(AGENT_CHANNELS.permissionsList),

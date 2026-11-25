@@ -238,7 +238,16 @@ export function createApiMock(
       chat: {
         send: vi.fn(async () => undefined),
         stop: vi.fn(async () => undefined),
-        retry: vi.fn(async () => undefined)
+        retry: vi.fn(async () => undefined),
+        steer: vi.fn(async (input) => ({
+          id: `queued-${Date.now()}`,
+          sessionId: input.sessionId,
+          text: input.text,
+          strategy: input.strategy,
+          attachments: input.attachments ?? [],
+          createdAt: new Date().toISOString()
+        })),
+        removeQueued: vi.fn(async () => true)
       },
       permissions: {
         list: vi.fn(async () => permissions.map((permission) => ({ ...permission }))),

@@ -1,9 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
+import type { QueuedMessage } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
+import { errorMessage } from '../../lib/errors'
 import ComposerActions from './composer/ComposerActions'
 import ComposerAttachments from './composer/ComposerAttachments'
+import ComposerQueue from './composer/ComposerQueue'
 import ComposerShellPrompt from './composer/ComposerShellPrompt'
 import ComposerSuggestions from './composer/ComposerSuggestions'
 import ComposerToolbar from './composer/ComposerToolbar'
@@ -14,9 +17,18 @@ import { useMentionSearch } from './composer/useMentionSearch'
 
 function Composer(): React.JSX.Element {
   const { t } = useTranslation()
-  const { sessions, selectedSessionId, models, agents, commands, status, revertPrompt } =
-    useChatStore()
+  const {
+    sessions,
+    selectedSessionId,
+    models,
+    agents,
+    commands,
+    status,
+    revertPrompt,
+    queuesBySession
+  } = useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
+  const queued = selectedSessionId ? (queuesBySession[selectedSessionId] ?? []) : []
   const [text, setText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -124,8 +136,33 @@ function Composer(): React.JSX.Element {
       : t('chat.agentStoppedHint')
     : t('chat.placeholder')
 
-  const sendDisabled =
-    (!text.trim() && attachments.length === 0) || sending || running || !ready || !hasModels
+  const sendDisabled = (!text.trim() && attachments.length === 0) || sending || !ready || !hasModels
+
+  async function editQueued(item: QueuedMessage): Promise<void> {
+    setError(null)
+    try {
+      await chatStore.removeQueued(item.sessionId, item.id)
+      setText(item.text)
+      if (item.attachments.length > 0) {
+        setAttachments((current) => {
+          const known = new Set(current.map((attachment) => attachment.id))
+          return [...current, ...item.attachments.filter((attachment) => !known.has(attachment.id))]
+        })
+      }
+      textareaRef.current?.focus()
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
+
+  async function removeQueued(item: QueuedMessage): Promise<void> {
+    setError(null)
+    try {
+      await chatStore.removeQueued(item.sessionId, item.id)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-[768px] flex-none px-4 pb-4">
@@ -143,6 +180,16 @@ function Composer(): React.JSX.Element {
           {error}
         </div>
       )}
+
+      <ComposerQueue
+        items={queued}
+        onEdit={(item) => {
+          void editQueued(item)
+        }}
+        onRemove={(item) => {
+          void removeQueued(item)
+        }}
+      />
 
       <div
         data-testid="composer"
@@ -235,7 +282,8 @@ function Composer(): React.JSX.Element {
             }
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault()
-              void submit()
+              const interrupt = running && (event.metaKey || event.ctrlKey)
+              void submit(interrupt ? 'interrupt' : 'default')
             }
           }}
           onPaste={(event) => {
@@ -290,6 +338,9 @@ function Composer(): React.JSX.Element {
               void stop()
             }}
             onSubmit={() => {
+              void submit()
+            }}
+            onQueue={() => {
               void submit()
             }}
           />

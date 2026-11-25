@@ -39,6 +39,7 @@ function state(): ChatStoreState {
       s1: [makeMessage({ id: 'm1', sessionId: 's1', role: 'user', parts: [makeTextPart('hi')] })]
     },
     loadedBySession: { s1: true },
+    queuesBySession: {},
     permissions: [],
     questions: [],
     runOutcomes: {},

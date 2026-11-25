@@ -28,6 +28,7 @@ import type {
   PluginAuthResult,
   QuestionAnswer,
   QuestionRequest,
+  QueuedMessage,
   RetryMetricsSnapshot,
   RunOutcome,
   RuntimeModelsConfig,
@@ -37,6 +38,7 @@ import type {
   SessionPlan,
   SessionSearchResult,
   SessionSettings,
+  SteerStrategy,
   McpAuthRecord,
   SubagentInput,
   TodoInput,
@@ -126,6 +128,8 @@ export class AgentRuntime {
   private readonly toolOutputs: ToolOutputStore
   private readonly runs = new Map<string, Run>()
   private readonly starting = new Set<string>()
+  private readonly queues = new Map<string, QueuedMessage[]>()
+  private closed = false
   private models: RuntimeModelsConfig
   private providerAuth: RuntimeProviderAuth[]
   private readonly effectiveModels: Map<string, RuntimeModelsConfig>
@@ -223,6 +227,7 @@ export class AgentRuntime {
   }
 
   async init(): Promise<void> {
+    this.closed = false
     await fs.mkdir(this.options.workspacePath, { recursive: true })
     await this.store.init()
     await this.permissionRules.init()
@@ -655,6 +660,7 @@ export class AgentRuntime {
   }
 
   async deleteSession(id: string): Promise<void> {
+    this.queues.delete(id)
     const run = this.runs.get(id)
     if (run) {
       run.abort.abort()
@@ -662,6 +668,7 @@ export class AgentRuntime {
     }
     const children = this.store.list().filter((session) => session.parentId === id)
     for (const child of children) {
+      this.queues.delete(child.id)
       const childRun = this.runs.get(child.id)
       if (childRun) {
         childRun.abort.abort()
@@ -689,7 +696,7 @@ export class AgentRuntime {
   }
 
   messages(id: string): MessagesSnapshot {
-    return this.sessionService.messages(id)
+    return { ...this.sessionService.messages(id), queued: this.queuedMessages(id) }
   }
 
   async sessionPlan(sessionId: string): Promise<SessionPlan> {
@@ -829,10 +836,102 @@ export class AgentRuntime {
   }
 
   stopChat(sessionId: string): void {
+    if (this.queues.delete(sessionId)) this.emitQueue(sessionId)
     const run = this.runs.get(sessionId)
     if (!run) return
     run.abort.abort()
     this.permissionService.rejectPendingForRun(run)
+  }
+
+  queuedMessages(sessionId: string): QueuedMessage[] {
+    return this.queues.get(sessionId)?.map((item) => structuredClone(item)) ?? []
+  }
+
+  steerChat(
+    sessionId: string,
+    input: { text: string; strategy?: SteerStrategy; attachments?: MessageAttachment[] }
+  ): QueuedMessage {
+    const content = input.text.trim()
+    const attachments = input.attachments ?? []
+    if (!content && attachments.length === 0) throw new Error('EMPTY_MESSAGE')
+    if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
+    const item: QueuedMessage = {
+      id: randomUUID(),
+      sessionId,
+      text: content,
+      strategy: input.strategy ?? 'after-step',
+      attachments,
+      createdAt: nowIso()
+    }
+    const queue = this.queues.get(sessionId) ?? []
+    queue.push(item)
+    this.queues.set(sessionId, queue)
+    this.emitQueue(sessionId)
+    const run = this.runs.get(sessionId)
+    if (!run) {
+      this.drainQueue(sessionId)
+      return item
+    }
+    if (item.strategy === 'interrupt') {
+      run.abort.abort()
+      this.permissionService.rejectPendingForRun(run)
+    }
+    return item
+  }
+
+  removeQueuedMessage(sessionId: string, id: string): boolean {
+    const queue = this.queues.get(sessionId)
+    if (!queue) return false
+    const index = queue.findIndex((item) => item.id === id)
+    if (index < 0) return false
+    queue.splice(index, 1)
+    if (queue.length === 0) this.queues.delete(sessionId)
+    this.emitQueue(sessionId)
+    return true
+  }
+
+  private emitQueue(sessionId: string): void {
+    this.events.emit({ type: 'chat.queue', sessionId, items: this.queuedMessages(sessionId) })
+  }
+
+  private hasAfterStepSteer(sessionId: string): boolean {
+    return this.queues.get(sessionId)?.some((item) => item.strategy === 'after-step') ?? false
+  }
+
+  /** Send the next queued message once the session is idle; no-op while busy. */
+  private drainQueue(sessionId: string): void {
+    if (this.closed) return
+    const queue = this.queues.get(sessionId)
+    const item = queue?.[0]
+    if (!queue || !item) return
+    if (this.sessionBusy(sessionId)) return
+    if (!this.store.get(sessionId)) {
+      this.queues.delete(sessionId)
+      this.emitQueue(sessionId)
+      return
+    }
+    queue.shift()
+    if (queue.length === 0) this.queues.delete(sessionId)
+    this.emitQueue(sessionId)
+    setTimeout(() => {
+      void this.startQueuedRun(sessionId, item)
+    }, 0)
+  }
+
+  private async startQueuedRun(sessionId: string, item: QueuedMessage): Promise<void> {
+    try {
+      await this.sendChat(sessionId, item.text, undefined, item.attachments)
+    } catch (error) {
+      if (this.closed) return
+      if (normalizeError(error) === 'SESSION_BUSY') {
+        const queue = this.queues.get(sessionId) ?? []
+        queue.unshift(item)
+        this.queues.set(sessionId, queue)
+        this.emitQueue(sessionId)
+        return
+      }
+      console.warn('[runtime] queued message could not be sent', error)
+    }
   }
 
   async retryChat(sessionId: string): Promise<void> {
@@ -919,6 +1018,8 @@ export class AgentRuntime {
   }
 
   async shutdown(): Promise<void> {
+    this.closed = true
+    this.queues.clear()
     for (const run of this.runs.values()) {
       run.abort.abort()
       this.permissionService.rejectPendingForRun(run)
@@ -1905,7 +2006,7 @@ export class AgentRuntime {
             messages: prepared.messages,
             tools: prepared.tools,
             abortSignal: run.abort.signal,
-            shouldStop: () => run.exitedPlan === true,
+            shouldStop: () => run.exitedPlan === true || this.hasAfterStepSteer(run.sessionId),
             reasoning: prepared.params.reasoning,
             maxSteps: agent?.maxSteps ?? undefined,
             maxOutputTokens: prepared.params.maxOutputTokens,
@@ -2036,6 +2137,7 @@ export class AgentRuntime {
       if (prepareCompaction) this.compaction.schedulePreparedCompaction(run.sessionId)
       this.events.emitSession(run.sessionId)
       void this.workspaceServices.releaseWorkspace(run.workspace)
+      this.drainQueue(run.sessionId)
     }
   }
 }

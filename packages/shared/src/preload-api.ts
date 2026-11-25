@@ -26,11 +26,13 @@ import type {
   QuestionRequest,
   PermissionRuleInput,
   MessageAttachment,
+  QueuedMessage,
   SessionMeta,
   SessionPlan,
   SessionSearchResult,
   SessionSettings,
   SessionUndoResult,
+  SteerStrategy,
   TurnChanges,
   WebSearchInput,
   WebSearchProviderPublic
@@ -86,6 +88,13 @@ export interface AgentBridge {
     }) => Promise<void>
     stop: (sessionId: string) => Promise<void>
     retry: (sessionId: string) => Promise<void>
+    steer: (input: {
+      sessionId: string
+      text: string
+      strategy: SteerStrategy
+      attachments?: MessageAttachment[]
+    }) => Promise<QueuedMessage>
+    removeQueued: (sessionId: string, id: string) => Promise<boolean>
   }
   permissions: {
     list: () => Promise<PermissionRequest[]>

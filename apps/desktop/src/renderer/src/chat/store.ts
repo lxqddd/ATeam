@@ -15,11 +15,13 @@ import type {
   MessageAttachment,
   PermissionDecision,
   PermissionRequest,
+  QueuedMessage,
   QuestionAnswer,
   QuestionRequest,
   RunOutcome,
   SessionMeta,
   SessionSettings,
+  SteerStrategy,
   SubagentResult
 } from '@ateam/shared'
 
@@ -35,6 +37,7 @@ export interface ChatStoreState {
   messagesBySession: Record<string, ChatMessage[] | undefined>
   loadedBySession: Record<string, boolean>
   loadErrorsBySession?: Record<string, string>
+  queuesBySession: Record<string, QueuedMessage[] | undefined>
   permissions: PermissionRequest[]
   questions: QuestionRequest[]
   runOutcomes: Record<string, RunOutcome>
@@ -61,6 +64,7 @@ function eventSessionId(event: AgentEvent): string | null {
     case 'permission.replied':
     case 'run.started':
     case 'run.finished':
+    case 'chat.queue':
     case 'background.finished':
       return event.sessionId
     case 'permission.asked':
@@ -89,6 +93,7 @@ export class ChatStore {
     messagesBySession: {},
     loadedBySession: {},
     loadErrorsBySession: {},
+    queuesBySession: {},
     permissions: [],
     questions: [],
     runOutcomes: {},
@@ -251,7 +256,11 @@ export class ChatStore {
       this.setState({
         messagesBySession: { ...this.state.messagesBySession, [sessionId]: snapshot.messages },
         loadedBySession: { ...this.state.loadedBySession, [sessionId]: true },
-        loadErrorsBySession: loadErrors
+        loadErrorsBySession: loadErrors,
+        queuesBySession: {
+          ...this.state.queuesBySession,
+          [sessionId]: snapshot.queued ?? []
+        }
       })
     } catch (error) {
       this.setState({
@@ -425,6 +434,28 @@ export class ChatStore {
     await window.api.agent.chat.stop(sessionId)
   }
 
+  async steer(
+    text: string,
+    strategy: SteerStrategy,
+    attachments: MessageAttachment[] = []
+  ): Promise<QueuedMessage> {
+    const content = text.trim()
+    const session = await this.ensureSession()
+    // The runtime emits `chat.queue` for every queue mutation, including the
+    // immediate drain when the run already finished; no optimistic merge here
+    // so a message that was sent right away is not left showing as queued.
+    return window.api.agent.chat.steer({
+      sessionId: session.id,
+      text: content,
+      strategy,
+      ...(attachments.length > 0 ? { attachments } : {})
+    })
+  }
+
+  async removeQueued(sessionId: string, id: string): Promise<void> {
+    await window.api.agent.chat.removeQueued(sessionId, id)
+  }
+
   async retry(): Promise<void> {
     const sessionId = this.state.selectedSessionId
     if (!sessionId) return
@@ -474,6 +505,7 @@ export class ChatStore {
         permissions: [],
         questions: [],
         runOutcomes: {},
+        queuesBySession: {},
         backgroundResults: [],
         subagentResults: [],
         revertPrompt: null
@@ -663,6 +695,11 @@ export class ChatStore {
           )
         })
         break
+      case 'chat.queue':
+        this.setState({
+          queuesBySession: { ...this.state.queuesBySession, [event.sessionId]: event.items }
+        })
+        break
       case 'subagent.finished': {
         const result: SubagentResult = {
           sessionId: event.sessionId,
@@ -723,13 +760,16 @@ export class ChatStore {
     const selected = previousSelected === sessionId ? (sessions[0]?.id ?? null) : previousSelected
     const messagesBySession = { ...this.state.messagesBySession }
     const loadedBySession = { ...this.state.loadedBySession }
+    const queuesBySession = { ...this.state.queuesBySession }
     delete messagesBySession[sessionId]
     delete loadedBySession[sessionId]
+    delete queuesBySession[sessionId]
     this.setState({
       sessions,
       selectedSessionId: selected,
       messagesBySession,
       loadedBySession,
+      queuesBySession,
       changesPanel: null
     })
     if (selected && selected !== previousSelected) {

@@ -122,6 +122,18 @@ export const chatSendSchema = z.object({
   attachments: z.array(attachmentSchema).max(10).optional()
 })
 
+export const chatSteerSchema = z.object({
+  sessionId: idSchema,
+  text: z.string().max(100_000),
+  strategy: z.enum(['after-step', 'interrupt']).optional(),
+  attachments: z.array(attachmentSchema).max(10).optional()
+})
+
+export const chatQueueRemoveSchema = z.object({
+  sessionId: idSchema,
+  id: idSchema
+})
+
 export const attachmentImportSchema = z.object({
   sessionId: idSchema,
   name: z.string().min(1).max(300),

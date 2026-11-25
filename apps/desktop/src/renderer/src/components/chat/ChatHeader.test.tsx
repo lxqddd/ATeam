@@ -66,6 +66,7 @@ function baseState(): ChatStoreState {
     selectedSessionId: 's1',
     messagesBySession: {},
     loadedBySession: {},
+    queuesBySession: {},
     permissions: [],
     questions: [],
     runOutcomes: {},

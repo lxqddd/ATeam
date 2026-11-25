@@ -3,6 +3,7 @@ import type {
   AgentDefinition,
   CommandDefinition,
   MessagesSnapshot,
+  QueuedMessage,
   SessionMeta
 } from '@ateam/shared'
 import { ChatStore } from './store'
@@ -1033,5 +1034,69 @@ describe('ChatStore changes panel', () => {
     store.selectSession('b')
 
     expect(store.getSnapshot().changesPanel).toBeNull()
+  })
+})
+
+describe('ChatStore steering', () => {
+  function queued(id: string, text: string): QueuedMessage {
+    return {
+      id,
+      sessionId: 's1',
+      text,
+      strategy: 'after-step',
+      attachments: [],
+      createdAt: '2026-01-01T00:00:00.000Z'
+    }
+  }
+
+  it('tracks queued messages from chat.queue events', async () => {
+    mock.sessions.push(makeSession({ id: 's1' }))
+    mock.messages.set('s1', { sessionId: 's1', seq: 0, messages: [], running: true })
+    await store.init()
+
+    mock.emit({ type: 'chat.queue', sessionId: 's1', items: [queued('q1', '补充要求')] })
+
+    expect(store.getSnapshot().queuesBySession.s1).toEqual([queued('q1', '补充要求')])
+  })
+
+  it('queues a steer message through the bridge', async () => {
+    mock.sessions.push(makeSession({ id: 's1' }))
+    mock.messages.set('s1', { sessionId: 's1', seq: 0, messages: [], running: true })
+    await store.init()
+
+    const item = await store.steer(' 补充要求 ', 'interrupt')
+
+    expect(mock.api.agent.chat.steer).toHaveBeenCalledWith({
+      sessionId: 's1',
+      text: '补充要求',
+      strategy: 'interrupt'
+    })
+    expect(item.text).toBe('补充要求')
+    expect(item.strategy).toBe('interrupt')
+  })
+
+  it('hydrates the queue from the messages snapshot', async () => {
+    mock.messages.set('s1', {
+      sessionId: 's1',
+      seq: 0,
+      messages: [],
+      running: true,
+      queued: [queued('q1', '后续')]
+    })
+
+    await store.loadMessages('s1')
+
+    expect(store.getSnapshot().queuesBySession.s1).toEqual([queued('q1', '后续')])
+  })
+
+  it('drops the queue when its session is deleted', async () => {
+    mock.sessions.push(makeSession({ id: 's1' }))
+    mock.messages.set('s1', { sessionId: 's1', seq: 0, messages: [], running: true })
+    await store.init()
+    mock.emit({ type: 'chat.queue', sessionId: 's1', items: [queued('q1', '补充')] })
+
+    mock.emit({ type: 'session.deleted', sessionId: 's1' })
+
+    expect(store.getSnapshot().queuesBySession.s1).toBeUndefined()
   })
 })

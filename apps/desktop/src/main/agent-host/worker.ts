@@ -156,6 +156,14 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'chat.retry':
       await requireRuntime().retryChat(request.params.sessionId)
       return null
+    case 'chat.steer':
+      return requireRuntime().steerChat(request.params.sessionId, {
+        text: request.params.text,
+        strategy: request.params.strategy,
+        attachments: request.params.attachments
+      })
+    case 'chat.queue.remove':
+      return requireRuntime().removeQueuedMessage(request.params.sessionId, request.params.id)
     case 'permissions.list':
       return requireRuntime().permissions()
     case 'permission.reply':

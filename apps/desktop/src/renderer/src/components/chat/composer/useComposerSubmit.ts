@@ -36,7 +36,7 @@ interface UseComposerSubmitOptions {
 
 export interface ComposerSubmitState {
   sending: boolean
-  submit: () => Promise<void>
+  submit: (strategy?: 'default' | 'interrupt') => Promise<void>
   runPendingShell: () => Promise<void>
   stop: () => Promise<void>
   changeModel: (model: ModelRef) => Promise<void>
@@ -72,9 +72,9 @@ export function useComposerSubmit({
 }: UseComposerSubmitOptions): ComposerSubmitState {
   const [sending, setSending] = useState(false)
 
-  async function submit(): Promise<void> {
+  async function submit(strategy: 'default' | 'interrupt' = 'default'): Promise<void> {
     const content = text.trim()
-    if ((!content && attachments.length === 0) || sending || running) return
+    if ((!content && attachments.length === 0) || sending) return
     if (!ready) {
       setError(t('chat.agentStoppedHint'))
       return
@@ -93,11 +93,23 @@ export function useComposerSubmit({
     try {
       const expanded = await expandSlashCommand(content)
       if (expanded.shell) {
+        if (running) {
+          setError(t('chat.sessionBusy'))
+          return
+        }
         setPendingShell(expanded.shell)
         return
       }
       if (expanded.command) await applyCommandBindings(expanded.command)
-      await chatStore.send(expanded.text, attachments)
+      if (running) {
+        await chatStore.steer(
+          expanded.text,
+          strategy === 'interrupt' ? 'interrupt' : 'after-step',
+          attachments
+        )
+      } else {
+        await chatStore.send(expanded.text, attachments)
+      }
       setText('')
       setAttachments([])
       setMention(null)

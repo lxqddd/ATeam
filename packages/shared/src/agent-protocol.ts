@@ -110,6 +110,17 @@ export type WorkerRequest =
     }
   | { id: string; method: 'chat.stop'; params: { sessionId: string } }
   | { id: string; method: 'chat.retry'; params: { sessionId: string } }
+  | {
+      id: string
+      method: 'chat.steer'
+      params: {
+        sessionId: string
+        text: string
+        strategy?: import('./agent-types').SteerStrategy
+        attachments?: MessageAttachment[]
+      }
+    }
+  | { id: string; method: 'chat.queue.remove'; params: { sessionId: string; id: string } }
   | { id: string; method: 'permissions.list'; params?: undefined }
   | {
       id: string
