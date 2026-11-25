@@ -200,6 +200,12 @@ export function createApiMock(
           session.agent = agent
           return { ...session }
         }),
+        plan: vi.fn(async (id: string) => ({
+          path: `.ateam/plans/${id}.md`,
+          absolutePath: `/workspace/.ateam/plans/${id}.md`,
+          exists: false,
+          content: ''
+        })),
         setModel: vi.fn(async (id: string, model: ModelRef | null) => {
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           session.model = model

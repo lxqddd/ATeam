@@ -265,12 +265,29 @@ describe('filterToolsForAgent', () => {
     read: 'read',
     write: 'write',
     subagent: 'subagent',
+    plan_exit: 'plan_exit',
     mcp_demo_echo: 'mcp'
   } as unknown as ToolSet
 
   it('keeps only the tools listed for the agent', () => {
     const plan = BUILTIN_AGENTS.find((agent) => agent.id === 'plan') as AgentDefinition
     expect(Object.keys(filterToolsForAgent(tools, plan))).toEqual(['read', 'write'])
+    expect(Object.keys(filterToolsForAgent(tools, plan, 'plan'))).toEqual([
+      'read',
+      'write',
+      'plan_exit'
+    ])
+  })
+
+  it('hides plan_exit outside the plan agent and plan mode', () => {
+    const general = BUILTIN_AGENTS.find((agent) => agent.id === 'general') as AgentDefinition
+    expect(Object.keys(filterToolsForAgent(tools, general, 'plan')).sort()).toEqual([
+      'mcp_demo_echo',
+      'read',
+      'write'
+    ])
+    expect(Object.keys(filterToolsForAgent(tools, general, 'ask'))).not.toContain('plan_exit')
+    expect(Object.keys(filterToolsForAgent(tools, null, 'plan'))).not.toContain('plan_exit')
   })
 
   it('drops the subagent tool for subagent runs', () => {
@@ -304,8 +321,13 @@ describe('filterToolsForAgent', () => {
     expect(Object.keys(filterToolsForAgent(tools, editor)).sort()).toEqual(['patch', 'read'])
   })
 
-  it('returns all tools without an agent', () => {
-    expect(Object.keys(filterToolsForAgent(tools, null))).toEqual(Object.keys(tools))
+  it('returns all non-plan tools without an agent', () => {
+    expect(Object.keys(filterToolsForAgent(tools, null))).toEqual([
+      'read',
+      'write',
+      'subagent',
+      'mcp_demo_echo'
+    ])
   })
 })
 

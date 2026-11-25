@@ -74,6 +74,15 @@ export interface SessionMeta extends SessionSettings {
 
 export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
+/** Plan file produced by the plan agent for one session. */
+export interface SessionPlan {
+  /** Workspace-relative path. */
+  path: string
+  absolutePath: string
+  exists: boolean
+  content: string
+}
+
 export type TodoPriority = 'high' | 'medium' | 'low'
 
 export interface TodoItem {

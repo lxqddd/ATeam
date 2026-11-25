@@ -37,15 +37,15 @@
 
 ### 第二轮 P0 实现进度（2026-11-24）
 
-| 项目                  | 状态     | 已实现                                                                                                                                                                                                                                                             | 仍待补齐                                                                          |
-| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件                                   | 完整配置矩阵端到端测试                                                            |
-| R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                                                                                |
-| R-P0-3 LLM 重试       | 完成     | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无                                                                                |
-| R-P0-4 提示词与上下文 | 完成     | 分模型 prompt 文件、项目/全局 prompt 覆盖、环境块（模型/目录/Git/平台/时区/日期/备注）、MCP instructions 按可用工具与 agent 权限过滤、XML 转义、提示词快照与运行时测试                                                                                             | 无                                                                                |
-| R-P0-5 推理与缓存     | 完成     | 同模型 reasoning providerMetadata 回放、跨模型丢弃、provider transform 层、Anthropic system/末条消息缓存断点、OpenAI promptCacheKey、缓存命中率与节省指标、旧消息模型迁移、端到端测试                                                                              | 无                                                                                |
-| R-P0-6 Shell arity    | 完成     | 引号/转义感知 bash / PowerShell / cmd 解析、控制操作符与重定向、参数级外部路径、动态路径保护、扩展 arity 表与全局选项、危险命令 auto 询问、集成测试                                                                                                                | 无                                                                                |
-| R-P0-7 Plan 工作流    | 基本完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、切换 build agent、plan 提示、基础测试                                                                                                                                                                        | 当前轮内切换工具集、计划文件 UI、build 切换提醒、按模式隐藏 plan_exit、端到端测试 |
+| 项目                  | 状态     | 已实现                                                                                                                                                                                                                                                             | 仍待补齐               |
+| --------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
+| R-P0-1 分层配置       | 基本完成 | `ateam.json/jsonc` 项目根发现、全局合并、instructions/references/permissions/lsp/formatters/snapshots/agents/MCP/plugins、项目 providers、自定义 LSP / formatter、commands / skills、项目 MCP 展示、来源与配置编辑、主动刷新事件                                   | 完整配置矩阵端到端测试 |
+| R-P0-2 插件系统       | 完成     | 本地/npm 安装、command/event/provider/auth/workspace adapter hook、声明式 auth 方法 UI、插件工具权限、限制型 permissionAsk、plugins.json 注册、管理 UI、版本检查、加载错误、dispose、工具参数/结果回写 UI、登录状态与退出登录、无 token endpoint 的 OAuth 自动刷新 | 无                     |
+| R-P0-3 LLM 重试       | 完成     | 429/5xx/网络/流中断重试、Retry-After、指数退避+抖动、可配置次数/等待/响应超时、可中止等待、重试原因与最终失败 UI、重试指标、测试                                                                                                                                   | 无                     |
+| R-P0-4 提示词与上下文 | 完成     | 分模型 prompt 文件、项目/全局 prompt 覆盖、环境块（模型/目录/Git/平台/时区/日期/备注）、MCP instructions 按可用工具与 agent 权限过滤、XML 转义、提示词快照与运行时测试                                                                                             | 无                     |
+| R-P0-5 推理与缓存     | 完成     | 同模型 reasoning providerMetadata 回放、跨模型丢弃、provider transform 层、Anthropic system/末条消息缓存断点、OpenAI promptCacheKey、缓存命中率与节省指标、旧消息模型迁移、端到端测试                                                                              | 无                     |
+| R-P0-6 Shell arity    | 完成     | 引号/转义感知 bash / PowerShell / cmd 解析、控制操作符与重定向、参数级外部路径、动态路径保护、扩展 arity 表与全局选项、危险命令 auto 询问、集成测试                                                                                                                | 无                     |
+| R-P0-7 Plan 工作流    | 完成     | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、自动切换 build agent 并续跑、计划文件查看/复制路径、切换提醒、按模式隐藏 plan_exit、端到端测试                                                                                                               | 无                     |
 
 ### 当前剩余 TODO（2026-11-24）
 
@@ -54,7 +54,6 @@
 **P0 收尾**
 
 - [ ] R-P0-1：配置来源、冲突覆盖与坏配置降级的完整端到端测试（主动刷新事件、来源展示、项目级编辑、providers / LSP / formatter / commands / skills / MCP、instructions 路径已实现）
-- [ ] R-P0-7：`plan_exit` 后当前轮立即切换 build 工具集；计划文件查看入口与计划状态 UI；plan → build 切换提醒；按模式隐藏 `plan_exit`；端到端测试
 
 **P1 / P2**
 
@@ -140,11 +139,11 @@
 
 - [x] 计划文件路径、plan agent 只写计划文件、`plan_exit` 确认与切换 build agent
 - [x] plan 模式提示与文件写入权限
-- [ ] `plan_exit` 后当前轮立即切换 build 工具集，或注入新的 build 回合
-- [ ] 计划文件查看/打开入口与计划状态 UI
-- [ ] plan → build 切换提醒（build switch reminder）
-- [ ] 按模式隐藏 `plan_exit`，避免 build / 子代理调用（当前仅运行时拒绝）
-- [ ] plan_exit、计划文件权限与切换 agent 的端到端测试
+- [x] `plan_exit` 后当前轮立即切换 build 工具集，或注入新的 build 回合
+- [x] 计划文件查看/打开入口与计划状态 UI
+- [x] plan → build 切换提醒（build switch reminder）
+- [x] 按模式隐藏 `plan_exit`，避免 build / 子代理调用
+- [x] plan_exit、计划文件权限与切换 agent 的端到端测试
 
 ### 第二轮 P0：核心运行时与配置
 
@@ -267,17 +266,18 @@
 
 #### R-P0-7 Plan 工作流
 
-**现状**：内置 plan agent 只有只读工具集（[agents.ts](../packages/agent-core/src/config/agents.ts)），没有计划文件、没有退出工具，也不会在计划完成后切换 build agent。
+**现状（2026-11-25）**：plan agent 可将计划写入 `.ateam/plans/<session>.md`，`plan_exit` 先询问用户，确认后切换为 build agent、权限模式恢复为 `ask`，当前 plan 流在下一步停止，并自动创建一个新的 build assistant 回合。build 回合通过仅模型可见的续跑指令读取计划文件并开始实现，不额外插入用户消息。聊天页头提供计划按钮，可查看计划内容与复制绝对路径；plan_exit 成功后显示切换提醒。`plan_exit` 仅在 plan agent + plan 模式下暴露，build/subagent 不再获得该工具。
 
 **OpenCode 参考**：`packages/opencode/src/session/reminders.ts` 维护 plan 文件提示与 plan/build 切换提醒；`tool/plan.ts` 提供 `plan_exit`，确认后切换到 build agent 并注入执行指令（实验性）。
 
 **待办**：
 
-- [ ] 定义 plan 文件路径与写入策略，允许 plan agent 只写计划文件
-- [ ] 增加 `plan_exit` 工具：确认后切换 build agent 并注入执行提示
-- [ ] 在 plan/build 切换时注入提醒，说明计划文件位置与下一步
-- [ ] UI 展示计划文件、当前 agent 与切换结果
-- [ ] 测试 plan 文件创建、退出确认、拒绝退出、切换到 build 后的权限
+- [x] 定义 plan 文件路径与写入策略，允许 plan agent 只写计划文件
+- [x] 增加 `plan_exit` 工具：确认后切换 build agent 并注入执行提示
+- [x] 在 plan/build 切换时注入提醒，说明计划文件位置与下一步
+- [x] UI 查看计划文件与切换结果
+- [x] 按模式/agent 隐藏 `plan_exit`
+- [x] 测试计划文件读取、退出后自动续跑、切换后的 agent 与权限
 
 **验收**：plan agent 产出可执行计划文件，用户确认后平滑进入 build 阶段。
 
@@ -458,7 +458,7 @@
 
 1. **R-P0-1 配置收尾**（小）——补完整配置矩阵端到端测试（R-P0-2 插件 OAuth 自动刷新已完成）。
 2. **R-P1-2 max steps + R-P1-1 steering**（小到中等）——R-P0-3 重试与 R-P0-5 推理/缓存已完成，继续改善长任务可靠性。
-3. **R-P0-7 plan 工作流 + R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文、R-P0-6 shell arity 已完成，补齐日常编码体验。
+3. **R-P1-6 LSP + R-P1-7 MCP + R-P1-4 后台任务 + R-P1-5 输出截断**（中等）——R-P0-4 提示词与上下文、R-P0-6 shell arity、R-P0-7 plan 工作流已完成，补齐日常编码体验。
 4. **第二轮 P1 剩余项**（按使用频率取舍）。
 5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 

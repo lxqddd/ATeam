@@ -37,6 +37,13 @@ function AssistantMessage({
     .join('\n\n')
   const hasParts = message.parts.length > 0
   const streaming = message.status === 'streaming'
+  const planSwitched = message.parts.some(
+    (part) =>
+      part.type === 'tool' &&
+      part.toolName === 'plan_exit' &&
+      part.state === 'completed' &&
+      (part.output ?? '').includes('Switched to build agent')
+  )
   const canRetry =
     isLast && !sessionRunning && (message.status === 'error' || message.status === 'interrupted')
   const canRevert = !sessionRunning && message.status !== 'streaming'
@@ -117,6 +124,12 @@ function AssistantMessage({
       )}
 
       {streaming && <StreamingStatus startedAt={message.createdAt} retry={message.retry} />}
+
+      {planSwitched && (
+        <div className="rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-caption text-accent-strong">
+          {t('chat.planSwitched')}
+        </div>
+      )}
 
       {message.status === 'complete' &&
         !text &&

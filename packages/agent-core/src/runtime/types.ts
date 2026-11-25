@@ -58,6 +58,10 @@ export interface Run {
     toolCallId: string,
     agentRules?: AgentPermissionRule[]
   ) => Promise<boolean>
+  /** Set when plan_exit switched the session to the build agent. */
+  exitedPlan?: boolean
+  /** Model-only prompt used by an automatic follow-up run after plan exit. */
+  continuationPrompt?: string
 }
 
 export interface PendingPermission {
@@ -98,6 +102,8 @@ export interface AgentTurnInput {
   messages: ModelMessage[]
   tools: ToolSet
   abortSignal: AbortSignal
+  /** Stop the tool loop after the current step when this returns true. */
+  shouldStop?: () => boolean
   reasoning?: ReasoningEffort | null
   maxSteps?: number
   maxOutputTokens?: number

@@ -8,7 +8,7 @@ const chatMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../../chat/store', () => ({ chatStore: chatMocks }))
-import { makeMessage, makeTextPart } from '../../test/factories'
+import { makeMessage, makeTextPart, makeToolPart } from '../../test/factories'
 
 describe('AssistantMessage', () => {
   it('shows the message cost when available', () => {
@@ -57,6 +57,22 @@ describe('changed files', () => {
     expect(screen.getByText('Retrying…')).toBeInTheDocument()
     expect(screen.getByText('attempt 2/5, retrying in 3s')).toBeInTheDocument()
     expect(screen.getByText('HTTP 503')).toBeInTheDocument()
+  })
+
+  it('shows a build switch reminder after plan exit', () => {
+    const message = makeMessage({
+      parts: [
+        makeToolPart({
+          toolName: 'plan_exit',
+          toolCallId: 'call-plan',
+          state: 'completed',
+          output: 'Switched to build agent.'
+        })
+      ]
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
+
+    expect(screen.getByText('Plan approved · continuing with the build agent.')).toBeInTheDocument()
   })
 
   it('shows the last retry reason when retries are exhausted', () => {

@@ -224,6 +224,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().testModel(request.params.providerId, request.params.modelId)
     case 'metrics.get':
       return requireRuntime().metricsSnapshot()
+    case 'plan.get':
+      return requireRuntime().sessionPlan(request.params.sessionId)
     case 'shutdown':
       rejectBrowserRequests('AGENT_STOPPED')
       await runtime?.shutdown()

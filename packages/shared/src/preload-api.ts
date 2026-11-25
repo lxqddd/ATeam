@@ -27,6 +27,7 @@ import type {
   PermissionRuleInput,
   MessageAttachment,
   SessionMeta,
+  SessionPlan,
   SessionSearchResult,
   SessionSettings,
   SessionUndoResult,
@@ -64,6 +65,7 @@ export interface AgentBridge {
     setSettings: (id: string, settings: SessionSettings) => Promise<SessionMeta>
     setDirectory: (id: string, directory: string | null) => Promise<SessionMeta>
     setAgent: (id: string, agent: string | null) => Promise<SessionMeta>
+    plan: (id: string) => Promise<SessionPlan>
     compact: (id: string) => Promise<SessionMeta>
     undo: (id: string, messageId?: string) => Promise<SessionUndoResult>
     redo: (id: string) => Promise<SessionMeta>

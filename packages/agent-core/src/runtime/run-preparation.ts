@@ -26,6 +26,7 @@ import { skillsPrompt } from '../skills'
 import { filterToolsForModel, type ToolContext } from '../tools'
 import { buildSystemPrompt } from './policy'
 import { filterMcpInstructions, type McpInstructionEntry } from './mcp-instructions'
+import { makeUserMessage } from './messages'
 import { buildToolContext, type ToolContextHost } from './tool-context'
 import type { Run } from './types'
 
@@ -149,7 +150,8 @@ export async function prepareRun(
         { ...mcpTools, ...baseTools, ...pluginTools },
         targetInfo.applyPatch === true
       ),
-      agent
+      agent,
+      current.session.permissionMode ?? 'ask'
     ),
     run.sessionId,
     {
@@ -220,6 +222,9 @@ export async function prepareRun(
   const system = systemState.system
 
   const modelHistory = host.historyMessages(run, input.messageId)
+  if (run.continuationPrompt) {
+    modelHistory.push(makeUserMessage(run.sessionId, run.continuationPrompt))
+  }
   const historyMessages = buildModelMessages(
     modelHistory,
     await host.attachmentPayloads(run.sessionId, modelHistory),

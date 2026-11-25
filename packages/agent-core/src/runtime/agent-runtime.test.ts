@@ -184,6 +184,15 @@ function usageDetailsScript(): Script {
   }
 }
 
+function planExitScript(): Script {
+  return async function* () {
+    await toolContext?.exitPlan?.()
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'plan ready' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function contextErrorScript(): Script {
   return async function* () {
     yield part({ type: 'error', error: new Error('maximum context length exceeded') })
@@ -2574,6 +2583,53 @@ describe('agent selection', () => {
     expect(turns[0].system).toContain('plan agent')
     expect(Object.keys(turns[0].tools)).toEqual(['read', 'write'])
     expect(turns[0].maxSteps).toBe(20)
+  })
+
+  it('continues with the build agent after plan exit', async () => {
+    await runtime.setSessionAgent(sessionId, 'plan')
+    await runtime.setSessionSettings(sessionId, {
+      reasoningEffort: null,
+      permissionMode: 'plan'
+    })
+    scripts.push(planExitScript())
+    scripts.push(textScript('implemented'))
+
+    await runtime.sendChat(sessionId, 'plan the work')
+    await sink.next('run.finished')
+    await sink.next('run.finished')
+
+    expect(turns).toHaveLength(2)
+    const synthetic = turns[1].messages.find(
+      (message) =>
+        message.role === 'user' &&
+        JSON.stringify(message.content).includes('The user approved the plan saved at')
+    )
+    expect(synthetic).toBeTruthy()
+    expect(turns[1].system).not.toContain('read-only plan mode')
+    expect(assistantMessages()).toHaveLength(2)
+    expect(assistantMessages()[1].parts).toEqual([{ type: 'text', text: 'implemented' }])
+    const session = runtime.listSessions()[0]
+    expect(session.agent).toBe('build')
+    expect(session.permissionMode).toBe('ask')
+  })
+
+  it('reads the session plan file', async () => {
+    await expect(runtime.sessionPlan(sessionId)).resolves.toMatchObject({
+      path: `.ateam/plans/${sessionId}.md`,
+      exists: false,
+      content: ''
+    })
+
+    const planDirectory = path.join(directory, 'workspace', '.ateam', 'plans')
+    await fs.mkdir(planDirectory, { recursive: true })
+    await fs.writeFile(path.join(planDirectory, `${sessionId}.md`), '# Plan\n\nImplement it.')
+
+    await expect(runtime.sessionPlan(sessionId)).resolves.toMatchObject({
+      path: `.ateam/plans/${sessionId}.md`,
+      exists: true,
+      content: '# Plan\n\nImplement it.'
+    })
+    await expect(runtime.sessionPlan('missing')).rejects.toThrow('SESSION_NOT_FOUND')
   })
 
   it('uses the agent model when configured', async () => {

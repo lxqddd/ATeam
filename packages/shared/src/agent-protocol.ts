@@ -86,6 +86,7 @@ export type WorkerRequest =
   | { id: string; method: 'sessions.redo'; params: { id: string } }
   | { id: string; method: 'sessions.fork'; params: { id: string; messageId?: string } }
   | { id: string; method: 'sessions.search'; params: { query: string } }
+  | { id: string; method: 'plan.get'; params: { sessionId: string } }
   | {
       id: string
       method: 'sessions.changes'

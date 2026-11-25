@@ -6,6 +6,7 @@ import type {
   AgentPermissionRule,
   ModelRef,
   PermissionEffect,
+  PermissionMode,
   PermissionRuleAction
 } from '@ateam/shared'
 import { readJsonFile } from '../atomic-json'
@@ -389,11 +390,20 @@ export async function loadAgents(input: {
   return [...byName.values()]
 }
 
-export function filterToolsForAgent(tools: ToolSet, agent: AgentDefinition | null): ToolSet {
-  if (!agent) return tools
+export function filterToolsForAgent(
+  tools: ToolSet,
+  agent: AgentDefinition | null,
+  permissionMode?: PermissionMode
+): ToolSet {
+  if (!agent) {
+    return Object.fromEntries(
+      Object.entries(tools).filter(([name]) => name !== 'plan_exit')
+    ) as ToolSet
+  }
   const allowed = agent.tools ? new Set(agent.tools) : null
   const filtered: ToolSet = {}
   for (const [name, definition] of Object.entries(tools)) {
+    if (name === 'plan_exit' && (permissionMode !== 'plan' || agent.id !== 'plan')) continue
     if (agent.mode === 'subagent' && name === 'subagent') continue
     if (allowed && !allowed.has(name)) {
       const patchAlias = name === 'patch' && (allowed.has('edit') || allowed.has('write'))

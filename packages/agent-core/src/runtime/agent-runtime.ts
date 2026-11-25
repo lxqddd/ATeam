@@ -34,6 +34,7 @@ import type {
   RuntimeProviderAuth,
   RuntimeWebSearchConfig,
   SessionMeta,
+  SessionPlan,
   SessionSearchResult,
   SessionSettings,
   McpAuthRecord,
@@ -691,6 +692,23 @@ export class AgentRuntime {
     return this.sessionService.messages(id)
   }
 
+  async sessionPlan(sessionId: string): Promise<SessionPlan> {
+    const record = this.store.get(sessionId)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    const relative = this.planPathForSession(sessionId)
+    const absolutePath = path.resolve(this.sessionWorkspace(sessionId), relative)
+    try {
+      return {
+        path: relative,
+        absolutePath,
+        exists: true,
+        content: await fs.readFile(absolutePath, 'utf8')
+      }
+    } catch {
+      return { path: relative, absolutePath, exists: false, content: '' }
+    }
+  }
+
   setModels(models: RuntimeModelsConfig): void {
     this.models = models
     this.effectiveModels.clear()
@@ -766,7 +784,8 @@ export class AgentRuntime {
     assistant: ChatMessage,
     skipHistoryIds: Set<string> | undefined,
     config: AgentConfig,
-    models: RuntimeModelsConfig
+    models: RuntimeModelsConfig,
+    continuationPrompt?: string
   ): void {
     this.events.emit({ type: 'message.upsert', message: structuredClone(assistant) })
     this.events.emitSession(sessionId)
@@ -788,7 +807,8 @@ export class AgentRuntime {
       models,
       skipHistoryIds,
       agent: null,
-      depth: 0
+      depth: 0,
+      ...(continuationPrompt ? { continuationPrompt } : {})
     }
     this.runs.set(sessionId, run)
     void this.runAgent(run).catch((error) => {
@@ -1127,7 +1147,11 @@ export class AgentRuntime {
   }
 
   private planFilePath(run: Run): string {
-    return path.posix.join('.ateam', 'plans', `${run.sessionId}.md`)
+    return this.planPathForSession(run.sessionId)
+  }
+
+  private planPathForSession(sessionId: string): string {
+    return path.posix.join('.ateam', 'plans', `${sessionId}.md`)
   }
 
   private async isGitRepository(workspace: string): Promise<boolean> {
@@ -1161,8 +1185,41 @@ export class AgentRuntime {
       (await this.sessionService.agents(run.workspace)).find(
         (candidate) => candidate.id === 'build'
       ) ?? run.agent
+    run.exitedPlan = true
     this.events.emit({ type: 'session.upsert', session })
-    return `Switched to build agent. The plan is saved at ${this.planFilePath(run)}. Ask the user to send the next message to start implementing.`
+    return `Switched to build agent. The plan is saved at ${this.planFilePath(run)}. Continuing with implementation.`
+  }
+
+  private async startBuildContinuation(previous: Run): Promise<void> {
+    const sessionId = previous.sessionId
+    if (this.sessionBusy(sessionId)) return
+    const record = this.store.get(sessionId)
+    if (!record || record.session.agent !== 'build') return
+    const workspace = this.sessionWorkspace(sessionId)
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const config = effective.config
+    const models = await this.modelsForWorkspace(workspace, config)
+    resolveModelRef(models, record.session.model ?? models.defaultModel)
+    if (this.sessionBusy(sessionId)) return
+    const assistant = makeAssistantMessage(sessionId)
+    if (config.snapshots) {
+      assistant.snapshotBefore = await this.createSnapshotId(
+        sessionId,
+        workspace,
+        await this.resolveRunReferences(config, workspace)
+      )
+    }
+    if (!this.store.get(sessionId)) return
+    await this.store.appendMessage(sessionId, assistant)
+    await this.store.setStatus(sessionId, 'running')
+    this.beginRun(
+      sessionId,
+      assistant,
+      undefined,
+      config,
+      models,
+      `The user approved the plan saved at ${this.planFilePath(previous)}. Read it and implement it now.`
+    )
   }
 
   private historyMessages(run: Run, assistantMessageId: string): ChatMessage[] {
@@ -1826,6 +1883,7 @@ export class AgentRuntime {
             messages: prepared.messages,
             tools: prepared.tools,
             abortSignal: run.abort.signal,
+            shouldStop: () => run.exitedPlan === true,
             reasoning: prepared.params.reasoning,
             maxSteps: agent?.maxSteps ?? undefined,
             maxOutputTokens: prepared.params.maxOutputTokens,
@@ -1892,6 +1950,13 @@ export class AgentRuntime {
         usage: state.usage,
         durationMs: message.durationMs
       })
+      if (run.exitedPlan) {
+        setTimeout(() => {
+          void this.startBuildContinuation(run).catch((error) => {
+            console.warn('[runtime] failed to start the build continuation', error)
+          })
+        }, 0)
+      }
     } catch (error) {
       if (!run.retried && isContextLengthError(error)) {
         try {

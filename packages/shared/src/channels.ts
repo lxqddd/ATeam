@@ -17,6 +17,7 @@ export const AGENT_CHANNELS = {
   sessionSetSettings: 'ateam:agent:sessions:set-settings',
   sessionSetDirectory: 'ateam:agent:sessions:set-directory',
   sessionSetAgent: 'ateam:agent:sessions:set-agent',
+  sessionPlan: 'ateam:agent:sessions:plan',
   sessionCompact: 'ateam:agent:sessions:compact',
   sessionUndo: 'ateam:agent:sessions:undo',
   sessionRedo: 'ateam:agent:sessions:redo',

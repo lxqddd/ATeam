@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { SessionPlan } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
 
 function statusLabel(sessionStatus: string | undefined): string | null {
@@ -30,15 +31,24 @@ function ChatHeaderContent(): React.JSX.Element {
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
   const label = statusLabel(session?.status)
   const messages = selectedSessionId ? (messagesBySession[selectedSessionId] ?? []) : []
+  const lastMessageStatus = messages[messages.length - 1]?.status
   const running = session?.status === 'running' || session?.status === 'waiting-permission'
   const [compacting, setCompacting] = useState(false)
   const [historyBusy, setHistoryBusy] = useState<'undo' | 'redo' | null>(null)
   const [headerError, setHeaderError] = useState<string | null>(null)
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [workspaceBusy, setWorkspaceBusy] = useState(false)
+  const [plan, setPlan] = useState<SessionPlan | null>(null)
+  const [planOpen, setPlanOpen] = useState(false)
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planError, setPlanError] = useState<string | null>(null)
+  const [planCopied, setPlanCopied] = useState(false)
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null)
   const canUndo = !running && messages.some((message) => message.role === 'assistant')
   const canRedo = !running && session?.redoAvailable === true
+  const showPlan =
+    Boolean(session) &&
+    (session?.agent === 'plan' || session?.permissionMode === 'plan' || plan?.exists === true)
   const totalCost = messages.reduce((sum, message) => sum + (message.costUsd ?? 0), 0)
   const contextPercent =
     session?.contextTokens != null && session.contextWindow
@@ -70,6 +80,57 @@ function ChatHeaderContent(): React.JSX.Element {
       window.removeEventListener('keydown', onKey)
     }
   }, [workspaceMenuOpen])
+
+  useEffect(() => {
+    if (!selectedSessionId) return undefined
+    let active = true
+    window.api.agent.sessions
+      .plan(selectedSessionId)
+      .then((next) => {
+        if (active) setPlan(next)
+      })
+      .catch(() => {
+        if (active) setPlan(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [selectedSessionId, lastMessageStatus, session?.agent, session?.permissionMode])
+
+  useEffect(() => {
+    if (!planOpen) return undefined
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setPlanOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [planOpen])
+
+  async function openPlan(): Promise<void> {
+    if (!selectedSessionId) return
+    setPlanOpen(true)
+    setPlanBusy(true)
+    setPlanError(null)
+    setPlanCopied(false)
+    try {
+      setPlan(await window.api.agent.sessions.plan(selectedSessionId))
+    } catch (caught) {
+      setPlanError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setPlanBusy(false)
+    }
+  }
+
+  async function copyPlanPath(): Promise<void> {
+    if (!plan) return
+    try {
+      await navigator.clipboard.writeText(plan.absolutePath)
+      setPlanCopied(true)
+      setTimeout(() => setPlanCopied(false), 1_500)
+    } catch {
+      /* clipboard access can be unavailable */
+    }
+  }
 
   async function compactSession(): Promise<void> {
     setCompacting(true)
@@ -297,6 +358,33 @@ function ChatHeaderContent(): React.JSX.Element {
         </span>
       )}
 
+      {showPlan && (
+        <button
+          type="button"
+          title={t('chat.plan')}
+          aria-label={t('chat.plan')}
+          onClick={() => {
+            void openPlan()
+          }}
+          className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <path d="M7 3.5h7l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" />
+            <path d="M14 3.5V8h4M9 12h6M9 15.5h6M9 19h4" />
+          </svg>
+        </button>
+      )}
+
       <button
         type="button"
         title={t('chat.undo')}
@@ -459,6 +547,83 @@ function ChatHeaderContent(): React.JSX.Element {
           <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h5l2 2h8a1.5 1.5 0 0 1 1.5 1.5V17.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z" />
         </svg>
       </button>
+
+      {planOpen && session && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center p-6">
+          <div
+            aria-hidden
+            onClick={() => setPlanOpen(false)}
+            className="absolute inset-0 bg-black/30 backdrop-blur-[1px]"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('chat.plan')}
+            className="relative flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-xl"
+          >
+            <header className="flex flex-none items-start justify-between gap-3 border-b border-border-subtle px-4 py-3">
+              <div className="min-w-0">
+                <h2 className="text-title font-semibold text-foreground">{t('chat.plan')}</h2>
+                {plan && (
+                  <p
+                    className="mt-0.5 truncate font-mono text-caption text-muted"
+                    title={plan.absolutePath}
+                  >
+                    {plan.path}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                aria-label={t('chat.planClose')}
+                onClick={() => setPlanOpen(false)}
+                className="flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path
+                    d="M7 7l10 10M17 7 7 17"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </header>
+            <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+              {planBusy ? (
+                <p className="m-0 text-caption text-muted">{t('settings.loading')}</p>
+              ) : planError ? (
+                <p className="m-0 text-caption text-danger">{planError}</p>
+              ) : plan?.exists ? (
+                <pre className="m-0 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-foreground">
+                  {plan.content}
+                </pre>
+              ) : (
+                <p className="m-0 text-caption text-muted">{t('chat.planEmpty')}</p>
+              )}
+            </div>
+            <footer className="flex flex-none items-center justify-end gap-2 border-t border-border-subtle px-4 py-3">
+              <button
+                type="button"
+                disabled={!plan?.exists}
+                onClick={() => {
+                  void copyPlanPath()
+                }}
+                className="h-8 rounded-md border border-border bg-surface px-3 text-label font-medium text-foreground transition-colors hover:bg-hover disabled:cursor-default disabled:opacity-55"
+              >
+                {planCopied ? t('chat.planCopied') : t('chat.planCopyPath')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPlanOpen(false)}
+                className="h-8 rounded-md bg-accent px-3 text-label font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
+              >
+                {t('chat.planClose')}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </header>
   )
 }

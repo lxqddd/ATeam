@@ -1,6 +1,7 @@
 import {
   AGENT_CHANNELS,
   type SessionMeta,
+  type SessionPlan,
   type SessionSearchResult,
   type SessionUndoResult,
   type TurnChanges
@@ -61,6 +62,11 @@ export function registerSessionHandlers(ctx: AgentIpcContext): void {
   handle(AGENT_CHANNELS.sessionSetAgent, (payload): Promise<SessionMeta> => {
     const { id, agent } = sessionSetAgentSchema.parse(payload)
     return manager.request('sessions.setAgent', { id, agent })
+  })
+
+  handle(AGENT_CHANNELS.sessionPlan, (payload): Promise<SessionPlan> => {
+    const { id } = idPayloadSchema.parse(payload)
+    return manager.request('plan.get', { sessionId: id })
   })
 
   handle(AGENT_CHANNELS.sessionCompact, (payload): Promise<SessionMeta> => {

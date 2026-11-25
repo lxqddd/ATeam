@@ -379,4 +379,24 @@ describe('session experience', () => {
       '25'
     )
   })
+
+  it('opens the session plan file', async () => {
+    const mock = createApiMock()
+    vi.mocked(mock.api.agent.sessions.plan).mockResolvedValue({
+      path: '.ateam/plans/s1.md',
+      absolutePath: '/workspace/.ateam/plans/s1.md',
+      exists: true,
+      content: '# Plan\n\nStep one.'
+    })
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+    const user = userEvent.setup()
+
+    render(<ChatHeader />)
+
+    await user.click(await screen.findByRole('button', { name: 'Plan' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Plan' })).toBeInTheDocument()
+    expect(screen.getByText('.ateam/plans/s1.md')).toBeInTheDocument()
+    expect(screen.getByText(/# Plan[\s\S]*Step one\./)).toBeInTheDocument()
+  })
 })

@@ -60,6 +60,7 @@ const api: AteamApi = {
       setSettings: (id, settings) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionSetSettings, { id, settings }),
       setAgent: (id, agent) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetAgent, { id, agent }),
+      plan: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionPlan, { id }),
       compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id }),
       undo: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId }),
       redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id }),
