@@ -1,5 +1,6 @@
 import {
   AGENT_CHANNELS,
+  type SessionChangesSummary,
   type SessionMeta,
   type SessionPlan,
   type SessionSearchResult,
@@ -12,13 +13,15 @@ import {
   idPayloadSchema,
   renameSchema,
   sessionChangesSchema,
+  sessionIdSchema,
   sessionMessageSchema,
   sessionRevertFilesSchema,
   sessionSearchSchema,
   sessionSetAgentSchema,
   sessionSetDirectorySchema,
   sessionSetModelSchema,
-  sessionSetSettingsSchema
+  sessionSetSettingsSchema,
+  sessionUnrevertFilesSchema
 } from './schemas'
 
 /** Registers every session lifecycle and inspection channel. */
@@ -75,8 +78,8 @@ export function registerSessionHandlers(ctx: AgentIpcContext): void {
   })
 
   handle(AGENT_CHANNELS.sessionUndo, (payload): Promise<SessionUndoResult> => {
-    const { id, messageId } = sessionMessageSchema.parse(payload)
-    return manager.request('sessions.undo', { id, messageId })
+    const { id, messageId, partIndex } = sessionMessageSchema.parse(payload)
+    return manager.request('sessions.undo', { id, messageId, partIndex })
   })
 
   handle(AGENT_CHANNELS.sessionRedo, (payload): Promise<SessionMeta> => {
@@ -99,8 +102,18 @@ export function registerSessionHandlers(ctx: AgentIpcContext): void {
     return manager.request('sessions.changes', { sessionId, messageId })
   })
 
+  handle(AGENT_CHANNELS.sessionChangesSummary, (payload): Promise<SessionChangesSummary> => {
+    const { sessionId } = sessionIdSchema.parse(payload)
+    return manager.request('sessions.changesSummary', { sessionId })
+  })
+
   handle(AGENT_CHANNELS.sessionRevertFiles, (payload): Promise<TurnChanges> => {
     const { sessionId, messageId, paths } = sessionRevertFilesSchema.parse(payload)
     return manager.request('sessions.revertFiles', { sessionId, messageId, paths })
+  })
+
+  handle(AGENT_CHANNELS.sessionUnrevertFiles, (payload): Promise<TurnChanges> => {
+    const { sessionId, paths } = sessionUnrevertFilesSchema.parse(payload)
+    return manager.request('sessions.unrevertFiles', { sessionId, paths })
   })
 }

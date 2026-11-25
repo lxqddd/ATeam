@@ -185,14 +185,36 @@ export function createApiMock(
           messageId: messageId ?? '',
           latest: true,
           canRevert: true,
+          canUnrevert: false,
+          revertedPaths: [],
           truncated: false,
           files: []
+        })),
+        changesSummary: vi.fn(async (sessionId: string) => ({
+          sessionId,
+          turns: [],
+          fileCount: 0,
+          additions: 0,
+          deletions: 0,
+          truncated: false
         })),
         revertFiles: vi.fn(async (sessionId: string, messageId: string) => ({
           sessionId,
           messageId,
           latest: true,
           canRevert: true,
+          canUnrevert: true,
+          revertedPaths: [],
+          truncated: false,
+          files: []
+        })),
+        unrevertFiles: vi.fn(async (sessionId: string) => ({
+          sessionId,
+          messageId: '',
+          latest: true,
+          canRevert: true,
+          canUnrevert: false,
+          revertedPaths: [],
           truncated: false,
           files: []
         })),
@@ -222,7 +244,8 @@ export function createApiMock(
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           return { ...session }
         }),
-        undo: vi.fn(async (id: string) => {
+        undo: vi.fn(async (...args: unknown[]) => {
+          const id = args[0] as string
           const session = sessions.find((entry) => entry.id === id) ?? makeSession({ id })
           return { session: { ...session, redoAvailable: true }, prompt: '' }
         }),

@@ -387,6 +387,32 @@ function ChatHeaderContent(): React.JSX.Element {
 
       <button
         type="button"
+        title={t('chat.changesSessionButton')}
+        aria-label={t('chat.changesSessionButton')}
+        disabled={running || messages.length === 0 || !selectedSessionId}
+        onClick={() => {
+          if (selectedSessionId) chatStore.openSessionChanges(selectedSessionId)
+        }}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55 disabled:hover:bg-transparent"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M6 3.5h8l4 4V20a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" />
+          <path d="M14 3.5V8h4M8 13h3M9.5 11.5v3M13 17h3" />
+        </svg>
+      </button>
+
+      <button
+        type="button"
         title={t('chat.undo')}
         aria-label={t('chat.undo')}
         disabled={!canUndo || historyBusy !== null}

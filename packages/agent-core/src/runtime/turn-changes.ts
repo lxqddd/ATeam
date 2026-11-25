@@ -1,9 +1,17 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { ChatMessage, TurnChanges } from '@ateam/shared'
+import type {
+  ChatMessage,
+  SessionChangeFile,
+  SessionChangesSummary,
+  SessionChangeTurn,
+  TurnChanges
+} from '@ateam/shared'
 import { attachmentDirectory, isPathInsideDirectory } from '../attachments'
-import type { SessionRecord, SessionsStore } from '../sessions/sessions-store'
+import type { RevertState, SessionRecord, SessionsStore } from '../sessions/sessions-store'
 import type { SnapshotStore } from '../sessions/snapshots'
+
+const MAX_SUMMARY_TURNS = 50
 
 export interface TurnChangesHost {
   readonly snapshots: SnapshotStore
@@ -23,7 +31,8 @@ export function latestSnapshotMessage(messages: ChatMessage[]): ChatMessage | un
 export async function buildTurnChanges(
   host: TurnChangesHost,
   record: SessionRecord,
-  message: ChatMessage
+  message: ChatMessage,
+  revert?: RevertState
 ): Promise<TurnChanges> {
   if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
   const latest = latestSnapshotMessage(record.messages)?.id === message.id
@@ -36,13 +45,93 @@ export async function buildTurnChanges(
     current: latest,
     paths: afterId ? undefined : fallbackPaths
   })
+  const revertedPaths =
+    revert && revert.messageId === message.id ? [...new Set(revert.files)].sort() : []
+  const idle = !host.sessionBusy(record.session.id) && message.status !== 'streaming'
   return {
     sessionId: record.session.id,
     messageId: message.id,
     latest,
-    canRevert: latest && !host.sessionBusy(record.session.id) && message.status !== 'streaming',
+    canRevert: latest && idle,
+    canUnrevert: latest && idle && revertedPaths.length > 0,
+    revertedPaths,
     truncated: result.truncated,
     files: result.files
+  }
+}
+
+/**
+ * Summarises the net file changes of each assistant turn that recorded
+ * snapshots. Turns are newest first; hunk contents are omitted so the summary
+ * stays small enough to load eagerly. Older turns and files beyond the diff
+ * limits are reported through `truncated`.
+ */
+export async function buildSessionChanges(
+  host: TurnChangesHost,
+  record: SessionRecord
+): Promise<SessionChangesSummary> {
+  const candidates = record.messages.filter(
+    (message) =>
+      message.role === 'assistant' &&
+      Boolean(message.snapshotBefore) &&
+      Boolean(message.snapshotAfter ?? message.snapshotSteps?.length)
+  )
+  const selected = candidates.slice(-MAX_SUMMARY_TURNS).reverse()
+  const turns: SessionChangeTurn[] = []
+  const uniqueFiles = new Set<string>()
+  let additions = 0
+  let deletions = 0
+  let truncated = candidates.length > selected.length
+
+  for (const message of selected) {
+    const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
+    const fallbackPaths = [
+      ...(message.changedFiles ?? []),
+      ...(message.snapshotSteps ?? []).flatMap((step) => step.files)
+    ]
+    let result: Awaited<ReturnType<SnapshotStore['changes']>>
+    try {
+      result = await host.snapshots.changes(message.snapshotBefore as string, afterId, {
+        paths: afterId ? undefined : fallbackPaths
+      })
+    } catch {
+      truncated = true
+      continue
+    }
+    if (result.truncated) truncated = true
+    const files: SessionChangeFile[] = result.files.map((file) => ({
+      path: file.path,
+      snapshotPath: file.snapshotPath,
+      status: file.status,
+      binary: file.binary,
+      truncated: file.truncated,
+      additions: file.additions,
+      deletions: file.deletions,
+      error: file.error ?? null
+    }))
+    if (files.length === 0) continue
+    const turnAdditions = files.reduce((total, file) => total + file.additions, 0)
+    const turnDeletions = files.reduce((total, file) => total + file.deletions, 0)
+    turns.push({
+      messageId: message.id,
+      createdAt: message.createdAt,
+      status: message.status,
+      files,
+      additions: turnAdditions,
+      deletions: turnDeletions
+    })
+    for (const file of files) uniqueFiles.add(file.snapshotPath)
+    additions += turnAdditions
+    deletions += turnDeletions
+  }
+
+  return {
+    sessionId: record.session.id,
+    turns,
+    fileCount: uniqueFiles.size,
+    additions,
+    deletions,
+    truncated
   }
 }
 

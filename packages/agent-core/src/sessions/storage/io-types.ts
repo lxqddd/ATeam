@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import type { ChatMessage, SessionMeta } from '@ateam/shared'
-import type { PreparedCompaction, RedoState, SessionRecord } from './types'
+import type { PreparedCompaction, RedoState, RevertState, SessionRecord } from './types'
 
 export interface SessionIndex {
   version: 1
@@ -12,6 +12,7 @@ export interface SessionFile {
   session: SessionMeta
   messages: ChatMessage[]
   redo?: RedoState
+  revert?: RevertState
   preparedCompaction?: PreparedCompaction
 }
 

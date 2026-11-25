@@ -83,10 +83,11 @@ export const sessionSetAgentSchema = z.object({
   agent: z.string().min(1).max(100).nullable()
 })
 
-/** Shared shape for undo/fork, which both target an optional message. */
+/** Shared shape for undo/fork, which both target an optional message; undo also takes a part index. */
 export const sessionMessageSchema = z.object({
   id: idSchema,
-  messageId: idSchema.optional()
+  messageId: idSchema.optional(),
+  partIndex: z.number().int().min(0).max(100_000).optional()
 })
 
 export const sessionIdSchema = z.object({ sessionId: idSchema })
@@ -101,6 +102,11 @@ export const sessionChangesSchema = z.object({
 export const sessionRevertFilesSchema = z.object({
   sessionId: idSchema,
   messageId: idSchema,
+  paths: z.array(z.string().min(1).max(2_000)).min(1).max(200).optional()
+})
+
+export const sessionUnrevertFilesSchema = z.object({
+  sessionId: idSchema,
   paths: z.array(z.string().min(1).max(2_000)).min(1).max(200).optional()
 })
 

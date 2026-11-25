@@ -82,7 +82,11 @@ export type WorkerRequest =
       params: { id: string; directory: string | null }
     }
   | { id: string; method: 'sessions.compact'; params: { id: string; force?: boolean } }
-  | { id: string; method: 'sessions.undo'; params: { id: string; messageId?: string } }
+  | {
+      id: string
+      method: 'sessions.undo'
+      params: { id: string; messageId?: string; partIndex?: number }
+    }
   | { id: string; method: 'sessions.redo'; params: { id: string } }
   | { id: string; method: 'sessions.fork'; params: { id: string; messageId?: string } }
   | { id: string; method: 'sessions.search'; params: { query: string } }
@@ -94,8 +98,18 @@ export type WorkerRequest =
     }
   | {
       id: string
+      method: 'sessions.changesSummary'
+      params: { sessionId: string }
+    }
+  | {
+      id: string
       method: 'sessions.revertFiles'
       params: { sessionId: string; messageId: string; paths?: string[] }
+    }
+  | {
+      id: string
+      method: 'sessions.unrevertFiles'
+      params: { sessionId: string; paths?: string[] }
     }
   | { id: string; method: 'messages.list'; params: { sessionId: string } }
   | {

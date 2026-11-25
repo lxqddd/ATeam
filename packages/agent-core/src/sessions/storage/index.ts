@@ -8,6 +8,7 @@ export { restoreLegacySessionBackups } from './legacy'
 export type {
   PreparedCompaction,
   RedoState,
+  RevertState,
   SessionBackend,
   SessionRecord,
   SessionStorage

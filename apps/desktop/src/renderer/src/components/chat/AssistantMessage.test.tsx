@@ -4,7 +4,9 @@ import AssistantMessage from './AssistantMessage'
 
 const chatMocks = vi.hoisted(() => ({
   forkSession: vi.fn(async () => undefined),
-  openChanges: vi.fn()
+  openChanges: vi.fn(),
+  undoSession: vi.fn(async () => null),
+  undoToPart: vi.fn(async () => undefined)
 }))
 
 vi.mock('../../chat/store', () => ({ chatStore: chatMocks }))
@@ -144,5 +146,45 @@ describe('changed files', () => {
     render(<AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning />)
 
     expect(screen.queryByRole('button', { name: 'Files changed (1)' })).not.toBeInTheDocument()
+  })
+})
+
+describe('step rewind', () => {
+  it('rewinds the latest turn to a finished step boundary', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default
+    const user = userEvent.setup()
+    const message = makeMessage({
+      id: 'm1',
+      parts: [
+        makeTextPart('first'),
+        makeToolPart({ toolCallId: 'call-1', toolName: 'read' }),
+        makeTextPart('second')
+      ],
+      snapshotBefore: 'snap-0',
+      snapshotAfter: 'snap-2',
+      snapshotSteps: [
+        { before: 'snap-0', after: 'snap-1', files: ['src/a.ts'], partIndex: 2 },
+        { before: 'snap-1', after: 'snap-2', files: [], partIndex: 3 }
+      ]
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
+
+    await user.click(screen.getByRole('button', { name: /Rewind to this step/ }))
+
+    expect(chatMocks.undoToPart).toHaveBeenCalledWith('m1', 2)
+  })
+
+  it('hides step rewind for historical messages', () => {
+    const message = makeMessage({
+      parts: [makeTextPart('first'), makeTextPart('second')],
+      snapshotBefore: 'snap-0',
+      snapshotAfter: 'snap-1',
+      snapshotSteps: [{ before: 'snap-0', after: 'snap-1', files: [], partIndex: 1 }]
+    })
+    render(
+      <AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning={false} />
+    )
+
+    expect(screen.queryByRole('button', { name: /Rewind to this step/ })).not.toBeInTheDocument()
   })
 })

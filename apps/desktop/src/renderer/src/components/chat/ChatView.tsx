@@ -120,7 +120,7 @@ function ChatView(): React.JSX.Element {
       <Composer key={`composer-${selectedSessionId ?? 'none'}`} />
       {changesPanel && (
         <ChangesPanel
-          key={`${changesPanel.sessionId}:${changesPanel.messageId}`}
+          key={`${changesPanel.sessionId}:${changesPanel.messageId ?? 'summary'}`}
           sessionId={changesPanel.sessionId}
           messageId={changesPanel.messageId}
           onClose={() => chatStore.closeChanges()}

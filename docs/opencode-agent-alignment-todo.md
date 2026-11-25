@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：part 级回滚 / unrevert / 会话 diff、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
+- [ ] P1：MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务（part 级回滚 / unrevert / 会话 diff 已完成，2026-11-25）
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -327,17 +327,19 @@
 
 #### R-P1-3 会话级回滚、unrevert 与 diff
 
-**现状**：已有 undo/redo 和最新轮文件级回滚（[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)），但没有 part 级回滚、unrevert 和会话级 diff 汇总。
+**现状（2026-11-25）**：已完成。每个 `finish-step` 快照记录当时的 `partIndex`；`sessions.undo` 新增可选 `partIndex`，把最新一轮 assistant 消息截断到精确的步骤边界，按该步骤的 `after` 快照恢复整轮文件（含删除后续步骤新建的文件），并把原始消息存入 `RedoState.target`，redo 时原位恢复。文件回滚状态改为独立持久化的 `RevertState { snapshot, messageId, files }`：首次回滚懒创建“回滚前快照”，`sessions.revertFiles` 不再改写消息的 `changedFiles`，`sessions.unrevertFiles` 可按路径或全部恢复；`TurnChanges` 增加 `canUnrevert` / `revertedPaths`。新增 `sessions.changesSummary` → `SessionChangesSummary`：按轮次汇总文件（不含 hunk）、每轮与总计增删行、去重文件数，最新轮在前、最多 50 轮，超出或命中 diff 限制时标记 `truncated`。新消息、整轮 undo 与 part 回滚都会清除挂起的 revert，避免 undo/redo 与 revert 两套状态冲突。UI：最新消息的步骤边界显示回滚按钮，审查面板展示 unrevert 横幅与只读的会话汇总，页头提供“查看会话改动”入口。
 
 **OpenCode 参考**：`session/revert.ts` 支持 message/part 级 revert、快照恢复、diff 汇总与 unrevert；`session/summary.ts` 计算会话 diff。
 
 **待办**：
 
-- [ ] 评估在现有消息 part 模型上支持 part 级回滚
-- [ ] 增加 unrevert（撤销回滚）与对应的 UI 状态
-- [ ] 增加会话级 diff 汇总（文件数、增删行、按轮次）
-- [ ] 统一文件审查面板、undo/redo 与 revert 语义，避免两套状态冲突
-- [ ] 测试历史轮次、部分 part、回滚后继续对话、unrevert
+- [x] 评估在现有消息 part 模型上支持 part 级回滚
+- [x] 增加 unrevert（撤销回滚）与对应的 UI 状态
+- [x] 增加会话级 diff 汇总（文件数、增删行、按轮次）
+- [x] 统一文件审查面板、undo/redo 与 revert 语义，避免两套状态冲突
+- [x] 测试历史轮次、部分 part、回滚后继续对话、unrevert
+
+**仍待 / 边界**：part 回滚只支持最新一轮，且目标 partIndex 必须正好是某个步骤边界；文件 revert/unrevert 同样只作用于最新一轮，同一会话同时只保留一个挂起的 revert；会话汇总为只读视图，最多统计 50 轮，单文件 diff 受 512 KiB / 5000 行限制，超限文件只统计条目、不提供增删行。
 
 **验收**：用户可以回滚到消息或 part，并在回滚后恢复；审查面板能看到整个会话的改动汇总。
 
@@ -474,7 +476,7 @@
 ### 第二轮建议实施顺序
 
 1. **R-P1-5 输出截断**（已完成，2026-11-25）——行数 / 字节数配置、head/tail、按工具覆盖、完整输出落盘、过期清理与子代理提示均已落地。
-2. **R-P1-3 会话级回滚 / unrevert / diff**（中等偏大）——下一步；依赖快照与消息存储。
+2. **R-P1-3 会话级回滚 / unrevert / diff**（已完成，2026-11-25）——part 级回滚、revert/unrevert 状态与只读会话汇总均已落地。
 3. **第二轮 P1 剩余项**（按使用频率取舍）。
 4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 

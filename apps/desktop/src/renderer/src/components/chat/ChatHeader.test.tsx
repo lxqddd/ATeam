@@ -11,7 +11,8 @@ const chatMocks = vi.hoisted(() => ({
   undoSession: vi.fn(async () => 'prompt'),
   redoSession: vi.fn(async () => undefined),
   forkSession: vi.fn(async () => undefined),
-  setSessionDirectory: vi.fn(async () => undefined)
+  setSessionDirectory: vi.fn(async () => undefined),
+  openSessionChanges: vi.fn()
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -90,6 +91,7 @@ beforeEach(() => {
   chatMocks.redoSession.mockResolvedValue(undefined)
   chatMocks.setSessionDirectory.mockClear()
   chatMocks.setSessionDirectory.mockResolvedValue(undefined)
+  chatMocks.openSessionChanges.mockClear()
   Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
 })
 
@@ -110,6 +112,18 @@ describe('ChatHeader', () => {
 
     expect(screen.queryByRole('button', { name: /Claude/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it('opens the session-wide change summary', async () => {
+    const state = baseState()
+    state.messagesBySession = { s1: [makeMessage({ id: 'm1' })] }
+    storeState.current = state
+
+    render(<ChatHeader />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'View session changes' }))
+
+    expect(chatMocks.openSessionChanges).toHaveBeenCalledWith('s1')
   })
 
   it('compacts the selected session from the header', async () => {

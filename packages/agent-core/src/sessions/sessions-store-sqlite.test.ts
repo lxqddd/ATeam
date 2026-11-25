@@ -304,6 +304,40 @@ describe('SQLite session storage', () => {
     await reloaded.close()
   })
 
+  it('persists revert state and part redo targets', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+    const original = makeMessage({
+      id: 'a1',
+      role: 'assistant',
+      parts: [makeTextPart('one'), makeTextPart('two')]
+    })
+    await store.appendMessage(session.id, original)
+    await store.setRevert(session.id, { snapshot: 'pre-revert', messageId: 'a1', files: ['a.txt'] })
+    const record = store.get(session.id)
+    if (!record) throw new Error('record missing')
+    record.messages[1] = { ...original, parts: original.parts.slice(0, 1) }
+    await store.stagePartUndo(session.id, 1, original, 'snapshot-after', ['a.txt'])
+
+    const reloaded = new SessionsStore(directory)
+    await reloaded.init()
+    expect(reloaded.getMessages(session.id)?.[1].parts).toHaveLength(1)
+    expect(reloaded.getRedo(session.id)).toMatchObject({
+      snapshotAfter: 'snapshot-after',
+      files: ['a.txt'],
+      target: { index: 1 }
+    })
+    expect(reloaded.getRevert(session.id)).toBeUndefined()
+
+    const redone = await reloaded.redo(session.id)
+    expect(redone?.redoAvailable).toBe(false)
+    expect(reloaded.getMessages(session.id)?.[1].parts).toHaveLength(2)
+    await reloaded.close()
+  })
+
   it('moves migrated legacy files aside', async () => {
     await store.close()
     for (const suffix of ['', '-wal', '-shm']) {

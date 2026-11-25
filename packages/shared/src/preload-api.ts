@@ -28,6 +28,7 @@ import type {
   PermissionRuleInput,
   MessageAttachment,
   QueuedMessage,
+  SessionChangesSummary,
   SessionMeta,
   SessionPlan,
   SessionSearchResult,
@@ -70,12 +71,14 @@ export interface AgentBridge {
     setAgent: (id: string, agent: string | null) => Promise<SessionMeta>
     plan: (id: string) => Promise<SessionPlan>
     compact: (id: string) => Promise<SessionMeta>
-    undo: (id: string, messageId?: string) => Promise<SessionUndoResult>
+    undo: (id: string, messageId?: string, partIndex?: number) => Promise<SessionUndoResult>
     redo: (id: string) => Promise<SessionMeta>
     fork: (id: string, messageId?: string) => Promise<SessionMeta>
     search: (query: string) => Promise<SessionSearchResult[]>
     changes: (sessionId: string, messageId?: string) => Promise<TurnChanges>
+    changesSummary: (sessionId: string) => Promise<SessionChangesSummary>
     revertFiles: (sessionId: string, messageId: string, paths?: string[]) => Promise<TurnChanges>
+    unrevertFiles: (sessionId: string, paths?: string[]) => Promise<TurnChanges>
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>

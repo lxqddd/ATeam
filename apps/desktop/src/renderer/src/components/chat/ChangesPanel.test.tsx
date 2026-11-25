@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FileChange, TurnChanges } from '@ateam/shared'
+import type { FileChange, SessionChangesSummary, TurnChanges } from '@ateam/shared'
 import ChangesPanel from './ChangesPanel'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
 
@@ -34,8 +34,42 @@ function makeTurn(overrides: Partial<TurnChanges> = {}): TurnChanges {
     messageId: 'm1',
     latest: true,
     canRevert: true,
+    canUnrevert: false,
+    revertedPaths: [],
     truncated: false,
     files: [makeFile()],
+    ...overrides
+  }
+}
+
+function makeSummary(overrides: Partial<SessionChangesSummary> = {}): SessionChangesSummary {
+  return {
+    sessionId: 's1',
+    turns: [
+      {
+        messageId: 'm1',
+        createdAt: '2026-01-02T03:04:05.000Z',
+        status: 'complete',
+        files: [
+          {
+            path: 'src/a.ts',
+            snapshotPath: 'src/a.ts',
+            status: 'modified',
+            binary: false,
+            truncated: false,
+            additions: 3,
+            deletions: 2,
+            error: null
+          }
+        ],
+        additions: 3,
+        deletions: 2
+      }
+    ],
+    fileCount: 1,
+    additions: 3,
+    deletions: 2,
+    truncated: false,
     ...overrides
   }
 }
@@ -230,5 +264,83 @@ describe('ChangesPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
 
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('unreverts a single reverted file from the banner', async () => {
+    const second = makeFile({ path: 'src/b.ts', snapshotPath: 'src/b.ts' })
+    api.api.agent.sessions.changes = vi.fn(async () =>
+      makeTurn({ canUnrevert: true, revertedPaths: ['src/a.ts'], files: [second] })
+    )
+    api.api.agent.sessions.unrevertFiles = vi.fn(async () =>
+      makeTurn({ files: [makeFile(), second] })
+    )
+
+    renderPanel()
+
+    expect(await screen.findByText('1 file(s) reverted — can be restored:')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Unrevert src/a.ts' }))
+
+    await waitFor(() => {
+      expect(api.api.agent.sessions.unrevertFiles).toHaveBeenCalledWith('s1', ['src/a.ts'])
+    })
+    expect(await screen.findAllByText('src/a.ts')).not.toHaveLength(0)
+  })
+
+  it('unreverts every reverted file at once', async () => {
+    api.api.agent.sessions.changes = vi.fn(async () =>
+      makeTurn({ canUnrevert: true, revertedPaths: ['src/a.ts', 'src/b.ts'], files: [] })
+    )
+    api.api.agent.sessions.unrevertFiles = vi.fn(async () => makeTurn({ files: [makeFile()] }))
+
+    renderPanel()
+
+    expect(
+      await screen.findByText('All changes in this turn were reverted. Restore them above.')
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Unrevert all' }))
+
+    await waitFor(() => {
+      expect(api.api.agent.sessions.unrevertFiles).toHaveBeenCalledWith('s1')
+    })
+    expect(await screen.findAllByText('src/a.ts')).not.toHaveLength(0)
+  })
+
+  it('reports unrevert failures', async () => {
+    api.api.agent.sessions.changes = vi.fn(async () =>
+      makeTurn({ canUnrevert: true, revertedPaths: ['src/a.ts'] })
+    )
+    api.api.agent.sessions.unrevertFiles = vi.fn(async () => {
+      throw new Error('SNAPSHOT_RESTORE_FAILED')
+    })
+
+    renderPanel()
+    await screen.findByText('1 file(s) reverted — can be restored:')
+    await userEvent.click(screen.getByRole('button', { name: 'Unrevert src/a.ts' }))
+
+    expect(await screen.findByText('Could not restore the files.')).toBeInTheDocument()
+  })
+
+  it('summarises changes across every turn', async () => {
+    api.api.agent.sessions.changesSummary = vi.fn(async () => makeSummary())
+
+    render(<ChangesPanel sessionId="s1" messageId={null} onClose={vi.fn()} />)
+
+    expect(await screen.findByText('Session changes')).toBeInTheDocument()
+    expect(screen.getByText('1 turns · 1 files · +3 −2')).toBeInTheDocument()
+    expect(
+      screen.getByText('The summary is read-only. Revert from a single turn’s file changes.')
+    ).toBeInTheDocument()
+    expect(screen.getByText('src/a.ts')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Revert all' })).not.toBeInTheDocument()
+  })
+
+  it('shows an empty state when the session has no recorded changes', async () => {
+    api.api.agent.sessions.changesSummary = vi.fn(async () =>
+      makeSummary({ turns: [], fileCount: 0, additions: 0, deletions: 0 })
+    )
+
+    render(<ChangesPanel sessionId="s1" messageId={null} onClose={vi.fn()} />)
+
+    expect(await screen.findByText('No file changes in this session.')).toBeInTheDocument()
   })
 })

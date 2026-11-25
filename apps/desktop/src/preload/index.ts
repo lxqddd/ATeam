@@ -62,14 +62,19 @@ const api: AteamApi = {
       setAgent: (id, agent) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSetAgent, { id, agent }),
       plan: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionPlan, { id }),
       compact: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionCompact, { id }),
-      undo: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId }),
+      undo: (id, messageId, partIndex) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionUndo, { id, messageId, partIndex }),
       redo: (id) => ipcRenderer.invoke(AGENT_CHANNELS.sessionRedo, { id }),
       fork: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionFork, { id, messageId }),
       search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSearch, { query }),
       changes: (sessionId, messageId) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionChanges, { sessionId, messageId }),
+      changesSummary: (sessionId) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionChangesSummary, { sessionId }),
       revertFiles: (sessionId, messageId, paths) =>
-        ipcRenderer.invoke(AGENT_CHANNELS.sessionRevertFiles, { sessionId, messageId, paths })
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionRevertFiles, { sessionId, messageId, paths }),
+      unrevertFiles: (sessionId, paths) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.sessionUnrevertFiles, { sessionId, paths })
     },
     messages: {
       list: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.messagesList, { sessionId })

@@ -276,6 +276,20 @@ describe('ChatStore sessions', () => {
     expect(store.getSnapshot().revertPrompt).toBe('older prompt')
   })
 
+  it('rewinds an assistant message to a recorded part boundary', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.init()
+    vi.mocked(mock.api.agent.sessions.undo).mockResolvedValue({
+      session: makeSession({ id: 's1', redoAvailable: true }),
+      prompt: ''
+    })
+
+    await store.undoToPart('a1', 2)
+
+    expect(mock.api.agent.sessions.undo).toHaveBeenCalledWith('s1', 'a1', 2)
+    expect(store.getSnapshot().revertPrompt).toBeNull()
+  })
+
   it('forwards rename, delete, setModel and run actions', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()
@@ -1050,6 +1064,12 @@ describe('ChatStore changes panel', () => {
     store.closeChanges()
 
     expect(store.getSnapshot().changesPanel).toBeNull()
+  })
+
+  it('opens the session-wide change summary', () => {
+    store.openSessionChanges('s1')
+
+    expect(store.getSnapshot().changesPanel).toEqual({ sessionId: 's1', messageId: null })
   })
 
   it('closes the panel when switching sessions', () => {

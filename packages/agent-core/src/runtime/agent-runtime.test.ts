@@ -135,6 +135,27 @@ function twoStepMutatingScript(): Script {
   }
 }
 
+function threeStepMutatingScript(): Script {
+  return async function* () {
+    await fs.writeFile(path.join(directory, 'workspace', 'step-one.txt'), 'one')
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'step one' })
+    yield part({ type: 'text-end', id: 't1' })
+    yield part({ type: 'finish-step' })
+    await fs.writeFile(path.join(directory, 'workspace', 'step-two.txt'), 'two')
+    yield part({ type: 'text-start', id: 't2' })
+    yield part({ type: 'text-delta', id: 't2', text: 'step two' })
+    yield part({ type: 'text-end', id: 't2' })
+    yield part({ type: 'finish-step' })
+    await fs.writeFile(path.join(directory, 'workspace', 'step-three.txt'), 'three')
+    yield part({ type: 'text-start', id: 't3' })
+    yield part({ type: 'text-delta', id: 't3', text: 'step three' })
+    yield part({ type: 'text-end', id: 't3' })
+    yield part({ type: 'finish-step' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function errorScript(message: string): Script {
   return async function* () {
     yield part({ type: 'text-start', id: 't1' })
@@ -2238,10 +2259,12 @@ describe('AgentRuntime', () => {
       'created'
     )
     expect(reverted.files.map((file) => file.path)).not.toContain('notes.txt')
+    expect(reverted.canUnrevert).toBe(true)
+    expect(reverted.revertedPaths).toEqual(['notes.txt'])
     expect(
       runtime.messages(sessionId).messages.find((message) => message.id === assistant.id)
         ?.changedFiles
-    ).toEqual(['new.txt'])
+    ).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
   })
 
   it('reverts every changed file when no paths are given', async () => {
@@ -2492,6 +2515,163 @@ describe('AgentRuntime', () => {
 
     runtime.stopChat(sessionId)
     await sink.next('run.finished')
+  })
+
+  it('rewinds the latest turn to a part boundary and restores it on redo', async () => {
+    scripts.push(threeStepMutatingScript())
+    await runtime.sendChat(sessionId, 'three steps')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+    expect(assistant.snapshotSteps?.map((step) => step.partIndex)).toEqual([1, 2, 3])
+
+    const rewound = await runtime.undoSession(sessionId, assistant.id, 2)
+
+    expect(rewound.prompt).toBe('')
+    expect(rewound.session.redoAvailable).toBe(true)
+    const message = runtime.messages(sessionId).messages.find((entry) => entry.id === assistant.id)
+    expect(message?.parts.map((part) => (part.type === 'text' ? part.text : ''))).toEqual([
+      'step one',
+      'step two'
+    ])
+    expect(message?.snapshotSteps).toHaveLength(2)
+    expect(message?.changedFiles).toEqual(expect.arrayContaining(['step-one.txt', 'step-two.txt']))
+    expect(message?.changedFiles).not.toContain('step-three.txt')
+    await expect(
+      fs.readFile(path.join(directory, 'workspace', 'step-one.txt'), 'utf8')
+    ).resolves.toBe('one')
+    await expect(
+      fs.readFile(path.join(directory, 'workspace', 'step-two.txt'), 'utf8')
+    ).resolves.toBe('two')
+    await expect(
+      fs.stat(path.join(directory, 'workspace', 'step-three.txt'))
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const redone = await runtime.redoSession(sessionId)
+
+    expect(redone.redoAvailable).toBe(false)
+    const restored = runtime.messages(sessionId).messages.find((entry) => entry.id === assistant.id)
+    expect(restored?.parts).toHaveLength(3)
+    expect(restored?.snapshotSteps).toHaveLength(3)
+    await expect(
+      fs.readFile(path.join(directory, 'workspace', 'step-three.txt'), 'utf8')
+    ).resolves.toBe('three')
+  })
+
+  it('rejects part rewinds that are not step boundaries', async () => {
+    scripts.push(threeStepMutatingScript())
+    await runtime.sendChat(sessionId, 'three steps')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+
+    await expect(runtime.undoSession(sessionId, assistant.id, 0)).rejects.toThrow(
+      'INVALID_PART_INDEX'
+    )
+    await expect(runtime.undoSession(sessionId, assistant.id, 3)).rejects.toThrow('NOTHING_TO_UNDO')
+    await expect(runtime.redoSession(sessionId)).rejects.toThrow('NOTHING_TO_REDO')
+  })
+
+  it('rejects part rewinds for historical turns', async () => {
+    scripts.push(threeStepMutatingScript())
+    await runtime.sendChat(sessionId, 'first')
+    await sink.next('run.finished')
+    const first = assistantMessages().at(-1)
+    if (!first) throw new Error('assistant message missing')
+    scripts.push(textScript('second'))
+    await runtime.sendChat(sessionId, 'second')
+    await sink.next('run.finished')
+
+    await expect(runtime.undoSession(sessionId, first.id, 2)).rejects.toThrow('TURN_NOT_LATEST')
+  })
+
+  it('clears a pending revert when the conversation continues', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after' }))
+    await runtime.sendChat(sessionId, 'change')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+    await runtime.revertChangedFiles(sessionId, assistant.id, ['notes.txt'])
+
+    scripts.push(textScript('continued'))
+    await runtime.sendChat(sessionId, 'continue')
+    await sink.next('run.finished')
+
+    await expect(runtime.unrevertChangedFiles(sessionId)).rejects.toThrow('NOTHING_TO_UNREVERT')
+  })
+
+  it('clears a pending revert when the turn is undone', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after' }))
+    await runtime.sendChat(sessionId, 'change')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+    await runtime.revertChangedFiles(sessionId, assistant.id, ['notes.txt'])
+
+    const undone = await runtime.undoSession(sessionId)
+
+    expect(undone.session.redoAvailable).toBe(true)
+    await expect(runtime.unrevertChangedFiles(sessionId)).rejects.toThrow('NOTHING_TO_UNREVERT')
+    await expect(fs.readFile(path.join(directory, 'workspace', 'notes.txt'), 'utf8')).resolves.toBe(
+      'before'
+    )
+  })
+
+  it('restores reverted files on unrevert and keeps the turn reviewable', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after', 'new.txt': 'created' }))
+    await runtime.sendChat(sessionId, 'change files')
+    await sink.next('run.finished')
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+
+    const reverted = await runtime.revertChangedFiles(sessionId, assistant.id, ['notes.txt'])
+    expect(reverted.canUnrevert).toBe(true)
+    expect(reverted.revertedPaths).toEqual(['notes.txt'])
+    await expect(fs.readFile(path.join(directory, 'workspace', 'notes.txt'), 'utf8')).resolves.toBe(
+      'before'
+    )
+
+    await expect(runtime.unrevertChangedFiles(sessionId, ['other.txt'])).rejects.toThrow(
+      'INVALID_CHANGE_PATH'
+    )
+    const restored = await runtime.unrevertChangedFiles(sessionId, ['notes.txt'])
+
+    await expect(fs.readFile(path.join(directory, 'workspace', 'notes.txt'), 'utf8')).resolves.toBe(
+      'after'
+    )
+    expect(restored.canUnrevert).toBe(false)
+    expect(restored.revertedPaths).toEqual([])
+    expect(restored.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining(['notes.txt', 'new.txt'])
+    )
+  })
+
+  it('summarises the changes of every recorded turn', async () => {
+    await fs.writeFile(path.join(directory, 'workspace', 'notes.txt'), 'before')
+    scripts.push(mutatingScript({ 'notes.txt': 'after', 'new.txt': 'created' }))
+    await runtime.sendChat(sessionId, 'first')
+    await sink.next('run.finished')
+    scripts.push(mutatingScript({ 'a.txt': 'a' }))
+    await runtime.sendChat(sessionId, 'second')
+    await sink.next('run.finished')
+
+    const assistants = assistantMessages()
+    const summary = await runtime.sessionChanges(sessionId)
+
+    expect(summary.truncated).toBe(false)
+    expect(summary.turns).toHaveLength(2)
+    expect(summary.turns[0].messageId).toBe(assistants[1].id)
+    expect(summary.turns[1].messageId).toBe(assistants[0].id)
+    expect(summary.turns[0].files.map((file) => file.path)).toEqual(['a.txt'])
+    expect(summary.turns[1].additions).toBe(2)
+    expect(summary.turns[1].deletions).toBe(1)
+    expect(summary.fileCount).toBe(3)
+    expect(summary.additions).toBe(3)
+    expect(summary.deletions).toBe(1)
+    expect(summary.turns[1].files.every((file) => !('hunks' in file))).toBe(true)
   })
 
   it('rejects manual compaction for unknown or running sessions', async () => {

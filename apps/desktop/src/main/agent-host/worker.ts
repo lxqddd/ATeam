@@ -125,7 +125,11 @@ async function handle(request: WorkerRequest): Promise<unknown> {
     case 'sessions.compact':
       return requireRuntime().compactSession(request.params.id, { force: request.params.force })
     case 'sessions.undo':
-      return requireRuntime().undoSession(request.params.id, request.params.messageId)
+      return requireRuntime().undoSession(
+        request.params.id,
+        request.params.messageId,
+        request.params.partIndex
+      )
     case 'sessions.redo':
       return requireRuntime().redoSession(request.params.id)
     case 'sessions.fork':
@@ -134,12 +138,16 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().searchSessions(request.params.query)
     case 'sessions.changes':
       return requireRuntime().messageChanges(request.params.sessionId, request.params.messageId)
+    case 'sessions.changesSummary':
+      return requireRuntime().sessionChanges(request.params.sessionId)
     case 'sessions.revertFiles':
       return requireRuntime().revertChangedFiles(
         request.params.sessionId,
         request.params.messageId,
         request.params.paths
       )
+    case 'sessions.unrevertFiles':
+      return requireRuntime().unrevertChangedFiles(request.params.sessionId, request.params.paths)
     case 'messages.list':
       return requireRuntime().messages(request.params.sessionId)
     case 'chat.send':

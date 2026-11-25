@@ -45,6 +45,7 @@ export class JsonSessionStorage implements SessionStorage {
           session: record.session,
           messages: record.messages,
           redo: record.redo,
+          revert: record.revert,
           preparedCompaction: record.preparedCompaction
         }
         await writeJsonAtomic(path.join(this.root, `${id}.json`), data)
@@ -97,6 +98,7 @@ export class JsonSessionStorage implements SessionStorage {
       session: data.session,
       messages: data.messages,
       redo: data.redo,
+      revert: data.revert,
       preparedCompaction: data.preparedCompaction
     }
   }

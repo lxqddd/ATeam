@@ -168,6 +168,10 @@ export interface TurnChanges {
   messageId: string
   latest: boolean
   canRevert: boolean
+  /** True when the latest file revert can be rolled back file-by-file. */
+  canUnrevert: boolean
+  /** Paths currently restored by a file revert, in snapshot-key form. */
+  revertedPaths: string[]
   truncated: boolean
   files: FileChange[]
 }
@@ -176,6 +180,8 @@ export interface MessageSnapshotStep {
   before: string
   after: string
   files: string[]
+  /** Number of assistant message parts when this step finished; absent on older records. */
+  partIndex?: number
 }
 
 export interface ChatRetryStatus {
@@ -216,6 +222,40 @@ export interface ChatMessage {
   changedFiles?: string[]
   /** Set when the runtime injected this message instead of the user. */
   synthetic?: SyntheticMessageInfo
+}
+
+/** A file in one turn's diff, without hunk contents. */
+export interface SessionChangeFile {
+  path: string
+  snapshotPath: string
+  status: FileChangeStatus
+  binary: boolean
+  truncated: boolean
+  additions: number
+  deletions: number
+  error?: string | null
+}
+
+/** One assistant turn in the session-wide change summary. */
+export interface SessionChangeTurn {
+  messageId: string
+  createdAt: string
+  status: ChatMessage['status']
+  files: SessionChangeFile[]
+  additions: number
+  deletions: number
+}
+
+/** Aggregate diff of every turn that recorded snapshots. */
+export interface SessionChangesSummary {
+  sessionId: string
+  turns: SessionChangeTurn[]
+  /** Number of distinct files changed across the included turns. */
+  fileCount: number
+  additions: number
+  deletions: number
+  /** True when older turns or files were omitted from the summary. */
+  truncated: boolean
 }
 
 export type PermissionAction =

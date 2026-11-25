@@ -46,7 +46,7 @@ export interface ChatStoreState {
   actionError: string | null
   restarting: boolean
   revertPrompt: string | null
-  changesPanel: { sessionId: string; messageId: string } | null
+  changesPanel: { sessionId: string; messageId: string | null } | null
 }
 
 const INITIAL_STATUS: AgentStatus = { status: 'stopped' }
@@ -395,16 +395,25 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
-  async undoSession(messageId?: string): Promise<string | null> {
+  async undoSession(messageId?: string, partIndex?: number): Promise<string | null> {
     const sessionId = this.state.selectedSessionId
     if (!sessionId) return null
-    const result = messageId
-      ? await window.api.agent.sessions.undo(sessionId, messageId)
-      : await window.api.agent.sessions.undo(sessionId)
+    const result =
+      partIndex !== undefined
+        ? await window.api.agent.sessions.undo(sessionId, messageId, partIndex)
+        : messageId
+          ? await window.api.agent.sessions.undo(sessionId, messageId)
+          : await window.api.agent.sessions.undo(sessionId)
     this.upsertSession(result.session)
     await this.loadMessages(sessionId)
-    this.setState({ revertPrompt: result.prompt })
-    return result.prompt
+    const prompt = result.prompt || null
+    this.setState({ revertPrompt: prompt })
+    return prompt
+  }
+
+  /** Rewinds the latest assistant turn to the end of one recorded step. */
+  async undoToPart(messageId: string, partIndex: number): Promise<void> {
+    await this.undoSession(messageId, partIndex)
   }
 
   async redoSession(): Promise<void> {
@@ -421,6 +430,11 @@ export class ChatStore {
 
   openChanges(sessionId: string, messageId: string): void {
     this.setState({ changesPanel: { sessionId, messageId } })
+  }
+
+  /** Opens the read-only summary of every turn that changed files. */
+  openSessionChanges(sessionId: string): void {
+    this.setState({ changesPanel: { sessionId, messageId: null } })
   }
 
   closeChanges(): void {

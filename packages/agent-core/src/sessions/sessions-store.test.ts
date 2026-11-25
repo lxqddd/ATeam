@@ -236,6 +236,82 @@ describe('SessionsStore', () => {
     await store.clearRedo(session.id)
   })
 
+  it('stages a part undo that replaces the message on redo', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+    const original = makeMessage({
+      id: 'a1',
+      role: 'assistant',
+      parts: [makeTextPart('one'), makeTextPart('two')]
+    })
+    await store.appendMessage(session.id, original)
+    await store.setRevert(session.id, { snapshot: 'pre-revert', messageId: 'a1', files: ['a.txt'] })
+    const record = store.get(session.id)
+    if (!record) throw new Error('record missing')
+    record.messages[1] = { ...original, parts: original.parts.slice(0, 1) }
+
+    const staged = await store.stagePartUndo(session.id, 1, original, 'snapshot-after', ['a.txt'])
+
+    expect(staged?.redoAvailable).toBe(true)
+    expect(store.getRevert(session.id)).toBeUndefined()
+
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
+    await reloaded.init()
+    expect(reloaded.getMessages(session.id)?.[1].parts).toHaveLength(1)
+    expect(reloaded.getRedo(session.id)).toMatchObject({
+      snapshotAfter: 'snapshot-after',
+      prompt: '',
+      files: ['a.txt'],
+      target: { index: 1 }
+    })
+
+    await reloaded.redo(session.id)
+    expect(reloaded.getMessages(session.id)?.[1].parts).toHaveLength(2)
+    expect(reloaded.getRedo(session.id)).toBeUndefined()
+  })
+
+  it('rejects invalid part undo indexes', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+
+    expect(
+      await store.stagePartUndo(session.id, 5, makeMessage({ id: 'x' }), null, [])
+    ).toBeUndefined()
+    expect(
+      await store.stagePartUndo('missing', 0, makeMessage({ id: 'x' }), null, [])
+    ).toBeUndefined()
+  })
+
+  it('persists revert state and clears it on a new message', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      makeMessage({ id: 'u1', role: 'user', parts: [makeTextPart('hello')] })
+    )
+    await store.appendMessage(session.id, makeMessage({ id: 'a1', role: 'assistant', parts: [] }))
+    await store.setRevert(session.id, { snapshot: 'pre-revert', messageId: 'a1', files: ['a.txt'] })
+
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
+    await reloaded.init()
+    expect(reloaded.getRevert(session.id)).toEqual({
+      snapshot: 'pre-revert',
+      messageId: 'a1',
+      files: ['a.txt']
+    })
+
+    await reloaded.appendMessage(
+      session.id,
+      makeMessage({ id: 'u2', role: 'user', parts: [makeTextPart('again')] })
+    )
+    expect(reloaded.getRevert(session.id)).toBeUndefined()
+  })
+
   it('fills session settings for records written before they existed', async () => {
     const session = await store.create()
     const file = path.join(sessionsDirectory, `${session.id}.json`)

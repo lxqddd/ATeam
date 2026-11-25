@@ -35,6 +35,7 @@ import type {
   RuntimeModelsConfig,
   RuntimeProviderAuth,
   RuntimeWebSearchConfig,
+  SessionChangesSummary,
   SessionMeta,
   SessionPlan,
   SessionSearchResult,
@@ -109,6 +110,7 @@ import { runSubagentTask } from './subagents'
 import type { ToolContextHost } from './tool-context'
 import {
   allowedChangePaths,
+  buildSessionChanges,
   buildTurnChanges,
   latestSnapshotMessage,
   type TurnChangesHost
@@ -508,8 +510,10 @@ export class AgentRuntime {
 
   async undoSession(
     id: string,
-    messageId?: string
+    messageId?: string,
+    partIndex?: number
   ): Promise<{ session: SessionMeta; prompt: string }> {
+    if (partIndex !== undefined) return this.rewindAssistantParts(id, messageId, partIndex)
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
     this.reserveSession(id)
@@ -567,6 +571,82 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * Truncates the latest assistant turn at a recorded step boundary and
+   * restores the workspace files to the snapshot taken when that step ended.
+   * The original message is kept in the redo state so the rewind can be undone.
+   */
+  private async rewindAssistantParts(
+    id: string,
+    messageId: string | undefined,
+    partIndex: number
+  ): Promise<{ session: SessionMeta; prompt: string }> {
+    if (!Number.isInteger(partIndex) || partIndex < 0) throw new Error('INVALID_PART_INDEX')
+    const record = this.store.get(id)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    this.reserveSession(id)
+
+    try {
+      const assistantIndex = messageId
+        ? record.messages.findIndex(
+            (message) => message.id === messageId && message.role === 'assistant'
+          )
+        : -1
+      if (assistantIndex < 0) throw new Error(messageId ? 'MESSAGE_NOT_FOUND' : 'NOTHING_TO_UNDO')
+      const message = record.messages[assistantIndex]
+      if (message.status === 'streaming') throw new Error('SESSION_BUSY')
+      if (latestSnapshotMessage(record.messages)?.id !== message.id) {
+        throw new Error('TURN_NOT_LATEST')
+      }
+
+      const steps = message.snapshotSteps ?? []
+      if (partIndex >= message.parts.length) throw new Error('NOTHING_TO_UNDO')
+      // Several steps can end without adding parts; the boundary then refers
+      // to the last recorded state at that point.
+      let targetIndex = -1
+      for (let index = steps.length - 1; index >= 0; index -= 1) {
+        if (steps[index].partIndex === partIndex) {
+          targetIndex = index
+          break
+        }
+      }
+      if (targetIndex < 0) throw new Error('INVALID_PART_INDEX')
+      const target = steps[targetIndex]
+      const files = [
+        ...new Set([...(message.changedFiles ?? []), ...steps.flatMap((step) => step.files)])
+      ]
+      if (files.length > 0) {
+        try {
+          await this.snapshots.restorePaths(target.after, files)
+        } catch {
+          throw new Error('SNAPSHOT_RESTORE_FAILED')
+        }
+      }
+
+      const original = structuredClone(message)
+      const keptSteps = steps.slice(0, targetIndex + 1)
+      message.parts = message.parts.slice(0, partIndex)
+      message.snapshotSteps = keptSteps
+      message.snapshotAfter = target.after
+      message.changedFiles = [...new Set(keptSteps.flatMap((step) => step.files))]
+      message.updatedAt = nowIso()
+      const session = await this.store.stagePartUndo(
+        id,
+        assistantIndex,
+        original,
+        original.snapshotAfter ?? original.snapshotSteps?.at(-1)?.after ?? null,
+        files
+      )
+      if (!session) throw new Error('NOTHING_TO_UNDO')
+      this.events.emit({ type: 'session.upsert', session })
+      this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
+      await this.compaction.updateContextUsage(id)
+      return { session: this.store.getSession(id) ?? session, prompt: '' }
+    } finally {
+      this.starting.delete(id)
+    }
+  }
+
   async redoSession(id: string): Promise<SessionMeta> {
     if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
     this.reserveSession(id)
@@ -585,6 +665,12 @@ export class AgentRuntime {
 
       const session = await this.store.redo(id)
       if (!session) throw new Error('NOTHING_TO_REDO')
+      if (redo.target) {
+        const restored = this.store.get(id)?.messages[redo.target.index]
+        if (restored) {
+          this.events.emit({ type: 'message.upsert', message: structuredClone(restored) })
+        }
+      }
       this.events.emit({ type: 'session.upsert', session })
       await this.compaction.updateContextUsage(id)
       return this.store.getSession(id) ?? session
@@ -604,7 +690,13 @@ export class AgentRuntime {
       ? record.messages.find((entry) => entry.id === messageId && entry.role === 'assistant')
       : latestSnapshotMessage(record.messages)
     if (!message) throw new Error(messageId ? 'MESSAGE_NOT_FOUND' : 'NO_CHANGES')
-    return buildTurnChanges(this.turnChangesHost, record, message)
+    return buildTurnChanges(this.turnChangesHost, record, message, this.store.getRevert(sessionId))
+  }
+
+  async sessionChanges(sessionId: string): Promise<SessionChangesSummary> {
+    const record = this.store.get(sessionId)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    return buildSessionChanges(this.turnChangesHost, record)
   }
 
   async revertChangedFiles(
@@ -632,17 +724,62 @@ export class AgentRuntime {
     if (targets.length > 0) {
       this.reserveSession(sessionId)
       try {
-        await this.snapshots.restorePaths(message.snapshotBefore, targets)
+        const existing = this.store.getRevert(sessionId)
+        let snapshot = existing?.messageId === message.id ? existing.snapshot : undefined
+        if (!snapshot) {
+          const workspace = this.sessionWorkspace(sessionId)
+          const effective = await this.applyWorkspaceConfig(workspace)
+          const references = (await this.resolveRunReferences(effective.config, workspace)).map(
+            (reference) => ({ alias: reference.alias, root: reference.root })
+          )
+          snapshot = (await this.snapshots.create(workspace, sessionId, references)).id
+        }
+        try {
+          await this.snapshots.restorePaths(message.snapshotBefore, targets)
+        } catch {
+          throw new Error('SNAPSHOT_RESTORE_FAILED')
+        }
+        const files = [
+          ...new Set([...(existing?.messageId === message.id ? existing.files : []), ...targets])
+        ]
+        await this.store.setRevert(sessionId, { snapshot, messageId: message.id, files })
       } finally {
         this.starting.delete(sessionId)
       }
     }
 
-    const changes = await buildTurnChanges(this.turnChangesHost, record, message)
-    message.changedFiles = changes.files.map((file) => file.snapshotPath)
-    await this.store.persist(sessionId)
-    this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
-    return changes
+    return buildTurnChanges(this.turnChangesHost, record, message, this.store.getRevert(sessionId))
+  }
+
+  async unrevertChangedFiles(sessionId: string, paths: string[] = []): Promise<TurnChanges> {
+    const record = this.store.get(sessionId)
+    if (!record) throw new Error('SESSION_NOT_FOUND')
+    if (this.sessionBusy(sessionId)) throw new Error('SESSION_BUSY')
+    const revert = this.store.getRevert(sessionId)
+    if (!revert) throw new Error('NOTHING_TO_UNREVERT')
+    const message = record.messages.find((entry) => entry.id === revert.messageId)
+    if (!message) throw new Error('MESSAGE_NOT_FOUND')
+    if (message.status === 'streaming') throw new Error('SESSION_BUSY')
+
+    const targets = paths.length > 0 ? [...new Set(paths)] : [...revert.files]
+    if (targets.length === 0) throw new Error('NOTHING_TO_UNREVERT')
+    for (const target of targets) {
+      if (!revert.files.includes(target)) throw new Error('INVALID_CHANGE_PATH')
+    }
+
+    this.reserveSession(sessionId)
+    try {
+      await this.snapshots.restorePaths(revert.snapshot, targets)
+    } catch {
+      throw new Error('SNAPSHOT_RESTORE_FAILED')
+    } finally {
+      this.starting.delete(sessionId)
+    }
+
+    const remaining = revert.files.filter((file) => !targets.includes(file))
+    if (remaining.length === 0) await this.store.clearRevert(sessionId)
+    else await this.store.setRevert(sessionId, { ...revert, files: remaining })
+    return buildTurnChanges(this.turnChangesHost, record, message, this.store.getRevert(sessionId))
   }
 
   private get turnChangesHost(): TurnChangesHost {
@@ -1857,7 +1994,10 @@ export class AgentRuntime {
       const snapshot = await this.snapshots.create(run.workspace, run.sessionId, run.references)
       const diff = await this.snapshots.diff(before, snapshot.id)
       const files = [...diff.added, ...diff.modified, ...diff.deleted]
-      message.snapshotSteps = [...steps, { before, after: snapshot.id, files }]
+      message.snapshotSteps = [
+        ...steps,
+        { before, after: snapshot.id, files, partIndex: message.parts.length }
+      ]
       message.snapshotAfter = snapshot.id
       message.changedFiles = [...new Set([...(message.changedFiles ?? []), ...files])]
       await this.store.persist(run.sessionId)

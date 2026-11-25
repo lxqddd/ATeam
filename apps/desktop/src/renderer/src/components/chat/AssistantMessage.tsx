@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, PermissionRequest, RunOutcome } from '@ateam/shared'
 import { chatStore } from '../../chat/store'
@@ -27,6 +27,7 @@ function AssistantMessage({
   const [retrying, setRetrying] = useState(false)
   const [retryError, setRetryError] = useState<string | null>(null)
   const [reverting, setReverting] = useState(false)
+  const [rewinding, setRewinding] = useState<number | null>(null)
   const [revertError, setRevertError] = useState<string | null>(null)
   const [forking, setForking] = useState(false)
   const [forkError, setForkError] = useState<string | null>(null)
@@ -47,6 +48,19 @@ function AssistantMessage({
   const canRetry =
     isLast && !sessionRunning && (message.status === 'error' || message.status === 'interrupted')
   const canRevert = !sessionRunning && message.status !== 'streaming'
+  const canRewind = isLast && canRevert
+  // Step boundaries are recorded after each finished step; only boundaries
+  // with later parts left can be rewound.
+  const stepBoundaries = new Map<number, number>()
+  for (const step of message.snapshotSteps ?? []) {
+    if (
+      typeof step.partIndex === 'number' &&
+      step.partIndex > 0 &&
+      step.partIndex < message.parts.length
+    ) {
+      stepBoundaries.set(step.partIndex - 1, step.partIndex)
+    }
+  }
 
   async function copyText(): Promise<void> {
     try {
@@ -82,6 +96,18 @@ function AssistantMessage({
     }
   }
 
+  async function rewindToPart(partIndex: number): Promise<void> {
+    setRewinding(partIndex)
+    setRevertError(null)
+    try {
+      await chatStore.undoToPart(message.id, partIndex)
+    } catch (caught) {
+      setRevertError(caught instanceof Error ? caught.message : String(caught))
+    } finally {
+      setRewinding(null)
+    }
+  }
+
   async function fork(): Promise<void> {
     setForking(true)
     setForkError(null)
@@ -99,15 +125,15 @@ function AssistantMessage({
       {hasParts && (
         <div className="flex min-w-0 flex-col gap-2.5">
           {message.parts.map((part, index) => {
+            let node: React.ReactNode = null
+            let key = `part-${index}`
             if (part.type === 'text') {
-              return <MarkdownBlock key={`text-${index}`} text={part.text} />
-            }
-            if (part.type === 'reasoning') {
-              return (
-                <details
-                  key={`reasoning-${index}`}
-                  className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2"
-                >
+              node = <MarkdownBlock text={part.text} />
+              key = `text-${index}`
+            } else if (part.type === 'reasoning') {
+              key = `reasoning-${index}`
+              node = (
+                <details className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
                   <summary className="cursor-pointer select-none text-caption text-muted">
                     {t('chat.thinking')}
                   </summary>
@@ -120,9 +146,31 @@ function AssistantMessage({
                   </div>
                 </details>
               )
+            } else if (part.type === 'tool') {
+              key = part.toolCallId
+              node = <ToolRow part={part} />
             }
-            if (part.type === 'attachment') return null
-            return <ToolRow key={part.toolCallId} part={part} />
+            const boundary = stepBoundaries.get(index)
+            return (
+              <Fragment key={key}>
+                {node}
+                {boundary !== undefined && canRewind && (
+                  <div className="flex items-center">
+                    <button
+                      type="button"
+                      title={t('chat.rewindStepHint')}
+                      disabled={rewinding !== null}
+                      onClick={() => {
+                        void rewindToPart(boundary)
+                      }}
+                      className="rounded px-1 text-caption text-subtle transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+                    >
+                      {rewinding === boundary ? '…' : `↩ ${t('chat.rewindStep')}`}
+                    </button>
+                  </div>
+                )}
+              </Fragment>
+            )
           })}
         </div>
       )}

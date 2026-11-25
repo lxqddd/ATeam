@@ -5,6 +5,21 @@ export interface RedoState {
   snapshotAfter: string | null
   files: string[]
   prompt: string
+  /** Original assistant message replaced by a part-level rewind. */
+  target?: {
+    index: number
+    message: ChatMessage
+  }
+}
+
+/** Files restored by a file-level revert, so the revert itself can be undone. */
+export interface RevertState {
+  /** Workspace snapshot taken before the first file was reverted. */
+  snapshot: string
+  /** Latest assistant turn the restored files belong to. */
+  messageId: string
+  /** Snapshot keys currently restored to their pre-turn content. */
+  files: string[]
 }
 
 export interface PreparedCompaction {
@@ -17,6 +32,7 @@ export interface SessionRecord {
   session: SessionMeta
   messages: ChatMessage[]
   redo?: RedoState
+  revert?: RevertState
   preparedCompaction?: PreparedCompaction
 }
 

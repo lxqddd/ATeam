@@ -18,12 +18,13 @@ import {
   createSessionStorage,
   type PreparedCompaction,
   type RedoState,
+  type RevertState,
   type SessionBackend,
   type SessionRecord,
   type SessionStorage
 } from './session-storage'
 
-export type { PreparedCompaction, RedoState, SessionRecord }
+export type { PreparedCompaction, RedoState, RevertState, SessionRecord }
 
 function nowIso(): string {
   return new Date().toISOString()
@@ -38,6 +39,18 @@ function isSessionCompaction(value: unknown): value is SessionCompaction {
     typeof compaction.createdAt === 'string' &&
     typeof compaction.tokensBefore === 'number' &&
     typeof compaction.tokensAfter === 'number'
+  )
+}
+
+function isRevertState(value: unknown): value is RevertState {
+  if (!value) return true
+  if (typeof value !== 'object') return false
+  const revert = value as Partial<RevertState>
+  return (
+    typeof revert.snapshot === 'string' &&
+    typeof revert.messageId === 'string' &&
+    Array.isArray(revert.files) &&
+    revert.files.every((file) => typeof file === 'string')
   )
 }
 
@@ -93,6 +106,12 @@ function repairRecord(record: SessionRecord): boolean {
   if (record.session.directory !== null && typeof record.session.directory !== 'string') {
     record.session.directory = null
     changed = true
+  }
+  if (!isRevertState(record.revert)) {
+    if (record.revert) {
+      delete record.revert
+      changed = true
+    }
   }
   const redoAvailable = Boolean(record.redo)
   if (record.session.redoAvailable !== redoAvailable) {
@@ -391,6 +410,7 @@ export class SessionsStore {
       delete record.redo
       record.session.redoAvailable = false
     }
+    if (record.revert) delete record.revert
     record.session.updatedAt = nowIso()
     if (!record.session.title && message.role === 'user') {
       const text = message.parts
@@ -405,6 +425,25 @@ export class SessionsStore {
   getRedo(id: string): RedoState | undefined {
     const record = this.records.get(id)
     return record?.redo ? clone(record.redo) : undefined
+  }
+
+  getRevert(id: string): RevertState | undefined {
+    const record = this.records.get(id)
+    return record?.revert ? clone(record.revert) : undefined
+  }
+
+  async setRevert(id: string, revert: RevertState): Promise<void> {
+    const record = this.records.get(id)
+    if (!record) return
+    record.revert = clone(revert)
+    await this.persist(id)
+  }
+
+  async clearRevert(id: string): Promise<void> {
+    const record = this.records.get(id)
+    if (!record?.revert) return
+    delete record.revert
+    await this.persist(id)
   }
 
   getPreparedCompaction(id: string): PreparedCompaction | undefined {
@@ -457,6 +496,7 @@ export class SessionsStore {
       files: [...files],
       prompt
     }
+    if (record.revert) delete record.revert
     record.session.redoAvailable = true
     record.session.status = 'idle'
     record.session.updatedAt = nowIso()
@@ -464,10 +504,46 @@ export class SessionsStore {
     return { session: clone(record.session), removed: clone(removed) }
   }
 
+  async stagePartUndo(
+    id: string,
+    index: number,
+    original: ChatMessage,
+    snapshotAfter: string | null,
+    files: string[]
+  ): Promise<SessionMeta | undefined> {
+    const record = this.records.get(id)
+    if (!record) return undefined
+    if (!Number.isInteger(index) || index < 0 || index >= record.messages.length) {
+      return undefined
+    }
+    if (record.revert) delete record.revert
+    record.redo = {
+      messages: [],
+      snapshotAfter,
+      files: [...files],
+      prompt: '',
+      target: { index, message: clone(original) }
+    }
+    record.session.redoAvailable = true
+    record.session.status = 'idle'
+    record.session.updatedAt = nowIso()
+    await this.persist(id)
+    return clone(record.session)
+  }
+
   async redo(id: string): Promise<SessionMeta | undefined> {
     const record = this.records.get(id)
     if (!record?.redo) return undefined
-    record.messages.push(...clone(record.redo.messages))
+    if (record.redo.target) {
+      const { index, message } = record.redo.target
+      if (index >= 0 && index < record.messages.length) {
+        record.messages[index] = clone(message)
+      } else {
+        record.messages.push(clone(message))
+      }
+    } else {
+      record.messages.push(...clone(record.redo.messages))
+    }
     delete record.redo
     record.session.redoAvailable = false
     record.session.updatedAt = nowIso()

@@ -4,13 +4,20 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { ChatMessage, SessionMeta } from '@ateam/shared'
 import { readJsonFile } from '../../atomic-json'
 import { isRecord, renameCorruptFile, type SessionFile } from './io-types'
-import type { PreparedCompaction, RedoState, SessionRecord, SessionStorage } from './types'
+import type {
+  PreparedCompaction,
+  RedoState,
+  RevertState,
+  SessionRecord,
+  SessionStorage
+} from './types'
 
 const CHECKPOINT_EVENTS = 2_000
 
 interface StoredSession {
   session: SessionMeta
   redo?: RedoState
+  revert?: RevertState
   preparedCompaction?: PreparedCompaction
 }
 
@@ -185,6 +192,7 @@ export class SqliteSessionStorage implements SessionStorage {
     const data: StoredSession = {
       session: stored.session,
       redo: stored.redo,
+      revert: stored.revert,
       preparedCompaction: stored.preparedCompaction
     }
     const sessionData = JSON.stringify(data)
@@ -343,6 +351,7 @@ export class SqliteSessionStorage implements SessionStorage {
       session: stored.session,
       messages: parsed,
       redo: stored.redo,
+      revert: stored.revert,
       preparedCompaction: stored.preparedCompaction
     }
   }
@@ -367,6 +376,7 @@ export class SqliteSessionStorage implements SessionStorage {
           JSON.stringify({
             session: stored.session,
             redo: stored.redo,
+            revert: stored.revert,
             preparedCompaction: stored.preparedCompaction
           })
         )
@@ -412,6 +422,7 @@ export class SqliteSessionStorage implements SessionStorage {
           session: data.session,
           messages: data.messages,
           redo: data.redo,
+          revert: data.revert,
           preparedCompaction: data.preparedCompaction
         })
         imported.push(filePath)
@@ -509,6 +520,7 @@ export class SqliteSessionStorage implements SessionStorage {
         session: stored.session,
         messages,
         redo: stored.redo,
+        revert: stored.revert,
         preparedCompaction: stored.preparedCompaction
       })
     }
