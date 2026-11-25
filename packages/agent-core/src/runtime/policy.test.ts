@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { evaluatePermissionRules } from '../config/permissions'
-import { buildSystemPrompt, modePermissionRules } from './policy'
+import { buildSystemPrompt, modePermissionRules, toolOutputGuidance } from './policy'
 
 describe('buildSystemPrompt', () => {
   it('includes model, environment and MCP context', () => {
@@ -141,5 +141,23 @@ describe('buildSystemPrompt', () => {
     expect(evaluatePermissionRules(modePermissionRules('plan'), request)).toBe('deny')
     expect(evaluatePermissionRules(modePermissionRules('ask'), request)).toBe('ask')
     expect(evaluatePermissionRules(modePermissionRules('auto'), request)).toBe('allow')
+  })
+})
+
+describe('toolOutputGuidance', () => {
+  it('points at the saved output and the read tool', () => {
+    const guidance = toolOutputGuidance(false)
+
+    expect(guidance).toContain('truncated')
+    expect(guidance).toContain('saved full output')
+    expect(guidance).toContain('read tool')
+    expect(guidance).not.toContain('subagent')
+  })
+
+  it('suggests the explore subagent when subagents are available', () => {
+    const guidance = toolOutputGuidance(true)
+
+    expect(guidance).toContain('subagent tool')
+    expect(guidance).toContain('"explore"')
   })
 })

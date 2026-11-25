@@ -67,6 +67,7 @@ const enUS = {
       '{{requests}} requests · {{rate}}% hit · {{read}} read / {{write}} written tokens',
     environmentSettings: 'Environment',
     environmentSettingsDescription: 'Optional environment details included in the system prompt.',
+    toolOutputSettings: 'Tool output truncation',
     environmentTimezone: 'Timezone',
     environmentNotes: 'Environment notes',
     systemPromptOverride: 'System prompt override',

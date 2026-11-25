@@ -333,6 +333,7 @@ export function createApiMock(
             skills: 'default',
             retry: 'default',
             environment: 'default',
+            toolOutput: 'default',
             systemPrompt: 'default'
           }
         }))

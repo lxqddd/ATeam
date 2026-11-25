@@ -26,7 +26,8 @@ describe('AgentConfigStore', () => {
       lspInstall: false,
       formatters: true,
       formatterOverrides: {},
-      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 },
+      toolOutput: { maxLines: 2_000, maxBytes: 50 * 1024, mode: 'head' }
     })
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
@@ -35,7 +36,8 @@ describe('AgentConfigStore', () => {
       lspInstall: false,
       formatters: true,
       formatterOverrides: {},
-      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 },
+      toolOutput: { maxLines: 2_000, maxBytes: 50 * 1024, mode: 'head' }
     })
   })
 
@@ -54,7 +56,8 @@ describe('AgentConfigStore', () => {
       formatters: false,
       instructions: ['AGENTS.md', 'https://example.com/rules.md'],
       formatterOverrides: {},
-      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 },
+      toolOutput: { maxLines: 2_000, maxBytes: 50 * 1024, mode: 'head' }
     })
     const reloaded = new AgentConfigStore(directory)
     await reloaded.init()
@@ -107,6 +110,49 @@ describe('AgentConfigStore', () => {
     const reloaded = new AgentConfigStore(directory)
     await reloaded.init()
     expect(reloaded.get().retry).toEqual({ maxRetries: 2, maxDelayMs: 5_000, timeoutMs: 120_000 })
+  })
+
+  it('normalizes tool output limits and per-tool overrides', async () => {
+    const updated = await store.update({
+      toolOutput: {
+        maxLines: 500,
+        maxBytes: 20_000,
+        mode: 'tail',
+        tools: { shell: { maxLines: 50 }, read: { mode: 'head' } }
+      }
+    })
+
+    expect(updated.toolOutput).toEqual({
+      maxLines: 500,
+      maxBytes: 20_000,
+      mode: 'tail',
+      tools: { shell: { maxLines: 50 }, read: { mode: 'head' } }
+    })
+    const reloaded = new AgentConfigStore(directory)
+    await reloaded.init()
+    expect(reloaded.get().toolOutput).toEqual(updated.toolOutput)
+  })
+
+  it('drops invalid tool output limits', async () => {
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        toolOutput: {
+          maxLines: 0,
+          maxBytes: -1,
+          mode: 'side',
+          tools: { 'bad name': { maxLines: 5 }, shell: { maxLines: 'many' } }
+        }
+      })
+    )
+
+    expect((await readAgentConfig(directory)).toolOutput).toEqual({
+      maxLines: 2_000,
+      maxBytes: 50 * 1024,
+      mode: 'head'
+    })
   })
 
   it('clamps invalid retry settings back to the previous values', async () => {
@@ -173,7 +219,8 @@ describe('AgentConfigStore', () => {
       lspInstall: false,
       formatters: true,
       formatterOverrides: {},
-      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 }
+      retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 },
+      toolOutput: { maxLines: 2_000, maxBytes: 50 * 1024, mode: 'head' }
     })
   })
 })

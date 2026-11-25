@@ -21,7 +21,8 @@ export interface ToolContextHost {
     toolCallId: string
   ): Promise<boolean>
   storeOutput(
-    sessionId: string,
+    run: Run,
+    toolName: string | undefined,
     toolCallId: string,
     output: string
   ): Promise<{ output: string; path?: string }>
@@ -125,7 +126,8 @@ export function buildToolContext(host: ToolContextHost, input: ToolContextInput)
       )
       return formatInstructions(nested)
     },
-    storeOutput: (toolCallId, output) => host.storeOutput(run.sessionId, toolCallId, output),
+    storeOutput: (toolCallId, output, toolName) =>
+      host.storeOutput(run, toolName, toolCallId, output),
     shellEnv: () =>
       run.plugins ? run.plugins.shellEnv(run.workspace, run.sessionId) : Promise.resolve({}),
     onToolOutput: (toolCallId, delta) => host.appendToolOutput(run, toolCallId, delta),

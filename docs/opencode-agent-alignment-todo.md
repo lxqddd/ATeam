@@ -1,7 +1,7 @@
 # ATeam Agent 对齐 OpenCode TODO List
 
 > 对比基准：OpenCode `master`（2026-11-22 复审）与 ATeam `master` 当前实现；第一轮记录基于 2026-11-21 的 `dev` 文档。
-> 最近更新：2026-11-25（R-P1-4 后台任务与结果注入完成）。
+> 最近更新：2026-11-25（R-P1-5 工具输出截断完成）。
 > 范围：Agent 核心能力（会话、工具、权限、上下文、扩展、运行时接口），不包含主题、打包等桌面外观；CLI/TUI/IDE 等接口差距在第二轮 P2 单列。
 > 标记：`[x]` 已完成，`[ ]` 待办。优先级：**P0** 必须、**P1** 重要、**P2** 后续。
 
@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：part 级回滚 / unrevert / 会话 diff、后台任务结果注入、工具输出截断策略、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
+- [ ] P1：part 级回滚 / unrevert / 会话 diff、MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -361,17 +361,17 @@
 
 #### R-P1-5 工具输出截断策略
 
-**现状**：固定 30k 字符、只保留头部（[tool-output-store.ts](../packages/agent-core/src/sessions/tool-output-store.ts)），没有配置项、tail 模式、过期清理或子代理提示。
+**现状（2026-11-25）**：已完成。输出先按各工具自身上限截断，再由 `ToolOutputStore` 按配置的行数 / 字节数生成模型可见视图；默认 2000 行 / 50 KiB，支持 `head` 与 `tail`，并可用 `toolOutput.tools.<name>` 按工具覆盖。超限时完整输出写入 `agent/tool-output/<session>/<call>.txt`，截断提示包含路径与 read 工具按需读取提示；超出 7 天的 `.txt` / `.log` 在启动和每小时首次工具输出时清理。system prompt 在有 `subagent` 工具时提示把大输出交给 `explore` 子代理。
 
 **OpenCode 参考**：`tool/truncate.ts` 支持 `max_lines` / `max_bytes` 配置、head/tail、写盘预览、按子代理能力提示委派，并定期清理过期输出。
 
 **待办**：
 
-- [ ] 配置最大行数/字节数，支持 head 与 tail
-- [ ] 截断结果附带完整输出路径与按需读取提示
-- [ ] 定期清理过期输出文件
-- [ ] 有子代理能力时提示把大文件交给 explore 子代理
-- [ ] 测试边界、UTF-8 截断、清理与提示
+- [x] 配置最大行数/字节数，支持 head 与 tail
+- [x] 截断结果附带完整输出路径与按需读取提示
+- [x] 定期清理过期输出文件
+- [x] 有子代理能力时提示把大文件交给 explore 子代理
+- [x] 测试边界、UTF-8 截断、清理与提示
 
 **验收**：不同工具可按配置截断，完整输出可追溯且不会无限增长。
 
@@ -473,8 +473,8 @@
 
 ### 第二轮建议实施顺序
 
-1. **R-P1-5 输出截断**（小）——R-P1-1 Steering、R-P1-2 max steps、R-P1-4 后台任务、R-P1-6 LSP、R-P1-7 MCP 已完成，继续补齐日常编码体验。
-2. **R-P1-3 会话级回滚 / unrevert / diff**（中等偏大）——依赖快照与消息存储，可在编码体验项之后做。
+1. **R-P1-5 输出截断**（已完成，2026-11-25）——行数 / 字节数配置、head/tail、按工具覆盖、完整输出落盘、过期清理与子代理提示均已落地。
+2. **R-P1-3 会话级回滚 / unrevert / diff**（中等偏大）——下一步；依赖快照与消息存储。
 3. **第二轮 P1 剩余项**（按使用频率取舍）。
 4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 

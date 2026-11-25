@@ -34,7 +34,11 @@ export interface ToolContext {
     toolCallId: string
   ) => Promise<boolean>
   loadNestedInstructions?: (targetPath: string) => Promise<string>
-  storeOutput?: (toolCallId: string, output: string) => Promise<{ output: string; path?: string }>
+  storeOutput?: (
+    toolCallId: string,
+    output: string,
+    toolName?: string
+  ) => Promise<{ output: string; path?: string }>
   onToolOutput?: (toolCallId: string, delta: string) => void
   shellEnv?: () => Promise<Record<string, string>>
   backgroundOutputPath?: (toolCallId: string) => Promise<string>

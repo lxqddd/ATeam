@@ -77,7 +77,9 @@ beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-test-')))
   askPermission = vi.fn<ToolContext['askPermission']>(async () => true)
   loadNested = vi.fn(async () => '')
-  storeOutput = vi.fn(async (_toolCallId: string, output: string) => ({ output }))
+  storeOutput = vi.fn(async (_toolCallId: string, output: string) => ({
+    output
+  }))
   onToolOutput = vi.fn()
   backgroundOutputPath = vi.fn(async () => path.join(directory, 'bg.log'))
   onBackgroundFinished = vi.fn()
@@ -240,7 +242,7 @@ describe('read tool', () => {
     storeOutput.mockResolvedValue({ output: 'stored output', path: '/tmp/full.txt' })
 
     await expect(execute(tools.read, { path: 'a.txt' })).resolves.toBe('stored output')
-    expect(storeOutput).toHaveBeenCalledWith('call-1', expect.stringContaining('one'))
+    expect(storeOutput).toHaveBeenCalledWith('call-1', expect.stringContaining('one'), 'read')
   })
 
   it('allows external files after external-directory approval', async () => {

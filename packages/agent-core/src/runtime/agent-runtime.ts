@@ -53,7 +53,7 @@ import { loadOrgPolicy } from '../config/org-policy'
 import { PermissionsStore } from '../config/permissions-store'
 import { SessionsStore, type SessionRecord, makeTitle } from '../sessions/sessions-store'
 import { SnapshotStore } from '../sessions/snapshots'
-import { ToolOutputStore } from '../sessions/tool-output-store'
+import { ToolOutputStore, toolOutputLimitsFor } from '../sessions/tool-output-store'
 import type { AttachmentPayload } from '../message-history'
 import {
   attachmentDirectory,
@@ -241,6 +241,7 @@ export class AgentRuntime {
   async init(): Promise<void> {
     this.closed = false
     await fs.mkdir(this.options.workspacePath, { recursive: true })
+    void this.toolOutputs.cleanup().catch(() => undefined)
     await this.store.init()
     await this.permissionRules.init()
     await this.snapshots.init()
@@ -2014,8 +2015,13 @@ export class AgentRuntime {
     return {
       askPermission: (run, action, resource, toolName, toolCallId) =>
         this.permissionService.askPermission(run, action, resource, toolName, toolCallId),
-      storeOutput: (sessionId, toolCallId, output) =>
-        this.toolOutputs.bound(sessionId, toolCallId, output),
+      storeOutput: (run, toolName, toolCallId, output) =>
+        this.toolOutputs.bound(
+          run.sessionId,
+          toolCallId,
+          output,
+          toolOutputLimitsFor(run.config.toolOutput, toolName)
+        ),
       toolOutputPath: (sessionId, toolCallId) => this.toolOutputs.pathFor(sessionId, toolCallId),
       appendToolOutput: (run, toolCallId, delta) =>
         appendToolOutput(this.events, this.assistantFor(run), run, toolCallId, delta),

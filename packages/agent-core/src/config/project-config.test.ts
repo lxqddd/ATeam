@@ -114,6 +114,41 @@ describe('project config', () => {
     expect(config.agents).toHaveLength(1)
   })
 
+  it('merges tool output limits and per-tool overrides', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({
+        toolOutput: {
+          maxLines: 1_500,
+          mode: 'tail',
+          tools: { shell: { maxBytes: 4_096 }, read: { maxLines: 100 } }
+        }
+      })
+    )
+    await fs.writeFile(
+      path.join(directory, 'repo', 'ateam.json'),
+      JSON.stringify({
+        toolOutput: {
+          maxBytes: 8_192,
+          tools: { shell: { maxLines: 20 }, grep: { mode: 'head' } }
+        }
+      })
+    )
+
+    const config = await readAgentConfig(userData, workspace)
+
+    expect(config.toolOutput).toEqual({
+      maxLines: 1_500,
+      maxBytes: 8_192,
+      mode: 'tail',
+      tools: {
+        shell: { maxBytes: 4_096, maxLines: 20 },
+        read: { maxLines: 100 },
+        grep: { mode: 'head' }
+      }
+    })
+  })
+
   it('ignores invalid project config without failing global settings', async () => {
     await fs.writeFile(path.join(directory, 'repo', 'ateam.json'), '{ not json')
     await fs.writeFile(

@@ -116,7 +116,7 @@ export function wrapToolOutputs(tools: ToolSet, context: ToolContext): ToolSet {
       execute: async (input: never, options: { toolCallId: string }) => {
         const result = await execute(input, options)
         if (typeof result !== 'string') return result
-        return (await context.storeOutput?.(options.toolCallId, result))?.output ?? result
+        return (await context.storeOutput?.(options.toolCallId, result, name))?.output ?? result
       }
     }
   }

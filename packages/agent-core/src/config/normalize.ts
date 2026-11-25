@@ -13,7 +13,9 @@ import type {
   ProviderConfigInput,
   ProviderModelConfigInput,
   ProviderType,
-  RetryConfigInput
+  RetryConfigInput,
+  ToolOutputConfigInput,
+  ToolOutputLimits
 } from '@ateam/shared'
 
 const RULE_ACTIONS: readonly PermissionRuleAction[] = [
@@ -166,6 +168,80 @@ function normalizeRetry(
   if (maxDelayMs !== undefined) retry.maxDelayMs = maxDelayMs
   if (timeoutMs !== undefined) retry.timeoutMs = timeoutMs
   return Object.keys(retry).length > 0 ? retry : undefined
+}
+
+const MAX_TOOL_OUTPUT_LINES = 100_000
+const MAX_TOOL_OUTPUT_BYTES = 10 * 1024 * 1024
+const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/
+
+function normalizeToolOutputLimits(
+  value: unknown,
+  source: string,
+  path: string,
+  diagnostics: ConfigDiagnostic[]
+): ToolOutputLimits {
+  if (!isRecord(value)) {
+    diagnostic(diagnostics, source, path, `${path} must be an object`)
+    return {}
+  }
+  const limits: ToolOutputLimits = {}
+  const maxLines = boundedInteger(
+    value.maxLines,
+    `${path}.maxLines`,
+    source,
+    diagnostics,
+    1,
+    MAX_TOOL_OUTPUT_LINES
+  )
+  const maxBytes = boundedInteger(
+    value.maxBytes,
+    `${path}.maxBytes`,
+    source,
+    diagnostics,
+    1,
+    MAX_TOOL_OUTPUT_BYTES
+  )
+  if (maxLines !== undefined) limits.maxLines = maxLines
+  if (maxBytes !== undefined) limits.maxBytes = maxBytes
+  if (value.mode === 'head' || value.mode === 'tail') limits.mode = value.mode
+  else if (value.mode !== undefined) {
+    diagnostic(diagnostics, source, `${path}.mode`, `${path}.mode must be "head" or "tail"`)
+  }
+  return limits
+}
+
+function normalizeToolOutput(
+  value: unknown,
+  source: string,
+  diagnostics: ConfigDiagnostic[]
+): ToolOutputConfigInput | undefined {
+  if (!isRecord(value)) {
+    diagnostic(diagnostics, source, '$.toolOutput', 'toolOutput must be an object')
+    return undefined
+  }
+  const config: ToolOutputConfigInput = normalizeToolOutputLimits(
+    value,
+    source,
+    '$.toolOutput',
+    diagnostics
+  )
+  if (isRecord(value.tools)) {
+    const tools: Record<string, ToolOutputLimits> = {}
+    for (const [name, entry] of Object.entries(value.tools).slice(0, 50)) {
+      if (!TOOL_NAME.test(name)) continue
+      const limits = normalizeToolOutputLimits(
+        entry,
+        source,
+        `$.toolOutput.tools.${name}`,
+        diagnostics
+      )
+      if (Object.keys(limits).length > 0) tools[name] = limits
+    }
+    if (Object.keys(tools).length > 0) config.tools = tools
+  } else if (value.tools !== undefined) {
+    diagnostic(diagnostics, source, '$.toolOutput.tools', 'toolOutput.tools must be an object')
+  }
+  return Object.keys(config).length > 0 ? config : undefined
 }
 
 export function normalizeFormatterOverrides(value: unknown): Record<string, string> {
@@ -721,6 +797,10 @@ export function normalizeAgentConfigDocument(
   if (value.retry !== undefined) {
     const retry = normalizeRetry(value.retry, source, diagnostics)
     if (retry) document.retry = retry
+  }
+  if (value.toolOutput !== undefined) {
+    const toolOutput = normalizeToolOutput(value.toolOutput, source, diagnostics)
+    if (toolOutput) document.toolOutput = toolOutput
   }
   if (value.environment !== undefined) {
     const environment = normalizeEnvironment(value.environment, source, diagnostics)

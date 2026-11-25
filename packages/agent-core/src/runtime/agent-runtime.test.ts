@@ -751,6 +751,17 @@ describe('AgentRuntime', () => {
     expect(runtime.listSessions()[0].status).toBe('idle')
   })
 
+  it('includes tool output guidance in the system prompt', async () => {
+    baseTools = { subagent: {} as never }
+    scripts.push(textScript('ok'))
+
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(turns[0].system).toContain('truncated for the model')
+    expect(turns[0].system).toContain('"explore"')
+  })
+
   it('asks for permission and completes a tool after a once reply', async () => {
     scripts.push(toolScript(['a.txt']))
 

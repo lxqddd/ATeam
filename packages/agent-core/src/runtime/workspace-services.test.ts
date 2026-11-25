@@ -43,6 +43,7 @@ function effective(skills: string[]): EffectiveAgentConfig {
       skills: skills.length > 0 ? 'project' : 'default',
       retry: 'default',
       environment: 'default',
+      toolOutput: 'default',
       systemPrompt: 'default'
     }
   }

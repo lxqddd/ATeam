@@ -24,8 +24,15 @@ const FIELD_KEYS: Array<keyof ConfigProvenance> = [
   'skills',
   'retry',
   'environment',
+  'toolOutput',
   'systemPrompt'
 ]
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KiB`
+  return `${bytes} B`
+}
 
 function sourceClass(source: ConfigFieldSource): string {
   return {
@@ -150,6 +157,11 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
     environment: config.environment
       ? [config.environment.timezone, config.environment.notes].filter(Boolean).join(' · ') || '—'
       : '—',
+    toolOutput: config.toolOutput
+      ? `${config.toolOutput.maxLines} · ${formatBytes(config.toolOutput.maxBytes)} · ${config.toolOutput.mode}${
+          config.toolOutput.tools ? ` · ${Object.keys(config.toolOutput.tools).length} tools` : ''
+        }`
+      : '—',
     systemPrompt: config.systemPrompt ? t('settings.enabled') : '—'
   }
   const labels: Record<keyof ConfigProvenance, string> = {
@@ -167,6 +179,7 @@ function ProjectConfigCard({ defaultDirectory }: { defaultDirectory?: string }):
     skills: t('settings.configuredSkills'),
     retry: t('settings.retrySettings'),
     environment: t('settings.environmentSettings'),
+    toolOutput: t('settings.toolOutputSettings'),
     systemPrompt: t('settings.systemPromptOverride')
   }
   const sourceLabels: Record<ConfigFieldSource, string> = {

@@ -62,6 +62,7 @@ const zhCN = {
       '{{requests}} 次请求 · 命中率 {{rate}}% · 读取 {{read}} / 写入 {{write}} tokens',
     environmentSettings: '环境信息',
     environmentSettingsDescription: '可选的环境信息，会写入 system prompt。',
+    toolOutputSettings: '工具输出截断',
     environmentTimezone: '时区',
     environmentNotes: '环境备注',
     systemPromptOverride: 'System prompt 覆盖',

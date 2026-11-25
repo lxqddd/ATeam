@@ -438,6 +438,43 @@ export interface CommandConfigInput {
   model?: string
 }
 
+export type ToolOutputMode = 'head' | 'tail'
+
+/** Truncation limits; unspecified fields inherit the effective global limits. */
+export interface ToolOutputLimits {
+  /** Maximum lines kept in the model-facing view. */
+  maxLines?: number
+  /** Maximum UTF-8 bytes kept in the model-facing view. */
+  maxBytes?: number
+  /** Keep the beginning or the end of the output. */
+  mode?: ToolOutputMode
+}
+
+export interface ToolOutputConfigInput extends ToolOutputLimits {
+  /** Per-tool overrides keyed by tool name, for example `shell` or `read`. */
+  tools?: Record<string, ToolOutputLimits>
+}
+
+export interface ToolOutputLimitsResolved {
+  maxLines: number
+  maxBytes: number
+  mode: ToolOutputMode
+}
+
+export interface ToolOutputConfig extends ToolOutputLimitsResolved {
+  /** Per-tool overrides; unspecified fields inherit the effective global limits. */
+  tools?: Record<string, ToolOutputLimits>
+}
+
+export const DEFAULT_TOOL_OUTPUT_LIMITS: ToolOutputLimitsResolved = {
+  maxLines: 2_000,
+  maxBytes: 50 * 1024,
+  mode: 'head'
+}
+
+/** Full outputs older than this are removed by the periodic cleanup. */
+export const TOOL_OUTPUT_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000
+
 /** On-disk configuration document shared by global config.json and project ateam.json(c). */
 export interface AgentConfigDocument {
   snapshots?: boolean
@@ -460,6 +497,8 @@ export interface AgentConfigDocument {
   skills?: string[]
   retry?: RetryConfigInput
   environment?: AgentEnvironmentConfig
+  /** Tool output truncation limits for the model-facing view. */
+  toolOutput?: ToolOutputConfigInput
   /** Replaces the model-family base prompt; environment and permission sections still apply. */
   systemPrompt?: string
 }
@@ -499,6 +538,8 @@ export interface AgentConfig {
   retry?: RetryConfig
   /** System prompt environment overrides. */
   environment?: AgentEnvironmentConfig
+  /** Effective tool output truncation limits; always filled by the config loader. */
+  toolOutput?: ToolOutputConfig
   /** Project or global replacement for the model-family base prompt. */
   systemPrompt?: string
   references?: AgentReference[]
@@ -674,6 +715,7 @@ export interface ConfigProvenance {
   skills: ConfigFieldSource
   retry: ConfigFieldSource
   environment: ConfigFieldSource
+  toolOutput: ConfigFieldSource
   systemPrompt: ConfigFieldSource
 }
 

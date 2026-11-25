@@ -12,9 +12,12 @@ import type {
   LspServerConfigInput,
   McpServerInput,
   ProjectConfigFile,
-  ProviderConfigInput
+  ProviderConfigInput,
+  ToolOutputConfig,
+  ToolOutputConfigInput,
+  ToolOutputLimits
 } from '@ateam/shared'
-import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
+import { DEFAULT_RETRY_CONFIG, DEFAULT_TOOL_OUTPUT_LIMITS } from '@ateam/shared'
 import { parseCommandJson } from '../commands'
 import { normalizeAgentConfigDocument, type ParsedConfigDocument } from './normalize'
 import { findProjectRoot } from './project-root'
@@ -321,6 +324,34 @@ function mergeStrings(
   return values.length > 0 ? values : undefined
 }
 
+function mergeToolOutputConfig(
+  base: ToolOutputConfig | undefined,
+  project: ToolOutputConfigInput | undefined
+): ToolOutputConfig {
+  const current: ToolOutputConfig = base ?? { ...DEFAULT_TOOL_OUTPUT_LIMITS }
+  const config: ToolOutputConfig = {
+    maxLines: project?.maxLines ?? current.maxLines,
+    maxBytes: project?.maxBytes ?? current.maxBytes,
+    mode: project?.mode ?? current.mode
+  }
+  const names = new Set([...Object.keys(current.tools ?? {}), ...Object.keys(project?.tools ?? {})])
+  const tools: Record<string, ToolOutputLimits> = {}
+  for (const name of names) {
+    const global = current.tools?.[name]
+    const override = project?.tools?.[name]
+    const entry: ToolOutputLimits = {}
+    const maxLines = override?.maxLines ?? global?.maxLines
+    const maxBytes = override?.maxBytes ?? global?.maxBytes
+    const mode = override?.mode ?? global?.mode
+    if (maxLines !== undefined) entry.maxLines = maxLines
+    if (maxBytes !== undefined) entry.maxBytes = maxBytes
+    if (mode !== undefined) entry.mode = mode
+    if (Object.keys(entry).length > 0) tools[name] = entry
+  }
+  if (Object.keys(tools).length > 0) config.tools = tools
+  return config
+}
+
 /**
  * Merge a project document over an already-effective global config.
  * Project path anchoring is performed by `anchorProjectDocument` before this call.
@@ -393,6 +424,7 @@ export function mergeAgentConfig(
     ...(base.environment || project.environment
       ? { environment: { ...base.environment, ...project.environment } }
       : {}),
+    toolOutput: mergeToolOutputConfig(base.toolOutput, project.toolOutput),
     ...((project.systemPrompt ?? base.systemPrompt)
       ? { systemPrompt: project.systemPrompt ?? base.systemPrompt }
       : {}),

@@ -124,6 +124,15 @@ function escapeXml(value: string): string {
     .replace(/'/g, '&apos;')
 }
 
+export function toolOutputGuidance(subagentsAvailable: boolean): string {
+  const base =
+    'Tool results longer than the configured line or byte limit are truncated for the model. ' +
+    'The truncation notice includes the path of the saved full output; use the read tool with offset and limit when you need the missing part, and avoid re-running a command only to see more output.'
+  return subagentsAvailable
+    ? `${base} If a truncated output is large and you only need specific facts from it, delegate reading it to the subagent tool with agent "explore".`
+    : base
+}
+
 export function buildSystemPrompt(input: SystemPromptInput): string {
   const permission =
     input.permissionMode === 'plan'

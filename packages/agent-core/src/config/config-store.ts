@@ -9,9 +9,10 @@ import type {
   ConfigFieldSource,
   ConfigProvenance,
   EffectiveAgentConfig,
-  RetryConfigInput
+  RetryConfigInput,
+  ToolOutputConfig
 } from '@ateam/shared'
-import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
+import { DEFAULT_RETRY_CONFIG, DEFAULT_TOOL_OUTPUT_LIMITS } from '@ateam/shared'
 import { readJsonFile, writeJsonAtomic } from '../atomic-json'
 import { normalizeAgentConfigDocument } from './normalize'
 import { anchorProjectDocument, mergeAgentConfig, readProjectConfigDetails } from './project-config'
@@ -29,7 +30,24 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   lspInstall: false,
   formatters: true,
   formatterOverrides: {},
-  retry: { ...DEFAULT_RETRY_CONFIG }
+  retry: { ...DEFAULT_RETRY_CONFIG },
+  toolOutput: { ...DEFAULT_TOOL_OUTPUT_LIMITS }
+}
+
+function cloneToolOutputConfig(config: ToolOutputConfig | undefined): ToolOutputConfig {
+  const current: ToolOutputConfig = config ?? { ...DEFAULT_TOOL_OUTPUT_LIMITS }
+  return {
+    maxLines: current.maxLines,
+    maxBytes: current.maxBytes,
+    mode: current.mode,
+    ...(current.tools
+      ? {
+          tools: Object.fromEntries(
+            Object.entries(current.tools).map(([name, limits]) => [name, { ...limits }])
+          )
+        }
+      : {})
+  }
 }
 
 function configFile(userDataPath: string): string {
@@ -45,6 +63,7 @@ function cloneConfig(config: AgentConfig): AgentConfig {
     formatters: config.formatters,
     formatterOverrides: { ...config.formatterOverrides },
     ...(config.retry ? { retry: { ...config.retry } } : {}),
+    toolOutput: cloneToolOutputConfig(config.toolOutput),
     ...(config.environment ? { environment: { ...config.environment } } : {}),
     ...(config.systemPrompt ? { systemPrompt: config.systemPrompt } : {}),
     ...(config.references ? { references: config.references.map((ref) => ({ ...ref })) } : {}),
@@ -171,6 +190,11 @@ function computeProvenance(
       Boolean(project.environment && Object.keys(project.environment).length > 0),
       true
     ),
+    toolOutput: fieldSource(
+      Boolean(globalDocument.toolOutput && Object.keys(globalDocument.toolOutput).length > 0),
+      Boolean(project.toolOutput && Object.keys(project.toolOutput).length > 0),
+      true
+    ),
     systemPrompt: fieldSource(
       globalDocument.systemPrompt !== undefined,
       project.systemPrompt !== undefined
@@ -262,6 +286,7 @@ export class AgentConfigStore {
     }
     if ('formatterOverrides' in patch) next.formatterOverrides = patch.formatterOverrides
     if ('retry' in patch && patch.retry) next.retry = patch.retry
+    if ('toolOutput' in patch && patch.toolOutput) next.toolOutput = patch.toolOutput
     if ('environment' in patch) next.environment = patch.environment
     if ('systemPrompt' in patch) next.systemPrompt = patch.systemPrompt
     if ('references' in patch) next.references = patch.references

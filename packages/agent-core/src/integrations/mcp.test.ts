@@ -75,7 +75,9 @@ let context: McpToolContext
 beforeEach(async () => {
   directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-mcp-mgr-')))
   askPermission = vi.fn(async () => true)
-  storeOutput = vi.fn(async (_toolCallId: string, output: string) => ({ output }))
+  storeOutput = vi.fn(async (_toolCallId: string, output: string) => ({
+    output
+  }))
   context = {
     askPermission: askPermission as unknown as McpToolContext['askPermission'],
     storeOutput: storeOutput as unknown as McpToolContext['storeOutput']
@@ -255,7 +257,7 @@ describe('McpManager tools', () => {
     const result = await runTool(tools, 'mcp_demo_echo')
 
     expect(result).toBe('bounded')
-    expect(storeOutput).toHaveBeenCalledWith('call-1', 'x'.repeat(5_000))
+    expect(storeOutput).toHaveBeenCalledWith('call-1', 'x'.repeat(5_000), 'mcp_demo_echo')
     await manager.dispose()
   })
 

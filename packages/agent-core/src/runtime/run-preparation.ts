@@ -24,7 +24,7 @@ import { systemWithSummary } from '../sessions/context'
 import type { SessionRecord } from '../sessions/sessions-store'
 import { skillsPrompt } from '../skills'
 import { filterToolsForModel, type ToolContext } from '../tools'
-import { buildSystemPrompt } from './policy'
+import { buildSystemPrompt, toolOutputGuidance } from './policy'
 import { filterMcpInstructions, type McpInstructionEntry } from './mcp-instructions'
 import { makeUserMessage } from './messages'
 import { buildToolContext, type ToolContextHost } from './tool-context'
@@ -197,7 +197,8 @@ export async function prepareRun(
         current.session.compaction?.summary
       ),
       instructions
-    )
+    ),
+    toolOutputGuidance('subagent' in tools)
   ]
   const planPath = host.planFilePath(run)
   if ((current.session.permissionMode ?? 'ask') === 'plan') {

@@ -29,7 +29,11 @@ export interface McpToolContext {
     toolName: string,
     toolCallId: string
   ) => Promise<boolean>
-  storeOutput?: (toolCallId: string, output: string) => Promise<{ output: string; path?: string }>
+  storeOutput?: (
+    toolCallId: string,
+    output: string,
+    toolName?: string
+  ) => Promise<{ output: string; path?: string }>
 }
 
 export interface McpServerInstructions {
@@ -715,7 +719,7 @@ export class McpManager implements McpManagerLike {
             .map((part) => (part.type === 'text' ? (part.text ?? '') : JSON.stringify(part)))
             .join('\n')
           const output = result.isError ? `Error: ${text}` : text || '(no output)'
-          const stored = await context.storeOutput?.(options.toolCallId, output)
+          const stored = await context.storeOutput?.(options.toolCallId, output, name)
           return stored?.output ?? truncateOutput(output)
         } catch (error) {
           return `Error: ${errorMessage(error)}`

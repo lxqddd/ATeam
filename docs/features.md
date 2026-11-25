@@ -138,7 +138,8 @@
 | `question`           | 向用户提出结构化问题                                               | 不需要审批  |
 | MCP 工具             | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`       |
 
-- 大输出统一截断（200k 字符），再经输出存储落盘（30k 展示上限，完整内容保存在 `agent/tool-outputs/`）。
+- 单个工具结果先经过 200k 字符硬上限，再按 `toolOutput` 配置截断：默认 2000 行 / 50 KiB，`mode` 支持 `head` / `tail`，并可用 `toolOutput.tools.<name>` 按工具覆盖；完整输出保存到 `agent/tool-output/<session>/<call>.txt`，截断提示附带路径与 read 工具按需读取提示，超过 7 天的输出文件自动清理。
+- 存在 `subagent` 工具时，系统提示会引导模型把过大的截断输出交给 `explore` 子代理阅读。
 - 工作区外路径先触发 `external_directory` 审批；只读工具默认允许。
 
 ## 5. 权限系统
@@ -274,11 +275,11 @@
 agent/
 ├── sessions/            # 会话与消息、索引
 ├── snapshots/           # 文件快照 blob 与索引
-├── tool-outputs/        # 大工具输出完整内容
+├── tool-output/         # 大工具输出完整内容（按会话分目录，7 天后清理）
 ├── attachments/<session>/
 ├── permissions.json     # 权限规则
 ├── policy.json          # 组织级权限策略（可选）
-├── config.json          # 快照 / LSP / 格式化开关与额外指令
+├── config.json          # 快照 / LSP / 格式化 / 输出截断等配置与额外指令
 ├── mcp.json             # MCP 服务器配置
 ├── mcp-auth.json        # MCP OAuth token 与客户端注册信息（明文，0600）
 ├── references/          # Git 引用的本地缓存
