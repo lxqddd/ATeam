@@ -162,6 +162,7 @@ export type WorkerRequest =
       params: { questionId: string; answer: QuestionAnswer }
     }
   | { id: string; method: 'permissions.rules'; params: { sessionId?: string } }
+  | { id: string; method: 'permissions.overview'; params?: { workspace?: string } }
   | {
       id: string
       method: 'permissions.addRule'

@@ -8,6 +8,7 @@ import { PluginStore } from '@ateam/agent-core'
 import { hasProjectReferences, resolveReferences } from '@ateam/agent-core/references'
 import type { McpAuthStore } from '../../credentials/mcp-auth-store'
 import type { ProviderAuthStore } from '../../providers/provider-auth-store'
+import type { ConfigWatcher } from '../../config-watcher'
 import {
   refreshExpiringPluginAuth,
   refreshExpiringProviderAuth,
@@ -26,6 +27,12 @@ export interface AgentIpcOptions {
   providerAuthStore: ProviderAuthStore
   workspacePath: string
   isTrustedSender: TrustedSender
+  /** Shared global config store; created from `app.getPath('userData')` when omitted. */
+  configStore?: AgentConfigStore
+  /** Initialization promise for the shared config store. */
+  configReady?: Promise<void>
+  /** Watches config files so writes made by the app are not reloaded twice. */
+  configWatcher?: ConfigWatcher
 }
 
 /** Reference root used to extend file search beyond the workspace. */
@@ -73,9 +80,9 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
     await manager.setModels(runtimeModelsWithOAuth(modelsStore.runtimeConfig(), providerAuthStore))
   }
 
-  const configStore = new AgentConfigStore(app.getPath('userData'))
+  const configStore = options.configStore ?? new AgentConfigStore(app.getPath('userData'))
   const pluginStore = new PluginStore(app.getPath('userData'))
-  const configReady = configStore.init()
+  const configReady = options.configReady ?? configStore.init()
   let referenceSearchCache: {
     key: string
     expiresAt: number

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { RuntimeModelsConfig } from '@ateam/shared'
+import { mergeProjectModelCatalog, normalizeProjectVariants } from '@ateam/shared'
+import type { ModelsConfigPublic, RuntimeModelsConfig } from '@ateam/shared'
 import { mergeRuntimeProviders, normalizeAnthropicBaseURL, providerHeaders } from './providers'
 
 describe('providerHeaders', () => {
@@ -181,5 +182,127 @@ describe('mergeRuntimeProviders', () => {
       merged.providers.find((provider) => provider.id === 'provider-3')?.apiKey
     ).toBeUndefined()
     expect(warnings.join(' ')).toContain('provider-3')
+  })
+})
+
+describe('mergeProjectModelCatalog', () => {
+  const catalog: ModelsConfigPublic = {
+    providers: [
+      {
+        id: 'provider-1',
+        name: 'Global',
+        type: 'anthropic',
+        hasApiKey: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      }
+    ],
+    models: [
+      {
+        id: 'model-1',
+        providerId: 'provider-1',
+        modelId: 'model-1',
+        name: 'Global Model',
+        createdAt: '2026-01-01T00:00:00.000Z'
+      }
+    ],
+    defaultModel: null
+  }
+
+  it('mirrors the runtime display fields and marks project entries', () => {
+    const configured = {
+      'provider-1': {
+        name: 'Renamed',
+        models: {
+          'model-1': { name: 'Project Model', contextWindow: 2000 },
+          'model-2': { reasoning: true }
+        }
+      }
+    }
+    const merged = mergeProjectModelCatalog(catalog, configured)
+    const runtime = mergeRuntimeProviders(
+      {
+        providers: [{ id: 'provider-1', name: 'Global', type: 'anthropic', apiKey: 'global-key' }],
+        models: [
+          {
+            id: 'model-1',
+            providerId: 'provider-1',
+            modelId: 'model-1',
+            name: 'Global Model',
+            createdAt: '2026-01-01T00:00:00.000Z'
+          }
+        ],
+        defaultModel: null
+      },
+      configured,
+      {}
+    )
+
+    expect(merged.providers[0]).toMatchObject({
+      id: 'provider-1',
+      name: 'Renamed',
+      hasApiKey: true,
+      source: 'config'
+    })
+    expect(merged.models.find((model) => model.modelId === 'model-1')).toMatchObject({
+      id: 'model-1',
+      name: 'Project Model',
+      contextWindow: 2000,
+      source: 'config'
+    })
+    expect(merged.models.find((model) => model.modelId === 'model-2')).toMatchObject({
+      id: runtime.models.find((model) => model.modelId === 'model-2')?.id,
+      createdAt: '1970-01-01T00:00:00.000Z',
+      source: 'config'
+    })
+    expect(merged.models.find((model) => model.modelId === 'model-2')?.name).toBe(
+      runtime.models.find((model) => model.modelId === 'model-2')?.name
+    )
+    // With no default configured, the first merged model becomes the fallback.
+    expect(merged.defaultModel).toEqual({ providerId: 'provider-1', modelId: 'model-1' })
+  })
+
+  it('falls back to the first project model when the catalog is empty', () => {
+    const merged = mergeProjectModelCatalog(
+      { providers: [], models: [], defaultModel: null },
+      {
+        local: {
+          type: 'openai-compatible',
+          baseURL: 'https://local.test/v1',
+          apiKeyEnv: 'LOCAL_KEY',
+          models: { 'local-model': {} }
+        }
+      }
+    )
+
+    expect(merged.defaultModel).toEqual({ providerId: 'local', modelId: 'local-model' })
+    expect(merged.providers[0]).toMatchObject({
+      id: 'local',
+      hasApiKey: true,
+      source: 'config'
+    })
+  })
+
+  it('skips providers the runtime would reject and never exposes credentials', () => {
+    const merged = mergeProjectModelCatalog(catalog, {
+      'provider-3': { name: 'No type' },
+      'provider-4': { type: 'openai-compatible', models: { orphan: {} } }
+    })
+
+    expect(merged.providers).toHaveLength(1)
+    expect(merged.models).toHaveLength(1)
+    expect(JSON.stringify(merged)).not.toContain('global-key')
+  })
+
+  it('normalizes project variants in shared code', () => {
+    expect(
+      normalizeProjectVariants([
+        { name: ' Fast Mode ', settings: { reasoningEffort: 'low' } },
+        { name: 'fast mode', settings: {} },
+        { name: '', settings: {} }
+      ])
+    ).toEqual([{ id: 'fast-mode', name: 'Fast Mode', settings: { reasoningEffort: 'low' } }])
+    expect(normalizeProjectVariants(undefined)).toBeUndefined()
+    expect(normalizeProjectVariants([])).toBeUndefined()
   })
 })

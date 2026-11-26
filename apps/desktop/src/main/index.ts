@@ -7,12 +7,15 @@ import {
   AGENT_EVENT_CHANNEL,
   APP_ID,
   APP_NAME,
+  CONFIG_CHANGE_CHANNEL,
   THEME_CHANNEL,
   UPDATE_EVENT_CHANNEL,
   type AgentEventEnvelope
 } from '@ateam/shared'
+import { AgentConfigStore } from '@ateam/agent-core/config'
 import { AgentManager } from './agent-host/agent-manager'
 import { BrowserController } from './browser/browser-controller'
+import { ConfigWatcher } from './config-watcher'
 import { ModelConfigStore } from './settings/model-config-store'
 import { ModelCatalogStore } from './providers/catalog-store'
 import { WebSearchConfigStore } from './settings/websearch-config-store'
@@ -35,6 +38,7 @@ const TITLE_BAR_COLORS = {
 let mainWindow: BrowserWindow | null = null
 let agentManager: AgentManager | null = null
 let browserController: BrowserController | null = null
+let configWatcher: ConfigWatcher | null = null
 let quitting = false
 
 function getWindowChrome(): BrowserWindowConstructorOptions {
@@ -168,6 +172,29 @@ if (!hasSingleInstanceLock) {
       console.error('[workspace] failed to create the agent workspace', error)
     }
 
+    const configStore = new AgentConfigStore(userDataPath)
+    const configReady = configStore.init().catch((error: unknown) => {
+      console.error('[config] failed to load the agent configuration', error)
+    })
+    const watcher = new ConfigWatcher({
+      userDataPath,
+      onChange: (change) => {
+        const window = mainWindow
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(CONFIG_CHANGE_CHANNEL, change)
+        }
+        if (change.global) {
+          void configStore.reload()
+          void agentManager?.request('config.reload').catch(() => undefined)
+          return
+        }
+        for (const workspace of change.workspaces) {
+          void agentManager?.request('config.reload', { workspace }).catch(() => undefined)
+        }
+      }
+    })
+    configWatcher = watcher
+
     browserController = new BrowserController()
     const manager = new AgentManager({
       workerPath: join(__dirname, 'agent.js'),
@@ -189,9 +216,13 @@ if (!hasSingleInstanceLock) {
         if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
           window.webContents.send(AGENT_EVENT_CHANNEL, envelope)
         }
+        if (envelope.event.type === 'session.upsert' && envelope.event.session.directory) {
+          void watcher.trackWorkspace(envelope.event.session.directory)
+        }
       }
     })
     agentManager = manager
+    void watcher.trackWorkspace(workspacePath)
 
     ipcMain.on(THEME_CHANNEL, (event, theme: unknown) => {
       if (process.platform === 'darwin') return
@@ -218,7 +249,10 @@ if (!hasSingleInstanceLock) {
       mcpAuthStore,
       providerAuthStore,
       workspacePath,
-      isTrustedSender
+      isTrustedSender,
+      configStore,
+      configReady,
+      configWatcher: watcher
     })
     registerModelsIpc({
       manager,
@@ -275,6 +309,8 @@ app.on('before-quit', (event) => {
   const browser = browserController
   agentManager = null
   browserController = null
+  configWatcher?.dispose()
+  configWatcher = null
   void Promise.all([manager.stop(), browser?.dispose().catch(() => undefined)]).finally(() => {
     app.quit()
   })

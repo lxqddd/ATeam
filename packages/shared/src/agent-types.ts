@@ -332,6 +332,37 @@ export interface PermissionRuleInput {
   sessionId: string | null
 }
 
+/** Layer that grants a permission rule, listed in the order the runtime evaluates them. */
+export type PermissionRuleSource =
+  'global-persisted' | 'global-config' | 'project-config' | 'agent' | 'session-persisted' | 'policy'
+
+export interface PermissionRuleView {
+  id: string
+  action: PermissionRuleAction
+  resource: string
+  effect: PermissionEffect
+  /** Set for rules persisted for a single session. */
+  sessionId?: string | null
+}
+
+export interface PermissionRuleGroupView {
+  source: PermissionRuleSource
+  /** Whether the app can add or remove rules in this layer. */
+  editable: boolean
+  /** Config file that declares the layer, when it comes from a document. */
+  path?: string
+  agentId?: string
+  agentName?: string
+  agentSource?: 'builtin' | 'user' | 'project'
+  rules: PermissionRuleView[]
+}
+
+export interface PermissionRulesOverview {
+  workspace: string
+  /** Fixed six layers; layers without rules are returned as empty groups. */
+  groups: PermissionRuleGroupView[]
+}
+
 export interface SessionSearchResult {
   session: SessionMeta
   snippet: string
@@ -654,6 +685,21 @@ export interface ProjectConfigFile {
   exists: boolean
   content: string
   diagnostics: ConfigDiagnostic[]
+  /** Normalized project document; safe defaults applied and paths anchored. */
+  document: AgentConfigDocument
+  /** Raw JSON value parsed from the file (no comments); the form baseline. */
+  raw?: unknown
+}
+
+export interface ProjectConfigEdit {
+  path: (string | number)[]
+  /** Omit to delete the entry at `path`. */
+  value?: unknown
+}
+
+export interface ProjectConfigEditInput {
+  directory?: string | null
+  edits: ProjectConfigEdit[]
 }
 
 export type PluginSource = 'local' | 'npm'
@@ -772,6 +818,16 @@ export interface ConfigSources {
   projectRoot: string
 }
 
+/** Configuration files that changed outside the app and should be reloaded. */
+export interface ConfigFileChange {
+  /** True when the global `userData/agent/config.json` changed. */
+  global: boolean
+  /** Workspace roots whose `ateam.json(c)` changed. */
+  workspaces: string[]
+  /** Absolute paths of the changed files. */
+  files: string[]
+}
+
 export interface ConfigDiagnostic {
   source: string
   path: string
@@ -808,6 +864,15 @@ export interface EffectiveAgentConfig {
   provenance: ConfigProvenance
   /** MCP servers that came from the project document, safe to manage as config-owned. */
   projectMcpServers?: McpServerInput[]
+  /**
+   * Providers declared by the project document only. Used to merge project
+   * models into the renderer picker without exposing the merged runtime view.
+   */
+  projectProviders?: Record<string, ProviderConfigInput>
+  /** Permission rules declared by the global config document. */
+  globalPermissionRules?: PermissionRuleInput[]
+  /** Permission rules declared by the project config document. */
+  projectPermissionRules?: PermissionRuleInput[]
 }
 
 export type McpServerType = 'local' | 'remote'

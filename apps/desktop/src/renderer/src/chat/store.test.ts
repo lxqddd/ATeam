@@ -4,6 +4,7 @@ import type {
   BackgroundTaskInfo,
   CommandDefinition,
   MessagesSnapshot,
+  ModelsConfigPublic,
   QueuedMessage,
   SessionMeta
 } from '@ateam/shared'
@@ -78,6 +79,52 @@ describe('ChatStore init', () => {
     await store.init()
 
     expect(store.getSnapshot().actionError).toBe('boom')
+  })
+})
+
+describe('ChatStore config refresh', () => {
+  function delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  it('coalesces external change pushes into one revision bump', async () => {
+    await store.init()
+    const before = store.getSnapshot().configRevision
+
+    mock.emitConfigChange({
+      global: true,
+      workspaces: [],
+      files: ['/tmp/user-data/agent/config.json']
+    })
+    mock.emitConfigChange({
+      global: false,
+      workspaces: ['/tmp/workspace'],
+      files: ['/tmp/workspace/ateam.json']
+    })
+
+    expect(store.getSnapshot().configRevision).toBe(before)
+    await delay(200)
+    expect(store.getSnapshot().configRevision).toBe(before + 1)
+  })
+
+  it('coalesces worker config.changed events with external pushes', async () => {
+    await store.init()
+    const before = store.getSnapshot().configRevision
+
+    mock.emit({ type: 'config.changed', workspace: '/tmp/a' })
+    mock.emit({ type: 'config.changed', workspace: '/tmp/b' })
+    await delay(200)
+
+    expect(store.getSnapshot().configRevision).toBe(before + 1)
+  })
+
+  it('unsubscribes from external config changes on dispose', async () => {
+    await store.init()
+    expect(mock.configChangeListenerCount()).toBe(1)
+
+    store.dispose()
+
+    expect(mock.configChangeListenerCount()).toBe(0)
   })
 })
 
@@ -457,6 +504,77 @@ describe('ChatStore send', () => {
     await store.send('   ')
 
     expect(mock.api.agent.chat.send).not.toHaveBeenCalled()
+  })
+
+  it('forwards the model the composer is showing', async () => {
+    await store.init()
+    const model = { providerId: 'p1', modelId: 'm1' }
+
+    await store.send('hello', [], model)
+
+    expect(mock.api.agent.chat.send).toHaveBeenCalledWith({
+      sessionId: 'created-1',
+      text: 'hello',
+      model
+    })
+  })
+})
+
+describe('ChatStore project models', () => {
+  const createdAt = '2026-01-01T00:00:00.000Z'
+
+  const catalogFor = (name: string): ModelsConfigPublic => ({
+    providers: [
+      { id: name, name, type: 'openai', hasApiKey: true, createdAt, updatedAt: createdAt }
+    ],
+    models: [],
+    defaultModel: null
+  })
+
+  it('merges the providers declared by the selected session project', async () => {
+    mock.sessions.push(makeSession({ id: 's1', directory: '/tmp/project' }))
+    const resolved = await mock.api.agent.config.resolve('/tmp/project')
+    vi.mocked(mock.api.agent.config.resolve).mockResolvedValue({
+      ...resolved,
+      projectProviders: {
+        local: {
+          type: 'openai-compatible',
+          baseURL: 'https://local.test/v1',
+          apiKeyEnv: 'LOCAL_KEY',
+          models: { lm: { name: 'Local Model' } }
+        }
+      }
+    })
+
+    await store.init()
+
+    const models = store.getSnapshot().models
+    expect(models?.providers.find((provider) => provider.id === 'local')).toMatchObject({
+      source: 'config',
+      hasApiKey: true
+    })
+    expect(models?.models.find((model) => model.modelId === 'lm')).toMatchObject({
+      id: 'config:local:lm',
+      source: 'config',
+      name: 'Local Model'
+    })
+    expect(models?.defaultModel).toEqual({ providerId: 'local', modelId: 'lm' })
+  })
+
+  it('keeps the newest refresh when sessions are switched quickly', async () => {
+    const pending: Array<(value: ModelsConfigPublic) => void> = []
+    vi.mocked(mock.api.models.get).mockImplementation(
+      () => new Promise<ModelsConfigPublic>((resolve) => pending.push(resolve))
+    )
+
+    const first = store.refreshModels('/tmp/a')
+    const second = store.refreshModels('/tmp/b')
+    pending[1]!(catalogFor('second'))
+    await second
+    pending[0]!(catalogFor('first'))
+    await first
+
+    expect(store.getSnapshot().models?.providers[0]?.name).toBe('second')
   })
 })
 

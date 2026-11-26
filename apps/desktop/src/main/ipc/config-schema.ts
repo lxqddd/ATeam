@@ -18,6 +18,71 @@ export const projectConfigUpdateSchema = z.object({
   content: z.string().max(1_000_000)
 })
 
+/** Top-level project keys the structured editors are allowed to touch. */
+const PROJECT_EDIT_TOP_LEVEL_KEYS = new Set([
+  'providers',
+  'lsp',
+  'lspEnabled',
+  'lspInstall',
+  'formatters',
+  'formattersEnabled',
+  'formatterOverrides',
+  'commands',
+  'skills'
+])
+
+const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
+const MAX_PROJECT_EDIT_BYTES = 200_000
+
+const projectConfigEditPathSchema = z
+  .array(z.union([z.string().min(1).max(200), z.number().int().min(0).max(10_000)]))
+  .min(1)
+  .max(8)
+
+export const projectConfigEditSchema = z
+  .object({
+    directory: z.string().max(2_000).nullable().optional(),
+    edits: z
+      .array(
+        z.object({
+          path: projectConfigEditPathSchema,
+          value: z.unknown().optional()
+        })
+      )
+      .min(1)
+      .max(100)
+  })
+  .superRefine((input, ctx) => {
+    input.edits.forEach((edit, index) => {
+      const [head] = edit.path
+      if (typeof head !== 'string' || !PROJECT_EDIT_TOP_LEVEL_KEYS.has(head)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edits', index, 'path', 0],
+          message: `unsupported project config field: ${String(head)}`
+        })
+      }
+      if (
+        edit.path.some(
+          (segment) => typeof segment === 'string' && FORBIDDEN_PATH_SEGMENTS.has(segment)
+        )
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edits', index, 'path'],
+          message: 'unsafe path segment'
+        })
+      }
+    })
+    if (JSON.stringify(input.edits).length > MAX_PROJECT_EDIT_BYTES) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edits'],
+        message: 'project config edits are too large'
+      })
+    }
+  })
+
 const retryPatchSchema = z.object({
   maxRetries: z.number().int().min(0).max(10).optional(),
   maxDelayMs: z.number().int().min(0).max(600_000).optional(),

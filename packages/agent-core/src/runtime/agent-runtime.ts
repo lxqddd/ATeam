@@ -24,6 +24,7 @@ import type {
   PermissionRequest,
   PermissionRule,
   PermissionRuleInput,
+  PermissionRulesOverview,
   PluginAuthCredentials,
   PluginAuthMethodInfo,
   PluginAuthResult,
@@ -54,6 +55,7 @@ import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import { DEFAULT_CONTEXT_WINDOW, messagesAfterCompaction, shouldCompact } from '../sessions/context'
 import { readEffectiveAgentConfig } from '../config/config-store'
 import { loadOrgPolicy } from '../config/org-policy'
+import { buildPermissionOverview } from './permission-overview'
 import { PermissionsStore } from '../config/permissions-store'
 import { SessionsStore, type SessionRecord, makeTitle } from '../sessions/sessions-store'
 import { SnapshotStore } from '../sessions/snapshots'
@@ -269,6 +271,9 @@ export class AgentRuntime {
       await this.rememberWorkspaceConfig(target, !busy)
       this.events.emit({ type: 'config.changed', workspace: target })
     }
+    // Providers or models may have been removed by the edit; drop session
+    // references that no longer resolve so the next send can pick a model.
+    this.sessionService.setModels()
   }
 
   async init(): Promise<void> {
@@ -676,6 +681,31 @@ export class AgentRuntime {
 
   listPermissionRules(sessionId?: string): PermissionRule[] {
     return this.permissionService.listPermissionRules(sessionId)
+  }
+
+  /**
+   * Reports every permission layer in evaluation order for the settings view.
+   * Config layers come from the workspace documents, so the answer follows the
+   * session directory rather than the worker default.
+   */
+  async permissionRulesOverview(
+    workspace = this.options.workspacePath
+  ): Promise<PermissionRulesOverview> {
+    const [effective, agents] = await Promise.all([
+      readEffectiveAgentConfig(this.options.userDataPath, workspace),
+      this.sessionService.agents(workspace)
+    ])
+    const policy = loadOrgPolicy({
+      userDataPath: this.options.userDataPath,
+      envPolicyFile: process.env.ATEAM_POLICY_FILE
+    })
+    return buildPermissionOverview({
+      workspace,
+      storedRules: this.permissionRules.list(),
+      effective,
+      agents,
+      policy
+    })
   }
 
   async prepareCompaction(id: string): Promise<boolean> {

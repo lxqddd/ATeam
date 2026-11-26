@@ -349,7 +349,7 @@ function ModelsPage(): React.JSX.Element {
           {mutationError && <Alert type="error" showIcon title={mutationError} />}
 
           {projectConfig?.sources.projectConfigPath &&
-            Object.keys(projectConfig.config.providers ?? {}).length > 0 && (
+            Object.keys(projectConfig.projectProviders ?? {}).length > 0 && (
               <section
                 data-testid="project-providers"
                 className="rounded-[10px] border border-border-subtle bg-background-subtle px-4 py-3.5"
@@ -367,7 +367,7 @@ function ModelsPage(): React.JSX.Element {
                   {t('modelsPage.projectProvidersDescription')}
                 </p>
                 <div className="mt-3 flex flex-col gap-2">
-                  {Object.entries(projectConfig.config.providers ?? {}).map(([id, provider]) => {
+                  {Object.entries(projectConfig.projectProviders ?? {}).map(([id, provider]) => {
                     const models = Object.entries(provider.models ?? {})
                     const matchesGlobal = config.providers.some((entry) => entry.id === id)
                     return (

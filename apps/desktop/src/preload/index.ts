@@ -2,12 +2,14 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   AGENT_CHANNELS,
   AGENT_EVENT_CHANNEL,
+  CONFIG_CHANGE_CHANNEL,
   MODEL_CHANNELS,
   THEME_CHANNEL,
   UPDATE_CHANNELS,
   UPDATE_EVENT_CHANNEL,
   type AgentEventEnvelope,
   type AteamApi,
+  type ConfigFileChange,
   type DesktopPlatform,
   type UpdateProgress
 } from '@ateam/shared'
@@ -107,6 +109,8 @@ const api: AteamApi = {
       reply: (requestId, decision) =>
         ipcRenderer.invoke(AGENT_CHANNELS.permissionReply, { requestId, decision }),
       rules: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.permissionsRules, { sessionId }),
+      overview: (directory) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.permissionsOverview, { directory }),
       addRule: (input) => ipcRenderer.invoke(AGENT_CHANNELS.permissionRuleAdd, input),
       removeRule: (id) => ipcRenderer.invoke(AGENT_CHANNELS.permissionRuleRemove, { id })
     },
@@ -122,6 +126,15 @@ const api: AteamApi = {
         ipcRenderer.invoke(AGENT_CHANNELS.agentConfigResolve, {
           directory: directory ?? undefined
         }),
+      onExternalChange: (callback) => {
+        const listener = (_event: IpcRendererEvent, change: ConfigFileChange): void => {
+          callback(change)
+        }
+        ipcRenderer.on(CONFIG_CHANGE_CHANNEL, listener)
+        return () => {
+          ipcRenderer.removeListener(CONFIG_CHANGE_CHANNEL, listener)
+        }
+      },
       project: {
         get: (directory) =>
           ipcRenderer.invoke(AGENT_CHANNELS.agentConfigProjectGet, {
@@ -131,6 +144,11 @@ const api: AteamApi = {
           ipcRenderer.invoke(AGENT_CHANNELS.agentConfigProjectUpdate, {
             directory: input.directory ?? undefined,
             content: input.content
+          }),
+        edit: (input) =>
+          ipcRenderer.invoke(AGENT_CHANNELS.agentConfigProjectEdit, {
+            directory: input.directory ?? undefined,
+            edits: input.edits
           })
       }
     },

@@ -201,6 +201,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return null
     case 'permissions.rules':
       return requireRuntime().listPermissionRules(request.params.sessionId)
+    case 'permissions.overview':
+      return requireRuntime().permissionRulesOverview(request.params?.workspace)
     case 'permissions.addRule':
       return requireRuntime().addPermissionRule(request.params)
     case 'permissions.removeRule':

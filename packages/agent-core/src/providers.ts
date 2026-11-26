@@ -4,34 +4,16 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { randomUUID } from 'node:crypto'
 import type { LanguageModel } from 'ai'
-import type {
-  ChatRetryStatus,
-  ModelPublic,
-  ModelRef,
-  ModelVariant,
-  ModelVariantInput,
-  ProviderConfigInput,
-  RetryConfig,
-  RuntimeModelsConfig
+import {
+  normalizeProjectVariants,
+  type ChatRetryStatus,
+  type ModelPublic,
+  type ModelRef,
+  type ProviderConfigInput,
+  type RetryConfig,
+  type RuntimeModelsConfig
 } from '@ateam/shared'
 import { createRetryFetch } from './retry-fetch'
-
-function projectVariants(variants: ModelVariantInput[] | undefined): ModelVariant[] | undefined {
-  if (!variants) return undefined
-  const result: ModelVariant[] = []
-  const seen = new Set<string>()
-  for (const variant of variants) {
-    const name = typeof variant?.name === 'string' ? variant.name.trim() : ''
-    const id = name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-    if (!name || !id || seen.has(id)) continue
-    seen.add(id)
-    result.push({ id, name, settings: variant.settings ?? {} })
-  }
-  return result.length > 0 ? result : undefined
-}
 
 const PROJECT_MODEL_CREATED_AT = '1970-01-01T00:00:00.000Z'
 
@@ -87,6 +69,7 @@ export function mergeRuntimeProviders(
     }
 
     for (const [modelId, modelInput] of Object.entries(input.models ?? {})) {
+      const variants = normalizeProjectVariants(modelInput.variants)
       const current = models.find((model) => model.providerId === id && model.modelId === modelId)
       if (current) {
         const index = models.indexOf(current)
@@ -105,9 +88,7 @@ export function mergeRuntimeProviders(
           ...(modelInput.costOutput !== undefined ? { costOutput: modelInput.costOutput } : {}),
           ...(modelInput.applyPatch !== undefined ? { applyPatch: modelInput.applyPatch } : {}),
           ...(modelInput.compaction !== undefined ? { compaction: modelInput.compaction } : {}),
-          ...(projectVariants(modelInput.variants)
-            ? { variants: projectVariants(modelInput.variants) }
-            : {})
+          ...(variants ? { variants } : {})
         }
         continue
       }
@@ -129,15 +110,21 @@ export function mergeRuntimeProviders(
         ...(modelInput.costOutput !== undefined ? { costOutput: modelInput.costOutput } : {}),
         ...(modelInput.applyPatch !== undefined ? { applyPatch: modelInput.applyPatch } : {}),
         ...(modelInput.compaction !== undefined ? { compaction: modelInput.compaction } : {}),
-        ...(projectVariants(modelInput.variants)
-          ? { variants: projectVariants(modelInput.variants) }
-          : {})
+        ...(variants ? { variants } : {})
       }
       models.push(model)
     }
   }
 
-  return { providers, models, defaultModel: base.defaultModel }
+  // A project can be the only source of models; fall back to its first model so
+  // a session without an explicit model can still send.
+  const first = models[0]
+  return {
+    providers,
+    models,
+    defaultModel:
+      base.defaultModel ?? (first ? { providerId: first.providerId, modelId: first.modelId } : null)
+  }
 }
 
 export function resolveModelRef(

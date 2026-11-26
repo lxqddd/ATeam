@@ -26,7 +26,10 @@ export { findProjectRoot } from './project-root'
 
 export type ProjectConfig = AgentConfigDocument
 
-const CONFIG_NAMES = ['ateam.json', 'ateam.jsonc'] as const
+/** Project configuration file names, in lookup order. */
+export const PROJECT_CONFIG_FILENAMES = ['ateam.json', 'ateam.jsonc'] as const
+
+const CONFIG_NAMES = PROJECT_CONFIG_FILENAMES
 
 export interface ProjectConfigDetails {
   document: AgentConfigDocument
@@ -50,18 +53,30 @@ export async function readProjectConfigFile(workspacePath: string): Promise<Proj
   const file = existing ?? path.join(root, CONFIG_NAMES[0])
   const directory = path.dirname(file)
   if (!existing) {
-    return { path: file, directory, root, exists: false, content: '', diagnostics: [] }
+    return {
+      path: file,
+      directory,
+      root,
+      exists: false,
+      content: '',
+      diagnostics: [],
+      document: {}
+    }
   }
   try {
     const content = await fs.readFile(file, 'utf8')
     const parsed = parseProjectConfigDocument(content, file)
+    const errors: ParseError[] = []
+    const raw = parseJsonc(content, errors, { allowTrailingComma: true })
     return {
       path: file,
       directory,
       root,
       exists: true,
       content,
-      diagnostics: parsed.diagnostics
+      diagnostics: parsed.diagnostics,
+      document: parsed.document,
+      ...(errors.length === 0 ? { raw } : {})
     }
   } catch (error) {
     return {
@@ -77,7 +92,8 @@ export async function readProjectConfigFile(workspacePath: string): Promise<Proj
           severity: 'error',
           message: `unable to read config: ${error instanceof Error ? error.message : 'unknown error'}`
         }
-      ]
+      ],
+      document: {}
     }
   }
 }

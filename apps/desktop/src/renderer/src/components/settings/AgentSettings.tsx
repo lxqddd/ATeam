@@ -3,10 +3,41 @@ import SettingsLoadError from './SettingsLoadError'
 import ProjectConfigCard from './ProjectConfigCard'
 import PluginSettings from './PluginSettings'
 import PluginAuthSettings from './PluginAuthSettings'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DEFAULT_RETRY_CONFIG, type AgentConfig, type AgentInfo } from '@ateam/shared'
 import { formatReferenceLines, parseReferenceLines } from './reference-lines'
+import { useChatStore } from '../../chat/store'
+
+interface ConfigFormValues {
+  instructions: string
+  formatterOverrides: string
+  referencesText: string
+  retryRetries: string
+  retryDelaySeconds: string
+  retryTimeoutSeconds: string
+  timezone: string
+  environmentNotes: string
+  systemPromptOverride: string
+}
+
+/** Derives the editable form state from a loaded config (also used as the pristine baseline). */
+function formValues(config: AgentConfig): ConfigFormValues {
+  const retry = config.retry ?? DEFAULT_RETRY_CONFIG
+  return {
+    instructions: config.instructions.join('\n'),
+    formatterOverrides: Object.entries(config.formatterOverrides)
+      .map(([extension, formatter]) => `${extension}=${formatter}`)
+      .join('\n'),
+    referencesText: formatReferenceLines(config.references ?? []),
+    retryRetries: String(retry.maxRetries),
+    retryDelaySeconds: String(Math.round(retry.maxDelayMs / 1_000)),
+    retryTimeoutSeconds: String(Math.round(retry.timeoutMs / 1_000)),
+    timezone: config.environment?.timezone ?? '',
+    environmentNotes: config.environment?.notes ?? '',
+    systemPromptOverride: config.systemPrompt ?? ''
+  }
+}
 
 interface ToggleRowProps {
   label: string
@@ -60,28 +91,51 @@ function AgentSettings(): React.JSX.Element {
   >(null)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [staleDraft, setStaleDraft] = useState(false)
+  const loadedSnapshot = useRef<string | null>(null)
+  const formSnapshot = JSON.stringify({
+    instructions,
+    formatterOverrides,
+    referencesText,
+    retryRetries,
+    retryDelaySeconds,
+    retryTimeoutSeconds,
+    timezone,
+    environmentNotes,
+    systemPromptOverride
+  })
+  const latestSnapshot = useRef(formSnapshot)
+  const { configRevision } = useChatStore()
 
   useEffect(() => {
+    latestSnapshot.current = formSnapshot
+  }, [formSnapshot])
+
+  useEffect(() => {
+    // A reload triggered elsewhere (external edit, save on another screen)
+    // must not overwrite unsaved draft text.
+    if (loadedSnapshot.current !== null && latestSnapshot.current !== loadedSnapshot.current) {
+      setStaleDraft(true)
+      return undefined
+    }
+    setStaleDraft(false)
     let active = true
     window.api.agent.config
       .get()
       .then((next) => {
         if (!active) return
+        const values = formValues(next)
         setConfig(next)
-        setInstructions(next.instructions.join('\n'))
-        setFormatterOverrides(
-          Object.entries(next.formatterOverrides)
-            .map(([extension, formatter]) => `${extension}=${formatter}`)
-            .join('\n')
-        )
-        setReferencesText(formatReferenceLines(next.references ?? []))
-        const retry = next.retry ?? DEFAULT_RETRY_CONFIG
-        setRetryRetries(String(retry.maxRetries))
-        setRetryDelaySeconds(String(Math.round(retry.maxDelayMs / 1_000)))
-        setRetryTimeoutSeconds(String(Math.round(retry.timeoutMs / 1_000)))
-        setTimezone(next.environment?.timezone ?? '')
-        setEnvironmentNotes(next.environment?.notes ?? '')
-        setSystemPromptOverride(next.systemPrompt ?? '')
+        setInstructions(values.instructions)
+        setFormatterOverrides(values.formatterOverrides)
+        setReferencesText(values.referencesText)
+        setRetryRetries(values.retryRetries)
+        setRetryDelaySeconds(values.retryDelaySeconds)
+        setRetryTimeoutSeconds(values.retryTimeoutSeconds)
+        setTimezone(values.timezone)
+        setEnvironmentNotes(values.environmentNotes)
+        setSystemPromptOverride(values.systemPromptOverride)
+        loadedSnapshot.current = JSON.stringify(values)
       })
       .catch((caught: unknown) => {
         if (active) setError(errorMessage(caught))
@@ -95,7 +149,12 @@ function AgentSettings(): React.JSX.Element {
     return () => {
       active = false
     }
-  }, [reloadKey])
+  }, [reloadKey, configRevision])
+
+  function markFormLoaded(next: AgentConfig): void {
+    loadedSnapshot.current = JSON.stringify(formValues(next))
+    setStaleDraft(false)
+  }
 
   async function updateConfig(patch: Partial<AgentConfig>): Promise<void> {
     setSaving(true)
@@ -120,6 +179,7 @@ function AgentSettings(): React.JSX.Element {
         .filter(Boolean)
       const next = await window.api.agent.config.update({ instructions: entries })
       setConfig(next)
+      markFormLoaded(next)
       setInstructions(next.instructions.join('\n'))
       setSaved('instructions')
     } catch (caught) {
@@ -146,6 +206,7 @@ function AgentSettings(): React.JSX.Element {
       }
       const next = await window.api.agent.config.update({ formatterOverrides: overrides })
       setConfig(next)
+      markFormLoaded(next)
       setFormatterOverrides(
         Object.entries(next.formatterOverrides)
           .map(([extension, formatter]) => `${extension}=${formatter}`)
@@ -168,6 +229,7 @@ function AgentSettings(): React.JSX.Element {
         references: parseReferenceLines(referencesText)
       })
       setConfig(next)
+      markFormLoaded(next)
       setReferencesText(formatReferenceLines(next.references ?? []))
       setSaved('references')
     } catch (caught) {
@@ -206,6 +268,7 @@ function AgentSettings(): React.JSX.Element {
         }
       })
       setConfig(next)
+      markFormLoaded(next)
       const retry = next.retry ?? DEFAULT_RETRY_CONFIG
       setRetryRetries(String(retry.maxRetries))
       setRetryDelaySeconds(String(Math.round(retry.maxDelayMs / 1_000)))
@@ -245,6 +308,7 @@ function AgentSettings(): React.JSX.Element {
         systemPrompt: systemPrompt || undefined
       })
       setConfig(next)
+      markFormLoaded(next)
       setTimezone(next.environment?.timezone ?? '')
       setEnvironmentNotes(next.environment?.notes ?? '')
       setSystemPromptOverride(next.systemPrompt ?? '')
@@ -286,6 +350,25 @@ function AgentSettings(): React.JSX.Element {
         <p role="alert" className="m-0 text-caption text-danger">
           {error}
         </p>
+      )}
+
+      {staleDraft && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 rounded-md border border-border-subtle bg-background-subtle px-3 py-2"
+        >
+          <p className="m-0 text-caption text-muted">{t('settings.configChangedExternally')}</p>
+          <button
+            type="button"
+            onClick={() => {
+              loadedSnapshot.current = null
+              setReloadKey((value) => value + 1)
+            }}
+            className="h-7 flex-none rounded-md border border-border bg-surface px-2 text-caption font-medium text-foreground transition-colors hover:bg-background-subtle"
+          >
+            {t('settings.reloadConfig')}
+          </button>
+        </div>
       )}
 
       <ProjectConfigCard defaultDirectory={info?.workspacePath} />

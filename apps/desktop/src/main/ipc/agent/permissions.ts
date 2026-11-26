@@ -2,10 +2,12 @@ import {
   AGENT_CHANNELS,
   type PermissionRequest,
   type PermissionRule,
+  type PermissionRulesOverview,
   type QuestionRequest
 } from '@ateam/shared'
 import type { AgentIpcContext } from './context'
 import {
+  directoryPayloadSchema,
   idPayloadSchema,
   permissionReplySchema,
   permissionRuleInputSchema,
@@ -38,6 +40,13 @@ export function registerPermissionHandlers(ctx: AgentIpcContext): void {
   handle(AGENT_CHANNELS.permissionsRules, (payload): Promise<PermissionRule[]> => {
     const { sessionId } = permissionRulesSchema.parse(payload) ?? {}
     return manager.request('permissions.rules', { sessionId })
+  })
+
+  handle(AGENT_CHANNELS.permissionsOverview, (payload): Promise<PermissionRulesOverview> => {
+    const { directory } = directoryPayloadSchema.parse(payload) ?? {}
+    return manager.request('permissions.overview', {
+      ...(directory ? { workspace: directory } : {})
+    })
   })
 
   handle(AGENT_CHANNELS.permissionRuleAdd, (payload): Promise<PermissionRule> => {

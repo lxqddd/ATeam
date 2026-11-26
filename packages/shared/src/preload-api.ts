@@ -1,6 +1,7 @@
 import type {
   AgentConfig,
   AgentDefinition,
+  ConfigFileChange,
   EffectiveAgentConfig,
   PluginAuthAuthorizeInput,
   PluginAuthCompleteInput,
@@ -9,6 +10,7 @@ import type {
   PluginEntry,
   PluginInstallInput,
   PluginUpdateInput,
+  ProjectConfigEditInput,
   ProjectConfigFile,
   AgentEventEnvelope,
   AgentInfo,
@@ -23,6 +25,7 @@ import type {
   PermissionDecision,
   PermissionRequest,
   PermissionRule,
+  PermissionRulesOverview,
   QuestionAnswer,
   QuestionRequest,
   PermissionRuleInput,
@@ -113,6 +116,7 @@ export interface AgentBridge {
     list: () => Promise<PermissionRequest[]>
     reply: (requestId: string, decision: PermissionDecision) => Promise<void>
     rules: (sessionId?: string) => Promise<PermissionRule[]>
+    overview: (directory?: string | null) => Promise<PermissionRulesOverview>
     addRule: (input: PermissionRuleInput) => Promise<PermissionRule>
     removeRule: (id: string) => Promise<boolean>
   }
@@ -124,9 +128,12 @@ export interface AgentBridge {
     get: () => Promise<AgentConfig>
     update: (patch: Partial<AgentConfig>) => Promise<AgentConfig>
     resolve: (directory?: string | null) => Promise<EffectiveAgentConfig>
+    /** Subscribes to config files changed outside the app; returns an unsubscribe function. */
+    onExternalChange: (callback: (change: ConfigFileChange) => void) => () => void
     project: {
       get: (directory?: string | null) => Promise<ProjectConfigFile>
       update: (input: { directory?: string | null; content: string }) => Promise<ProjectConfigFile>
+      edit: (input: ProjectConfigEditInput) => Promise<ProjectConfigFile>
     }
   }
   plugins: {

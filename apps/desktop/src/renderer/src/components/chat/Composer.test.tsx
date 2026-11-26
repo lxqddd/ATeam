@@ -158,7 +158,12 @@ describe('Composer', () => {
 
     await user.click(send)
 
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('hello', []))
+    await waitFor(() =>
+      expect(chatMocks.send).toHaveBeenCalledWith('hello', [], {
+        providerId: 'p1',
+        modelId: 'claude-x'
+      })
+    )
     await waitFor(() => expect(textarea).toHaveValue(''))
   })
 
@@ -168,7 +173,12 @@ describe('Composer', () => {
     const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
 
     await user.type(textarea, 'first{Enter}')
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('first', []))
+    await waitFor(() =>
+      expect(chatMocks.send).toHaveBeenCalledWith('first', [], {
+        providerId: 'p1',
+        modelId: 'claude-x'
+      })
+    )
 
     await user.type(textarea, 'line1{Shift>}{Enter}{/Shift}line2')
     expect(chatMocks.send).toHaveBeenCalledTimes(1)
@@ -554,9 +564,11 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() =>
-      expect(chatMocks.send).toHaveBeenCalledWith('see attached', [
-        expect.objectContaining({ name: 'notes.txt', kind: 'text' })
-      ])
+      expect(chatMocks.send).toHaveBeenCalledWith(
+        'see attached',
+        [expect.objectContaining({ name: 'notes.txt', kind: 'text' })],
+        { providerId: 'p1', modelId: 'claude-x' }
+      )
     )
     expect(api.api.agent.attachments.import).toHaveBeenCalledWith(
       's1',
@@ -669,7 +681,7 @@ describe('Composer', () => {
     await user.type(textarea, '/review src/a.ts')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', [], null))
   })
 
   it('expands command names containing dots', async () => {
@@ -694,7 +706,7 @@ describe('Composer', () => {
     await user.type(textarea, '/deploy.prod now')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Deploy now', []))
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Deploy now', [], null))
   })
 
   it('applies the agent and model bound to a command', async () => {
@@ -719,7 +731,7 @@ describe('Composer', () => {
     await user.type(textarea, '/review src/a.ts')
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', []))
+    await waitFor(() => expect(chatMocks.send).toHaveBeenCalledWith('Review src/a.ts', [], null))
     expect(chatMocks.setSessionAgent).toHaveBeenCalledWith('s1', 'plan')
     expect(chatMocks.setSessionModel).toHaveBeenCalledWith('s1', {
       providerId: 'p1',
@@ -911,7 +923,7 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
     await waitFor(() =>
-      expect(chatMocks.send).toHaveBeenCalledWith('Search results for electron', [])
+      expect(chatMocks.send).toHaveBeenCalledWith('Search results for electron', [], null)
     )
     expect(api.api.agent.mcp.prompt).toHaveBeenCalledWith(
       'docs',

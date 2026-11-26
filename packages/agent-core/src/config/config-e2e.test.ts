@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readEffectiveAgentConfig } from './config-store'
+import { editProjectConfigFile } from './project-config-edit'
 import { readProjectConfigFile, writeProjectConfigFile } from './project-config'
 
 let directory: string
@@ -139,6 +140,19 @@ describe('layered project configuration end to end', () => {
     expect(effective.projectMcpServers).toEqual([
       { name: 'project-mcp', type: 'local', command: 'node', args: ['server.js'] }
     ])
+    expect(effective.projectProviders).toMatchObject({
+      'provider-1': {
+        baseURL: 'https://project.example',
+        models: { 'project-model': { name: 'Project' } }
+      }
+    })
+    expect(effective.globalPermissionRules).toEqual([
+      { action: 'shell', resource: 'rm *', effect: 'deny', sessionId: null }
+    ])
+    expect(effective.projectPermissionRules).toEqual([
+      { action: 'write', resource: 'src/*', effect: 'allow', sessionId: null }
+    ])
+    expect(JSON.stringify(effective.projectProviders)).not.toContain('super-secret')
     expect(config.providers?.['provider-1']).toMatchObject({
       baseURL: 'https://project.example',
       models: {
@@ -209,5 +223,24 @@ describe('layered project configuration end to end', () => {
       'INVALID_PROJECT_CONFIG'
     )
     expect((await readProjectConfigFile(workspace)).content).toContain('docs/new.md')
+  })
+
+  it('applies structured edits without dropping comments or other fields', async () => {
+    const edited = await editProjectConfigFile(workspace, [
+      { path: ['providers', 'provider-1', 'models', 'project-model', 'name'], value: 'Renamed' },
+      { path: ['skills'], value: ['project-skills', 'https://example.com/skill', 'extra'] }
+    ])
+
+    expect(edited.content).toContain('// project overrides with JSONC')
+    expect(edited.raw).toMatchObject({
+      snapshots: false,
+      providers: { 'provider-1': { models: { 'project-model': { name: 'Renamed' } } } }
+    })
+
+    const effective = await readEffectiveAgentConfig(userData, workspace)
+    expect(effective.config.providers?.['provider-1']?.models?.['project-model']?.name).toBe(
+      'Renamed'
+    )
+    expect(effective.config.skills).toContain(path.join(repo, 'extra'))
   })
 })

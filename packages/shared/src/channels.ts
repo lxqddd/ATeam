@@ -4,6 +4,12 @@ export const THEME_CHANNEL = 'ateam:theme-changed'
 /** Main → renderer channel carrying agent events. */
 export const AGENT_EVENT_CHANNEL = 'ateam:agent:event'
 
+/**
+ * Main → renderer push for configuration files changed outside the app.
+ * Kept out of `AGENT_CHANNELS`: that map only holds renderer → main requests.
+ */
+export const CONFIG_CHANGE_CHANNEL = 'ateam:agent:config:external-changed'
+
 export const AGENT_CHANNELS = {
   status: 'ateam:agent:status',
   restart: 'ateam:agent:restart',
@@ -42,6 +48,7 @@ export const AGENT_CHANNELS = {
   questionsList: 'ateam:agent:questions:list',
   questionReply: 'ateam:agent:questions:reply',
   permissionsRules: 'ateam:agent:permissions:rules',
+  permissionsOverview: 'ateam:agent:permissions:overview',
   permissionRuleAdd: 'ateam:agent:permissions:add-rule',
   permissionRuleRemove: 'ateam:agent:permissions:remove-rule',
   agentConfig: 'ateam:agent:config:get',
@@ -49,6 +56,7 @@ export const AGENT_CHANNELS = {
   agentConfigResolve: 'ateam:agent:config:resolve',
   agentConfigProjectGet: 'ateam:agent:config:project:get',
   agentConfigProjectUpdate: 'ateam:agent:config:project:update',
+  agentConfigProjectEdit: 'ateam:agent:config:project:edit',
   pluginsList: 'ateam:agent:plugins:list',
   pluginsInstall: 'ateam:agent:plugins:install',
   pluginsUpdate: 'ateam:agent:plugins:update',

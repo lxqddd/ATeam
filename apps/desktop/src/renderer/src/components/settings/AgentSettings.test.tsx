@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentSettings from './AgentSettings'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
+import { chatStore } from '../../chat/store'
 
 const DEFAULTS = {
   snapshots: true,
@@ -310,27 +311,61 @@ describe('AgentSettings', () => {
     )
     expect(await screen.findByText('Saved')).toBeInTheDocument()
   })
-  it('edits the project config from the read-only card', async () => {
-    const user = userEvent.setup()
-    vi.mocked(mock.api.agent.config.project.update).mockResolvedValue({
-      path: '/tmp/workspace/ateam.json',
-      directory: '/tmp/workspace',
-      root: '/tmp/workspace',
-      exists: true,
-      content: '{"snapshots": false}\n',
-      diagnostics: []
+  it('links to the project settings editor', async () => {
+    render(<AgentSettings />)
+
+    const link = await screen.findByRole('link', { name: 'Open project settings' })
+    expect(link).toHaveAttribute('href', '#/settings?section=project')
+    expect(await screen.findByText('/tmp/workspace/ateam.json')).toBeInTheDocument()
+    expect(screen.getByText('Not created')).toBeInTheDocument()
+  })
+
+  it('reloads when the configuration changes externally', async () => {
+    chatStore.dispose()
+    await chatStore.init()
+    vi.mocked(mock.api.agent.config.get).mockResolvedValue({
+      ...DEFAULTS,
+      instructions: ['first.md']
     })
     render(<AgentSettings />)
 
-    await user.click(await screen.findByRole('button', { name: 'Create project config' }))
-    const editor = screen.getByRole('textbox', { name: /ateam\.json/ })
-    fireEvent.change(editor, { target: { value: '{"snapshots": false}\n' } })
-    await user.click(screen.getByRole('button', { name: 'Save project config' }))
+    expect(await screen.findByLabelText('Instruction files')).toHaveValue('first.md')
 
-    await waitFor(() =>
-      expect(mock.api.agent.config.project.update).toHaveBeenCalledWith(
-        expect.objectContaining({ content: '{"snapshots": false}\n' })
-      )
+    vi.mocked(mock.api.agent.config.get).mockResolvedValue({
+      ...DEFAULTS,
+      instructions: ['second.md']
+    })
+    mock.emit({ type: 'config.changed', workspace: '/tmp/workspace' })
+
+    await waitFor(
+      () => expect(screen.getByLabelText('Instruction files')).toHaveValue('second.md'),
+      { timeout: 2_000 }
     )
+  })
+
+  it('keeps an unsaved draft when the configuration changes externally', async () => {
+    chatStore.dispose()
+    await chatStore.init()
+    vi.mocked(mock.api.agent.config.get).mockResolvedValue({
+      ...DEFAULTS,
+      instructions: ['first.md']
+    })
+    const user = userEvent.setup()
+    render(<AgentSettings />)
+
+    const input = await screen.findByLabelText('Instruction files')
+    expect(input).toHaveValue('first.md')
+
+    await user.clear(input)
+    await user.type(input, 'draft.md')
+    mock.emit({ type: 'config.changed', workspace: '/tmp/workspace' })
+
+    expect(
+      await screen.findByText(
+        'Configuration changed externally, but there are unsaved edits, so it was not reloaded.'
+      )
+    ).toBeInTheDocument()
+    expect(input).toHaveValue('draft.md')
+    expect(mock.api.agent.config.get).toHaveBeenCalledTimes(1)
   })
 })

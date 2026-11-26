@@ -46,6 +46,8 @@ export interface ProviderPublic {
   hasOAuthClientSecret?: boolean
   createdAt: string
   updatedAt: string
+  /** Set when the entry comes from the project configuration rather than the global model store. */
+  source?: 'config'
 }
 
 export interface ProviderOAuthStatus {
@@ -98,6 +100,8 @@ export interface ModelPublic {
   applyPatch?: boolean
   /** Provider performs context compaction server-side. */
   compaction?: boolean
+  /** Set when the entry comes from the project configuration rather than the global model store. */
+  source?: 'config'
 }
 
 export interface ModelCatalogEntry {

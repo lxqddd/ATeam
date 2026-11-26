@@ -24,6 +24,7 @@ import type {
   SteerStrategy,
   SubagentResult
 } from '@ateam/shared'
+import { mergeProjectModelCatalog } from '@ateam/shared'
 
 export interface ChatStoreState {
   status: AgentStatus
@@ -118,9 +119,12 @@ export class ChatStore {
   private commandsRequest = 0
   private agentsDirectory: string | null = null
   private agentsRequest = 0
+  private modelsRequest = 0
   private snapshotting = new Set<string>()
   private buffered = new Map<string, AgentEventEnvelope[]>()
   private unsubscribe: (() => void) | null = null
+  private unsubscribeConfig: (() => void) | null = null
+  private configRefreshTimer: ReturnType<typeof setTimeout> | null = null
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
@@ -141,6 +145,9 @@ export class ChatStore {
     this.unsubscribe = window.api.agent.onEvent((envelope) => {
       this.handleEnvelope(envelope)
     })
+    this.unsubscribeConfig = window.api.agent.config.onExternalChange(() => {
+      this.scheduleConfigRefresh()
+    })
 
     try {
       const status = await window.api.agent.status()
@@ -156,11 +163,11 @@ export class ChatStore {
       /* the info panel is optional */
     }
 
-    await this.refreshModels()
     await this.loadSessions()
     const selected = this.state.sessions.find(
       (session) => session.id === this.state.selectedSessionId
     )
+    await this.refreshModels(selected?.directory ?? null)
     await this.refreshAgents(selected?.directory ?? undefined)
     await this.refreshCommands(selected?.directory ?? undefined)
 
@@ -182,13 +189,33 @@ export class ChatStore {
     }
   }
 
-  async refreshModels(): Promise<void> {
+  /**
+   * Refreshes the public model catalog merged with the providers declared by
+   * the current project. Without `directory`, the selected session's directory
+   * is used.
+   */
+  async refreshModels(directory?: string | null): Promise<void> {
+    const target = directory === undefined ? this.selectedDirectory() : directory
+    const request = ++this.modelsRequest
     try {
-      const models = await window.api.models.get()
-      this.setState({ models })
+      const [models, resolved] = await Promise.all([
+        window.api.models.get(),
+        target ? window.api.agent.config.resolve(target).catch(() => null) : Promise.resolve(null)
+      ])
+      // Overlapping refreshes are resolved last-write-wins so switching
+      // sessions quickly cannot leave the picker on the previous project.
+      if (request !== this.modelsRequest) return
+      this.setState({ models: mergeProjectModelCatalog(models, resolved?.projectProviders) })
     } catch {
       /* the composer will show the missing configuration */
     }
+  }
+
+  private selectedDirectory(): string | null {
+    const session = this.state.sessions.find(
+      (candidate) => candidate.id === this.state.selectedSessionId
+    )
+    return session?.directory ?? null
   }
 
   async refreshAgents(directory?: string | null, force = false): Promise<void> {
@@ -294,6 +321,7 @@ export class ChatStore {
   selectSession(sessionId: string): void {
     this.setState({ selectedSessionId: sessionId, changesPanel: null })
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
+    void this.refreshModels(session?.directory ?? null)
     void this.refreshAgents(session?.directory ?? undefined)
     void this.refreshCommands(session?.directory ?? undefined)
     void this.loadBackgroundTasks(sessionId)
@@ -338,6 +366,7 @@ export class ChatStore {
       actionError: null,
       changesPanel: null
     })
+    void this.refreshModels(session.directory ?? null)
     void this.refreshAgents(session.directory ?? undefined)
     void this.refreshCommands(session.directory ?? undefined)
     return session
@@ -369,6 +398,7 @@ export class ChatStore {
   async setSessionDirectory(sessionId: string, directory: string | null): Promise<void> {
     const session = await window.api.agent.sessions.setDirectory(sessionId, directory)
     this.upsertSession(session)
+    void this.refreshModels(directory)
   }
 
   async setSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
@@ -462,7 +492,11 @@ export class ChatStore {
     })
   }
 
-  async send(text: string, attachments: MessageAttachment[] = []): Promise<void> {
+  async send(
+    text: string,
+    attachments: MessageAttachment[] = [],
+    model?: ModelRef | null
+  ): Promise<void> {
     const content = text.trim()
     if (!content && attachments.length === 0) return
     if (this.state.status.status !== 'ready') {
@@ -472,6 +506,9 @@ export class ChatStore {
     await window.api.agent.chat.send({
       sessionId: session.id,
       text: content,
+      // Pass the model the composer is showing so a model picked right before
+      // sending is used even if the session update has not arrived yet.
+      ...(model ? { model } : {}),
       ...(attachments.length > 0 ? { attachments } : {})
     })
   }
@@ -553,7 +590,28 @@ export class ChatStore {
   dispose(): void {
     this.unsubscribe?.()
     this.unsubscribe = null
+    this.unsubscribeConfig?.()
+    this.unsubscribeConfig = null
+    if (this.configRefreshTimer !== null) {
+      clearTimeout(this.configRefreshTimer)
+      this.configRefreshTimer = null
+    }
     this.listeners.clear()
+    this.initialized = false
+    this.initPromise = null
+  }
+
+  /**
+   * Merges worker `config.changed` events and main-process external-change
+   * pushes into one revision bump so dependent settings views reload once.
+   */
+  private scheduleConfigRefresh(): void {
+    if (this.configRefreshTimer !== null) return
+    this.configRefreshTimer = setTimeout(() => {
+      this.configRefreshTimer = null
+      void this.refreshModels(this.selectedDirectory())
+      this.setState({ configRevision: this.state.configRevision + 1 })
+    }, 120)
   }
 
   private async reloadAfterReady(): Promise<void> {
@@ -582,10 +640,10 @@ export class ChatStore {
       } catch {
         /* questions are unavailable until the agent is ready */
       }
-      await this.refreshModels()
       const selected = this.state.sessions.find(
         (session) => session.id === this.state.selectedSessionId
       )
+      await this.refreshModels(selected?.directory ?? null)
       await this.refreshAgents(selected?.directory ?? undefined, true)
       await this.refreshCommands(selected?.directory ?? undefined, true)
     })()
@@ -629,7 +687,7 @@ export class ChatStore {
   private applyEvent(event: AgentEvent): void {
     switch (event.type) {
       case 'config.changed':
-        this.setState({ configRevision: this.state.configRevision + 1 })
+        this.scheduleConfigRefresh()
         break
       case 'agent.status':
         this.applyStatus(event.status)

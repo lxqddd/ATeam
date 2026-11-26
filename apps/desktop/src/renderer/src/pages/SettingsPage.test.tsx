@@ -26,6 +26,9 @@ vi.mock('../components/settings/WebSearchSettings', () => ({
 vi.mock('../components/settings/UpdateSettings', () => ({
   default: () => <div>update-panel</div>
 }))
+vi.mock('../components/settings/project/ProjectSettings', () => ({
+  default: () => <div>project-panel</div>
+}))
 
 function renderPage(initialEntry = '/settings'): void {
   render(
@@ -92,6 +95,15 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Web search' }))
 
     expect(await screen.findByText('websearch-panel')).toBeInTheDocument()
+  })
+
+  it('shows project settings from the menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('menuitem', { name: 'Project' }))
+
+    expect(await screen.findByText('project-panel')).toBeInTheDocument()
   })
 
   it('shows update settings from the menu', async () => {

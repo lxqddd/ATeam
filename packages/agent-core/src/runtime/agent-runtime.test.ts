@@ -4942,6 +4942,33 @@ describe('project provider and MCP configuration', () => {
       projectModel
     )
   })
+  it('clears a session model removed by a config reload', async () => {
+    const workspace = path.join(directory, 'workspace')
+    await fs.writeFile(
+      path.join(workspace, 'ateam.json'),
+      JSON.stringify({
+        providers: {
+          'provider-1': { models: { 'project-model': { name: 'Project Model' } } }
+        }
+      })
+    )
+    await runtime.reloadConfig(workspace)
+    await sink.next('config.changed')
+    const projectModel = { providerId: 'provider-1', modelId: 'project-model' }
+    await runtime.setSessionModel(sessionId, projectModel)
+    expect(runtime.listSessions().find((session) => session.id === sessionId)?.model).toEqual(
+      projectModel
+    )
+
+    await fs.writeFile(
+      path.join(workspace, 'ateam.json'),
+      JSON.stringify({ providers: { 'provider-1': { models: {} } } })
+    )
+    await runtime.reloadConfig(workspace)
+    await sink.next('config.changed')
+
+    expect(runtime.listSessions().find((session) => session.id === sessionId)?.model).toBeNull()
+  })
   it('reloads project config and emits config.changed', async () => {
     const workspace = path.join(directory, 'workspace')
     await fs.writeFile(path.join(workspace, 'ateam.json'), JSON.stringify({ snapshots: false }))

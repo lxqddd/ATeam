@@ -770,6 +770,13 @@ describe('ModelsPage edge cases', () => {
         projectRoot: '/tmp/workspace'
       },
       diagnostics: [],
+      projectProviders: {
+        'provider-1': {
+          name: 'Project Provider',
+          baseURL: 'https://project.example.com',
+          models: { 'project-model': { name: 'Project Model' } }
+        }
+      },
       provenance: {
         snapshots: 'default',
         instructions: 'default',

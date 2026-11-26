@@ -5,6 +5,7 @@ import AgentSettings from '../components/settings/AgentSettings'
 import LanguageSettings from '../components/settings/LanguageSettings'
 import McpServers from '../components/settings/McpServers'
 import PermissionRules from '../components/settings/PermissionRules'
+import ProjectSettings from '../components/settings/project/ProjectSettings'
 import WebSearchSettings from '../components/settings/WebSearchSettings'
 import { SettingsGroup } from '../components/settings/SettingsGroup'
 import ThemeSettings from '../components/settings/ThemeSettings'
@@ -40,6 +41,11 @@ const SETTINGS_SECTIONS = [
     id: 'agent',
     labelKey: 'settings.agent',
     descriptionKey: 'settings.agentDescription'
+  },
+  {
+    id: 'project',
+    labelKey: 'settings.project',
+    descriptionKey: 'settings.projectDescription'
   },
   {
     id: 'update',
@@ -135,6 +141,7 @@ function SettingsPage(): React.JSX.Element {
                 <AgentSettings />
               </SettingsGroup>
             )}
+            {section === 'project' && <ProjectSettings />}
             {section === 'update' && (
               <SettingsGroup
                 title={t('settings.update')}

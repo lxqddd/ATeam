@@ -1,6 +1,7 @@
 import { errorMessage } from '../../lib/errors'
 import { useChatStore } from '../../chat/store'
 import SettingsLoadError from './SettingsLoadError'
+import { parseKeyValue, parseLines } from './config-lines'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import type {
@@ -10,27 +11,6 @@ import type {
   McpServerStatus,
   McpServerType
 } from '@ateam/shared'
-
-function parseLines(value: string): string[] {
-  return value
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-}
-
-function parseKeyValue(text: string, separator: ':' | '='): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-    const index = trimmed.indexOf(separator)
-    if (index === -1) continue
-    const key = trimmed.slice(0, index).trim()
-    const value = trimmed.slice(index + 1).trim()
-    if (key) result[key] = value
-  }
-  return result
-}
 
 const STATUS_CLASS: Record<string, string> = {
   idle: 'bg-background-subtle text-muted',

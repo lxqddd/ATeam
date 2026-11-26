@@ -268,6 +268,52 @@ it('preserves layered document fields when updating global switches', async () =
   expect(again.get()).toEqual(updated)
 })
 
+describe('reload', () => {
+  it('re-reads the global document after an external edit', async () => {
+    await store.update({ snapshots: false })
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.writeFile(file, JSON.stringify({ snapshots: true, instructions: ['EXT.md'] }))
+
+    await store.reload()
+
+    expect(store.get().snapshots).toBe(true)
+    expect(store.get().instructions).toEqual(['EXT.md'])
+  })
+
+  it('keeps the current state when the file is temporarily invalid', async () => {
+    await store.update({ snapshots: false })
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.writeFile(file, '{ invalid')
+
+    await store.reload()
+
+    expect(store.get().snapshots).toBe(false)
+  })
+
+  it('resets to defaults when the file is removed', async () => {
+    await store.update({ snapshots: false })
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.rm(file)
+
+    await store.reload()
+
+    expect(store.get().snapshots).toBe(true)
+  })
+
+  it('serializes reload and update so a save is not lost', async () => {
+    const file = path.join(directory, 'agent', 'config.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, JSON.stringify({ snapshots: false }))
+
+    await Promise.all([store.reload(), store.update({ subagentDepth: 2 })])
+
+    expect(store.get().subagentDepth).toBe(2)
+    const saved = JSON.parse(await fs.readFile(file, 'utf8')) as Record<string, unknown>
+    expect(saved.subagentDepth).toBe(2)
+    expect(saved.snapshots).toBe(false)
+  })
+})
+
 describe('additional patch fields', () => {
   it('persists additional config fields from a core patch', async () => {
     const updated = await store.update({

@@ -51,9 +51,12 @@ function cloneToolOutputConfig(config: ToolOutputConfig | undefined): ToolOutput
   }
 }
 
-function configFile(userDataPath: string): string {
+/** Absolute path of the global agent configuration document. */
+export function globalAgentConfigPath(userDataPath: string): string {
   return path.join(userDataPath, 'agent', 'config.json')
 }
+
+const configFile = globalAgentConfigPath
 
 function cloneConfig(config: AgentConfig): AgentConfig {
   return {
@@ -101,6 +104,40 @@ async function readGlobalDocument(userDataPath: string): Promise<{
   const file = configFile(userDataPath)
   const raw = await readJsonFile<unknown>(file)
   if (!raw) return { document: {}, diagnostics: [] }
+  return normalizeGlobalRaw(raw, file)
+}
+
+/**
+ * Reads the global document for a hot reload. Returns `null` when the file is
+ * temporarily unreadable or not valid JSON (for example mid-save in an external
+ * editor): the caller must keep its previous state instead of resetting it.
+ */
+async function readGlobalDocumentStrict(
+  userDataPath: string
+): Promise<{ document: AgentConfigDocument; diagnostics: ConfigDiagnostic[] } | null> {
+  const file = configFile(userDataPath)
+  let content: string
+  try {
+    content = await fs.readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { document: {}, diagnostics: [] }
+    }
+    return null
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(content)
+  } catch {
+    return null
+  }
+  return normalizeGlobalRaw(raw, file)
+}
+
+function normalizeGlobalRaw(
+  raw: unknown,
+  file: string
+): { document: AgentConfigDocument; diagnostics: ConfigDiagnostic[] } {
   const parsed = normalizeAgentConfigDocument(raw, file)
   const directory = path.dirname(file)
   if (parsed.document.skills) {
@@ -212,6 +249,7 @@ export async function readEffectiveAgentConfig(
   const global = await readGlobalDocument(userDataPath)
   const base = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, global.document, 'user')
   const diagnostics = [...global.diagnostics]
+  const globalPermissionRules = global.document.permissions ?? global.document.permissionRules ?? []
 
   if (!workspacePath) {
     return {
@@ -223,7 +261,8 @@ export async function readEffectiveAgentConfig(
         projectRoot: userDataPath
       },
       diagnostics,
-      provenance: computeProvenance(global.document, null)
+      provenance: computeProvenance(global.document, null),
+      ...(globalPermissionRules.length > 0 ? { globalPermissionRules } : {})
     }
   }
 
@@ -239,12 +278,21 @@ export async function readEffectiveAgentConfig(
     projectConfigDir: project.directory,
     projectRoot: project.root
   }
+  const projectProviders =
+    project.document.providers && !Array.isArray(project.document.providers)
+      ? project.document.providers
+      : undefined
+  const projectPermissionRules =
+    project.document.permissions ?? project.document.permissionRules ?? []
   return {
     config,
     sources,
     diagnostics,
     provenance: computeProvenance(global.document, project.document),
-    projectMcpServers: project.document.mcp ?? []
+    projectMcpServers: project.document.mcp ?? [],
+    ...(projectProviders ? { projectProviders } : {}),
+    ...(globalPermissionRules.length > 0 ? { globalPermissionRules } : {}),
+    ...(projectPermissionRules.length > 0 ? { projectPermissionRules } : {})
   }
 }
 
@@ -258,20 +306,52 @@ export async function readAgentConfig(
 export class AgentConfigStore {
   private config: AgentConfig = { ...DEFAULT_AGENT_CONFIG }
   private document: AgentConfigDocument = {}
+  /** Serializes init/reload/update so a hot reload never interleaves with a save. */
+  private operation: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly userDataPath: string) {}
 
   async init(): Promise<void> {
-    const global = await readGlobalDocument(this.userDataPath)
-    this.document = global.document
-    this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, global.document, 'user')
+    await this.serialize(async () => {
+      const global = await readGlobalDocument(this.userDataPath)
+      this.document = global.document
+      this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, global.document, 'user')
+    })
   }
 
   get(): AgentConfig {
     return cloneConfig(this.config)
   }
 
+  /**
+   * Re-reads the global document from disk after an external edit.
+   * A temporarily unreadable or invalid file keeps the current in-memory state.
+   */
+  async reload(): Promise<void> {
+    await this.serialize(async () => {
+      const global = await readGlobalDocumentStrict(this.userDataPath)
+      if (!global) return
+      this.document = global.document
+      this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, global.document, 'user')
+    })
+  }
+
   async update(
+    patch: Omit<Partial<AgentConfig>, 'retry'> & { retry?: RetryConfigInput }
+  ): Promise<AgentConfig> {
+    return this.serialize(() => this.applyUpdate(patch))
+  }
+
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.operation.then(task, task)
+    this.operation = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
+  private async applyUpdate(
     patch: Omit<Partial<AgentConfig>, 'retry'> & { retry?: RetryConfigInput }
   ): Promise<AgentConfig> {
     const next: AgentConfigDocument = { ...this.document }

@@ -50,6 +50,8 @@
 - OpenAI 与 OpenAI-compatible 供应商可选择 OAuth 2.0 认证：填写授权地址、Token 地址、Client ID / Secret、Scope 与回调地址，在供应商卡片完成授权 / 重新授权 / 退出登录；access token 作为 Bearer 凭据使用，过期前自动刷新。
 - API Key 与 OAuth 客户端密钥、access / refresh token 以明文 JSON 保存在 `userData/auth.json`（文件权限 0600），与 OpenCode 的存储方式一致；渲染层只能看到配置状态。旧版 `safeStorage` 加密数据会在启动时一次性迁移为明文。
 - 支持从供应商接口拉取模型列表并批量添加。
+- 项目 `ateam.json(c)` 的 `providers` / `models` 会合并进当前会话的模型选择器（带“项目”标识）：同 id 供应商/模型逐字段覆盖全局配置，新模型 id 为 `config:<provider>:<model>`；未设置默认模型时取合并后的第一个模型。合并只发生在渲染层，运行时仍以 worker 的合并结果为准，且项目 provider 只接受 `apiKeyEnv` 环境变量引用（`ProviderConfigInput` 无字面凭据字段）。
+- 切换会话目录、创建会话或配置热更新时重建合并结果，请求竞态只应用最后一次；项目删除模型后自动清理失效的会话模型引用。
 
 ### 2.2 模型元数据
 
@@ -160,6 +162,7 @@
 - 求值顺序：模式基础规则 → 全局规则 → 当前 Agent 的规则 → 会话规则 → 组织策略；组织策略最后生效，可强制执行 allow / ask / deny。子代理的 Agent 规则随权限请求上抛，由父会话统一裁决。
 - 支持通配符（`*`）、shell 命令的 ` *` 后缀匹配、Windows 下大小写不敏感。
 - “始终允许”持久化到 `agent/permissions.json`，重启后仍生效；设置页可查看与删除。
+- 设置页按实际求值顺序展示六层规则来源：全局持久化 → 全局配置 → 项目配置 → 当前 Agent → 会话持久化 → 组织策略；持久化层可直接增删，其余只读并标注来源文件或 Agent 名称，空层也会显示。
 - 多资源操作（如 shell 命令中的多个路径）任一命中 `deny` 即拒绝。
 - shell 命令使用引号、转义感知的 bash / PowerShell / cmd 解析，按 `;`、`|`、`&&`、`||`、`&` 与换行分段；重定向目标、`--flag=value` 与普通参数中的绝对 / 父级相对路径都参与 `external_directory` 判定，变量展开路径视为不安全并触发确认。
 - `sudo`、`rm -rf /`、`rm -rf .` / `.git`、`git clean -fdx`、`find -delete`、`mkfs`、`dd if=`、强制 push、管道执行 shell / Python / Node、`Invoke-Expression`、`cmd /c` 等危险命令在 `auto` 模式下仍需要显式 allow 规则或一次确认；`plan` 模式继续拒绝 shell。
@@ -265,15 +268,16 @@
 
 ## 15. 设置页
 
-| 分区     | 内容                                                                                                                 |
-| -------- | -------------------------------------------------------------------------------------------------------------------- |
-| 外观     | 内置主题（跟随系统 / 浅色 / 深色 / 日落橙 / 暖墨 / 石墨 / 奶油 / 冷雾）                                              |
-| 语言     | 跟随系统 / 中文 / English                                                                                            |
-| 权限     | 查看与删除已保存的权限规则                                                                                           |
-| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                                                                  |
-| 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                                                                           |
-| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用；项目配置来源/生效值/诊断、原始 `ateam.json(c)` 编辑 |
-| 插件     | 安装 / 启用 / 移除、来源与加载错误、插件声明的登录方式、连接状态、授权与退出登录、OAuth 自动刷新                     |
+| 分区     | 内容                                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------------------------- |
+| 外观     | 内置主题（跟随系统 / 浅色 / 深色 / 日落橙 / 暖墨 / 石墨 / 奶油 / 冷雾）                                         |
+| 语言     | 跟随系统 / 中文 / English                                                                                       |
+| 权限     | 查看与删除已保存的权限规则                                                                                      |
+| MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                                                             |
+| 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                                                                      |
+| Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用；项目配置摘要入口（路径、诊断数、跳转项目分区） |
+| 项目     | 概览（来源/生效值/诊断）、Providers、LSP、Formatters、Commands、Skills 结构化表单与 Raw JSONC 编辑              |
+| 插件     | 安装 / 启用 / 移除、来源与加载错误、插件声明的登录方式、连接状态、授权与退出登录、OAuth 自动刷新                |
 
 模型管理是独立页面：供应商与模型的增删改、默认模型、目录填充、上下文与能力元数据；选中会话工作区存在项目 providers 时，额外展示只读的项目 provider/模型覆盖。MCP 页按当前会话 workspace 加载，project server 显示来源并禁用编辑/启停，OAuth 授权仍可用。
 
@@ -311,7 +315,7 @@ models/                  # 供应商 / 模型配置
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件，可在配置中开启 npm 按需安装（见第 10 节）。
 - 缓存成本仍按 input token 统一价格估算，未区分 cache read/write 价格；缓存指标只统计聊天模型请求，标题、压缩与模型测试不计入。
-- 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示、原始项目配置编辑和完整配置矩阵 E2E；结构化 provider/LSP/formatter/commands/skills 管理表单、项目模型进入选择器、项目权限规则来源 UI、文件监听热更新仍待补齐；运行中的配置更新会通过 `config.changed` 主动刷新 UI 与缓存。
+- 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示、结构化 provider/LSP/formatter/commands/skills 管理表单、原始 JSONC 兜底编辑、项目模型进入选择器（带“项目”标识）、权限规则六层来源 UI 与完整配置矩阵 E2E。主进程以目录监听 + 去抖 + mtime 兜底监视全局 `config.json` 与项目 `ateam.json(c)`，外部修改约 1 秒内刷新设置页与缓存；应用内保存通过内容摘要抑制自写事件，watcher 跟随会话 workspace 按 Git 根复用（LRU 上限 32）。边界：结构化表单只托管 `providers` / `lsp` / `lspEnabled` / `lspInstall` / `formatters` / `formattersEnabled` / `formatterOverrides` / `commands` / `skills` 顶层 key 的路径级 diff，数组或整对象替换会丢失节点内注释，JSONC 无效时结构化面板只读、需在 Raw 中修复；watcher 不监视 `permissions.json` / `policy.json` / `mcp.json`。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 - 桌面安装包尚未配置代码签名与公证（macOS `notarize: false`）；正式分发前需提供证书、公证凭据并调整 `electron-builder.yml`。
 
@@ -325,7 +329,7 @@ models/                  # 供应商 / 模型配置
 - 浏览器与控制台：[browser-controller.ts](../apps/desktop/src/main/browser/browser-controller.ts)、[cli/main.ts](../apps/headless/src/cli/main.ts)、[server/main.ts](../apps/headless/src/server/main.ts)、[acp/main.ts](../apps/headless/src/acp/main.ts)、[sdk/client.ts](../packages/client-sdk/src/client.ts)
 - 会话存储：[storage/index.ts](../packages/agent-core/src/sessions/storage/index.ts)
 - 主进程存储：[model-config-store.ts](../apps/desktop/src/main/settings/model-config-store.ts)、[websearch-config-store.ts](../apps/desktop/src/main/settings/websearch-config-store.ts)、[catalog.ts](../apps/desktop/src/main/providers/catalog.ts)
-- 配置 UI：[ProjectConfigCard.tsx](../apps/desktop/src/renderer/src/components/settings/ProjectConfigCard.tsx)
+- 配置 UI：[ProjectConfigCard.tsx](../apps/desktop/src/renderer/src/components/settings/ProjectConfigCard.tsx)、[project/ProjectSettings.tsx](../apps/desktop/src/renderer/src/components/settings/project/ProjectSettings.tsx)、[project/useProjectConfig.ts](../apps/desktop/src/renderer/src/components/settings/project/useProjectConfig.ts)、[config-watcher.ts](../apps/desktop/src/main/config-watcher.ts)
 
 ## 19. Headless CLI
 

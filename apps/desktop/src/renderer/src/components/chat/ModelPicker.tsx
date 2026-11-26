@@ -104,8 +104,13 @@ function ModelPicker({
             if (providerModels.length === 0) return null
             return (
               <div key={provider.id} className="pb-1">
-                <div className="px-2 py-1 text-caption font-medium text-subtle">
-                  {provider.name}
+                <div className="flex items-center gap-1.5 px-2 py-1 text-caption font-medium text-subtle">
+                  <span className="truncate">{provider.name}</span>
+                  {provider.source === 'config' && (
+                    <span className="flex-none rounded-sm bg-accent/10 px-1 py-px text-[10px] font-medium text-accent">
+                      {t('chat.projectModel')}
+                    </span>
+                  )}
                 </div>
                 {providerModels.map((model) => {
                   const ref = { providerId: model.providerId, modelId: model.modelId }
@@ -125,8 +130,13 @@ function ModelPicker({
                       }`}
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-label font-medium text-foreground">
-                          {model.name}
+                        <span className="flex items-center gap-1.5 text-label font-medium text-foreground">
+                          <span className="truncate">{model.name}</span>
+                          {model.source === 'config' && provider.source !== 'config' && (
+                            <span className="flex-none rounded-sm bg-accent/10 px-1 py-px text-[10px] font-medium text-accent">
+                              {t('chat.projectModel')}
+                            </span>
+                          )}
                         </span>
                         <span className="block truncate font-mono text-[11px] text-subtle">
                           {model.modelId}

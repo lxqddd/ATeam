@@ -120,7 +120,9 @@ export function useComposerSubmit({
           attachments
         )
       } else {
-        await chatStore.send(expanded.text, attachments)
+        // A command may have rebound the session model, so only pass the
+        // composer's model for plain sends.
+        await chatStore.send(expanded.text, attachments, expanded.command ? null : effectiveModel)
       }
       setText('')
       setAttachments([])

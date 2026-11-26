@@ -2,7 +2,16 @@ import { errorMessage } from '../../lib/errors'
 import SettingsLoadError from './SettingsLoadError'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
+import type {
+  AgentDefinition,
+  PermissionEffect,
+  PermissionRuleGroupView,
+  PermissionRuleSource,
+  PermissionRuleView,
+  PermissionRuleAction,
+  PermissionRulesOverview
+} from '@ateam/shared'
+import { useChatStore } from '../../chat/store'
 
 const ACTION_LABEL_KEYS: Record<PermissionRuleAction, string> = {
   read: 'chat.permissionRead',
@@ -35,12 +44,133 @@ const EFFECT_CLASS: Record<PermissionEffect, string> = {
   deny: 'bg-danger/10 text-danger'
 }
 
+const SOURCE_LABEL_KEYS: Record<PermissionRuleSource, string> = {
+  'global-persisted': 'settings.permissionSourceGlobalPersisted',
+  'global-config': 'settings.permissionSourceGlobalConfig',
+  'project-config': 'settings.permissionSourceProjectConfig',
+  agent: 'settings.permissionSourceAgent',
+  'session-persisted': 'settings.permissionSourceSessionPersisted',
+  policy: 'settings.permissionSourcePolicy'
+}
+
+const AGENT_SOURCE_LABEL_KEYS: Record<AgentDefinition['source'], string> = {
+  builtin: 'settings.permissionAgentBuiltin',
+  user: 'settings.permissionAgentUser',
+  project: 'settings.permissionAgentProject'
+}
+
 const ACTIONS = Object.keys(ACTION_LABEL_KEYS) as PermissionRuleAction[]
 const EFFECTS = Object.keys(EFFECT_LABEL_KEYS) as PermissionEffect[]
 
+function PermissionRuleRow({
+  rule,
+  onRemove,
+  removing
+}: {
+  rule: PermissionRuleView
+  onRemove?: () => void
+  removing: boolean
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
+      <span className="text-label font-medium text-foreground">
+        {t(ACTION_LABEL_KEYS[rule.action])}
+      </span>
+      <span
+        className={`inline-flex h-[18px] items-center rounded-full px-1.5 text-[12px] leading-none font-medium ${EFFECT_CLASS[rule.effect]}`}
+      >
+        {t(EFFECT_LABEL_KEYS[rule.effect])}
+      </span>
+      <code
+        className="min-w-0 flex-1 truncate font-mono text-caption text-muted"
+        title={rule.resource}
+      >
+        {rule.resource}
+      </code>
+      {rule.sessionId && (
+        <span className="flex-none text-caption text-subtle">
+          {t('settings.permissionRuleSession')} · {rule.sessionId.slice(0, 8)}
+        </span>
+      )}
+      {onRemove && (
+        <button
+          type="button"
+          disabled={removing}
+          aria-label={`${t('settings.removePermissionRule')}: ${rule.resource}`}
+          onClick={onRemove}
+          className="h-7 flex-none rounded-md px-2 text-caption font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
+        >
+          {t('settings.delete')}
+        </button>
+      )}
+    </li>
+  )
+}
+
+function PermissionLayer({
+  group,
+  index,
+  removing,
+  onRemove
+}: {
+  group: PermissionRuleGroupView
+  index: number
+  removing: string | null
+  onRemove: (groupIndex: number, rule: PermissionRuleView) => void
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  return (
+    <section className="flex flex-col gap-2 border-border-subtle pb-4 not-last:border-b">
+      <header className="flex flex-wrap items-center gap-2">
+        <h3 className="m-0 text-label font-semibold text-foreground">
+          {t(SOURCE_LABEL_KEYS[group.source])}
+        </h3>
+        {!group.editable && (
+          <span className="inline-flex h-[18px] items-center rounded-full bg-neutral-soft px-1.5 text-[11px] leading-none font-medium text-neutral">
+            {t('settings.permissionReadOnly')}
+          </span>
+        )}
+        {group.agentName && (
+          <span className="text-caption text-muted">
+            {group.agentName} · {t(AGENT_SOURCE_LABEL_KEYS[group.agentSource ?? 'builtin'])}
+          </span>
+        )}
+        {group.path && (
+          <code
+            className="min-w-0 flex-1 truncate text-right font-mono text-caption text-subtle"
+            title={group.path}
+          >
+            {group.path}
+          </code>
+        )}
+      </header>
+      {group.rules.length === 0 ? (
+        <p className="m-0 text-caption text-subtle">{t('settings.permissionLayerEmpty')}</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {group.rules.map((rule) => (
+            <PermissionRuleRow
+              key={rule.id}
+              rule={rule}
+              removing={removing === rule.id}
+              {...(group.editable ? { onRemove: () => onRemove(index, rule) } : {})}
+            />
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 function PermissionRules(): React.JSX.Element {
   const { t } = useTranslation()
-  const [rules, setRules] = useState<PermissionRule[] | null>(null)
+  const { sessions, selectedSessionId, configRevision } = useChatStore()
+  const selected = sessions.find((session) => session.id === selectedSessionId)
+  const [defaultDirectory, setDefaultDirectory] = useState<string | null>(null)
+  const directory = selected?.directory ?? defaultDirectory
+  const [overview, setOverview] = useState<PermissionRulesOverview | null>(null)
+  const [degraded, setDegraded] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -51,18 +181,73 @@ function PermissionRules(): React.JSX.Element {
 
   useEffect(() => {
     let active = true
+    window.api.agent.info().then(
+      (info) => {
+        if (active) setDefaultDirectory(info.workspacePath)
+      },
+      () => undefined
+    )
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
     window.api.agent.permissions
-      .rules()
+      .overview(directory)
       .then((next) => {
-        if (active) setRules(next)
+        if (!active) return
+        setOverview(next)
+        setDegraded(false)
+        setError(null)
       })
       .catch((caught: unknown) => {
-        if (active) setError(errorMessage(caught))
+        // An older worker without the overview method must still show the
+        // rules the app can actually edit.
+        window.api.agent.permissions
+          .rules()
+          .then((rules) => {
+            if (!active) return
+            setOverview({
+              workspace: directory ?? '',
+              groups: [
+                {
+                  source: 'global-persisted',
+                  editable: true,
+                  rules: rules.filter((rule) => rule.sessionId === null)
+                },
+                {
+                  source: 'session-persisted',
+                  editable: true,
+                  rules: rules.filter((rule) => rule.sessionId !== null)
+                }
+              ]
+            })
+            setDegraded(true)
+            setError(null)
+          })
+          .catch(() => {
+            if (active) setError(errorMessage(caught))
+          })
       })
     return () => {
       active = false
     }
-  }, [reloadKey])
+  }, [directory, reloadKey, configRevision])
+
+  function replaceGroupRules(
+    state: PermissionRulesOverview,
+    groupIndex: number,
+    update: (rules: PermissionRuleView[]) => PermissionRuleView[]
+  ): PermissionRulesOverview {
+    return {
+      ...state,
+      groups: state.groups.map((group, index) =>
+        index === groupIndex ? { ...group, rules: update(group.rules) } : group
+      )
+    }
+  }
 
   async function add(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
@@ -77,7 +262,21 @@ function PermissionRules(): React.JSX.Element {
         effect,
         sessionId: null
       })
-      setRules((current) => [...(current ?? []), rule])
+      setOverview((current) => {
+        if (!current) return current
+        const index = current.groups.findIndex((group) => group.source === 'global-persisted')
+        if (index < 0) return current
+        return replaceGroupRules(current, index, (rules) => [
+          ...rules,
+          {
+            id: rule.id,
+            action: rule.action,
+            resource: rule.resource,
+            effect: rule.effect,
+            sessionId: rule.sessionId
+          }
+        ])
+      })
       setResource('')
     } catch (caught) {
       setError(errorMessage(caught))
@@ -86,12 +285,18 @@ function PermissionRules(): React.JSX.Element {
     }
   }
 
-  async function remove(rule: PermissionRule): Promise<void> {
+  async function remove(groupIndex: number, rule: PermissionRuleView): Promise<void> {
     setRemoving(rule.id)
     setError(null)
     try {
       await window.api.agent.permissions.removeRule(rule.id)
-      setRules((current) => current?.filter((entry) => entry.id !== rule.id) ?? null)
+      setOverview((current) =>
+        current
+          ? replaceGroupRules(current, groupIndex, (rules) =>
+              rules.filter((entry) => entry.id !== rule.id)
+            )
+          : current
+      )
     } catch (caught) {
       setError(errorMessage(caught))
     } finally {
@@ -99,7 +304,7 @@ function PermissionRules(): React.JSX.Element {
     }
   }
 
-  if (!rules) {
+  if (!overview) {
     return error ? (
       <SettingsLoadError
         message={error}
@@ -121,49 +326,25 @@ function PermissionRules(): React.JSX.Element {
         </p>
       )}
 
-      {rules.length === 0 ? (
-        <p className="m-0 py-2 text-caption text-muted">{t('settings.noPermissionRules')}</p>
-      ) : (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {rules.map((rule) => (
-            <li
-              key={rule.id}
-              className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-background-subtle px-3 py-2"
-            >
-              <span className="text-label font-medium text-foreground">
-                {t(ACTION_LABEL_KEYS[rule.action])}
-              </span>
-              <span
-                className={`inline-flex h-[18px] items-center rounded-full px-1.5 text-[12px] leading-none font-medium ${EFFECT_CLASS[rule.effect]}`}
-              >
-                {t(EFFECT_LABEL_KEYS[rule.effect])}
-              </span>
-              <code
-                className="min-w-0 flex-1 truncate font-mono text-caption text-muted"
-                title={rule.resource}
-              >
-                {rule.resource}
-              </code>
-              <span className="flex-none text-caption text-subtle">
-                {rule.sessionId
-                  ? `${t('settings.permissionRuleSession')} · ${rule.sessionId.slice(0, 8)}`
-                  : t('settings.permissionRuleGlobal')}
-              </span>
-              <button
-                type="button"
-                disabled={removing === rule.id}
-                aria-label={`${t('settings.removePermissionRule')}: ${rule.resource}`}
-                onClick={() => {
-                  void remove(rule)
-                }}
-                className="h-7 flex-none rounded-md px-2 text-caption font-medium text-danger transition-colors hover:bg-danger/10 disabled:opacity-50"
-              >
-                {t('settings.delete')}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {degraded && (
+        <p role="status" className="m-0 text-caption text-muted">
+          {t('settings.permissionOverviewUnavailable')}
+        </p>
       )}
+
+      <div className="flex flex-col">
+        {overview.groups.map((group, index) => (
+          <PermissionLayer
+            key={`${group.source}-${group.agentId ?? index}`}
+            group={group}
+            index={index}
+            removing={removing}
+            onRemove={(groupIndex, rule) => {
+              void remove(groupIndex, rule)
+            }}
+          />
+        ))}
+      </div>
 
       <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => void add(event)}>
         <label className="flex flex-col gap-1 text-caption text-muted">

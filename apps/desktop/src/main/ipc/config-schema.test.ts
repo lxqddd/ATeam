@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentConfigPatchSchema } from './config-schema'
+import { agentConfigPatchSchema, projectConfigEditSchema } from './config-schema'
 
 describe('agentConfigPatchSchema', () => {
   it('keeps formatter overrides', () => {
@@ -66,6 +66,54 @@ describe('agentConfigPatchSchema', () => {
     ).toThrow()
     expect(() =>
       agentConfigPatchSchema.parse({ formatterOverrides: { '.ts': 'x'.repeat(41) } })
+    ).toThrow()
+  })
+})
+
+describe('projectConfigEditSchema', () => {
+  it('accepts edits to form-managed top-level fields', () => {
+    expect(
+      projectConfigEditSchema.parse({
+        edits: [
+          { path: ['providers', 'local', 'models', 'm'], value: { name: 'M' } },
+          { path: ['skills'], value: ['a'] },
+          { path: ['lsp', 'servers', 'ts'] }
+        ]
+      }).edits
+    ).toHaveLength(3)
+  })
+
+  it('rejects fields the structured editors do not own', () => {
+    expect(() => projectConfigEditSchema.parse({ edits: [{ path: ['mcp'], value: [] }] })).toThrow()
+    expect(() =>
+      projectConfigEditSchema.parse({ edits: [{ path: ['systemPrompt'], value: 'x' }] })
+    ).toThrow()
+    expect(() =>
+      projectConfigEditSchema.parse({ edits: [{ path: ['permissions'], value: [] }] })
+    ).toThrow()
+  })
+
+  it('rejects unsafe or oversized paths', () => {
+    expect(() =>
+      projectConfigEditSchema.parse({ edits: [{ path: ['providers', '__proto__'], value: {} }] })
+    ).toThrow()
+    expect(() =>
+      projectConfigEditSchema.parse({
+        edits: [{ path: ['providers', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], value: 1 }]
+      })
+    ).toThrow()
+    expect(() =>
+      projectConfigEditSchema.parse({
+        edits: Array.from({ length: 101 }, () => ({ path: ['skills'], value: [] }))
+      })
+    ).toThrow()
+  })
+
+  it('rejects payloads over the size limit', () => {
+    expect(() =>
+      projectConfigEditSchema.parse({
+        edits: [{ path: ['commands', 'review'], value: { template: 'x'.repeat(200_001) } }]
+      })
     ).toThrow()
   })
 })

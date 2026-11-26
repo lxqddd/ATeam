@@ -6,10 +6,12 @@ import type {
   AgentInfo,
   AgentStatus,
   BackgroundTaskInfo,
+  ConfigFileChange,
   EffectiveAgentConfig,
   PluginAuthMethodState,
   PluginAuthResult,
   PluginEntry,
+  ProjectConfigEdit,
   ProjectConfigFile,
   AteamApi,
   CommandDefinition,
@@ -24,6 +26,7 @@ import type {
   ModelsConfigPublic,
   PermissionRequest,
   PermissionRuleInput,
+  PermissionRulesOverview,
   ProviderOAuthStatus,
   QuestionRequest,
   SessionMeta,
@@ -86,6 +89,8 @@ export interface ApiMock {
   messages: Map<string, MessagesSnapshot>
   permissions: PermissionRequest[]
   emit: (event: AgentEvent, seq?: number) => void
+  emitConfigChange: (change: ConfigFileChange) => void
+  configChangeListenerCount: () => number
 }
 
 export function createApiMock(
@@ -98,6 +103,7 @@ export function createApiMock(
   const messages = new Map<string, MessagesSnapshot>()
   const permissions: PermissionRequest[] = []
   const listeners = new Set<(envelope: AgentEventEnvelope) => void>()
+  const configChangeListeners = new Set<(change: ConfigFileChange) => void>()
   let sequence = 0
 
   const emptySnapshot = (sessionId: string): MessagesSnapshot => ({
@@ -298,6 +304,22 @@ export function createApiMock(
         list: vi.fn(async () => permissions.map((permission) => ({ ...permission }))),
         reply: vi.fn(async () => undefined),
         rules: vi.fn(async () => []),
+        overview: vi.fn(async (): Promise<PermissionRulesOverview> => ({
+          workspace: '/tmp/workspace',
+          groups: [
+            { source: 'global-persisted', editable: true, rules: [] },
+            {
+              source: 'global-config',
+              editable: false,
+              path: '/tmp/config.json',
+              rules: []
+            },
+            { source: 'project-config', editable: false, rules: [] },
+            { source: 'agent', editable: false, rules: [] },
+            { source: 'session-persisted', editable: true, rules: [] },
+            { source: 'policy', editable: false, rules: [] }
+          ]
+        })),
         addRule: vi.fn(async (input: PermissionRuleInput) => ({
           id: `rule-${Date.now()}`,
           ...input,
@@ -317,6 +339,12 @@ export function createApiMock(
           formatters: true,
           formatterOverrides: {}
         })),
+        onExternalChange: vi.fn((callback: (change: ConfigFileChange) => void) => {
+          configChangeListeners.add(callback)
+          return () => {
+            configChangeListeners.delete(callback)
+          }
+        }),
         update: vi.fn(async (patch: Partial<AgentConfig>) => ({
           snapshots: true,
           instructions: [],
@@ -332,7 +360,8 @@ export function createApiMock(
             root: '/tmp/workspace',
             exists: false,
             content: '',
-            diagnostics: []
+            diagnostics: [],
+            document: {}
           })),
           update: vi.fn(async (input: { content: string }): Promise<ProjectConfigFile> => ({
             path: '/tmp/workspace/ateam.json',
@@ -340,8 +369,20 @@ export function createApiMock(
             root: '/tmp/workspace',
             exists: true,
             content: input.content,
-            diagnostics: []
-          }))
+            diagnostics: [],
+            document: {}
+          })),
+          edit: vi.fn(
+            async (input: { edits: ProjectConfigEdit[] }): Promise<ProjectConfigFile> => ({
+              path: '/tmp/workspace/ateam.json',
+              directory: '/tmp/workspace',
+              root: '/tmp/workspace',
+              exists: true,
+              content: JSON.stringify(input.edits),
+              diagnostics: [],
+              document: {}
+            })
+          )
         },
         resolve: vi.fn(async (): Promise<EffectiveAgentConfig> => ({
           config: {
@@ -507,6 +548,10 @@ export function createApiMock(
         event
       }
       for (const listener of listeners) listener(envelope)
-    }
+    },
+    emitConfigChange: (change: ConfigFileChange) => {
+      for (const listener of configChangeListeners) listener(change)
+    },
+    configChangeListenerCount: () => configChangeListeners.size
   }
 }
