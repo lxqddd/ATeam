@@ -64,7 +64,9 @@ describe('MessageList', () => {
     renderList({
       messages: [
         makeMessage({ id: 'u1', sessionId: 's1', role: 'user', parts: [makeTextPart('hello')] }),
-        assistant({ parts: [makeTextPart('hi there')], snapshotBefore: 'snap-1' })
+        assistant({
+          parts: [{ type: 'snapshot', snapshot: 'snap-1' }, makeTextPart('hi there')]
+        })
       ]
     })
 

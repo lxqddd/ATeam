@@ -6,7 +6,7 @@ const chatMocks = vi.hoisted(() => ({
   forkSession: vi.fn(async () => undefined),
   openChanges: vi.fn(),
   undoSession: vi.fn(async () => null),
-  undoToPart: vi.fn(async () => undefined)
+  undoToStep: vi.fn(async () => undefined)
 }))
 
 vi.mock('../../chat/store', () => ({ chatStore: chatMocks }))
@@ -125,8 +125,10 @@ describe('changed files', () => {
     const message = makeMessage({
       id: 'm1',
       sessionId: 's1',
-      parts: [makeTextPart('answer')],
-      changedFiles: ['src/a.ts']
+      parts: [
+        makeTextPart('answer'),
+        { type: 'patch', step: 0, snapshot: 'snap-1', files: ['src/a.ts'] }
+      ]
     })
     render(
       <AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning={false} />
@@ -139,9 +141,11 @@ describe('changed files', () => {
 
   it('hides the review entry while the message is streaming', () => {
     const message = makeMessage({
-      parts: [makeTextPart('answer')],
-      status: 'streaming',
-      changedFiles: ['src/a.ts']
+      parts: [
+        makeTextPart('answer'),
+        { type: 'patch', step: 0, snapshot: 'snap-1', files: ['src/a.ts'] }
+      ],
+      status: 'streaming'
     })
     render(<AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning />)
 
@@ -156,35 +160,70 @@ describe('step rewind', () => {
     const message = makeMessage({
       id: 'm1',
       parts: [
+        { type: 'snapshot', snapshot: 'snap-0' },
+        { type: 'step-start', step: 0, snapshot: 'snap-0' },
         makeTextPart('first'),
         makeToolPart({ toolCallId: 'call-1', toolName: 'read' }),
-        makeTextPart('second')
-      ],
-      snapshotBefore: 'snap-0',
-      snapshotAfter: 'snap-2',
-      snapshotSteps: [
-        { before: 'snap-0', after: 'snap-1', files: ['src/a.ts'], partIndex: 2 },
-        { before: 'snap-1', after: 'snap-2', files: [], partIndex: 3 }
+        { type: 'step-finish', step: 0, snapshot: 'snap-1' },
+        { type: 'patch', step: 0, snapshot: 'snap-1', files: ['src/a.ts'] },
+        { type: 'step-start', step: 1, snapshot: 'snap-1' },
+        makeTextPart('second'),
+        { type: 'step-finish', step: 1, snapshot: 'snap-2' }
       ]
     })
     render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
 
     await user.click(screen.getByRole('button', { name: /Rewind to this step/ }))
 
-    expect(chatMocks.undoToPart).toHaveBeenCalledWith('m1', 2)
+    expect(chatMocks.undoToStep).toHaveBeenCalledWith('m1', 0)
   })
 
   it('hides step rewind for historical messages', () => {
     const message = makeMessage({
-      parts: [makeTextPart('first'), makeTextPart('second')],
-      snapshotBefore: 'snap-0',
-      snapshotAfter: 'snap-1',
-      snapshotSteps: [{ before: 'snap-0', after: 'snap-1', files: [], partIndex: 1 }]
+      parts: [
+        { type: 'snapshot', snapshot: 'snap-0' },
+        { type: 'step-start', step: 0, snapshot: 'snap-0' },
+        makeTextPart('first'),
+        { type: 'step-finish', step: 0, snapshot: 'snap-1' },
+        { type: 'step-start', step: 1, snapshot: 'snap-1' },
+        makeTextPart('second'),
+        { type: 'step-finish', step: 1, snapshot: 'snap-2' }
+      ]
     })
     render(
       <AssistantMessage message={message} permissions={[]} isLast={false} sessionRunning={false} />
     )
 
     expect(screen.queryByRole('button', { name: /Rewind to this step/ })).not.toBeInTheDocument()
+  })
+
+  it('does not offer a rewind for the final step or steps without snapshots', () => {
+    const message = makeMessage({
+      parts: [
+        { type: 'snapshot', snapshot: 'snap-0' },
+        { type: 'step-start', step: 0, snapshot: 'snap-0' },
+        makeTextPart('first'),
+        { type: 'step-finish', step: 0 },
+        { type: 'step-start', step: 1, snapshot: 'snap-0' },
+        makeTextPart('second'),
+        { type: 'step-finish', step: 1, snapshot: 'snap-1' }
+      ]
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
+
+    expect(screen.queryByRole('button', { name: /Rewind to this step/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the empty assistant hint when only metadata parts exist', () => {
+    const message = makeMessage({
+      status: 'complete',
+      parts: [
+        { type: 'step-start', step: 0 },
+        { type: 'step-finish', step: 0, reason: 'stop' }
+      ]
+    })
+    render(<AssistantMessage message={message} permissions={[]} isLast sessionRunning={false} />)
+
+    expect(screen.getByText('The model returned no content.')).toBeInTheDocument()
   })
 })

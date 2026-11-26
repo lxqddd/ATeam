@@ -72,7 +72,7 @@ export interface AgentBridge {
     setAgent: (id: string, agent: string | null) => Promise<SessionMeta>
     plan: (id: string) => Promise<SessionPlan>
     compact: (id: string) => Promise<SessionMeta>
-    undo: (id: string, messageId?: string, partIndex?: number) => Promise<SessionUndoResult>
+    undo: (id: string, messageId?: string, stepIndex?: number) => Promise<SessionUndoResult>
     redo: (id: string) => Promise<SessionMeta>
     fork: (id: string, messageId?: string) => Promise<SessionMeta>
     search: (query: string) => Promise<SessionSearchResult[]>

@@ -103,6 +103,48 @@ export interface TodoInput {
 export type ToolState =
   'pending' | 'awaiting-approval' | 'running' | 'completed' | 'failed' | 'denied'
 
+/** A whole-turn snapshot checkpoint, emitted before the first step or at the end of a step-less turn. */
+export interface SnapshotPart {
+  type: 'snapshot'
+  snapshot: string
+  /** Files changed for a step-less turn snapshot; step snapshots report files through `patch`. */
+  files?: string[]
+}
+
+/** Start of one model step inside an assistant message. */
+export interface StepStartPart {
+  type: 'step-start'
+  /** 0-based, consecutive within one assistant message. */
+  step: number
+  /** Snapshot taken when the step started (previous checkpoint, or the turn start). */
+  snapshot?: string
+  startedAt?: string
+}
+
+/** End of one model step, including its resulting checkpoint and usage. */
+export interface StepFinishPart {
+  type: 'step-finish'
+  step: number
+  /** Snapshot taken when the step finished; absent when snapshots are unavailable. */
+  snapshot?: string
+  /** Provider finish reason for the step. */
+  reason?: string
+  usage?: TokenUsage
+  startedAt?: string
+  finishedAt?: string
+}
+
+/** Files changed by one model step. */
+export interface PatchPart {
+  type: 'patch'
+  step: number
+  snapshot: string
+  files: string[]
+}
+
+/** Parts that describe run bookkeeping rather than user-visible content. */
+export type MetadataPart = SnapshotPart | StepStartPart | StepFinishPart | PatchPart
+
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string; providerMetadata?: Record<string, unknown> }
@@ -119,6 +161,10 @@ export type MessagePart =
       startedAt?: string
       finishedAt?: string
     }
+  | SnapshotPart
+  | StepStartPart
+  | StepFinishPart
+  | PatchPart
 
 export type AttachmentKind = 'text' | 'image' | 'pdf'
 
@@ -178,14 +224,6 @@ export interface TurnChanges {
   files: FileChange[]
 }
 
-export interface MessageSnapshotStep {
-  before: string
-  after: string
-  files: string[]
-  /** Number of assistant message parts when this step finished; absent on older records. */
-  partIndex?: number
-}
-
 export interface ChatRetryStatus {
   attempt: number
   maxAttempts: number
@@ -218,10 +256,6 @@ export interface ChatMessage {
   durationMs?: number
   /** Estimated USD cost for this message when the model has pricing metadata. */
   costUsd?: number
-  snapshotBefore?: string
-  snapshotAfter?: string
-  snapshotSteps?: MessageSnapshotStep[]
-  changedFiles?: string[]
   /** Set when the runtime injected this message instead of the user. */
   synthetic?: SyntheticMessageInfo
 }

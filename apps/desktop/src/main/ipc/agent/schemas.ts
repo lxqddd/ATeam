@@ -89,11 +89,17 @@ export const sessionSetAgentSchema = z.object({
   agent: z.string().min(1).max(100).nullable()
 })
 
-/** Shared shape for undo/fork, which both target an optional message; undo also takes a part index. */
-export const sessionMessageSchema = z.object({
+/** Undo targets an optional assistant message, or one recorded step inside it. */
+export const sessionUndoSchema = z.object({
   id: idSchema,
   messageId: idSchema.optional(),
-  partIndex: z.number().int().min(0).max(100_000).optional()
+  stepIndex: z.number().int().min(0).max(100_000).optional()
+})
+
+/** Fork targets an optional message to cut the conversation at. */
+export const sessionForkSchema = z.object({
+  id: idSchema,
+  messageId: idSchema.optional()
 })
 
 export const sessionIdSchema = z.object({ sessionId: idSchema })

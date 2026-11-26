@@ -7,6 +7,7 @@ import type {
   SessionChangeTurn,
   TurnChanges
 } from '@ateam/shared'
+import { messageChangedFiles, messageSnapshotBounds, messageSteps } from '@ateam/shared'
 import { attachmentDirectory, isPathInsideDirectory } from '../attachments'
 import type { RevertState, SessionRecord, SessionsStore } from '../sessions/sessions-store'
 import type { SnapshotStore } from '../sessions/snapshots'
@@ -25,7 +26,9 @@ export interface ForkAttachmentsHost {
 
 export function latestSnapshotMessage(messages: ChatMessage[]): ChatMessage | undefined {
   const lastAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
-  return lastAssistant?.snapshotBefore ? lastAssistant : undefined
+  return lastAssistant && messageSnapshotBounds(lastAssistant.parts).before
+    ? lastAssistant
+    : undefined
 }
 
 export async function buildTurnChanges(
@@ -34,14 +37,12 @@ export async function buildTurnChanges(
   message: ChatMessage,
   revert?: RevertState
 ): Promise<TurnChanges> {
-  if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
+  const bounds = messageSnapshotBounds(message.parts)
+  if (!bounds.before) throw new Error('NO_SNAPSHOT')
   const latest = latestSnapshotMessage(record.messages)?.id === message.id
-  const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
-  const fallbackPaths = [
-    ...(message.changedFiles ?? []),
-    ...(message.snapshotSteps ?? []).flatMap((step) => step.files)
-  ]
-  const result = await host.snapshots.changes(message.snapshotBefore, afterId, {
+  const afterId = bounds.after ?? null
+  const fallbackPaths = messageChangedFiles(message.parts)
+  const result = await host.snapshots.changes(bounds.before, afterId, {
     current: latest,
     paths: afterId ? undefined : fallbackPaths
   })
@@ -70,12 +71,11 @@ export async function buildSessionChanges(
   host: TurnChangesHost,
   record: SessionRecord
 ): Promise<SessionChangesSummary> {
-  const candidates = record.messages.filter(
-    (message) =>
-      message.role === 'assistant' &&
-      Boolean(message.snapshotBefore) &&
-      Boolean(message.snapshotAfter ?? message.snapshotSteps?.length)
-  )
+  const candidates = record.messages.filter((message) => {
+    if (message.role !== 'assistant') return false
+    const bounds = messageSnapshotBounds(message.parts)
+    return Boolean(bounds.before) && Boolean(bounds.after ?? messageSteps(message.parts).length)
+  })
   const selected = candidates.slice(-MAX_SUMMARY_TURNS).reverse()
   const turns: SessionChangeTurn[] = []
   const uniqueFiles = new Set<string>()
@@ -84,14 +84,13 @@ export async function buildSessionChanges(
   let truncated = candidates.length > selected.length
 
   for (const message of selected) {
-    const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
-    const fallbackPaths = [
-      ...(message.changedFiles ?? []),
-      ...(message.snapshotSteps ?? []).flatMap((step) => step.files)
-    ]
+    const bounds = messageSnapshotBounds(message.parts)
+    if (!bounds.before) continue
+    const afterId = bounds.after ?? null
+    const fallbackPaths = messageChangedFiles(message.parts)
     let result: Awaited<ReturnType<SnapshotStore['changes']>>
     try {
-      result = await host.snapshots.changes(message.snapshotBefore as string, afterId, {
+      result = await host.snapshots.changes(bounds.before, afterId, {
         paths: afterId ? undefined : fallbackPaths
       })
     } catch {
@@ -139,13 +138,11 @@ export async function allowedChangePaths(
   host: TurnChangesHost,
   message: ChatMessage
 ): Promise<Set<string>> {
-  const afterId = message.snapshotAfter ?? message.snapshotSteps?.at(-1)?.after ?? null
-  const paths = new Set<string>([
-    ...(message.changedFiles ?? []),
-    ...(message.snapshotSteps ?? []).flatMap((step) => step.files)
-  ])
-  if (message.snapshotBefore && afterId) {
-    const diff = await host.snapshots.diff(message.snapshotBefore, afterId)
+  const bounds = messageSnapshotBounds(message.parts)
+  const afterId = bounds.after ?? null
+  const paths = new Set<string>(messageChangedFiles(message.parts))
+  if (bounds.before && afterId) {
+    const diff = await host.snapshots.diff(bounds.before, afterId)
     for (const path of diff.added) paths.add(path)
     for (const path of diff.modified) paths.add(path)
     for (const path of diff.deleted) paths.add(path)

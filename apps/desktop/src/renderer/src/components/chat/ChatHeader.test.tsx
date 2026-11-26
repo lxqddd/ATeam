@@ -178,8 +178,7 @@ describe('ChatHeader', () => {
           id: 'a1',
           sessionId: 's1',
           role: 'assistant',
-          parts: [makeTextPart('hello')],
-          snapshotBefore: 'snap-1'
+          parts: [{ type: 'snapshot', snapshot: 'snap-1' }, makeTextPart('hello')]
         })
       ]
     }
@@ -224,8 +223,7 @@ describe('ChatHeader', () => {
           id: 'a1',
           sessionId: 's1',
           role: 'assistant',
-          parts: [makeTextPart('hi')],
-          snapshotBefore: 'snap-1'
+          parts: [{ type: 'snapshot', snapshot: 'snap-1' }, makeTextPart('hi')]
         })
       ]
     }

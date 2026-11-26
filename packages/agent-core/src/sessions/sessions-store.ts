@@ -12,8 +12,9 @@ import type {
   TodoPriority,
   TodoStatus
 } from '@ateam/shared'
-import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
+import { PERMISSION_MODES, REASONING_EFFORTS, isMetadataPart } from '@ateam/shared'
 import { normalizeTodos, TODO_PRIORITIES, TODO_STATUSES } from '../todos'
+import { migrateRecordMessageParts } from './migrate-message-parts'
 import {
   createSessionStorage,
   type PreparedCompaction,
@@ -181,6 +182,8 @@ function repairRecord(record: SessionRecord): boolean {
     }
   }
 
+  if (migrateRecordMessageParts(record)) changed = true
+
   if (changed) record.session.updatedAt = nowIso()
   return changed
 }
@@ -293,10 +296,9 @@ export class SessionsStore {
       .filter((message) => message.status !== 'streaming')
       .map((message) => ({
         ...message,
-        snapshotBefore: undefined,
-        snapshotAfter: undefined,
-        snapshotSteps: [],
-        changedFiles: undefined
+        // Forked sessions keep the conversation but must not point at the
+        // parent's snapshots, so step/patch/snapshot parts are dropped.
+        parts: message.parts.filter((part) => !isMetadataPart(part))
       }))
     if (messageId) {
       const index = messages.findIndex((message) => message.id === messageId)
@@ -504,7 +506,7 @@ export class SessionsStore {
     return { session: clone(record.session), removed: clone(removed) }
   }
 
-  async stagePartUndo(
+  async stageStepUndo(
     id: string,
     index: number,
     original: ChatMessage,

@@ -96,10 +96,10 @@ export async function runSubagentTask(
   else parent.abort.signal.addEventListener('abort', onAbort, { once: true })
 
   const user = makeUserMessage(sessionId, input.prompt)
-  const assistant = makeAssistantMessage(sessionId)
-  if (parent.config.snapshots) {
-    assistant.snapshotBefore = await host.createSnapshotId(sessionId, parent.references ?? [])
-  }
+  const snapshot = parent.config.snapshots
+    ? await host.createSnapshotId(sessionId, parent.references ?? [])
+    : undefined
+  const assistant = makeAssistantMessage(sessionId, snapshot)
   await host.store.appendMessage(sessionId, user)
   await host.store.appendMessage(sessionId, assistant)
   await host.store.setStatus(sessionId, 'running')

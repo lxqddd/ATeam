@@ -96,7 +96,7 @@ function ChangesPanel({
     if (raw.includes('TURN_NOT_LATEST')) return t('chat.changesNotLatest')
     if (raw.includes('SESSION_BUSY')) return t('chat.changesBusy')
     if (raw.includes('INVALID_CHANGE_PATH')) return t('chat.changesInvalidPath')
-    if (raw.includes('INVALID_PART_INDEX')) return t('chat.changesInvalidPart')
+    if (raw.includes('INVALID_STEP_INDEX')) return t('chat.changesInvalidPart')
     if (raw.includes('NOTHING_TO_UNDO')) return t('chat.changesNothingToUndo')
     if (raw.includes('NOTHING_TO_UNREVERT')) return t('chat.changesNothingToUnrevert')
     if (raw.includes('SNAPSHOT_RESTORE_FAILED')) return t('chat.changesRestoreFailed')

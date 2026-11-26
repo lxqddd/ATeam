@@ -14,6 +14,12 @@ import type {
   PermissionRule,
   RuntimeModelsConfig
 } from '@ateam/shared'
+import {
+  isMetadataPart,
+  messageChangedFiles,
+  messageSnapshotBounds,
+  messageSteps
+} from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './index'
 import { attachmentDirectory, saveAttachment } from '../attachments'
 import type { InstructionFile } from '../config/instructions'
@@ -88,9 +94,11 @@ function createSink(): Sink {
 
 function textScript(text: string, finishReason = 'stop'): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text })
     yield part({ type: 'text-end', id: 't1' })
+    yield part({ type: 'finish-step' })
     yield part({
       type: 'finish',
       finishReason,
@@ -101,9 +109,11 @@ function textScript(text: string, finishReason = 'stop'): Script {
 
 function measuredTextScript(text: string, inputTokens: number): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text })
     yield part({ type: 'text-end', id: 't1' })
+    yield part({ type: 'finish-step' })
     yield part({
       type: 'finish',
       finishReason: 'stop',
@@ -114,21 +124,25 @@ function measuredTextScript(text: string, inputTokens: number): Script {
 
 function mutatingScript(changes: Record<string, string>): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     for (const [relative, content] of Object.entries(changes)) {
       await fs.writeFile(path.join(directory, 'workspace', relative), content)
     }
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'done' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function twoStepMutatingScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     await fs.writeFile(path.join(directory, 'workspace', 'step-one.txt'), 'one')
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'step one' })
     yield part({ type: 'finish-step' })
+    yield part({ type: 'start-step' })
     await fs.writeFile(path.join(directory, 'workspace', 'step-two.txt'), 'two')
     yield part({ type: 'text-delta', id: 't1', text: 'step two' })
     yield part({ type: 'finish-step' })
@@ -138,16 +152,19 @@ function twoStepMutatingScript(): Script {
 
 function threeStepMutatingScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     await fs.writeFile(path.join(directory, 'workspace', 'step-one.txt'), 'one')
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'step one' })
     yield part({ type: 'text-end', id: 't1' })
     yield part({ type: 'finish-step' })
+    yield part({ type: 'start-step' })
     await fs.writeFile(path.join(directory, 'workspace', 'step-two.txt'), 'two')
     yield part({ type: 'text-start', id: 't2' })
     yield part({ type: 'text-delta', id: 't2', text: 'step two' })
     yield part({ type: 'text-end', id: 't2' })
     yield part({ type: 'finish-step' })
+    yield part({ type: 'start-step' })
     await fs.writeFile(path.join(directory, 'workspace', 'step-three.txt'), 'three')
     yield part({ type: 'text-start', id: 't3' })
     yield part({ type: 'text-delta', id: 't3', text: 'step three' })
@@ -159,14 +176,32 @@ function threeStepMutatingScript(): Script {
 
 function errorScript(message: string): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'partial' })
     yield part({ type: 'error', error: new Error(message) })
   }
 }
 
+/**
+ * The first step omits `start-step` on purpose: the runtime must backfill it
+ * at finish time and must not record a snapshot for that step.
+ */
+function lazyStepScript(): Script {
+  return async function* () {
+    yield part({ type: 'text-start', id: 't1' })
+    yield part({ type: 'text-delta', id: 't1', text: 'lazy step' })
+    yield part({ type: 'finish-step' })
+    yield part({ type: 'start-step' })
+    yield part({ type: 'text-delta', id: 't1', text: ' second step' })
+    yield part({ type: 'finish-step' })
+    yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
+  }
+}
+
 function interruptedStreamScript(text: string): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text })
     yield part({ type: 'error', error: new TypeError('fetch failed') })
@@ -175,6 +210,7 @@ function interruptedStreamScript(text: string): Script {
 
 function interruptedToolStreamScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'read' })
     yield part({ type: 'error', error: new TypeError('fetch failed') })
   }
@@ -184,11 +220,13 @@ const REASONING_METADATA = { anthropic: { signature: 'sig-1' } }
 
 function reasoningMetadataScript(text: string): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'reasoning-start', id: 'r1', providerMetadata: REASONING_METADATA })
     yield part({ type: 'reasoning-delta', id: 'r1', text })
     yield part({ type: 'reasoning-end', id: 'r1', providerMetadata: REASONING_METADATA })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'answer' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
@@ -201,6 +239,7 @@ function usageDetailsScript(): Script {
       totalTokens: 110,
       inputTokenDetails: { cacheReadTokens: 60, cacheWriteTokens: 20 }
     }
+    yield part({ type: 'start-step' })
     yield part({ type: 'finish-step', usage })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: usage })
   }
@@ -209,8 +248,10 @@ function usageDetailsScript(): Script {
 function planExitScript(): Script {
   return async function* () {
     await toolContext?.exitPlan?.()
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'plan ready' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
@@ -224,8 +265,10 @@ function contextErrorScript(): Script {
 function maxStepsScript(steps: number, finishReason: 'stop' | 'tool-calls' = 'stop'): Script {
   return async function* () {
     for (let index = 0; index < steps - 1; index += 1) {
+      yield part({ type: 'start-step' })
       yield part({ type: 'finish-step' })
     }
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'summary of work' })
     yield part({ type: 'finish-step' })
@@ -380,6 +423,7 @@ function createRuntime(): AgentRuntime {
 
 function toolScript(values: string[]): Script {
   return async function* (input) {
+    yield part({ type: 'start-step' })
     for (const [index, value] of values.entries()) {
       const callId = `call-${index + 1}`
       yield part({ type: 'tool-input-start', id: callId, toolName: 'task' })
@@ -400,6 +444,7 @@ function toolScript(values: string[]): Script {
     }
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'done' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
@@ -444,6 +489,7 @@ async function writeAgentConfig(config: {
 
 function stoppableScript(): Script {
   return async function* (input) {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'partial' })
     await new Promise<void>((resolve) => {
@@ -459,6 +505,7 @@ function stoppableScript(): Script {
 
 function parallelToolScript(values: string[]): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     for (const [index, value] of values.entries()) {
       const callId = `call-${index + 1}`
       yield part({ type: 'tool-input-start', id: callId, toolName: 'task' })
@@ -481,12 +528,14 @@ function parallelToolScript(values: string[]): Script {
     }
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'done' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function mixedParallelToolScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
     yield part({ type: 'tool-call', toolCallId: 'call-1', toolName: 'task', input: { value: 'a' } })
     yield part({ type: 'tool-input-start', id: 'call-2', toolName: 'task' })
@@ -510,12 +559,14 @@ function mixedParallelToolScript(): Script {
       input: { value: 'b' },
       error: new Error('boom')
     })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function imageResultScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     const input = { path: 'a.png' }
     const output = {
       summary: 'Image: a.png (2 bytes)',
@@ -526,18 +577,21 @@ function imageResultScript(): Script {
     yield part({ type: 'tool-result', toolCallId: 'call-img', toolName: 'read', input, output })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'seen' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function multiStepUsageScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'step one' })
     yield part({
       type: 'finish-step',
       usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 }
     })
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-delta', id: 't1', text: ' step two' })
     yield part({ type: 'finish-step' })
     yield part({
@@ -550,6 +604,7 @@ function multiStepUsageScript(): Script {
 
 function richStreamScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-delta', id: 'missing', text: 'ignored' })
     yield part({ type: 'reasoning-delta', id: 'ghost', text: 'ignored' })
     yield part({ type: 'reasoning-start', id: 'r1' })
@@ -559,12 +614,14 @@ function richStreamScript(): Script {
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'answer' })
     yield part({ type: 'text-end', id: 't1' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function toolEventScript(event: Record<string, unknown>): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
     yield part({
       type: 'tool-call',
@@ -573,12 +630,14 @@ function toolEventScript(event: Record<string, unknown>): Script {
       input: { value: 'a.txt' }
     })
     yield part(event)
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function unfinishedToolScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
     yield part({
       type: 'tool-call',
@@ -586,26 +645,31 @@ function unfinishedToolScript(): Script {
       toolName: 'task',
       input: { value: 'a.txt' }
     })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function doubleDeltaScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'a' })
     yield part({ type: 'text-delta', id: 't1', text: 'b' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function pausableTextScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'first' })
     await new Promise<void>((resolve) => {
       resumeTurn = resolve
     })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
@@ -613,6 +677,7 @@ function pausableTextScript(): Script {
 /** Runs one step, then pauses at the step boundary until the test releases it. */
 function steerStepScript(): Script {
   return async function* (input) {
+    yield part({ type: 'start-step' })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'working' })
     yield part({ type: 'finish-step' })
@@ -637,6 +702,7 @@ function steerStepScript(): Script {
 
 function stoppableToolScript(): Script {
   return async function* (input) {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
     yield part({
       type: 'tool-call',
@@ -657,6 +723,7 @@ function stoppableToolScript(): Script {
 
 function toolCallThenErrorScript(message: string): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-1', toolName: 'task' })
     yield part({
       type: 'tool-call',
@@ -670,6 +737,7 @@ function toolCallThenErrorScript(message: string): Script {
 
 function orphanToolEventScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({
       type: 'tool-result',
       toolCallId: 'ghost',
@@ -685,8 +753,13 @@ function orphanToolEventScript(): Script {
       error: new Error('x')
     })
     yield part({ type: 'tool-output-denied', toolCallId: 'ghost', toolName: 'task', input: {} })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
+}
+
+function nonMetadataParts(message: ChatMessage | undefined): ChatMessage['parts'] {
+  return message ? message.parts.filter((entry) => !isMetadataPart(entry)) : []
 }
 
 function assistantMessages(): ChatMessage[] {
@@ -801,7 +874,7 @@ describe('AgentRuntime', () => {
     expect(turns[0].messages).toEqual([cachedUser('hi')])
     const [assistant] = assistantMessages()
     expect(assistant.status).toBe('complete')
-    expect(assistant.parts).toEqual([{ type: 'text', text: 'Hello' }])
+    expect(nonMetadataParts(assistant)).toEqual([{ type: 'text', text: 'Hello' }])
     expect(assistant.usage).toEqual({ inputTokens: 3, outputTokens: 4, totalTokens: 7 })
     expect(assistant.durationMs).toBeGreaterThanOrEqual(0)
     expect(runtime.listSessions()[0].status).toBe('idle')
@@ -1086,7 +1159,8 @@ describe('AgentRuntime', () => {
     const [assistant] = assistantMessages()
     expect(assistant.status).toBe('interrupted')
     expect(assistant.error).toBe('Interrupted by user')
-    expect(assistant.parts).toEqual([{ type: 'text', text: 'partial' }])
+    expect(nonMetadataParts(assistant)).toEqual([{ type: 'text', text: 'partial' }])
+    expect(messageSteps(assistant.parts)[0]?.finish?.reason).toBe('interrupted')
     expect(runtime.listSessions()[0].status).toBe('idle')
   })
 
@@ -1100,6 +1174,7 @@ describe('AgentRuntime', () => {
     const [assistant] = assistantMessages()
     expect(assistant.status).toBe('error')
     expect(assistant.error).toBe('boom')
+    expect(messageSteps(assistant.parts)[0]?.finish?.reason).toBe('error')
     expect(runtime.listSessions()[0].status).toBe('error')
   })
 
@@ -1120,7 +1195,7 @@ describe('AgentRuntime', () => {
     })
     const [assistant] = assistantMessages()
     expect(assistant.status).toBe('complete')
-    expect(assistant.parts).toEqual([{ type: 'text', text: 'recovered' }])
+    expect(nonMetadataParts(assistant)).toEqual([{ type: 'text', text: 'recovered' }])
     expect(assistant.retry).toBeUndefined()
     expect(assistant.retryFailure).toBeUndefined()
     expect(
@@ -1193,7 +1268,7 @@ describe('AgentRuntime', () => {
     const messages = runtime.messages(sessionId).messages
     expect(messages.filter((message) => message.role === 'user')).toHaveLength(1)
     expect(assistantMessages()).toHaveLength(2)
-    expect(assistantMessages()[1].parts).toEqual([{ type: 'text', text: 'recovered' }])
+    expect(nonMetadataParts(assistantMessages()[1])).toEqual([{ type: 'text', text: 'recovered' }])
   })
 
   it('reports max-steps and keeps the forced summary when the step limit is reached', async () => {
@@ -1203,7 +1278,9 @@ describe('AgentRuntime', () => {
     const finished = await sink.next('run.finished')
 
     expect(finished.event).toMatchObject({ status: 'max-steps' })
-    expect(assistantMessages().at(-1)?.parts).toEqual([{ type: 'text', text: 'summary of work' }])
+    expect(nonMetadataParts(assistantMessages().at(-1))).toEqual([
+      { type: 'text', text: 'summary of work' }
+    ])
   })
 
   it('uses the agent step limit for the max-steps outcome', async () => {
@@ -1795,7 +1872,7 @@ describe('AgentRuntime', () => {
     const finished = await sink.next('run.finished')
 
     expect(finished.event).toMatchObject({ status: 'completed' })
-    expect(assistantMessages()[0].parts).toEqual([
+    expect(nonMetadataParts(assistantMessages()[0])).toEqual([
       { type: 'reasoning', text: 'think' },
       { type: 'text', text: 'answer' }
     ])
@@ -1935,7 +2012,7 @@ describe('AgentRuntime', () => {
     await runtime.sendChat(sessionId, 'hi')
     await sink.next('run.finished')
 
-    expect(assistantMessages()[0].parts).toEqual([{ type: 'text', text: 'ab' }])
+    expect(nonMetadataParts(assistantMessages()[0])).toEqual([{ type: 'text', text: 'ab' }])
   })
 
   it('persists while streaming', async () => {
@@ -1990,7 +2067,7 @@ describe('AgentRuntime', () => {
     const finished = await sink.next('run.finished')
 
     expect(finished.event).toMatchObject({ status: 'completed' })
-    expect(assistantMessages()[0].parts).toEqual([])
+    expect(nonMetadataParts(assistantMessages()[0])).toEqual([])
   })
 
   it('deletes idle sessions', async () => {
@@ -2200,8 +2277,13 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
 
     const assistant = assistantMessages().at(-1)
-    expect(assistant?.snapshotBefore).toBeUndefined()
-    expect(assistant?.snapshotAfter).toBeUndefined()
+    expect(
+      assistant?.parts.some((entry) => entry.type === 'snapshot' || entry.type === 'patch')
+    ).toBe(false)
+    expect(messageSnapshotBounds(assistant?.parts ?? [])).toEqual({
+      before: undefined,
+      after: undefined
+    })
   })
 
   it('compacts a session on demand without deleting stored messages', async () => {
@@ -2264,9 +2346,12 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
 
     const assistant = assistantMessages().at(-1)
-    expect(assistant?.snapshotBefore).toBeTruthy()
-    expect(assistant?.snapshotAfter).toBeTruthy()
-    expect(assistant?.changedFiles).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
+    const bounds = messageSnapshotBounds(assistant?.parts ?? [])
+    expect(bounds.before).toBeTruthy()
+    expect(bounds.after).toBeTruthy()
+    expect(messageChangedFiles(assistant?.parts ?? [])).toEqual(
+      expect.arrayContaining(['notes.txt', 'new.txt'])
+    )
   })
 
   it('reports file changes for the latest turn and reverts selected files', async () => {
@@ -2297,8 +2382,10 @@ describe('AgentRuntime', () => {
     expect(reverted.canUnrevert).toBe(true)
     expect(reverted.revertedPaths).toEqual(['notes.txt'])
     expect(
-      runtime.messages(sessionId).messages.find((message) => message.id === assistant.id)
-        ?.changedFiles
+      messageChangedFiles(
+        runtime.messages(sessionId).messages.find((message) => message.id === assistant.id)
+          ?.parts ?? []
+      )
     ).toEqual(expect.arrayContaining(['notes.txt', 'new.txt']))
   })
 
@@ -2454,13 +2541,58 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
 
     const assistant = assistantMessages().at(-1)
-    expect(assistant?.snapshotSteps).toHaveLength(2)
-    expect(assistant?.snapshotSteps?.[0].files).toContain('step-one.txt')
-    expect(assistant?.snapshotSteps?.[1].files).toContain('step-two.txt')
-    expect(assistant?.snapshotAfter).toBe(assistant?.snapshotSteps?.[1].after)
-    expect(assistant?.changedFiles).toEqual(
+    const steps = messageSteps(assistant?.parts ?? [])
+    expect(steps.map((step) => step.step)).toEqual([0, 1])
+    expect(steps[0].start?.snapshot).toBe(messageSnapshotBounds(assistant?.parts ?? []).before)
+    expect(steps[1].start?.snapshot).toBe(steps[0].after)
+    expect(steps[0].patch?.files).toContain('step-one.txt')
+    expect(steps[1].patch?.files).toContain('step-two.txt')
+    expect(messageSnapshotBounds(assistant?.parts ?? []).after).toBe(steps[1].after)
+    expect(messageChangedFiles(assistant?.parts ?? [])).toEqual(
       expect.arrayContaining(['step-one.txt', 'step-two.txt'])
     )
+  })
+
+  it('backfills a missing step-start without a snapshot or rewind point', async () => {
+    scripts.push(lazyStepScript())
+
+    await runtime.sendChat(sessionId, 'lazy steps')
+    await sink.next('run.finished')
+
+    const assistant = assistantMessages().at(-1)
+    if (!assistant) throw new Error('assistant message missing')
+    const steps = messageSteps(assistant.parts)
+    expect(steps.map((step) => step.step)).toEqual([0, 1])
+    const textIndex = assistant.parts.findIndex((entry) => entry.type === 'text')
+    const startIndex = assistant.parts.findIndex(
+      (entry) => entry.type === 'step-start' && entry.step === 0
+    )
+    expect(startIndex).toBeGreaterThan(textIndex)
+    expect(steps[0].finish?.snapshot).toBeUndefined()
+    expect(steps[0].patch).toBeUndefined()
+    await expect(runtime.undoSession(sessionId, assistant.id, 0)).rejects.toThrow('NOTHING_TO_UNDO')
+  })
+
+  it('keeps a step without a snapshot when the snapshot diff fails', async () => {
+    const snapshots = (
+      runtime as unknown as {
+        snapshots: { diff: (before: string, after: string) => Promise<unknown> }
+      }
+    ).snapshots
+    const diff = vi.spyOn(snapshots, 'diff').mockRejectedValueOnce(new Error('boom'))
+    scripts.push(mutatingScript({ 'a.txt': 'a' }))
+    try {
+      await runtime.sendChat(sessionId, 'change')
+      await sink.next('run.finished')
+    } finally {
+      diff.mockRestore()
+    }
+
+    const assistant = assistantMessages().at(-1)
+    const [step] = messageSteps(assistant?.parts ?? [])
+    expect(step.finish).toBeTruthy()
+    expect(step.finish?.snapshot).toBeUndefined()
+    expect(step.patch).toBeUndefined()
   })
 
   it('restores files and conversation on undo, then replays them on redo', async () => {
@@ -2552,26 +2684,28 @@ describe('AgentRuntime', () => {
     await sink.next('run.finished')
   })
 
-  it('rewinds the latest turn to a part boundary and restores it on redo', async () => {
+  it('rewinds the latest turn to a step boundary and restores it on redo', async () => {
     scripts.push(threeStepMutatingScript())
     await runtime.sendChat(sessionId, 'three steps')
     await sink.next('run.finished')
     const assistant = assistantMessages().at(-1)
     if (!assistant) throw new Error('assistant message missing')
-    expect(assistant.snapshotSteps?.map((step) => step.partIndex)).toEqual([1, 2, 3])
+    expect(messageSteps(assistant.parts).map((step) => step.step)).toEqual([0, 1, 2])
 
-    const rewound = await runtime.undoSession(sessionId, assistant.id, 2)
+    const rewound = await runtime.undoSession(sessionId, assistant.id, 1)
 
     expect(rewound.prompt).toBe('')
     expect(rewound.session.redoAvailable).toBe(true)
     const message = runtime.messages(sessionId).messages.find((entry) => entry.id === assistant.id)
-    expect(message?.parts.map((part) => (part.type === 'text' ? part.text : ''))).toEqual([
+    expect(message?.parts.filter((part) => part.type === 'text').map((part) => part.text)).toEqual([
       'step one',
       'step two'
     ])
-    expect(message?.snapshotSteps).toHaveLength(2)
-    expect(message?.changedFiles).toEqual(expect.arrayContaining(['step-one.txt', 'step-two.txt']))
-    expect(message?.changedFiles).not.toContain('step-three.txt')
+    expect(messageSteps(message?.parts ?? [])).toHaveLength(2)
+    expect(messageChangedFiles(message?.parts ?? [])).toEqual(
+      expect.arrayContaining(['step-one.txt', 'step-two.txt'])
+    )
+    expect(messageChangedFiles(message?.parts ?? [])).not.toContain('step-three.txt')
     await expect(
       fs.readFile(path.join(directory, 'workspace', 'step-one.txt'), 'utf8')
     ).resolves.toBe('one')
@@ -2586,28 +2720,31 @@ describe('AgentRuntime', () => {
 
     expect(redone.redoAvailable).toBe(false)
     const restored = runtime.messages(sessionId).messages.find((entry) => entry.id === assistant.id)
-    expect(restored?.parts).toHaveLength(3)
-    expect(restored?.snapshotSteps).toHaveLength(3)
+    expect(nonMetadataParts(restored)).toHaveLength(3)
+    expect(messageSteps(restored?.parts ?? [])).toHaveLength(3)
     await expect(
       fs.readFile(path.join(directory, 'workspace', 'step-three.txt'), 'utf8')
     ).resolves.toBe('three')
   })
 
-  it('rejects part rewinds that are not step boundaries', async () => {
+  it('rejects step rewinds outside recorded steps or on the last step', async () => {
     scripts.push(threeStepMutatingScript())
     await runtime.sendChat(sessionId, 'three steps')
     await sink.next('run.finished')
     const assistant = assistantMessages().at(-1)
     if (!assistant) throw new Error('assistant message missing')
 
-    await expect(runtime.undoSession(sessionId, assistant.id, 0)).rejects.toThrow(
-      'INVALID_PART_INDEX'
+    await expect(runtime.undoSession(sessionId, assistant.id, -1)).rejects.toThrow(
+      'INVALID_STEP_INDEX'
     )
-    await expect(runtime.undoSession(sessionId, assistant.id, 3)).rejects.toThrow('NOTHING_TO_UNDO')
+    await expect(runtime.undoSession(sessionId, assistant.id, 3)).rejects.toThrow(
+      'INVALID_STEP_INDEX'
+    )
+    await expect(runtime.undoSession(sessionId, assistant.id, 2)).rejects.toThrow('NOTHING_TO_UNDO')
     await expect(runtime.redoSession(sessionId)).rejects.toThrow('NOTHING_TO_REDO')
   })
 
-  it('rejects part rewinds for historical turns', async () => {
+  it('rejects step rewinds for historical turns', async () => {
     scripts.push(threeStepMutatingScript())
     await runtime.sendChat(sessionId, 'first')
     await sink.next('run.finished')
@@ -2617,7 +2754,7 @@ describe('AgentRuntime', () => {
     await runtime.sendChat(sessionId, 'second')
     await sink.next('run.finished')
 
-    await expect(runtime.undoSession(sessionId, first.id, 2)).rejects.toThrow('TURN_NOT_LATEST')
+    await expect(runtime.undoSession(sessionId, first.id, 1)).rejects.toThrow('TURN_NOT_LATEST')
   })
 
   it('clears a pending revert when the conversation continues', async () => {
@@ -2775,7 +2912,14 @@ describe('AgentRuntime', () => {
     expect(turns[2].system).toContain('SUMMARY')
     expect(turns[2].messages).toHaveLength(1)
     expect(assistantMessages().at(-1)?.status).toBe('complete')
-    expect(assistantMessages().at(-1)?.parts).toEqual([{ type: 'text', text: 'recovered' }])
+    expect(nonMetadataParts(assistantMessages().at(-1))).toEqual([
+      { type: 'text', text: 'recovered' }
+    ])
+    expect(
+      assistantMessages()
+        .at(-1)
+        ?.parts.filter((entry) => entry.type === 'snapshot')
+    ).toHaveLength(1)
   })
 })
 
@@ -2972,6 +3116,7 @@ function subagentCallScript(input: {
   background?: boolean
 }): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     yield part({ type: 'tool-input-start', id: 'call-sub', toolName: 'subagent' })
     yield part({ type: 'tool-call', toolCallId: 'call-sub', toolName: 'subagent', input })
     if (!subagentExecutor) throw new Error('subagent executor is missing')
@@ -2979,12 +3124,14 @@ function subagentCallScript(input: {
     yield part({ type: 'tool-result', toolCallId: 'call-sub', toolName: 'subagent', input, output })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'parent done' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function questionScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     const input = {
       header: 'Pick',
       question: 'Continue?',
@@ -2997,12 +3144,14 @@ function questionScript(): Script {
     yield part({ type: 'tool-result', toolCallId: 'call-q', toolName: 'question', input, output })
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: 'child done' })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
 
 function nestedSubagentScript(): Script {
   return async function* () {
+    yield part({ type: 'start-step' })
     if (!subagentExecutor) throw new Error('subagent executor is missing')
     const output = await subagentExecutor(
       { prompt: 'Nested task', agent: 'general' },
@@ -3010,6 +3159,7 @@ function nestedSubagentScript(): Script {
     )
     yield part({ type: 'text-start', id: 't1' })
     yield part({ type: 'text-delta', id: 't1', text: output })
+    yield part({ type: 'finish-step' })
     yield part({ type: 'finish', finishReason: 'stop', totalUsage: {} })
   }
 }
@@ -3098,7 +3248,9 @@ describe('agent selection', () => {
     expect(synthetic).toBeTruthy()
     expect(turns[1].system).not.toContain('read-only plan mode')
     expect(assistantMessages()).toHaveLength(2)
-    expect(assistantMessages()[1].parts).toEqual([{ type: 'text', text: 'implemented' }])
+    expect(nonMetadataParts(assistantMessages()[1])).toEqual([
+      { type: 'text', text: 'implemented' }
+    ])
     const session = runtime.listSessions()[0]
     expect(session.agent).toBe('build')
     expect(session.permissionMode).toBe('ask')
@@ -3201,7 +3353,9 @@ describe('subagent tool', () => {
     const childId = /session ([0-9a-f-]+)/.exec(output)?.[1]
     expect(childId).toBeTruthy()
     const childMessages = runtime.messages(childId as string).messages
-    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'found three files' }])
+    expect(nonMetadataParts(childMessages.at(-1))).toEqual([
+      { type: 'text', text: 'found three files' }
+    ])
     expect(runtime.listSessions()).toHaveLength(1)
   })
 
@@ -3248,7 +3402,9 @@ describe('subagent tool', () => {
 
     const childMessages = runtime.messages(childId).messages
     expect(childMessages).toHaveLength(4)
-    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'second answer' }])
+    expect(nonMetadataParts(childMessages.at(-1))).toEqual([
+      { type: 'text', text: 'second answer' }
+    ])
     expect(toolOutput(assistantMessages().at(-1))).toContain('second answer')
     expect(runtime.listSessions()).toHaveLength(1)
   })
@@ -3269,7 +3425,9 @@ describe('subagent tool', () => {
 
     const childMessages = runtime.messages(childId).messages
     expect(childMessages).toHaveLength(4)
-    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'second answer' }])
+    expect(nonMetadataParts(childMessages.at(-1))).toEqual([
+      { type: 'text', text: 'second answer' }
+    ])
     expect(toolOutput(assistantMessages().at(-1))).toContain('second answer')
   })
 
@@ -3598,7 +3756,7 @@ describe('subtask commands', () => {
     expect(started.sessionId).not.toBe(sessionId)
     expect(runtime.listSessions()).toHaveLength(1)
     await vi.waitFor(() =>
-      expect(assistantMessages().at(-1)?.parts).toEqual([
+      expect(nonMetadataParts(assistantMessages().at(-1))).toEqual([
         { type: 'text', text: 'used the research' }
       ])
     )
@@ -3606,7 +3764,9 @@ describe('subtask commands', () => {
     expect(childMessages.find((message) => message.role === 'user')?.parts).toEqual([
       { type: 'text', text: 'Research topic' }
     ])
-    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'research result' }])
+    expect(nonMetadataParts(childMessages.at(-1))).toEqual([
+      { type: 'text', text: 'research result' }
+    ])
     const injected = runtime
       .messages(sessionId)
       .messages.find((message) => message.synthetic?.taskId === started.taskId)
@@ -3891,9 +4051,7 @@ describe('session search and fork', () => {
     await expect(fs.stat(part.attachment.path)).resolves.toBeDefined()
 
     const assistant = messages[1]
-    expect(assistant.snapshotBefore).toBeUndefined()
-    expect(assistant.snapshotAfter).toBeUndefined()
-    expect(assistant.snapshotSteps).toEqual([])
+    expect(assistant.parts.some((entry) => isMetadataPart(entry))).toBe(false)
   })
 
   it('rejects forking a running session', async () => {
@@ -4148,7 +4306,7 @@ describe('background subagents and sampling', () => {
 
     const taskId = `${sessionId}:call-sub`
     await vi.waitFor(() =>
-      expect(assistantMessages().at(-1)?.parts).toEqual([
+      expect(nonMetadataParts(assistantMessages().at(-1))).toEqual([
         { type: 'text', text: 'used background result' }
       ])
     )
@@ -4233,7 +4391,7 @@ describe('background task results', () => {
     await vi.waitFor(() => expect(turns).toHaveLength(2))
     await sink.next('run.finished')
     await vi.waitFor(() =>
-      expect(assistantMessages().at(-1)?.parts).toEqual([
+      expect(nonMetadataParts(assistantMessages().at(-1))).toEqual([
         { type: 'text', text: 'continued with shell output' }
       ])
     )
@@ -4283,7 +4441,7 @@ describe('background task results', () => {
 
     await vi.waitFor(() => expect(turns).toHaveLength(3))
     await vi.waitFor(() =>
-      expect(assistantMessages().at(-1)?.parts).toEqual([
+      expect(nonMetadataParts(assistantMessages().at(-1))).toEqual([
         { type: 'text', text: 'continued after busy' }
       ])
     )

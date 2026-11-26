@@ -91,7 +91,7 @@ export type WorkerRequest =
   | {
       id: string
       method: 'sessions.undo'
-      params: { id: string; messageId?: string; partIndex?: number }
+      params: { id: string; messageId?: string; stepIndex?: number }
     }
   | { id: string; method: 'sessions.redo'; params: { id: string } }
   | { id: string; method: 'sessions.fork'; params: { id: string; messageId?: string } }

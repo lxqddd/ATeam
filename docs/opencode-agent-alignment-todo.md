@@ -1,7 +1,7 @@
 # ATeam Agent 对齐 OpenCode TODO List
 
 > 对比基准：OpenCode `master`（2026-11-22 复审）与 ATeam `master` 当前实现；第一轮记录基于 2026-11-21 的 `dev` 文档。
-> 最近更新：2026-11-26（R-P1-9 Formatter / Commands / Subagent 细节完成）。
+> 最近更新：2026-11-26（R-P1-8 消息 part 模型完成，第二轮 P1 全部完成）。
 > 范围：Agent 核心能力（会话、工具、权限、上下文、扩展、运行时接口），不包含主题、打包等桌面外观；CLI/TUI/IDE 等接口差距在第二轮 P2 单列。
 > 标记：`[x]` 已完成，`[ ]` 待办。优先级：**P0** 必须、**P1** 重要、**P2** 后续。
 
@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：消息 part 模型、VCS / Git 服务（MCP 细节 2026-11-25、part 级回滚 / unrevert / 会话 diff 2026-11-25、formatter / commands / subagent 细节 2026-11-26、VCS / Git 服务 2026-11-26 已完成）
+- [x] P1：消息 part 模型、VCS / Git 服务（MCP 细节 2026-11-25、会话回滚 / unrevert / 会话 diff 2026-11-25、formatter / commands / subagent 细节 2026-11-26、VCS / Git 服务 2026-11-26、消息 part 模型 2026-11-26 已完成）
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -327,7 +327,7 @@
 
 #### R-P1-3 会话级回滚、unrevert 与 diff
 
-**现状（2026-11-25）**：已完成。每个 `finish-step` 快照记录当时的 `partIndex`；`sessions.undo` 新增可选 `partIndex`，把最新一轮 assistant 消息截断到精确的步骤边界，按该步骤的 `after` 快照恢复整轮文件（含删除后续步骤新建的文件），并把原始消息存入 `RedoState.target`，redo 时原位恢复。文件回滚状态改为独立持久化的 `RevertState { snapshot, messageId, files }`：首次回滚懒创建“回滚前快照”，`sessions.revertFiles` 不再改写消息的 `changedFiles`，`sessions.unrevertFiles` 可按路径或全部恢复；`TurnChanges` 增加 `canUnrevert` / `revertedPaths`。新增 `sessions.changesSummary` → `SessionChangesSummary`：按轮次汇总文件（不含 hunk）、每轮与总计增删行、去重文件数，最新轮在前、最多 50 轮，超出或命中 diff 限制时标记 `truncated`。新消息、整轮 undo 与 part 回滚都会清除挂起的 revert，避免 undo/redo 与 revert 两套状态冲突。UI：最新消息的步骤边界显示回滚按钮，审查面板展示 unrevert 横幅与只读的会话汇总，页头提供“查看会话改动”入口。
+**现状（2026-11-25，2026-11-26 更新）**：已完成。每个 `finish-step` 快照记录当时的步骤边界（2026-11-25 原为 `partIndex`，R-P1-8 起改为 `stepIndex` 并存入 `step-finish` / `patch` part）；`sessions.undo` 支持可选的 `stepIndex`，把最新一轮 assistant 消息截断到精确的步骤边界，按该步骤的 `after` 快照恢复整轮文件（含删除后续步骤新建的文件），并把原始消息存入 `RedoState.target`，redo 时原位恢复。文件回滚状态改为独立持久化的 `RevertState { snapshot, messageId, files }`：首次回滚懒创建“回滚前快照”，`sessions.revertFiles` 不再改写消息内容，`sessions.unrevertFiles` 可按路径或全部恢复；`TurnChanges` 增加 `canUnrevert` / `revertedPaths`。新增 `sessions.changesSummary` → `SessionChangesSummary`：按轮次汇总文件（不含 hunk）、每轮与总计增删行、去重文件数，最新轮在前、最多 50 轮，超出或命中 diff 限制时标记 `truncated`。新消息、整轮 undo 与步骤回滚都会清除挂起的 revert，避免 undo/redo 与 revert 两套状态冲突。UI：最新消息的步骤边界显示回滚按钮，审查面板展示 unrevert 横幅与只读的会话汇总，页头提供“查看会话改动”入口。
 
 **OpenCode 参考**：`session/revert.ts` 支持 message/part 级 revert、快照恢复、diff 汇总与 unrevert；`session/summary.ts` 计算会话 diff。
 
@@ -339,9 +339,9 @@
 - [x] 统一文件审查面板、undo/redo 与 revert 语义，避免两套状态冲突
 - [x] 测试历史轮次、部分 part、回滚后继续对话、unrevert
 
-**仍待 / 边界**：part 回滚只支持最新一轮，且目标 partIndex 必须正好是某个步骤边界；文件 revert/unrevert 同样只作用于最新一轮，同一会话同时只保留一个挂起的 revert；会话汇总为只读视图，最多统计 50 轮，单文件 diff 受 512 KiB / 5000 行限制，超限文件只统计条目、不提供增删行。
+**仍待 / 边界**：步骤回滚只支持最新一轮，目标必须是具有结束快照且有后续步骤的步骤（最后一步除外）；文件 revert/unrevert 同样只作用于最新一轮，同一会话同时只保留一个挂起的 revert；会话汇总为只读视图，最多统计 50 轮，单文件 diff 受 512 KiB / 5000 行限制，超限文件只统计条目、不提供增删行。
 
-**验收**：用户可以回滚到消息或 part，并在回滚后恢复；审查面板能看到整个会话的改动汇总。
+**验收**：用户可以回滚到消息或步骤，并在回滚后恢复；审查面板能看到整个会话的改动汇总。
 
 #### R-P1-4 后台任务框架与结果注入
 
@@ -414,18 +414,22 @@
 
 **验收**：MCP server 的使用说明能被 Agent 看到，旧 SSE server 也能连接。
 
-#### R-P1-8 消息 part 模型
+#### R-P1-8 消息 part 模型（已完成，2026-11-26）
 
-**现状**：消息 part 只有 text / reasoning / attachment / tool；步骤、快照、patch、subtask 等信息放在消息字段或其他结构中。
+**现状（2026-11-26）**：已完成。`MessagePart` 在 text / reasoning / attachment / tool 之外新增 `snapshot` / `step-start` / `step-finish` / `patch` 四种元数据 part（[agent-types.ts](../packages/shared/src/agent-types.ts)、[message-parts.ts](../packages/shared/src/message-parts.ts)）：`step-start` 记录步骤编号与开始快照，`step-finish` 记录结束快照、`reason`、usage 与起止时间，`patch` 记录该步改动的文件，无步骤的整轮用首尾 `snapshot` part 表达。共享 helper `messageSteps / messageChangedFiles / messageSnapshotBounds / messageCheckpoint / messageOpenStep / isMetadataPart` 供 agent-core、桌面端与 headless 共用。
+
+运行期直接写 parts：每步开始时 append `step-start`，结束时创建快照并 `diff`，两者都成功才写 `step-finish.snapshot` 与非空 `patch`，失败降级为无快照（该步不可回退）；收尾（成功 / 中断 / 报错）通过 `messageOpenStep` 补 `step-finish` 与对应 `reason`，不增加步骤数。审查与回滚全部改为 parts 驱动：`turn-changes.ts`、整轮 undo、revert/unrevert 与步骤回退都用 helper 计算快照边界与改动文件，`ChatMessage` 的 `snapshotBefore / snapshotAfter / snapshotSteps / changedFiles` 旁路字段已删除。`sessions.undo` 第三参数由 `partIndex` 改为 `stepIndex`（错误码 `INVALID_STEP_INDEX`），步骤回退按 step 编号定位，要求存在后续步骤且该步有结束快照；UI 回退按钮锚定在步骤区间内最后一个非元数据 part，最后一步不显示。fork 时过滤四种元数据 part，不引用父会话快照。旧消息在 `repairRecord` 加载时一次性迁移（[migrate-message-parts.ts](../packages/agent-core/src/sessions/migrate-message-parts.ts)）：按旧 `partIndex` 稳定排序、缺失填充与单调 clamp，把旧字段编织为 step / patch / snapshot part，并迁移 redo 消息与 redo target；迁移幂等，单条失败保留旧字段下次重试，不阻塞会话加载。
 
 **OpenCode 参考**：`session/message-v2.ts` 的 part 覆盖 patch、snapshot、step-start/step-finish、subtask、retry、compaction 等，支撑更细的 UI 展示与回滚。
 
 **待办**：
 
-- [ ] 评估引入 step / patch / snapshot / subtask / retry part 的迁移成本
-- [ ] 优先补齐 step 与 patch/snapshot part，支撑审查面板与回滚
-- [ ] 保持旧消息向后兼容与迁移
-- [ ] 测试 part 序列化、历史回放、UI 渲染与回滚
+- [x] 评估引入 step / patch / snapshot / subtask / retry part 的迁移成本
+- [x] 优先补齐 step 与 patch/snapshot part，支撑审查面板与回滚
+- [x] 保持旧消息向后兼容与迁移
+- [x] 测试 part 序列化、历史回放、UI 渲染与回滚
+
+**边界 / 暂缓**：`subtask` part 暂缓——subtask 命令已有 `toolCallId`、后台任务注册表与子会话 `parentId`，改为 part 收益低；`retry` 是瞬时状态且重试会重置 parts；`compaction` 是会话级边界，不属于单条消息。步骤回退仍只支持最新一轮；异常流懒补的 `step-start` 不创建快照，该步不可回退；快照关闭时只有 step 元数据、没有 snapshot / patch part。
 
 **验收**：消息历史能表达每一步的工具、改动与状态，审查与回滚不再依赖旁路字段。
 
@@ -444,7 +448,7 @@
 - [x] 支持可配置子代理深度与 `task_id` 语义（`subagentDepth` 取 0–5、默认 1，可被项目配置覆盖；`subagent` 工具新增 `taskId` 别名，与 `sessionId` 同时给出且不同则报错）
 - [x] 测试命令来源、优先级、subtask 执行与嵌套限制（`commands.test.ts`、`skills.test.ts`、`agent-runtime.test.ts`、`config/*.test.ts`、`formatters.test.ts`、`store.test.ts`、`Composer.test.tsx`）
 
-**边界**：subtask 命令不向父会话写入模板文本（part 展示留给 R-P1-8）；停止父会话不会自动取消命令子任务，需通过后台任务取消；`subagentDepth` 与 formatterServers 暂无设置页控件；formatter 二进制探测只看 workspace 根与 PATH，air / uv 仅做二进制存在性探测，未校验 CLI 帮助输出。
+**边界**：subtask 命令不向父会话写入模板文本（subtask part 展示暂缓，R-P1-8 的 part 模型未纳入 subtask）；停止父会话不会自动取消命令子任务，需通过后台任务取消；`subagentDepth` 与 formatterServers 暂无设置页控件；formatter 二进制探测只看 workspace 根与 PATH，air / uv 仅做二进制存在性探测，未校验 CLI 帮助输出。
 
 **验收**：命令面板覆盖内置、用户、MCP、Skill 来源；子代理嵌套可按配置放开。
 
@@ -470,10 +474,11 @@
 ### 第二轮建议实施顺序
 
 1. **R-P1-5 输出截断**（已完成，2026-11-25）——行数 / 字节数配置、head/tail、按工具覆盖、完整输出落盘、过期清理与子代理提示均已落地。
-2. **R-P1-3 会话级回滚 / unrevert / diff**（已完成，2026-11-25）——part 级回滚、revert/unrevert 状态与只读会话汇总均已落地。
+2. **R-P1-3 会话级回滚 / unrevert / diff**（已完成，2026-11-25）——步骤回滚、revert/unrevert 状态与只读会话汇总均已落地。
 3. **R-P1-10 VCS / Git 模块**（已完成，2026-11-26）——VCS 服务、`vcs` 工具、只读 Git IPC 与审查面板“工作区 Git”标签已落地。
-4. **第二轮 P1 剩余项**（按使用频率取舍）。
-5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
+4. **R-P1-8 消息 part 模型**（已完成，2026-11-26）——step / patch / snapshot part、旧消息迁移与 parts 驱动的审查 / 回滚已落地，第二轮 P1 全部完成。
+5. **第二轮 P1 剩余项**（按使用频率取舍）。
+6. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 
 ## 第一轮 P0：可靠性、安全与编辑质量（已完成）
 
@@ -755,7 +760,7 @@
 - 工具输出落盘是后台 shell、MCP 大结果、Web 抓取大页面的共同基础设施。
 - 第二轮：分层配置模型是项目级 Agents / MCP / LSP / 权限 / 插件配置的共同入口，使用 ATeam 自有格式。
 - 第二轮：重试与状态事件是 Steering、后台任务、UI 等待态的基础。
-- 第二轮：消息 part 模型是 part 级回滚、会话 diff、审查面板与统计的基础。
+- 第二轮：消息 part 模型是步骤回滚、会话 diff、审查面板与统计的基础。
 
 ## 参考
 

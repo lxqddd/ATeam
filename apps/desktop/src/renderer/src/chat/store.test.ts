@@ -276,7 +276,7 @@ describe('ChatStore sessions', () => {
     expect(store.getSnapshot().revertPrompt).toBe('older prompt')
   })
 
-  it('rewinds an assistant message to a recorded part boundary', async () => {
+  it('rewinds an assistant message to a recorded step', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()
     vi.mocked(mock.api.agent.sessions.undo).mockResolvedValue({
@@ -284,7 +284,7 @@ describe('ChatStore sessions', () => {
       prompt: ''
     })
 
-    await store.undoToPart('a1', 2)
+    await store.undoToStep('a1', 2)
 
     expect(mock.api.agent.sessions.undo).toHaveBeenCalledWith('s1', 'a1', 2)
     expect(store.getSnapshot().revertPrompt).toBeNull()

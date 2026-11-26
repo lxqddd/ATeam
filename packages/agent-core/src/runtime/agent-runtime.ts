@@ -42,6 +42,7 @@ import type {
   SessionSettings,
   SteerStrategy,
   McpAuthRecord,
+  StepStartPart,
   SubagentInput,
   TodoInput,
   TokenUsage,
@@ -50,7 +51,14 @@ import type {
   VcsDiffResult,
   VcsStatus
 } from '@ateam/shared'
-import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
+import {
+  DEFAULT_RETRY_CONFIG,
+  messageChangedFiles,
+  messageCheckpoint,
+  messageOpenStep,
+  messageSnapshotBounds,
+  messageSteps
+} from '@ateam/shared'
 import { DEFAULT_CONTEXT_WINDOW, messagesAfterCompaction, shouldCompact } from '../sessions/context'
 import { readEffectiveAgentConfig } from '../config/config-store'
 import { loadOrgPolicy } from '../config/org-policy'
@@ -99,6 +107,7 @@ import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom 
 import { PermissionService } from './permission-service'
 import { applyProviderAuth } from './provider-auth'
 import {
+  appendPart,
   appendToolOutput,
   emitPart,
   ensureToolPart,
@@ -132,6 +141,7 @@ interface TurnStreamState {
   reasoningParts: Map<string, number>
   usage?: TokenUsage
   lastStepUsage?: TokenUsage
+  lastFinishReason?: string
 }
 
 export class AgentRuntime {
@@ -532,14 +542,14 @@ export class AgentRuntime {
 
     const abort = new AbortController()
     const user = makeUserMessage(session.id, prompt)
-    const assistant = makeAssistantMessage(session.id)
-    if (config.snapshots) {
-      assistant.snapshotBefore = await this.createSnapshotId(
-        session.id,
-        workspace,
-        await this.resolveRunReferences(config, workspace)
-      )
-    }
+    const snapshot = config.snapshots
+      ? await this.createSnapshotId(
+          session.id,
+          workspace,
+          await this.resolveRunReferences(config, workspace)
+        )
+      : undefined
+    const assistant = makeAssistantMessage(session.id, snapshot)
     await this.store.appendMessage(session.id, user)
     await this.store.appendMessage(session.id, assistant)
     await this.store.setStatus(session.id, 'running')
@@ -659,9 +669,9 @@ export class AgentRuntime {
   async undoSession(
     id: string,
     messageId?: string,
-    partIndex?: number
+    stepIndex?: number
   ): Promise<{ session: SessionMeta; prompt: string }> {
-    if (partIndex !== undefined) return this.rewindAssistantParts(id, messageId, partIndex)
+    if (stepIndex !== undefined) return this.rewindAssistantStep(id, messageId, stepIndex)
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
     this.reserveSession(id)
@@ -690,10 +700,13 @@ export class AgentRuntime {
       const removedMessages = record.messages.slice(userIndex)
       const removedAssistants = removedMessages.filter((item) => item.role === 'assistant')
       const finalAssistant = removedAssistants[removedAssistants.length - 1]
-      const files = [...new Set(removedMessages.flatMap((message) => message.changedFiles ?? []))]
-      if (assistant.snapshotBefore && files.length > 0) {
+      const files = [
+        ...new Set(removedMessages.flatMap((message) => messageChangedFiles(message.parts)))
+      ]
+      const before = messageSnapshotBounds(assistant.parts).before
+      if (before && files.length > 0) {
         try {
-          await this.snapshots.restorePaths(assistant.snapshotBefore, files)
+          await this.snapshots.restorePaths(before, files)
         } catch {
           throw new Error('SNAPSHOT_RESTORE_FAILED')
         }
@@ -706,7 +719,7 @@ export class AgentRuntime {
       const staged = await this.store.stageUndo(
         id,
         userIndex,
-        finalAssistant?.snapshotAfter ?? null,
+        finalAssistant ? (messageSnapshotBounds(finalAssistant.parts).after ?? null) : null,
         prompt,
         files
       )
@@ -724,12 +737,12 @@ export class AgentRuntime {
    * restores the workspace files to the snapshot taken when that step ended.
    * The original message is kept in the redo state so the rewind can be undone.
    */
-  private async rewindAssistantParts(
+  private async rewindAssistantStep(
     id: string,
     messageId: string | undefined,
-    partIndex: number
+    stepIndex: number
   ): Promise<{ session: SessionMeta; prompt: string }> {
-    if (!Number.isInteger(partIndex) || partIndex < 0) throw new Error('INVALID_PART_INDEX')
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) throw new Error('INVALID_STEP_INDEX')
     const record = this.store.get(id)
     if (!record) throw new Error('SESSION_NOT_FOUND')
     this.reserveSession(id)
@@ -747,42 +760,31 @@ export class AgentRuntime {
         throw new Error('TURN_NOT_LATEST')
       }
 
-      const steps = message.snapshotSteps ?? []
-      if (partIndex >= message.parts.length) throw new Error('NOTHING_TO_UNDO')
-      // Several steps can end without adding parts; the boundary then refers
-      // to the last recorded state at that point.
-      let targetIndex = -1
-      for (let index = steps.length - 1; index >= 0; index -= 1) {
-        if (steps[index].partIndex === partIndex) {
-          targetIndex = index
-          break
-        }
-      }
-      if (targetIndex < 0) throw new Error('INVALID_PART_INDEX')
-      const target = steps[targetIndex]
-      const files = [
-        ...new Set([...(message.changedFiles ?? []), ...steps.flatMap((step) => step.files)])
-      ]
+      const steps = messageSteps(message.parts)
+      const target = steps.find((step) => step.step === stepIndex)
+      if (!target) throw new Error('INVALID_STEP_INDEX')
+      if (!target.finish?.snapshot) throw new Error('NOTHING_TO_UNDO')
+      // A later step must exist; a trailing run-level snapshot part must not
+      // make the final step look rewindable.
+      if (!steps.some((step) => step.step > target.step)) throw new Error('NOTHING_TO_UNDO')
+
+      const files = messageChangedFiles(message.parts)
       if (files.length > 0) {
         try {
-          await this.snapshots.restorePaths(target.after, files)
+          await this.snapshots.restorePaths(target.finish.snapshot, files)
         } catch {
           throw new Error('SNAPSHOT_RESTORE_FAILED')
         }
       }
 
       const original = structuredClone(message)
-      const keptSteps = steps.slice(0, targetIndex + 1)
-      message.parts = message.parts.slice(0, partIndex)
-      message.snapshotSteps = keptSteps
-      message.snapshotAfter = target.after
-      message.changedFiles = [...new Set(keptSteps.flatMap((step) => step.files))]
+      message.parts = message.parts.slice(0, target.endIndex)
       message.updatedAt = nowIso()
-      const session = await this.store.stagePartUndo(
+      const session = await this.store.stageStepUndo(
         id,
         assistantIndex,
         original,
-        original.snapshotAfter ?? original.snapshotSteps?.at(-1)?.after ?? null,
+        messageSnapshotBounds(original.parts).after ?? null,
         files
       )
       if (!session) throw new Error('NOTHING_TO_UNDO')
@@ -872,7 +874,8 @@ export class AgentRuntime {
     const latest = latestSnapshotMessage(record.messages)
     if (latest?.id !== message.id) throw new Error('TURN_NOT_LATEST')
     if (message.status === 'streaming') throw new Error('SESSION_BUSY')
-    if (!message.snapshotBefore) throw new Error('NO_SNAPSHOT')
+    const before = messageSnapshotBounds(message.parts).before
+    if (!before) throw new Error('NO_SNAPSHOT')
 
     const allowed = await allowedChangePaths(this.turnChangesHost, message)
     const targets = paths.length > 0 ? [...new Set(paths)] : [...allowed]
@@ -893,7 +896,7 @@ export class AgentRuntime {
           snapshot = (await this.snapshots.create(workspace, sessionId, references)).id
         }
         try {
-          await this.snapshots.restorePaths(message.snapshotBefore, targets)
+          await this.snapshots.restorePaths(before, targets)
         } catch {
           throw new Error('SNAPSHOT_RESTORE_FAILED')
         }
@@ -1077,14 +1080,14 @@ export class AgentRuntime {
       }
 
       const user = makeUserMessage(sessionId, content, attachments)
-      const assistant = makeAssistantMessage(sessionId)
-      if (config.snapshots) {
-        assistant.snapshotBefore = await this.createSnapshotId(
-          sessionId,
-          workspace,
-          await this.resolveRunReferences(config, workspace)
-        )
-      }
+      const snapshot = config.snapshots
+        ? await this.createSnapshotId(
+            sessionId,
+            workspace,
+            await this.resolveRunReferences(config, workspace)
+          )
+        : undefined
+      const assistant = makeAssistantMessage(sessionId, snapshot)
       if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
       await this.store.appendMessage(sessionId, user)
       await this.store.appendMessage(sessionId, assistant)
@@ -1272,14 +1275,14 @@ export class AgentRuntime {
       const models = await this.modelsForWorkspace(workspace, config)
       resolveModelRef(models, record.session.model ?? models.defaultModel)
       const continuationPrompt = await this.planContinuationPrompt(sessionId)
-      const assistant = makeAssistantMessage(sessionId)
-      if (config.snapshots) {
-        assistant.snapshotBefore = await this.createSnapshotId(
-          sessionId,
-          workspace,
-          await this.resolveRunReferences(config, workspace)
-        )
-      }
+      const snapshot = config.snapshots
+        ? await this.createSnapshotId(
+            sessionId,
+            workspace,
+            await this.resolveRunReferences(config, workspace)
+          )
+        : undefined
+      const assistant = makeAssistantMessage(sessionId, snapshot)
       if (!this.store.get(sessionId)) throw new Error('SESSION_NOT_FOUND')
       await this.store.appendMessage(sessionId, assistant)
       await this.store.setStatus(sessionId, 'running')
@@ -1565,14 +1568,14 @@ export class AgentRuntime {
       const models = await this.modelsForWorkspace(workspace, config)
       resolveModelRef(models, record.session.model ?? models.defaultModel)
       if (this.backgroundSilenced.has(sessionId)) return
-      const assistant = makeAssistantMessage(sessionId)
-      if (config.snapshots) {
-        assistant.snapshotBefore = await this.createSnapshotId(
-          sessionId,
-          workspace,
-          await this.resolveRunReferences(config, workspace)
-        )
-      }
+      const snapshot = config.snapshots
+        ? await this.createSnapshotId(
+            sessionId,
+            workspace,
+            await this.resolveRunReferences(config, workspace)
+          )
+        : undefined
+      const assistant = makeAssistantMessage(sessionId, snapshot)
       if (!this.store.get(sessionId)) return
       await this.store.appendMessage(sessionId, assistant)
       await this.store.setStatus(sessionId, 'running')
@@ -1869,14 +1872,14 @@ export class AgentRuntime {
     resolveModelRef(models, record.session.model ?? models.defaultModel)
     const continuationPrompt = await this.planContinuationPrompt(sessionId)
     if (!continuationPrompt || this.sessionBusy(sessionId)) return
-    const assistant = makeAssistantMessage(sessionId)
-    if (config.snapshots) {
-      assistant.snapshotBefore = await this.createSnapshotId(
-        sessionId,
-        workspace,
-        await this.resolveRunReferences(config, workspace)
-      )
-    }
+    const snapshot = config.snapshots
+      ? await this.createSnapshotId(
+          sessionId,
+          workspace,
+          await this.resolveRunReferences(config, workspace)
+        )
+      : undefined
+    const assistant = makeAssistantMessage(sessionId, snapshot)
     if (!this.store.get(sessionId)) return
     await this.store.appendMessage(sessionId, assistant)
     await this.store.setStatus(sessionId, 'running')
@@ -2074,14 +2077,13 @@ export class AgentRuntime {
           }
           break
         }
+        case 'start-step':
+          this.ensureStepStarted(run, message)
+          schedulePersist()
+          break
         case 'finish-step':
-          run.steps += 1
-          if (part.usage) {
-            const stepUsage = usageFrom(part.usage)
-            state.lastStepUsage = stepUsage
-            this.cacheMetrics.record(stepUsage)
-          }
-          await this.recordStepSnapshot(run, message)
+          await this.finishStep(run, message, part, state)
+          await this.store.persist(run.sessionId)
           break
         case 'finish':
           state.usage = usageFrom(part.totalUsage)
@@ -2097,14 +2099,14 @@ export class AgentRuntime {
   }
 
   private resetAssistantMessage(run: Run, message: ChatMessage, retry?: ChatRetryStatus): void {
-    message.parts = []
+    // Keep the turn's starting snapshot so a retried stream still records its
+    // before/after bounds; everything from the failed attempt is discarded.
+    const head = message.parts[0]
+    message.parts = head?.type === 'snapshot' ? [head] : []
     message.error = undefined
     message.usage = undefined
     message.contextUsage = undefined
     message.durationMs = undefined
-    message.snapshotAfter = undefined
-    message.snapshotSteps = []
-    message.changedFiles = undefined
     delete message.retry
     delete message.retryFailure
     if (retry) message.retry = retry
@@ -2144,43 +2146,133 @@ export class AgentRuntime {
     }
   }
 
-  private async recordStepSnapshot(run: Run, message: ChatMessage): Promise<void> {
-    const steps = message.snapshotSteps ?? []
-    const before = steps[steps.length - 1]?.after ?? message.snapshotBefore
-    if (!before) return
+  /**
+   * Starts the step bookkeeping for the current `run.steps`. A real stream
+   * sends `start-step` before the step's content, so the part precedes it.
+   * Returns whether this call created the part (the fallback path).
+   */
+  private ensureStepStarted(
+    run: Run,
+    message: ChatMessage
+  ): { part: StepStartPart; created: boolean } {
+    const open = messageOpenStep(message.parts)
+    if (open) return { part: open.part, created: false }
+    const checkpoint = messageCheckpoint(message.parts)
+    const part: StepStartPart = {
+      type: 'step-start',
+      step: run.steps,
+      ...(checkpoint ? { snapshot: checkpoint } : {}),
+      startedAt: nowIso()
+    }
+    appendPart(this.events, run, message, part)
+    return { part, created: true }
+  }
+
+  /** Creates a checkpoint and diffs it against `before`; both must succeed. */
+  private async captureStepSnapshot(
+    run: Run,
+    before: string | undefined
+  ): Promise<{ snapshot: string; files: string[] } | undefined> {
+    if (!before) return undefined
     try {
       const snapshot = await this.snapshots.create(run.workspace, run.sessionId, run.references)
       const diff = await this.snapshots.diff(before, snapshot.id)
-      const files = [...diff.added, ...diff.modified, ...diff.deleted]
-      message.snapshotSteps = [
-        ...steps,
-        { before, after: snapshot.id, files, partIndex: message.parts.length }
-      ]
-      message.snapshotAfter = snapshot.id
-      message.changedFiles = [...new Set([...(message.changedFiles ?? []), ...files])]
-      await this.store.persist(run.sessionId)
+      return { snapshot: snapshot.id, files: [...diff.added, ...diff.modified, ...diff.deleted] }
     } catch {
       /* snapshots are best effort */
+      return undefined
     }
   }
 
-  private async recordAfterSnapshot(run: Run, message: ChatMessage): Promise<void> {
-    if (!message.snapshotBefore) return
-    if (message.snapshotSteps && message.snapshotSteps.length > 0) {
-      message.snapshotAfter = message.snapshotSteps[message.snapshotSteps.length - 1].after
-      message.changedFiles = [...new Set(message.snapshotSteps.flatMap((step) => step.files))]
+  private async finishStep(
+    run: Run,
+    message: ChatMessage,
+    part: Extract<TextStreamPart<ToolSet>, { type: 'finish-step' }>,
+    state: TurnStreamState
+  ): Promise<void> {
+    const step = run.steps
+    const started = this.ensureStepStarted(run, message)
+    const usage = part.usage ? usageFrom(part.usage) : undefined
+    if (usage) {
+      state.lastStepUsage = usage
+      this.cacheMetrics.record(usage)
+    }
+    state.lastFinishReason = part.finishReason
+
+    // A lazily created start part lands after the step content, so a rewind to
+    // its boundary would keep content the snapshot no longer matches.
+    const captured = started.created
+      ? undefined
+      : await this.captureStepSnapshot(run, started.part.snapshot)
+    appendPart(this.events, run, message, {
+      type: 'step-finish',
+      step,
+      ...(captured ? { snapshot: captured.snapshot } : {}),
+      ...(part.finishReason ? { reason: part.finishReason } : {}),
+      ...(usage ? { usage } : {}),
+      ...(started.part.startedAt ? { startedAt: started.part.startedAt } : {}),
+      finishedAt: nowIso()
+    })
+    if (captured && captured.files.length > 0) {
+      appendPart(this.events, run, message, {
+        type: 'patch',
+        step,
+        snapshot: captured.snapshot,
+        files: captured.files
+      })
+    }
+    run.steps += 1
+  }
+
+  private async recordAfterSnapshot(
+    run: Run,
+    message: ChatMessage,
+    reason = 'stop'
+  ): Promise<void> {
+    const open = messageOpenStep(message.parts)
+    if (open) {
+      const captured = await this.captureStepSnapshot(run, open.part.snapshot)
+      appendPart(this.events, run, message, {
+        type: 'step-finish',
+        step: open.step,
+        ...(captured ? { snapshot: captured.snapshot } : {}),
+        reason,
+        ...(open.part.startedAt ? { startedAt: open.part.startedAt } : {}),
+        finishedAt: nowIso()
+      })
+      if (captured && captured.files.length > 0) {
+        appendPart(this.events, run, message, {
+          type: 'patch',
+          step: open.step,
+          snapshot: captured.snapshot,
+          files: captured.files
+        })
+      }
       await this.store.persist(run.sessionId)
       return
     }
-    try {
-      const snapshot = await this.snapshots.create(run.workspace, run.sessionId, run.references)
-      const diff = await this.snapshots.diff(message.snapshotBefore, snapshot.id)
-      message.snapshotAfter = snapshot.id
-      message.changedFiles = [...diff.added, ...diff.modified, ...diff.deleted]
+
+    if (messageSteps(message.parts).length > 0) {
       await this.store.persist(run.sessionId)
-    } catch {
-      /* snapshots are best effort */
+      return
     }
+
+    // No steps ran: record the turn as a single before/after snapshot pair.
+    const bounds = messageSnapshotBounds(message.parts)
+    const snapshotParts = message.parts.filter((part) => part.type === 'snapshot')
+    if (!bounds.before || snapshotParts.length > 1) {
+      await this.store.persist(run.sessionId)
+      return
+    }
+    const captured = await this.captureStepSnapshot(run, bounds.before)
+    if (captured) {
+      appendPart(this.events, run, message, {
+        type: 'snapshot',
+        snapshot: captured.snapshot,
+        ...(captured.files.length > 0 ? { files: captured.files } : {})
+      })
+    }
+    await this.store.persist(run.sessionId)
   }
 
   private async browserAction(
@@ -2624,7 +2716,7 @@ export class AgentRuntime {
       message.costUsd = this.messageCost(runTarget, state.usage, run.models)
       if (retryCount > 0) this.retryMetrics.recordOutcome(true)
       settleTools(message, 'Tool call did not finish')
-      await this.recordAfterSnapshot(run, message)
+      await this.recordAfterSnapshot(run, message, state.lastFinishReason ?? 'stop')
       await this.store.persist(run.sessionId)
       this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.compaction.updateContextUsage(run.sessionId)
@@ -2658,6 +2750,11 @@ export class AgentRuntime {
           const compacted = await this.compaction.compactForOverflow(run)
           if (compacted) {
             run.retried = true
+            state.usage = undefined
+            state.lastStepUsage = undefined
+            state.lastFinishReason = undefined
+            state.textParts.clear()
+            state.reasoningParts.clear()
             this.resetAssistantMessage(run, message)
             await this.runAgent(run)
             return
@@ -2687,7 +2784,7 @@ export class AgentRuntime {
       message.contextUsage = state.lastStepUsage
       message.costUsd = this.messageCost(runTarget, state.usage, run.models)
       settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
-      await this.recordAfterSnapshot(run, message)
+      await this.recordAfterSnapshot(run, message, interrupted ? 'interrupted' : 'error')
       await this.store.persist(run.sessionId)
       this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.compaction.updateContextUsage(run.sessionId)

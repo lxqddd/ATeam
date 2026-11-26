@@ -13,11 +13,12 @@ import {
   idPayloadSchema,
   renameSchema,
   sessionChangesSchema,
+  sessionForkSchema,
   sessionIdSchema,
-  sessionMessageSchema,
   sessionRevertFilesSchema,
   sessionSearchSchema,
   sessionSetAgentSchema,
+  sessionUndoSchema,
   sessionSetDirectorySchema,
   sessionSetModelSchema,
   sessionSetSettingsSchema,
@@ -78,8 +79,8 @@ export function registerSessionHandlers(ctx: AgentIpcContext): void {
   })
 
   handle(AGENT_CHANNELS.sessionUndo, (payload): Promise<SessionUndoResult> => {
-    const { id, messageId, partIndex } = sessionMessageSchema.parse(payload)
-    return manager.request('sessions.undo', { id, messageId, partIndex })
+    const { id, messageId, stepIndex } = sessionUndoSchema.parse(payload)
+    return manager.request('sessions.undo', { id, messageId, stepIndex })
   })
 
   handle(AGENT_CHANNELS.sessionRedo, (payload): Promise<SessionMeta> => {
@@ -88,7 +89,7 @@ export function registerSessionHandlers(ctx: AgentIpcContext): void {
   })
 
   handle(AGENT_CHANNELS.sessionFork, (payload): Promise<SessionMeta> => {
-    const { id, messageId } = sessionMessageSchema.parse(payload)
+    const { id, messageId } = sessionForkSchema.parse(payload)
     return manager.request('sessions.fork', { id, messageId })
   })
 

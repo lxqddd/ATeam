@@ -5,6 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SessionsStore, makeTitle } from './sessions-store'
 import { makeMessage, makeTextPart, makeToolPart } from '../test/factories'
 
+interface LegacyFields {
+  snapshotBefore?: string
+  snapshotAfter?: string
+  snapshotSteps?: Array<{ before: string; after: string; files: string[]; partIndex?: number }>
+  changedFiles?: string[]
+}
+
+function withLegacyFields(
+  fields: Parameters<typeof makeMessage>[0] & LegacyFields
+): ReturnType<typeof makeMessage> {
+  return makeMessage(fields)
+}
+
 let directory: string
 let sessionsDirectory: string
 let store: SessionsStore
@@ -253,7 +266,7 @@ describe('SessionsStore', () => {
     if (!record) throw new Error('record missing')
     record.messages[1] = { ...original, parts: original.parts.slice(0, 1) }
 
-    const staged = await store.stagePartUndo(session.id, 1, original, 'snapshot-after', ['a.txt'])
+    const staged = await store.stageStepUndo(session.id, 1, original, 'snapshot-after', ['a.txt'])
 
     expect(staged?.redoAvailable).toBe(true)
     expect(store.getRevert(session.id)).toBeUndefined()
@@ -281,10 +294,10 @@ describe('SessionsStore', () => {
     )
 
     expect(
-      await store.stagePartUndo(session.id, 5, makeMessage({ id: 'x' }), null, [])
+      await store.stageStepUndo(session.id, 5, makeMessage({ id: 'x' }), null, [])
     ).toBeUndefined()
     expect(
-      await store.stagePartUndo('missing', 0, makeMessage({ id: 'x' }), null, [])
+      await store.stageStepUndo('missing', 0, makeMessage({ id: 'x' }), null, [])
     ).toBeUndefined()
   })
 
@@ -694,26 +707,58 @@ describe('fork', () => {
     expect(store.getMessages(forked?.id as string)).toHaveLength(2)
   })
 
+  it('migrates legacy snapshot fields on load and persists the parts', async () => {
+    const session = await store.create()
+    await store.appendMessage(
+      session.id,
+      withLegacyFields({
+        id: 'a1',
+        role: 'assistant',
+        parts: [makeTextPart('done')],
+        snapshotBefore: 's0',
+        snapshotAfter: 's1',
+        snapshotSteps: [{ before: 's0', after: 's1', files: ['a.ts'], partIndex: 1 }],
+        changedFiles: ['a.ts']
+      })
+    )
+
+    const reloaded = new SessionsStore(directory, { backend: 'json' })
+    await reloaded.init()
+    const [message] = reloaded.getMessages(session.id) ?? []
+    expect(message.parts.map((part) => part.type)).toEqual([
+      'snapshot',
+      'step-start',
+      'text',
+      'step-finish',
+      'patch'
+    ])
+    expect('snapshotBefore' in message).toBe(false)
+    expect('snapshotSteps' in message).toBe(false)
+
+    const again = new SessionsStore(directory, { backend: 'json' })
+    await again.init()
+    expect(again.getMessages(session.id)?.[0].parts).toHaveLength(message.parts.length)
+  })
+
   it('drops snapshot references in the fork', async () => {
     const session = await store.create()
     await store.appendMessage(
       session.id,
       makeMessage({
-        parts: [makeTextPart('hello')],
-        snapshotBefore: 'snap-before',
-        snapshotAfter: 'snap-after',
-        snapshotSteps: [{ before: 'a', after: 'b', files: ['x.ts'] }],
-        changedFiles: ['x.ts']
+        parts: [
+          { type: 'snapshot', snapshot: 'snap-before' },
+          { type: 'step-start', step: 0, snapshot: 'snap-before' },
+          makeTextPart('hello'),
+          { type: 'step-finish', step: 0, snapshot: 'snap-after' },
+          { type: 'patch', step: 0, snapshot: 'snap-after', files: ['x.ts'] }
+        ]
       })
     )
 
     const forked = await store.fork(session.id)
     const [message] = store.getMessages(forked?.id as string) ?? []
 
-    expect(message).toMatchObject({ snapshotSteps: [] })
-    expect(message?.snapshotBefore).toBeUndefined()
-    expect(message?.snapshotAfter).toBeUndefined()
-    expect(message?.changedFiles).toBeUndefined()
+    expect(message?.parts).toEqual([makeTextPart('hello')])
   })
 
   it('truncates the transcript at a message', async () => {

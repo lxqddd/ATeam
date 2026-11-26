@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatMessage, PermissionRequest, RunOutcome } from '@ateam/shared'
+import { isMetadataPart, messageChangedFiles, messageSteps } from '@ateam/shared'
 import { chatStore } from '../../chat/store'
 import MarkdownBlock from './MarkdownBlock'
 import PermissionCard from './PermissionCard'
@@ -36,7 +37,8 @@ function AssistantMessage({
     .filter((part) => part.type === 'text')
     .map((part) => part.text)
     .join('\n\n')
-  const hasParts = message.parts.length > 0
+  const hasParts = message.parts.some((part) => !isMetadataPart(part))
+  const changedFiles = messageChangedFiles(message.parts)
   const streaming = message.status === 'streaming'
   const planSwitched = message.parts.some(
     (part) =>
@@ -49,16 +51,20 @@ function AssistantMessage({
     isLast && !sessionRunning && (message.status === 'error' || message.status === 'interrupted')
   const canRevert = !sessionRunning && message.status !== 'streaming'
   const canRewind = isLast && canRevert
-  // Step boundaries are recorded after each finished step; only boundaries
-  // with later parts left can be rewound.
-  const stepBoundaries = new Map<number, number>()
-  for (const step of message.snapshotSteps ?? []) {
-    if (
-      typeof step.partIndex === 'number' &&
-      step.partIndex > 0 &&
-      step.partIndex < message.parts.length
-    ) {
-      stepBoundaries.set(step.partIndex - 1, step.partIndex)
+  // Rewind points are steps that captured a snapshot and still have a later
+  // step. Anchor the button on the last renderable part of each step.
+  const rewindPoints = new Map<number, number>()
+  const steps = messageSteps(message.parts)
+  for (const [position, step] of steps.entries()) {
+    if (!step.finish?.snapshot) continue
+    if (!steps.some((later, laterPosition) => laterPosition > position && later.step > step.step)) {
+      continue
+    }
+    for (let index = step.endIndex - 1; index >= step.fromIndex; index -= 1) {
+      const part = message.parts[index]
+      if (!part || isMetadataPart(part)) continue
+      rewindPoints.set(index, step.step)
+      break
     }
   }
 
@@ -96,11 +102,11 @@ function AssistantMessage({
     }
   }
 
-  async function rewindToPart(partIndex: number): Promise<void> {
-    setRewinding(partIndex)
+  async function rewindToStep(stepIndex: number): Promise<void> {
+    setRewinding(stepIndex)
     setRevertError(null)
     try {
-      await chatStore.undoToPart(message.id, partIndex)
+      await chatStore.undoToStep(message.id, stepIndex)
     } catch (caught) {
       setRevertError(caught instanceof Error ? caught.message : String(caught))
     } finally {
@@ -150,7 +156,7 @@ function AssistantMessage({
               key = part.toolCallId
               node = <ToolRow part={part} />
             }
-            const boundary = stepBoundaries.get(index)
+            const boundary = rewindPoints.get(index)
             return (
               <Fragment key={key}>
                 {node}
@@ -161,7 +167,7 @@ function AssistantMessage({
                       title={t('chat.rewindStepHint')}
                       disabled={rewinding !== null}
                       onClick={() => {
-                        void rewindToPart(boundary)
+                        void rewindToStep(boundary)
                       }}
                       className="rounded px-1 text-caption text-subtle transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
                     >
@@ -185,7 +191,7 @@ function AssistantMessage({
 
       {message.status === 'complete' &&
         !text &&
-        !message.parts.some((part) => part.type !== 'text') && (
+        !message.parts.some((part) => !isMetadataPart(part)) && (
           <p className="text-label text-subtle">{t('chat.emptyAssistant')}</p>
         )}
 
@@ -269,13 +275,13 @@ function AssistantMessage({
               {copied ? t('chat.copied') : t('chat.copy')}
             </button>
           )}
-          {(message.changedFiles?.length ?? 0) > 0 && (
+          {changedFiles.length > 0 && (
             <button
               type="button"
               onClick={() => chatStore.openChanges(message.sessionId, message.id)}
               className="rounded px-1 text-caption font-medium text-accent-strong transition-colors hover:bg-hover"
             >
-              {t('chat.changesButton', { count: message.changedFiles?.length ?? 0 })}
+              {t('chat.changesButton', { count: changedFiles.length })}
             </button>
           )}
           {canRevert && (

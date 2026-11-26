@@ -398,12 +398,12 @@ export class ChatStore {
     this.upsertSession(session)
   }
 
-  async undoSession(messageId?: string, partIndex?: number): Promise<string | null> {
+  async undoSession(messageId?: string, stepIndex?: number): Promise<string | null> {
     const sessionId = this.state.selectedSessionId
     if (!sessionId) return null
     const result =
-      partIndex !== undefined
-        ? await window.api.agent.sessions.undo(sessionId, messageId, partIndex)
+      stepIndex !== undefined
+        ? await window.api.agent.sessions.undo(sessionId, messageId, stepIndex)
         : messageId
           ? await window.api.agent.sessions.undo(sessionId, messageId)
           : await window.api.agent.sessions.undo(sessionId)
@@ -415,8 +415,8 @@ export class ChatStore {
   }
 
   /** Rewinds the latest assistant turn to the end of one recorded step. */
-  async undoToPart(messageId: string, partIndex: number): Promise<void> {
-    await this.undoSession(messageId, partIndex)
+  async undoToStep(messageId: string, stepIndex: number): Promise<void> {
+    await this.undoSession(messageId, stepIndex)
   }
 
   async redoSession(): Promise<void> {

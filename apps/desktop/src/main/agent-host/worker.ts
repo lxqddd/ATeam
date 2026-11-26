@@ -133,7 +133,7 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().undoSession(
         request.params.id,
         request.params.messageId,
-        request.params.partIndex
+        request.params.stepIndex
       )
     case 'sessions.redo':
       return requireRuntime().redoSession(request.params.id)

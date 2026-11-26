@@ -58,6 +58,19 @@ export function emitPart(events: EventSink, run: Run, part: MessagePart, index: 
   })
 }
 
+/** Appends a part at the end of the message and emits the matching upsert. */
+export function appendPart(
+  events: EventSink,
+  run: Run,
+  message: ChatMessage,
+  part: MessagePart
+): number {
+  const index = message.parts.length
+  message.parts.push(part)
+  emitPart(events, run, part, index)
+  return index
+}
+
 export function appendToolOutput(
   events: EventSink,
   message: ChatMessage,

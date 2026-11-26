@@ -29,13 +29,13 @@ export function makeUserMessage(
   }
 }
 
-export function makeAssistantMessage(sessionId: string): ChatMessage {
+export function makeAssistantMessage(sessionId: string, snapshot?: string): ChatMessage {
   const timestamp = nowIso()
   return {
     id: randomUUID(),
     sessionId,
     role: 'assistant',
-    parts: [],
+    parts: snapshot ? [{ type: 'snapshot', snapshot }] : [],
     createdAt: timestamp,
     updatedAt: timestamp,
     status: 'streaming'

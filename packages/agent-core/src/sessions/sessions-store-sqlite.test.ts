@@ -320,7 +320,7 @@ describe('SQLite session storage', () => {
     const record = store.get(session.id)
     if (!record) throw new Error('record missing')
     record.messages[1] = { ...original, parts: original.parts.slice(0, 1) }
-    await store.stagePartUndo(session.id, 1, original, 'snapshot-after', ['a.txt'])
+    await store.stageStepUndo(session.id, 1, original, 'snapshot-after', ['a.txt'])
 
     const reloaded = new SessionsStore(directory)
     await reloaded.init()

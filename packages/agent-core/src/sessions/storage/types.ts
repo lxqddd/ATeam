@@ -5,7 +5,7 @@ export interface RedoState {
   snapshotAfter: string | null
   files: string[]
   prompt: string
-  /** Original assistant message replaced by a part-level rewind. */
+  /** Original assistant message replaced by a step-level rewind. */
   target?: {
     index: number
     message: ChatMessage
