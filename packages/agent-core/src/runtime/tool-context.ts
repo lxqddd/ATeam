@@ -5,6 +5,10 @@ import type {
   SkillDefinition,
   SubagentInput,
   TodoInput,
+  VcsDiffOptions,
+  VcsDiffResult,
+  VcsInfo,
+  VcsStatus,
   WebFetchFormat
 } from '@ateam/shared'
 import { discoverNestedInstructions, formatInstructions } from '../config/instructions'
@@ -84,6 +88,10 @@ export interface ToolContextHost {
   createSessionWorktree(run: Run, input: { name: string; base?: string | null }): Promise<string>
   listSessionWorktrees(run: Run): Promise<string>
   removeSessionWorktree(run: Run, target: string, force: boolean): Promise<string>
+  vcsInfo(run: Run): Promise<VcsInfo>
+  vcsStatus(run: Run): Promise<VcsStatus>
+  vcsDiff(run: Run, options: VcsDiffOptions): Promise<VcsDiffResult>
+  vcsApply(run: Run, patch: string): Promise<{ files: string[] }>
   moveSession(run: Run, directory: string): Promise<string>
   listWorkspaceAdapters(run: Run): Promise<string>
   createPluginWorkspace(
@@ -187,6 +195,12 @@ export function buildToolContext(host: ToolContextHost, input: ToolContextInput)
     worktreeCreate: (worktreeInput) => host.createSessionWorktree(run, worktreeInput),
     worktreeList: () => host.listSessionWorktrees(run),
     worktreeRemove: (target, force) => host.removeSessionWorktree(run, target, force),
+    vcs: {
+      info: () => host.vcsInfo(run),
+      status: () => host.vcsStatus(run),
+      diff: (options) => host.vcsDiff(run, options ?? {}),
+      apply: (patch) => host.vcsApply(run, patch)
+    },
     moveSession: (directory) => host.moveSession(run, directory),
     workspaceAdapters: () => host.listWorkspaceAdapters(run),
     createWorkspace: (adapter, name, base) => host.createPluginWorkspace(run, adapter, name, base),

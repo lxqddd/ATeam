@@ -4,6 +4,10 @@ import type {
   QuestionInput,
   SubagentInput,
   TodoInput,
+  VcsDiffOptions,
+  VcsDiffResult,
+  VcsInfo,
+  VcsStatus,
   WebFetchFormat
 } from '@ateam/shared'
 import type { LspCallDirection } from '../integrations/lsp'
@@ -23,6 +27,14 @@ export const IMAGE_MIME: Record<string, string> = {
   '.gif': 'image/gif'
 }
 export const IGNORED_DIRS = new Set(['.git', 'node_modules', '.DS_Store'])
+
+/** Structured Git access exposed to the vcs tool. */
+export interface ToolContextVcs {
+  info: () => Promise<VcsInfo>
+  status: () => Promise<VcsStatus>
+  diff: (options?: VcsDiffOptions) => Promise<VcsDiffResult>
+  apply: (patch: string) => Promise<{ files: string[] }>
+}
 
 export interface ToolContext {
   workspace: string
@@ -91,6 +103,7 @@ export interface ToolContext {
   worktreeCreate?: (input: { name: string; base?: string | null }) => Promise<string>
   worktreeList?: () => Promise<string>
   worktreeRemove?: (path: string, force: boolean) => Promise<string>
+  vcs?: ToolContextVcs
   moveSession?: (directory: string) => Promise<string>
   workspaceAdapters?: () => Promise<string>
   createWorkspace?: (adapter: string, name: string, base?: string | null) => Promise<string>

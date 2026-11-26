@@ -153,6 +153,14 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       )
     case 'sessions.unrevertFiles':
       return requireRuntime().unrevertChangedFiles(request.params.sessionId, request.params.paths)
+    case 'vcs.status':
+      return requireRuntime().vcsStatus(request.params.sessionId)
+    case 'vcs.diff':
+      return requireRuntime().vcsDiff(request.params.sessionId, {
+        mode: request.params.mode,
+        base: request.params.base,
+        path: request.params.path
+      })
     case 'messages.list':
       return requireRuntime().messages(request.params.sessionId)
     case 'chat.send':

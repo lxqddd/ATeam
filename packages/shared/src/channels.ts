@@ -27,6 +27,8 @@ export const AGENT_CHANNELS = {
   sessionChangesSummary: 'ateam:agent:sessions:changes-summary',
   sessionRevertFiles: 'ateam:agent:sessions:revert-files',
   sessionUnrevertFiles: 'ateam:agent:sessions:unrevert-files',
+  vcsStatus: 'ateam:agent:vcs:status',
+  vcsDiff: 'ateam:agent:vcs:diff',
   messagesList: 'ateam:agent:messages:list',
   chatSend: 'ateam:agent:chat:send',
   chatStop: 'ateam:agent:chat:stop',

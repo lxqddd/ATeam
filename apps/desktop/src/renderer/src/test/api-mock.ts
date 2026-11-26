@@ -29,6 +29,8 @@ import type {
   SessionMeta,
   SessionSearchResult,
   SessionSettings,
+  VcsDiffResult,
+  VcsStatus,
   WebSearchInput,
   WebSearchProviderPublic
 } from '@ateam/shared'
@@ -258,6 +260,21 @@ export function createApiMock(
         list: vi.fn(
           async (sessionId: string) => messages.get(sessionId) ?? emptySnapshot(sessionId)
         )
+      },
+      vcs: {
+        status: vi.fn(async (): Promise<VcsStatus> => ({
+          info: { isRepository: false, root: null, branch: null, defaultBranch: null },
+          files: [],
+          truncated: false
+        })),
+        diff: vi.fn(async (): Promise<VcsDiffResult> => ({
+          isRepository: false,
+          mode: 'working',
+          base: null,
+          files: [],
+          truncated: false,
+          reason: null
+        }))
       },
       chat: {
         send: vi.fn(async () => undefined),

@@ -6,6 +6,7 @@ import { fetchWebContent } from '../integrations/webfetch'
 import { searchWeb } from '../integrations/websearch'
 import { createLanguageModel as createDefaultLanguageModel } from '../providers'
 import { createTools as createDefaultTools } from '../tools'
+import { createVcs } from '../vcs'
 import { createStepLimitHandler } from './max-steps'
 import { MAX_STEPS, type AgentRuntimeDependencies } from './types'
 
@@ -86,5 +87,6 @@ export const DEFAULT_DEPENDENCIES: AgentRuntimeDependencies = {
       projectServers: input.projectServers
     }),
   fetchWeb: fetchWebContent,
-  searchWeb
+  searchWeb,
+  createVcs: (workspace) => createVcs(workspace)
 }

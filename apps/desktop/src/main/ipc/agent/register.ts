@@ -7,6 +7,7 @@ import { registerMcpHandlers } from './mcp'
 import { registerPermissionHandlers } from './permissions'
 import { registerPluginHandlers } from './plugins'
 import { registerSessionHandlers } from './sessions'
+import { registerVcsHandlers } from './vcs'
 import { registerWebSearchHandlers } from './websearch'
 import { registerWorkspaceHandlers } from './workspace'
 
@@ -21,6 +22,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   const ctx = createAgentIpcContext(options)
   registerInfoHandlers(ctx)
   registerSessionHandlers(ctx)
+  registerVcsHandlers(ctx)
   registerChatHandlers(ctx)
   registerAttachmentHandlers(ctx)
   registerPermissionHandlers(ctx)

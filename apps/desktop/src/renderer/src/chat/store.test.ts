@@ -1086,7 +1086,11 @@ describe('ChatStore changes panel', () => {
   it('opens and closes the review target', () => {
     store.openChanges('s1', 'm1')
 
-    expect(store.getSnapshot().changesPanel).toEqual({ sessionId: 's1', messageId: 'm1' })
+    expect(store.getSnapshot().changesPanel).toEqual({
+      sessionId: 's1',
+      messageId: 'm1',
+      tab: 'session'
+    })
 
     store.closeChanges()
 
@@ -1096,7 +1100,35 @@ describe('ChatStore changes panel', () => {
   it('opens the session-wide change summary', () => {
     store.openSessionChanges('s1')
 
-    expect(store.getSnapshot().changesPanel).toEqual({ sessionId: 's1', messageId: null })
+    expect(store.getSnapshot().changesPanel).toEqual({
+      sessionId: 's1',
+      messageId: null,
+      tab: 'session'
+    })
+  })
+
+  it('opens the workspace Git view', () => {
+    store.openGitChanges('s1')
+
+    expect(store.getSnapshot().changesPanel).toEqual({
+      sessionId: 's1',
+      messageId: null,
+      tab: 'git'
+    })
+  })
+
+  it('switches tabs only while the panel is open', () => {
+    store.setChangesTab('git')
+    expect(store.getSnapshot().changesPanel).toBeNull()
+
+    store.openSessionChanges('s1')
+    store.setChangesTab('git')
+
+    expect(store.getSnapshot().changesPanel).toEqual({
+      sessionId: 's1',
+      messageId: null,
+      tab: 'git'
+    })
   })
 
   it('closes the panel when switching sessions', () => {

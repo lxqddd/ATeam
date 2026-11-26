@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：消息 part 模型、VCS / Git 服务（MCP 细节 2026-11-25、part 级回滚 / unrevert / 会话 diff 2026-11-25、formatter / commands / subagent 细节 2026-11-26 已完成）
+- [ ] P1：消息 part 模型、VCS / Git 服务（MCP 细节 2026-11-25、part 级回滚 / unrevert / 会话 diff 2026-11-25、formatter / commands / subagent 细节 2026-11-26、VCS / Git 服务 2026-11-26 已完成）
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -448,21 +448,13 @@
 
 **验收**：命令面板覆盖内置、用户、MCP、Skill 来源；子代理嵌套可按配置放开。
 
-#### R-P1-10 VCS / Git 模块
+#### R-P1-10 VCS / Git 模块（已完成，2026-11-26）
 
-**现状**：只有 worktree 辅助（[worktrees.ts](../packages/agent-core/src/worktrees.ts)）和 shell 里的 git；没有统一的 branch/status/diff/apply 服务，也没有会话级 Git diff。
+**现状（2026-11-26）**：已完成。新增独立的 VCS 服务（[vcs.ts](../packages/agent-core/src/vcs.ts)，`createVcs(root)`）：`info` 提供仓库根、当前分支（detached 为 null）与默认分支（`origin/HEAD` → 任一远端 HEAD → `init.defaultBranch` → 本地 `main` / `master`），`status` 解析 `status --porcelain=v1 -z --no-renames`，`diff` 支持 `working`（HEAD 基线，含未跟踪文件）、`branch`（`merge-base <base|默认分支> HEAD`）与 `committed`（`HEAD~1..HEAD`，根提交用 `git show`）三种模式，`apply` 先 `git apply --check -` 再 `git apply -`，只改工作区。已跟踪文件用 `git diff --unified=3` + `parsePatch` 转 hunks、`--numstat` 提供增删行与二进制判定；未跟踪文件从工作区合成 added hunk；文件数（200）、单文件 hunk（512 KB / 5000 行）、总文本（5 MB）与未跟踪文件（50 个 / 2 MB）均有上限并标记 `truncated`，输出超限时降级为 numstat 文件列表。`vcs` Agent 工具暴露 `info / status / diff / apply`，`info` / `status` / `diff` 需要 `read` 授权，`apply` 先解析补丁路径并逐文件请求 `edit` 授权；plan agent 可读、explore agent 不暴露该工具。会话 diff 与 Git diff 数据源完全分离：审查面板新增“会话 / 工作区 Git”双标签，Git 标签只读展示分支、默认分支、文件列表与 hunks，页头新增 Git 入口，打开时取一次快照、不轮询；IPC 仅暴露 `vcs.status` / `vcs.diff`（`vcs.status` / `vcs.diff` 通道 + preload `agent.vcs.status` / `agent.vcs.diff`）。
 
-**OpenCode 参考**：`project/vcs.ts` 提供 branch、default branch、status、diff、diffRaw、apply，并与 session diff / TUI 侧栏集成。
+**边界**：不提供 commit / checkout / 建分支等 Git 写操作（沿用 worktree 工具）；UI 不暴露 patch apply；统一 `--no-renames`（重命名显示为删除 + 新增）；apply 不做 `--3way`，冲突直接失败；仅支持本地仓库与 PATH 中的 git，不处理 git-lfs / submodule；大仓库按预算降级为文件列表与截断提示，不做分页；Git 视图不参与会话 revert / unrevert，也不写入会话状态。
 
-**待办**：
-
-- [ ] 增加 VCS 服务：branch、status、diff、patch apply
-- [ ] 处理非 Git 项目与未跟踪文件
-- [ ] 将会话 diff 与 Git diff 区分展示
-- [ ] 为审查面板增加“工作区 Git 改动”视图
-- [ ] 测试分支检测、未跟踪文件、patch 应用失败
-
-**验收**：Agent 和 UI 都能查询仓库状态与 diff，不再依赖临时 shell 解析。
+**验收**：Agent 与 UI 都能查询仓库状态与 diff，不再依赖临时 shell 解析；非 Git 工作区返回空结果并提示，未跟踪文件与二进制文件有明确标记。
 
 ### 第二轮 P2：接口与生态
 
@@ -479,8 +471,9 @@
 
 1. **R-P1-5 输出截断**（已完成，2026-11-25）——行数 / 字节数配置、head/tail、按工具覆盖、完整输出落盘、过期清理与子代理提示均已落地。
 2. **R-P1-3 会话级回滚 / unrevert / diff**（已完成，2026-11-25）——part 级回滚、revert/unrevert 状态与只读会话汇总均已落地。
-3. **第二轮 P1 剩余项**（按使用频率取舍）。
-4. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
+3. **R-P1-10 VCS / Git 模块**（已完成，2026-11-26）——VCS 服务、`vcs` 工具、只读 Git IPC 与审查面板“工作区 Git”标签已落地。
+4. **第二轮 P1 剩余项**（按使用频率取舍）。
+5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 
 ## 第一轮 P0：可靠性、安全与编辑质量（已完成）
 

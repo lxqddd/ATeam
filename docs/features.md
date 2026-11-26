@@ -110,33 +110,34 @@
 
 ## 4. 工具集
 
-| 工具                 | 作用                                                               | 权限 action |
-| -------------------- | ------------------------------------------------------------------ | ----------- |
-| `read`               | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本   | `read`      |
-| `list`               | 列目录（深度限制）                                                 | `list`      |
-| `grep`               | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep     | `grep`      |
-| `glob`               | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`      |
-| `write`              | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`     |
-| `edit`               | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`      |
-| `patch`              | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`      |
-| `shell`              | 执行命令，超时、流式输出、后台运行与任务跟踪                       | `shell`     |
-| `webfetch`           | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`  |
-| `websearch`          | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch` |
-| `skill`              | 按名称加载 Skill 全文与附带资源清单                                | `skill`     |
-| `subagent`           | 委派子任务到子代理（可后台运行）                                   | `subagent`  |
-| `background_tasks`   | 列出 / 等待 / 取消后台任务                                         | 不需要审批  |
-| `mcp_prompt`         | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`       |
-| `mcp_resource`       | 列出 / 读取 MCP resources 与 resource templates                    | `mcp`       |
-| `lsp_hover`          | 查询符号的类型与文档                                               | `lsp`       |
-| `lsp_definition`     | 查询符号定义位置                                                   | `lsp`       |
-| `lsp_references`     | 查询符号的全部引用（含声明）                                       | `lsp`       |
-| `lsp_implementation` | 查询接口 / 抽象符号的实现位置                                      | `lsp`       |
-| `lsp_symbols`        | 列出文件符号，或按名称搜索工作区符号                               | `lsp`       |
-| `lsp_call_hierarchy` | 查询函数的入向 / 出向调用层级                                      | `lsp`       |
-| `todowrite`          | 替换会话任务列表                                                   | 不需要审批  |
-| `todoread`           | 读取任务列表                                                       | 不需要审批  |
-| `question`           | 向用户提出结构化问题                                               | 不需要审批  |
-| MCP 工具             | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`       |
+| 工具                 | 作用                                                               | 权限 action     |
+| -------------------- | ------------------------------------------------------------------ | --------------- |
+| `read`               | 读取文本（行号、offset / limit）；图片作为图像内容、PDF 抽取文本   | `read`          |
+| `list`               | 列目录（深度限制）                                                 | `list`          |
+| `grep`               | 正则 / 字面量搜索，include、大小写、结果上限；优先使用 ripgrep     | `grep`          |
+| `glob`               | 按 glob 模式找文件，hidden、数量上限、10 秒超时                    | `list`          |
+| `write`              | 创建 / 覆盖文件（≤1 MB），写后格式化并附带诊断                     | `write`         |
+| `edit`               | 精确字符串替换，唯一匹配或 replaceAll（`applyPatch` 模型不暴露）   | `edit`          |
+| `patch`              | 单次多文件新增 / 更新 / 删除，逐文件审批（仅 `applyPatch` 模型）   | `edit`          |
+| `shell`              | 执行命令，超时、流式输出、后台运行与任务跟踪                       | `shell`         |
+| `webfetch`           | 抓取网页，markdown / text / html；私网拦截、重定向校验、5 分钟缓存 | `webfetch`      |
+| `websearch`          | Tavily / Exa / Brave / Serper 搜索，结果格式化                     | `websearch`     |
+| `skill`              | 按名称加载 Skill 全文与附带资源清单                                | `skill`         |
+| `subagent`           | 委派子任务到子代理（可后台运行）                                   | `subagent`      |
+| `background_tasks`   | 列出 / 等待 / 取消后台任务                                         | 不需要审批      |
+| `mcp_prompt`         | 列出 / 获取 MCP prompts 并展开为提示词                             | `mcp`           |
+| `mcp_resource`       | 列出 / 读取 MCP resources 与 resource templates                    | `mcp`           |
+| `lsp_hover`          | 查询符号的类型与文档                                               | `lsp`           |
+| `lsp_definition`     | 查询符号定义位置                                                   | `lsp`           |
+| `lsp_references`     | 查询符号的全部引用（含声明）                                       | `lsp`           |
+| `lsp_implementation` | 查询接口 / 抽象符号的实现位置                                      | `lsp`           |
+| `lsp_symbols`        | 列出文件符号，或按名称搜索工作区符号                               | `lsp`           |
+| `lsp_call_hierarchy` | 查询函数的入向 / 出向调用层级                                      | `lsp`           |
+| `vcs`                | 仓库信息、状态与 working / branch / committed diff；按补丁写工作区 | `read` / `edit` |
+| `todowrite`          | 替换会话任务列表                                                   | 不需要审批      |
+| `todoread`           | 读取任务列表                                                       | 不需要审批      |
+| `question`           | 向用户提出结构化问题                                               | 不需要审批      |
+| MCP 工具             | 动态注册为 `mcp_<server>_<tool>`                                   | `mcp`           |
 
 - 单个工具结果先经过 200k 字符硬上限，再按 `toolOutput` 配置截断：默认 2000 行 / 50 KiB，`mode` 支持 `head` / `tail`，并可用 `toolOutput.tools.<name>` 按工具覆盖；完整输出保存到 `agent/tool-output/<session>/<call>.txt`，截断提示附带路径与 read 工具按需读取提示，超过 7 天的输出文件自动清理。
 - 存在 `subagent` 工具时，系统提示会引导模型把过大的截断输出交给 `explore` 子代理阅读。
@@ -189,6 +190,8 @@
 - 会话改动汇总：审查面板可查看整个会话按轮次汇总的文件列表、增删行与去重文件数（最新轮在前，最多 50 轮，只读）。
 - Git 仓库遵循 ignore 规则，未跟踪文件仅纳入 ≤2 MiB；非 Git 工作区直接遍历（跳过依赖目录）。
 - 运行中禁止撤销 / 重做 / 回滚 / unrevert；会话删除时清理快照并按引用回收 blob；设置页提供快照开关。
+- VCS 服务（独立于快照）：`info`（仓库根、当前分支、默认分支）、`status`、`diff`（`working` / `branch` / `committed`）与 `apply`（仅改工作区，先 check 再 apply）；非 Git 工作区返回空结果，文件数与差异文本有上限并标记截断；Agent 通过 `vcs` 工具使用，`apply` 逐文件申请 `edit` 权限。
+- 工作区 Git 改动：审查面板新增“会话 / 工作区 Git”双标签，Git 标签只读展示当前分支、默认分支、文件列表与 hunks（固定 `working` 模式，打开时取一次快照），与快照 diff、revert / unrevert 数据源完全分离。
 
 ## 9. MCP（Model Context Protocol）
 

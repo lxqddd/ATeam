@@ -79,6 +79,16 @@ const api: AteamApi = {
     messages: {
       list: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.messagesList, { sessionId })
     },
+    vcs: {
+      status: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.vcsStatus, { sessionId }),
+      diff: (sessionId, options) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.vcsDiff, {
+          sessionId,
+          mode: options?.mode,
+          base: options?.base,
+          path: options?.path
+        })
+    },
     chat: {
       send: (input) => ipcRenderer.invoke(AGENT_CHANNELS.chatSend, input),
       stop: (sessionId) => ipcRenderer.invoke(AGENT_CHANNELS.chatStop, { sessionId }),

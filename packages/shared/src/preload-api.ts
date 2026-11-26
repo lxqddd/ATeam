@@ -40,6 +40,7 @@ import type {
   WebSearchProviderPublic
 } from './agent-types'
 import type { UpdateDownloadResult, UpdateInfo, UpdateProgress } from './update-types'
+import type { VcsDiffOptions, VcsDiffResult, VcsStatus } from './vcs-types'
 import type {
   ModelCatalogEntry,
   ModelCreateInput,
@@ -82,6 +83,10 @@ export interface AgentBridge {
   }
   messages: {
     list: (sessionId: string) => Promise<MessagesSnapshot>
+  }
+  vcs: {
+    status: (sessionId: string) => Promise<VcsStatus>
+    diff: (sessionId: string, options?: VcsDiffOptions) => Promise<VcsDiffResult>
   }
   chat: {
     send: (input: {

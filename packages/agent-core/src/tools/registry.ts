@@ -35,6 +35,7 @@ import {
 import { createGlobTool, createGrepTool } from './search'
 import { createShellTool } from './shell'
 import type { ToolContext } from './types'
+import { createVcsTool } from './vcs'
 import { createWebFetchTool, createWebSearchTool } from './web'
 import {
   createSessionMoveTool,
@@ -87,6 +88,7 @@ export function createTools(context: ToolContext): ToolSet {
     worktree_create: createWorktreeCreateTool(context),
     worktree_list: createWorktreeListTool(context),
     worktree_remove: createWorktreeRemoveTool(context),
+    vcs: createVcsTool(context),
     session_move: createSessionMoveTool(context),
     workspace_adapter_list: createWorkspaceAdapterListTool(context),
     workspace_create: createWorkspaceCreateTool(context),

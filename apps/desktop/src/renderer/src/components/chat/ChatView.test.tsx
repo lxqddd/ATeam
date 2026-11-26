@@ -10,7 +10,8 @@ vi.mock('../../chat/store', () => ({
   chatStore: {
     dismissSubagentResult: vi.fn(),
     loadMessages: vi.fn(),
-    closeChanges: vi.fn()
+    closeChanges: vi.fn(),
+    setChangesTab: vi.fn()
   },
   useChatStore: () => storeState.current
 }))
@@ -21,9 +22,15 @@ vi.mock('./BackgroundNotices', () => ({ default: () => null }))
 vi.mock('./SubagentNotices', () => ({ default: () => null }))
 vi.mock('./QuestionCard', () => ({ default: () => null }))
 vi.mock('./ChangesPanel', () => ({
-  default: ({ sessionId, messageId }: { sessionId: string; messageId: string }) => (
-    <div>{`changes-panel ${sessionId}:${messageId}`}</div>
-  )
+  default: ({
+    sessionId,
+    messageId,
+    tab
+  }: {
+    sessionId: string
+    messageId: string | null
+    tab: string
+  }) => <div>{`changes-panel ${sessionId}:${messageId ?? 'summary'}:${tab}`}</div>
 }))
 
 function state(): ChatStoreState {
@@ -71,11 +78,22 @@ describe('ChatView', () => {
   it('renders the changes panel for the stored target', () => {
     storeState.current = {
       ...state(),
-      changesPanel: { sessionId: 's1', messageId: 'm1' }
+      changesPanel: { sessionId: 's1', messageId: 'm1', tab: 'session' }
     }
 
     render(<ChatView />)
 
-    expect(screen.getByText('changes-panel s1:m1')).toBeInTheDocument()
+    expect(screen.getByText('changes-panel s1:m1:session')).toBeInTheDocument()
+  })
+
+  it('renders the workspace Git tab for the stored target', () => {
+    storeState.current = {
+      ...state(),
+      changesPanel: { sessionId: 's1', messageId: null, tab: 'git' }
+    }
+
+    render(<ChatView />)
+
+    expect(screen.getByText('changes-panel s1:summary:git')).toBeInTheDocument()
   })
 })

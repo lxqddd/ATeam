@@ -116,6 +116,15 @@ export const sessionUnrevertFilesSchema = z.object({
   paths: z.array(z.string().min(1).max(2_000)).min(1).max(200).optional()
 })
 
+export const vcsStatusSchema = z.object({ sessionId: idSchema })
+
+export const vcsDiffSchema = z.object({
+  sessionId: idSchema,
+  mode: z.enum(['working', 'branch', 'committed']).optional(),
+  base: z.string().max(200).optional(),
+  path: z.string().max(2_000).optional()
+})
+
 export const attachmentSchema = z.object({
   id: idSchema,
   name: z.string().min(1).max(300),

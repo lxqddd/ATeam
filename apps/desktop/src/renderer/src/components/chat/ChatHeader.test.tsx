@@ -12,7 +12,8 @@ const chatMocks = vi.hoisted(() => ({
   redoSession: vi.fn(async () => undefined),
   forkSession: vi.fn(async () => undefined),
   setSessionDirectory: vi.fn(async () => undefined),
-  openSessionChanges: vi.fn()
+  openSessionChanges: vi.fn(),
+  openGitChanges: vi.fn()
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -92,6 +93,7 @@ beforeEach(() => {
   chatMocks.setSessionDirectory.mockClear()
   chatMocks.setSessionDirectory.mockResolvedValue(undefined)
   chatMocks.openSessionChanges.mockClear()
+  chatMocks.openGitChanges.mockClear()
   Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
 })
 
@@ -124,6 +126,14 @@ describe('ChatHeader', () => {
     await userEvent.click(screen.getByRole('button', { name: 'View session changes' }))
 
     expect(chatMocks.openSessionChanges).toHaveBeenCalledWith('s1')
+  })
+
+  it('opens the workspace Git changes without requiring messages', async () => {
+    render(<ChatHeader />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'View workspace Git changes' }))
+
+    expect(chatMocks.openGitChanges).toHaveBeenCalledWith('s1')
   })
 
   it('compacts the selected session from the header', async () => {

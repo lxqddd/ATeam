@@ -26,6 +26,7 @@ import type { WebSearchResult } from '../integrations/websearch'
 import type { ToolContext } from '../tools'
 import type { ResolvedReference } from '../references'
 import type { PluginRegistry } from '../plugins'
+import type { VcsService } from '../vcs'
 
 export const MAX_STEPS = 25
 export const PERMISSION_TIMEOUT_MS = 10 * 60 * 1000
@@ -153,4 +154,5 @@ export interface AgentRuntimeDependencies {
     config: RuntimeWebSearchConfig,
     input: { query: string; count: number }
   ) => Promise<WebSearchResult[]>
+  createVcs: (workspace: string) => VcsService
 }

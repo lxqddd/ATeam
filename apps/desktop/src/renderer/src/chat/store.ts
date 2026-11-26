@@ -46,8 +46,11 @@ export interface ChatStoreState {
   actionError: string | null
   restarting: boolean
   revertPrompt: string | null
-  changesPanel: { sessionId: string; messageId: string | null } | null
+  changesPanel: { sessionId: string; messageId: string | null; tab: ChangesTab } | null
 }
+
+/** Which diff source the changes panel shows. */
+export type ChangesTab = 'session' | 'git'
 
 const INITIAL_STATUS: AgentStatus = { status: 'stopped' }
 
@@ -429,12 +432,22 @@ export class ChatStore {
   }
 
   openChanges(sessionId: string, messageId: string): void {
-    this.setState({ changesPanel: { sessionId, messageId } })
+    this.setState({ changesPanel: { sessionId, messageId, tab: 'session' } })
   }
 
   /** Opens the read-only summary of every turn that changed files. */
   openSessionChanges(sessionId: string): void {
-    this.setState({ changesPanel: { sessionId, messageId: null } })
+    this.setState({ changesPanel: { sessionId, messageId: null, tab: 'session' } })
+  }
+
+  /** Opens the read-only Git working tree view. */
+  openGitChanges(sessionId: string): void {
+    this.setState({ changesPanel: { sessionId, messageId: null, tab: 'git' } })
+  }
+
+  setChangesTab(tab: ChangesTab): void {
+    if (!this.state.changesPanel) return
+    this.setState({ changesPanel: { ...this.state.changesPanel, tab } })
   }
 
   closeChanges(): void {

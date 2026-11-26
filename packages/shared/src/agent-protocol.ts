@@ -8,6 +8,7 @@ import type {
   SessionSettings
 } from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType, RuntimeProviderAuth } from './model-types'
+import type { VcsDiffMode } from './vcs-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
 export interface RuntimeProvider {
@@ -115,6 +116,12 @@ export type WorkerRequest =
       id: string
       method: 'sessions.unrevertFiles'
       params: { sessionId: string; paths?: string[] }
+    }
+  | { id: string; method: 'vcs.status'; params: { sessionId: string } }
+  | {
+      id: string
+      method: 'vcs.diff'
+      params: { sessionId: string; mode?: VcsDiffMode; base?: string; path?: string }
     }
   | { id: string; method: 'messages.list'; params: { sessionId: string } }
   | {

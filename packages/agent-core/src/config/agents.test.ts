@@ -46,6 +46,7 @@ describe('builtin agents', () => {
       'write',
       'edit',
       'patch',
+      'vcs',
       'todowrite',
       'todoread',
       'question',

@@ -24,6 +24,7 @@ import { makeMessage } from '../test/factories'
 import type { ToolContext } from '../tools'
 import type { WebFetchResult } from '../integrations/webfetch'
 import type { WebSearchResult } from '../integrations/websearch'
+import type { VcsService } from '../vcs'
 import type { AgentRuntimeOptions } from './types'
 
 const runGit = promisify(execFile)
@@ -282,6 +283,13 @@ let resumeTurn: (() => void) | null
 let steerGate: (() => void) | null
 const generateTitle = vi.fn(async () => '')
 let browserRequest: Mock<NonNullable<AgentRuntimeOptions['browserRequest']>>
+let vcsWorkspaces: string[]
+let vcsService: {
+  info: Mock<VcsService['info']>
+  status: Mock<VcsService['status']>
+  diff: Mock<VcsService['diff']>
+  apply: Mock<VcsService['apply']>
+}
 
 function cachedUser(text: string): {
   role: 'user'
@@ -361,7 +369,11 @@ function createRuntime(): AgentRuntime {
           url: 'https://hit.example',
           snippet: `${config.provider}:${input.query}`
         }
-      ]
+      ],
+      createVcs: (workspace) => {
+        vcsWorkspaces.push(workspace)
+        return vcsService
+      }
     }
   })
 }
@@ -711,6 +723,29 @@ beforeEach(async () => {
       ? { summary: 'Screenshot: Example', image: { mimeType: 'image/png', data: 'AQID' } }
       : `${method}:ok`
   )
+  vcsWorkspaces = []
+  vcsService = {
+    info: vi.fn<VcsService['info']>(async () => ({
+      isRepository: false,
+      root: null,
+      branch: null,
+      defaultBranch: null
+    })),
+    status: vi.fn<VcsService['status']>(async () => ({
+      info: { isRepository: false, root: null, branch: null, defaultBranch: null },
+      files: [],
+      truncated: false
+    })),
+    diff: vi.fn<VcsService['diff']>(async () => ({
+      isRepository: false,
+      mode: 'working',
+      base: null,
+      files: [],
+      truncated: false,
+      reason: null
+    })),
+    apply: vi.fn<VcsService['apply']>(async () => ({ files: [] }))
+  }
   toolAction = 'write'
   toolExecutor = null
   toolContext = null
@@ -2672,6 +2707,43 @@ describe('AgentRuntime', () => {
     expect(summary.additions).toBe(3)
     expect(summary.deletions).toBe(1)
     expect(summary.turns[1].files.every((file) => !('hunks' in file))).toBe(true)
+  })
+
+  it('reads Git status and diffs for the session workspace', async () => {
+    const workspace = path.join(directory, 'workspace')
+    vcsService.status.mockResolvedValue({
+      info: { isRepository: true, root: workspace, branch: 'main', defaultBranch: 'main' },
+      files: [{ path: 'a.txt', status: 'modified' }],
+      truncated: false
+    })
+    vcsService.diff.mockResolvedValue({
+      isRepository: true,
+      mode: 'branch',
+      base: 'abc123',
+      files: [],
+      truncated: false,
+      reason: null
+    })
+
+    const status = await runtime.vcsStatus(sessionId)
+    expect(status.files).toEqual([{ path: 'a.txt', status: 'modified' }])
+    expect(vcsWorkspaces.at(-1)).toBe(workspace)
+
+    const diff = await runtime.vcsDiff(sessionId, { mode: 'branch', base: 'main' })
+    expect(diff.base).toBe('abc123')
+    expect(vcsService.diff).toHaveBeenCalledWith({ mode: 'branch', base: 'main' })
+
+    await expect(runtime.vcsStatus('missing')).rejects.toThrow('SESSION_NOT_FOUND')
+  })
+
+  it('binds the vcs tool to the run workspace', async () => {
+    scripts.push(textScript('ok'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    expect(toolContext?.vcs).toBeDefined()
+    await toolContext?.vcs?.status()
+    expect(vcsWorkspaces.at(-1)).toBe(path.join(directory, 'workspace'))
   })
 
   it('rejects manual compaction for unknown or running sessions', async () => {

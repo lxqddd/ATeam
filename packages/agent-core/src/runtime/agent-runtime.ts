@@ -45,7 +45,10 @@ import type {
   SubagentInput,
   TodoInput,
   TokenUsage,
-  TurnChanges
+  TurnChanges,
+  VcsDiffOptions,
+  VcsDiffResult,
+  VcsStatus
 } from '@ateam/shared'
 import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import { DEFAULT_CONTEXT_WINDOW, messagesAfterCompaction, shouldCompact } from '../sessions/context'
@@ -842,6 +845,16 @@ export class AgentRuntime {
     const record = this.store.get(sessionId)
     if (!record) throw new Error('SESSION_NOT_FOUND')
     return buildSessionChanges(this.turnChangesHost, record)
+  }
+
+  async vcsStatus(sessionId: string): Promise<VcsStatus> {
+    if (!this.store.getSession(sessionId)) throw new Error('SESSION_NOT_FOUND')
+    return this.deps.createVcs(this.sessionWorkspace(sessionId)).status()
+  }
+
+  async vcsDiff(sessionId: string, options: VcsDiffOptions = {}): Promise<VcsDiffResult> {
+    if (!this.store.getSession(sessionId)) throw new Error('SESSION_NOT_FOUND')
+    return this.deps.createVcs(this.sessionWorkspace(sessionId)).diff(options)
   }
 
   async revertChangedFiles(
@@ -2365,6 +2378,10 @@ export class AgentRuntime {
       createSessionWorktree: (run, input) => this.createSessionWorktree(run, input),
       listSessionWorktrees: (run) => this.listSessionWorktrees(run),
       removeSessionWorktree: (run, target, force) => this.removeSessionWorktree(run, target, force),
+      vcsInfo: (run) => this.deps.createVcs(run.workspace).info(),
+      vcsStatus: (run) => this.deps.createVcs(run.workspace).status(),
+      vcsDiff: (run, options) => this.deps.createVcs(run.workspace).diff(options),
+      vcsApply: (run, patch) => this.deps.createVcs(run.workspace).apply(patch),
       moveSession: (run, directory) => this.moveSession(run, directory),
       listWorkspaceAdapters: async (run) => {
         const adapters = run.plugins?.workspaceAdapters() ?? []

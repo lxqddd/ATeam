@@ -61,6 +61,10 @@ let lspCallHierarchy: Mock<NonNullable<ToolContext['lspCallHierarchy']>>
 let worktreeCreate: Mock<NonNullable<ToolContext['worktreeCreate']>>
 let worktreeList: Mock<NonNullable<ToolContext['worktreeList']>>
 let worktreeRemove: Mock<NonNullable<ToolContext['worktreeRemove']>>
+let vcsInfo: Mock<NonNullable<ToolContext['vcs']>['info']>
+let vcsStatus: Mock<NonNullable<ToolContext['vcs']>['status']>
+let vcsDiff: Mock<NonNullable<ToolContext['vcs']>['diff']>
+let vcsApply: Mock<NonNullable<ToolContext['vcs']>['apply']>
 let moveSession: Mock<NonNullable<ToolContext['moveSession']>>
 let browserOpen: Mock<NonNullable<ToolContext['browserOpen']>>
 let browserTabs: Mock<NonNullable<ToolContext['browserTabs']>>
@@ -110,6 +114,41 @@ beforeEach(async () => {
   worktreeCreate = vi.fn(async (input: { name: string }) => `Worktree ready: /tmp/${input.name}`)
   worktreeList = vi.fn(async () => 'Worktrees:\n- /tmp/project (main, main)')
   worktreeRemove = vi.fn(async () => 'Removed worktree /tmp/wt')
+  vcsInfo = vi.fn(async () => ({
+    isRepository: true,
+    root: '/tmp/project',
+    branch: 'main',
+    defaultBranch: 'main'
+  }))
+  vcsStatus = vi.fn(async () => ({
+    info: {
+      isRepository: true,
+      root: '/tmp/project',
+      branch: 'main',
+      defaultBranch: 'main'
+    },
+    files: [{ path: 'src/a.ts', status: 'modified' as const }],
+    truncated: false
+  }))
+  vcsDiff = vi.fn(async () => ({
+    isRepository: true,
+    mode: 'working' as const,
+    base: 'HEAD',
+    files: [
+      {
+        path: 'src/a.ts',
+        status: 'modified' as const,
+        binary: false,
+        truncated: false,
+        additions: 1,
+        deletions: 1,
+        hunks: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ['-old', '+new'] }]
+      }
+    ],
+    truncated: false,
+    reason: null
+  }))
+  vcsApply = vi.fn(async () => ({ files: ['src/a.ts'] }))
   moveSession = vi.fn(
     async (directory: string) => `Session will move to ${directory} next message.`
   )
@@ -170,6 +209,12 @@ beforeEach(async () => {
     worktreeCreate,
     worktreeList,
     worktreeRemove,
+    vcs: {
+      info: vcsInfo,
+      status: vcsStatus,
+      diff: vcsDiff,
+      apply: vcsApply
+    },
     moveSession,
     browserOpen,
     browserTabs,
@@ -1552,6 +1597,93 @@ describe('worktree and session tools', () => {
     await expect(execute(limited.session_move, { directory: '/tmp/x' })).resolves.toContain(
       'not available'
     )
+  })
+})
+
+describe('vcs tool', () => {
+  it('reports repository info and status through read permission', async () => {
+    await expect(execute(tools.vcs, { action: 'info' })).resolves.toBe(
+      'Repository: /tmp/project\nBranch: main\nDefault branch: main'
+    )
+    expect(askPermission).toHaveBeenCalledWith('read', 'git info', 'vcs', 'call-1')
+
+    await expect(execute(tools.vcs, { action: 'status' })).resolves.toBe('M src/a.ts')
+    expect(askPermission).toHaveBeenCalledWith('read', 'git status', 'vcs', 'call-1')
+  })
+
+  it('formats diffs and forwards diff options', async () => {
+    const result = await execute(tools.vcs, {
+      action: 'diff',
+      mode: 'branch',
+      base: 'main',
+      path: 'src'
+    })
+
+    expect(vcsDiff).toHaveBeenCalledWith({ mode: 'branch', base: 'main', path: 'src' })
+    expect(askPermission).toHaveBeenCalledWith('read', 'git diff branch', 'vcs', 'call-1')
+    expect(result).toContain('Mode: working (base HEAD)')
+    expect(result).toContain('Files: 1 (+1 -1)')
+    expect(result).toContain('M src/a.ts (+1 -1)')
+    expect(result).toContain('@@ -1,1 +1,1 @@')
+    expect(result).toContain('-old')
+    expect(result).toContain('+new')
+  })
+
+  it('applies patches after per-file edit approval', async () => {
+    const patch = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
+      ''
+    ].join('\n')
+
+    await expect(execute(tools.vcs, { action: 'apply', patch })).resolves.toBe(
+      'Applied patch to 1 file(s):\n- src/a.ts'
+    )
+    expect(askPermission).toHaveBeenCalledWith('edit', 'src/a.ts', 'vcs', 'call-1')
+    expect(vcsApply).toHaveBeenCalledWith(patch)
+  })
+
+  it('rejects patches without a/ and b/ prefixes before asking permission', async () => {
+    await expect(
+      execute(tools.vcs, {
+        action: 'apply',
+        patch: 'diff --git a.txt a.txt\n--- a.txt\n+++ a.txt\n@@ -1 +1 @@\n-a\n+b\n'
+      })
+    ).resolves.toBe('Error: patches must use a/ and b/ path prefixes.')
+    expect(vcsApply).not.toHaveBeenCalled()
+  })
+
+  it('honours denials and missing Git integration', async () => {
+    askPermission.mockResolvedValue(false)
+    await expect(execute(tools.vcs, { action: 'status' })).resolves.toBe(
+      'Permission denied; Git status was not read.'
+    )
+    await expect(
+      execute(tools.vcs, {
+        action: 'apply',
+        patch: 'diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-a\n+b\n'
+      })
+    ).resolves.toBe('Permission denied; the patch was not applied.')
+    expect(vcsApply).not.toHaveBeenCalled()
+
+    const limited = createTools({ ...baseContext, vcs: undefined })
+    await expect(execute(limited.vcs, { action: 'info' })).resolves.toBe(
+      'Error: Git integration is not available.'
+    )
+  })
+
+  it('reports non-repository workspaces', async () => {
+    vcsInfo.mockResolvedValue({
+      isRepository: false,
+      root: null,
+      branch: null,
+      defaultBranch: null
+    })
+    await expect(execute(tools.vcs, { action: 'info' })).resolves.toBe('Not a Git repository.')
   })
 })
 

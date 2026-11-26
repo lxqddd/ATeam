@@ -1,8 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FileChange, SessionChangesSummary, TurnChanges } from '@ateam/shared'
+import type {
+  FileChange,
+  SessionChangesSummary,
+  TurnChanges,
+  VcsDiffResult,
+  VcsStatus
+} from '@ateam/shared'
 import ChangesPanel from './ChangesPanel'
+import type { ChangesTab } from '../../chat/store'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
 
 function makeFile(overrides: Partial<FileChange> = {}): FileChange {
@@ -81,8 +88,59 @@ beforeEach(() => {
   Object.defineProperty(window, 'api', { value: api.api, configurable: true })
 })
 
-function renderPanel(onClose = vi.fn()): ReturnType<typeof render> {
-  return render(<ChangesPanel sessionId="s1" messageId="m1" onClose={onClose} />)
+function renderPanel(
+  onClose = vi.fn(),
+  tab: ChangesTab = 'session',
+  onTabChange = vi.fn()
+): ReturnType<typeof render> {
+  return render(
+    <ChangesPanel
+      sessionId="s1"
+      messageId="m1"
+      tab={tab}
+      onTabChange={onTabChange}
+      onClose={onClose}
+    />
+  )
+}
+
+function makeVcsStatus(overrides: Partial<VcsStatus> = {}): VcsStatus {
+  return {
+    info: { isRepository: true, root: '/repo', branch: 'main', defaultBranch: 'master' },
+    files: [],
+    truncated: false,
+    ...overrides
+  }
+}
+
+function makeVcsDiff(overrides: Partial<VcsDiffResult> = {}): VcsDiffResult {
+  return {
+    isRepository: true,
+    mode: 'working',
+    base: 'deadbeef',
+    files: [
+      {
+        path: 'src/a.ts',
+        status: 'modified',
+        binary: false,
+        truncated: false,
+        additions: 1,
+        deletions: 1,
+        hunks: [
+          {
+            oldStart: 1,
+            oldLines: 1,
+            newStart: 1,
+            newLines: 1,
+            lines: ['-const a = 0', '+const a = 1']
+          }
+        ]
+      }
+    ],
+    truncated: false,
+    reason: null,
+    ...overrides
+  }
 }
 
 describe('ChangesPanel', () => {
@@ -323,7 +381,15 @@ describe('ChangesPanel', () => {
   it('summarises changes across every turn', async () => {
     api.api.agent.sessions.changesSummary = vi.fn(async () => makeSummary())
 
-    render(<ChangesPanel sessionId="s1" messageId={null} onClose={vi.fn()} />)
+    render(
+      <ChangesPanel
+        sessionId="s1"
+        messageId={null}
+        tab="session"
+        onTabChange={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
 
     expect(await screen.findByText('Session changes')).toBeInTheDocument()
     expect(screen.getByText('1 turns · 1 files · +3 −2')).toBeInTheDocument()
@@ -339,8 +405,91 @@ describe('ChangesPanel', () => {
       makeSummary({ turns: [], fileCount: 0, additions: 0, deletions: 0 })
     )
 
-    render(<ChangesPanel sessionId="s1" messageId={null} onClose={vi.fn()} />)
+    render(
+      <ChangesPanel
+        sessionId="s1"
+        messageId={null}
+        tab="session"
+        onTabChange={vi.fn()}
+        onClose={vi.fn()}
+      />
+    )
 
     expect(await screen.findByText('No file changes in this session.')).toBeInTheDocument()
+  })
+})
+
+describe('ChangesPanel workspace Git tab', () => {
+  it('switches to the Git tab from the tab list', async () => {
+    const onTabChange = vi.fn()
+    renderPanel(vi.fn(), 'session', onTabChange)
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Workspace Git' }))
+
+    expect(onTabChange).toHaveBeenCalledWith('git')
+  })
+
+  it('loads the working-tree snapshot without requesting session changes', async () => {
+    api.api.agent.vcs.status = vi.fn(async () => makeVcsStatus())
+    api.api.agent.vcs.diff = vi.fn(async () => makeVcsDiff())
+
+    renderPanel(vi.fn(), 'git')
+
+    expect(await screen.findByText('Branch: main')).toBeInTheDocument()
+    expect(screen.getByText('Default branch: master')).toBeInTheDocument()
+    expect(screen.getByText('Changes: 1 · +1 −1')).toBeInTheDocument()
+    expect(screen.getAllByText('src/a.ts').length).toBeGreaterThan(0)
+    expect(screen.getByText('+const a = 1')).toBeInTheDocument()
+    expect(api.api.agent.vcs.diff).toHaveBeenCalledWith('s1', { mode: 'working' })
+    expect(api.api.agent.sessions.changes).not.toHaveBeenCalled()
+  })
+
+  it('explains when the workspace is not a Git repository', async () => {
+    api.api.agent.vcs.status = vi.fn(async () =>
+      makeVcsStatus({
+        info: { isRepository: false, root: null, branch: null, defaultBranch: null }
+      })
+    )
+    api.api.agent.vcs.diff = vi.fn(async () =>
+      makeVcsDiff({ isRepository: false, base: null, files: [] })
+    )
+
+    renderPanel(vi.fn(), 'git')
+
+    expect(await screen.findByText('The workspace is not a Git repository.')).toBeInTheDocument()
+  })
+
+  it('shows an empty state when the working tree is clean', async () => {
+    api.api.agent.vcs.status = vi.fn(async () => makeVcsStatus())
+    api.api.agent.vcs.diff = vi.fn(async () => makeVcsDiff({ files: [] }))
+
+    renderPanel(vi.fn(), 'git')
+
+    expect(await screen.findByText('No Git changes in the workspace.')).toBeInTheDocument()
+  })
+
+  it('warns when the Git diff was truncated', async () => {
+    api.api.agent.vcs.status = vi.fn(async () => makeVcsStatus())
+    api.api.agent.vcs.diff = vi.fn(async () => makeVcsDiff({ truncated: true, reason: 'files' }))
+
+    renderPanel(vi.fn(), 'git')
+
+    expect(
+      await screen.findByText(
+        'Too many changes — only the first 200 files are listed, and some diffs were omitted.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('reports Git load failures', async () => {
+    api.api.agent.vcs.status = vi.fn(async () => makeVcsStatus())
+    api.api.agent.vcs.diff = vi.fn(async () => {
+      throw new Error('git failed')
+    })
+
+    renderPanel(vi.fn(), 'git')
+
+    expect(await screen.findByText('Could not read the Git state.')).toBeInTheDocument()
+    expect(screen.getByText('git failed')).toBeInTheDocument()
   })
 })
