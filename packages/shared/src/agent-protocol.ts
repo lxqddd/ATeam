@@ -53,6 +53,11 @@ export type WorkerRequest =
       method: 'commands.expand'
       params: { template: string; args: string; workspace?: string }
     }
+  | {
+      id: string
+      method: 'commands.run'
+      params: { sessionId: string; name: string; args?: string }
+    }
   | { id: string; method: 'sessions.list'; params?: undefined }
   | {
       id: string

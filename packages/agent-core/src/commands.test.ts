@@ -77,6 +77,17 @@ describe('parseCommandMarkdown', () => {
     })
   })
 
+  it('parses a subtask flag from frontmatter', () => {
+    const command = parseCommandMarkdown(
+      '/repo/.opencode/command/review.md',
+      ['---', 'description: Review', 'subtask: true', '---', 'Review.'].join('\n'),
+      'project'
+    )
+
+    expect(command).toMatchObject({ subtask: true })
+    expect(parseCommandMarkdown('/repo/x.md', 'No flag.', 'project')).not.toHaveProperty('subtask')
+  })
+
   it('rejects empty files', () => {
     expect(parseCommandMarkdown('/repo/.opencode/command/empty.md', '', 'project')).toBeNull()
   })
@@ -102,6 +113,15 @@ describe('parseCommandJson', () => {
       agent: 'build',
       model: { providerId: 'anthropic', modelId: 'claude' }
     })
+  })
+
+  it('parses the subtask flag from json definitions', () => {
+    expect(
+      parseCommandJson({ name: 'review', template: 'Review', subtask: true }, 'user')
+    ).toMatchObject({ subtask: true })
+    expect(parseCommandJson({ name: 'plain', template: 'Plain' }, 'user')).not.toHaveProperty(
+      'subtask'
+    )
   })
 
   it('rejects incomplete definitions', () => {
@@ -198,10 +218,17 @@ describe('loadCommands', () => {
     await fs.writeFile(target, content)
   }
 
-  it('returns nothing when no commands exist', async () => {
-    await expect(
-      loadCommands({ userDataPath: directory, workspacePath: workspace })
-    ).resolves.toEqual([])
+  it('returns the builtin commands when no commands exist', async () => {
+    const commands = await loadCommands({ userDataPath: directory, workspacePath: workspace })
+
+    expect(commands.map((command) => command.name)).toEqual(['init', 'review'])
+    expect(commands.every((command) => command.source === 'builtin')).toBe(true)
+    expect(commands.find((command) => command.name === 'review')).toMatchObject({
+      subtask: true
+    })
+    expect(commands.find((command) => command.name === 'review')?.template).toContain(
+      'Review target: $ARGUMENTS'
+    )
   })
 
   it('loads user markdown and json commands', async () => {
@@ -215,7 +242,34 @@ describe('loadCommands', () => {
 
     const commands = await loadCommands({ userDataPath: directory, workspacePath: workspace })
 
-    expect(commands.map((command) => command.name).sort()).toEqual(['review', 'summarize'])
+    expect(commands.map((command) => command.name)).toEqual(['init', 'review', 'summarize'])
+    expect(commands.find((command) => command.name === 'review')?.source).toBe('user')
+  })
+
+  it('lets configured commands override builtin commands by name', async () => {
+    const base = {
+      snapshots: true,
+      instructions: [],
+      lsp: true,
+      formatters: true,
+      formatterOverrides: {}
+    } satisfies AgentConfig
+    const configured = parseCommandJson(
+      { name: 'init', template: 'Custom init', subtask: true },
+      'project'
+    ) as CommandDefinition
+
+    const commands = await loadCommands({
+      userDataPath: directory,
+      workspacePath: workspace,
+      config: { ...base, commands: [configured] }
+    })
+
+    expect(commands.find((command) => command.name === 'init')).toMatchObject({
+      template: 'Custom init',
+      source: 'project',
+      subtask: true
+    })
   })
 
   it('loads project commands and lets them override user commands', async () => {
@@ -241,9 +295,9 @@ describe('loadCommands', () => {
     await write('agent/commands/bad.md', '')
     await write('agent/commands.json', JSON.stringify({ commands: [{ name: '' }] }))
 
-    await expect(
-      loadCommands({ userDataPath: directory, workspacePath: workspace })
-    ).resolves.toEqual([])
+    const commands = await loadCommands({ userDataPath: directory, workspacePath: workspace })
+
+    expect(commands.map((command) => command.name)).toEqual(['init', 'review'])
   })
 })
 

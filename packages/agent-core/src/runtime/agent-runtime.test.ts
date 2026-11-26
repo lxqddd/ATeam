@@ -2896,6 +2896,7 @@ function subagentCallScript(input: {
   prompt: string
   agent?: string
   sessionId?: string
+  taskId?: string
   background?: boolean
 }): Script {
   return async function* () {
@@ -3132,14 +3133,31 @@ describe('subagent tool', () => {
     expect(runtime.listSessions()).toHaveLength(1)
   })
 
-  it('prevents nested subagents', async () => {
+  it('prevents nested subagents by default', async () => {
     scripts.push(subagentCallScript({ prompt: 'Outer task', agent: 'general' }))
     scripts.push(nestedSubagentScript())
 
     await runtime.sendChat(sessionId, 'delegate')
     await sink.next('run.finished')
 
-    expect(toolOutput(assistantMessages().at(-1))).toContain('subagents cannot spawn subagents')
+    expect(toolOutput(assistantMessages().at(-1))).toContain('subagent depth limit reached (1)')
+  })
+
+  it('allows nested subagents when subagentDepth permits', async () => {
+    await fs.writeFile(
+      path.join(directory, 'workspace', 'ateam.json'),
+      JSON.stringify({ subagentDepth: 2 })
+    )
+    await runtime.reloadConfig(path.join(directory, 'workspace'))
+    await sink.next('config.changed')
+    scripts.push(subagentCallScript({ prompt: 'Outer task', agent: 'general' }))
+    scripts.push(nestedSubagentScript())
+    scripts.push(textScript('deep answer'))
+
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toContain('deep answer')
   })
 
   it('continues an existing subagent session', async () => {
@@ -3161,6 +3179,44 @@ describe('subagent tool', () => {
     expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'second answer' }])
     expect(toolOutput(assistantMessages().at(-1))).toContain('second answer')
     expect(runtime.listSessions()).toHaveLength(1)
+  })
+
+  it('continues a subagent session through the taskId alias', async () => {
+    scripts.push(subagentCallScript({ prompt: 'First task', agent: 'explore' }))
+    scripts.push(textScript('first answer'))
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+    const childId = /session ([0-9a-f-]+)/.exec(
+      toolOutput(assistantMessages().at(-1))
+    )?.[1] as string
+
+    scripts.push(subagentCallScript({ prompt: 'Follow up', agent: 'explore', taskId: childId }))
+    scripts.push(textScript('second answer'))
+    await runtime.sendChat(sessionId, 'again')
+    await sink.next('run.finished')
+
+    const childMessages = runtime.messages(childId).messages
+    expect(childMessages).toHaveLength(4)
+    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'second answer' }])
+    expect(toolOutput(assistantMessages().at(-1))).toContain('second answer')
+  })
+
+  it('rejects conflicting sessionId and taskId values', async () => {
+    scripts.push(
+      subagentCallScript({
+        prompt: 'First task',
+        agent: 'explore',
+        sessionId: 'session-a',
+        taskId: 'session-b'
+      })
+    )
+
+    await runtime.sendChat(sessionId, 'delegate')
+    await sink.next('run.finished')
+
+    expect(toolOutput(assistantMessages().at(-1))).toContain(
+      'pass either sessionId or taskId, not both'
+    )
   })
 
   it('keeps a continued subagent in its own directory', async () => {
@@ -3410,9 +3466,135 @@ describe('skills and commands', () => {
 
     const commands = await runtime.listCommands()
 
-    expect(commands).toMatchObject([
-      { name: 'review', description: 'Review changes', template: 'Review $ARGUMENTS' }
+    expect(commands.map((command) => command.name)).toEqual(['init', 'review'])
+    expect(commands.find((command) => command.name === 'review')).toMatchObject({
+      description: 'Review changes',
+      template: 'Review $ARGUMENTS',
+      source: 'project'
+    })
+    expect(commands.find((command) => command.name === 'init')?.source).toBe('builtin')
+  })
+
+  it('lists skills as commands alongside normal commands', async () => {
+    await writeWorkspace(
+      '.opencode/skills/deploy/SKILL.md',
+      ['---', 'description: Deploy the app', '---', 'Deploy body.'].join('\n')
+    )
+
+    const commands = await runtime.listCommands()
+    const skill = commands.find((command) => command.name === 'deploy')
+
+    expect(skill).toMatchObject({ id: 'skill:deploy', source: 'skill' })
+    expect(skill?.template).toContain('Base directory for this skill: ')
+    expect(commands.map((command) => command.name)).toEqual(['deploy', 'init', 'review'])
+  })
+
+  it('does not let skill commands override existing commands', async () => {
+    await writeWorkspace(
+      '.opencode/skills/init/SKILL.md',
+      ['---', 'description: Skill init', '---', 'Skill body.'].join('\n')
+    )
+
+    const commands = await runtime.listCommands()
+    const init = commands.filter((command) => command.name === 'init')
+
+    expect(init).toHaveLength(1)
+    expect(init[0].source).toBe('builtin')
+  })
+})
+
+describe('subtask commands', () => {
+  async function writeCommand(lines: string[]): Promise<void> {
+    const target = path.join(directory, 'workspace', '.opencode', 'commands', 'research.md')
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    await fs.writeFile(target, lines.join('\n'))
+  }
+
+  it('runs a subtask command in a hidden child session and delivers the result', async () => {
+    await writeCommand([
+      '---',
+      'description: Research a topic',
+      'subtask: true',
+      '---',
+      'Research $ARGUMENTS'
     ])
+    scripts.push(textScript('research result'))
+    scripts.push(textScript('used the research'))
+
+    const started = await runtime.runCommand(sessionId, { name: 'research', args: 'topic' })
+
+    expect(started.sessionId).not.toBe(sessionId)
+    expect(runtime.listSessions()).toHaveLength(1)
+    await vi.waitFor(() =>
+      expect(assistantMessages().at(-1)?.parts).toEqual([
+        { type: 'text', text: 'used the research' }
+      ])
+    )
+    const childMessages = runtime.messages(started.sessionId).messages
+    expect(childMessages.find((message) => message.role === 'user')?.parts).toEqual([
+      { type: 'text', text: 'Research topic' }
+    ])
+    expect(childMessages.at(-1)?.parts).toEqual([{ type: 'text', text: 'research result' }])
+    const injected = runtime
+      .messages(sessionId)
+      .messages.find((message) => message.synthetic?.taskId === started.taskId)
+    expect(injected?.synthetic).toMatchObject({
+      kind: 'subagent',
+      state: 'completed',
+      title: 'research topic'
+    })
+    expect(runtime.listBackgroundTasks(sessionId)).toEqual([
+      expect.objectContaining({
+        id: started.taskId,
+        kind: 'subagent',
+        state: 'completed',
+        result: 'research result',
+        childSessionId: started.sessionId
+      })
+    ])
+  })
+
+  it('rejects commands that are not subtask commands', async () => {
+    await writeCommand(['---', 'description: Plain', '---', 'plain'])
+
+    await expect(runtime.runCommand(sessionId, { name: 'research' })).rejects.toThrow(
+      'does not run in a subtask'
+    )
+  })
+
+  it('rejects unknown commands', async () => {
+    await expect(runtime.runCommand(sessionId, { name: 'missing' })).rejects.toThrow(
+      'Unknown command: /missing'
+    )
+  })
+
+  it('rejects unknown command agents', async () => {
+    await writeCommand([
+      '---',
+      'description: Research a topic',
+      'subtask: true',
+      'agent: ghost',
+      '---',
+      'Research $ARGUMENTS'
+    ])
+
+    await expect(runtime.runCommand(sessionId, { name: 'research' })).rejects.toThrow(
+      'Unknown subagent: ghost'
+    )
+  })
+
+  it('rejects subtask commands when subagentDepth is 0', async () => {
+    await writeCommand(['---', 'description: Research a topic', 'subtask: true', '---', 'Research'])
+    await fs.writeFile(
+      path.join(directory, 'workspace', 'ateam.json'),
+      JSON.stringify({ subagentDepth: 0 })
+    )
+    await runtime.reloadConfig(path.join(directory, 'workspace'))
+    await sink.next('config.changed')
+
+    await expect(runtime.runCommand(sessionId, { name: 'research' })).rejects.toThrow(
+      'subagentDepth is 0'
+    )
   })
 })
 

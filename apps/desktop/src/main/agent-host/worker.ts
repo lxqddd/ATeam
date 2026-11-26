@@ -105,6 +105,11 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         request.params.args,
         request.params.workspace
       )
+    case 'commands.run':
+      return requireRuntime().runCommand(request.params.sessionId, {
+        name: request.params.name,
+        args: request.params.args
+      })
     case 'sessions.list':
       return requireRuntime().listSessions()
     case 'sessions.create':

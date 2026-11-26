@@ -425,6 +425,7 @@ export function mergeAgentConfig(
       ? { environment: { ...base.environment, ...project.environment } }
       : {}),
     toolOutput: mergeToolOutputConfig(base.toolOutput, project.toolOutput),
+    subagentDepth: project.subagentDepth ?? base.subagentDepth,
     ...((project.systemPrompt ?? base.systemPrompt)
       ? { systemPrompt: project.systemPrompt ?? base.systemPrompt }
       : {}),

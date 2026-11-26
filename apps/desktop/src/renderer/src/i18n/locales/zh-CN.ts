@@ -488,6 +488,13 @@ const zhCN = {
     commandShellRun: '运行命令',
     commandShellCancel: '取消',
     commands: '命令',
+    commandSource: {
+      builtin: '内置',
+      user: '用户',
+      project: '项目',
+      skill: 'Skill',
+      mcp: 'MCP'
+    },
     todos: '任务',
     question: '问题',
     questionSubmit: '提交',
@@ -565,6 +572,7 @@ const zhCN = {
     copied: '已复制',
     loadingMessages: '正在加载消息…',
     sessionBusy: '这个会话正在运行。',
+    subtaskNoAttachments: '子任务命令不支持附件。',
     emptyAssistant: '模型没有返回内容。',
     selectModelFirst: '请先选择一个模型。',
     noSessions: '还没有会话',

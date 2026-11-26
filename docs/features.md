@@ -95,7 +95,7 @@
 ### 3.4 子代理工具
 
 - `subagent` 工具创建隐藏子会话，在独立上下文中运行指定子 Agent，完成后把结果与子会话 id 返回主对话。
-- 传 `sessionId` 可继续已有子会话；子会话的权限请求上抛到父会话审批；禁止子代理再嵌套（深度 1）。
+- 传 `sessionId`（或 OpenCode 兼容别名 `taskId`）可继续已有子会话；子会话的权限请求上抛到父会话审批；嵌套深度由 `subagentDepth` 配置（0–5，默认 1，项目配置可覆盖），达到上限后子代理不再获得 `subagent` 工具。
 - 支持后台运行：工具立即返回子会话 id；任务完成后结果以结构化合成消息注入父会话，父会话空闲时自动继续一轮让 Agent 基于结果工作；父会话忙时在当前回合结束后继续，用户停止会话后只注入不重启。
 - 子代理发起的 Question 会以父会话身份展示，回答后继续子代理执行。
 - 隐藏子会话不出现在会话列表、不向 UI 推送事件（完成通知除外）；删除父会话级联清理。
@@ -209,7 +209,7 @@
 - 可选自动安装：配置 `lspInstall: true` 后，首次使用缺少可执行文件的 npm server 会安装到 `agent/lsp/<serverId>`；安装失败或超时（120 秒）静默回退为不可用，可用性检测本身不会触发安装。
 - read / write / edit / patch 后附带诊断（最多 20 条，含行号、级别、来源与代码），便于 Agent 自我修正。
 - LSP 工具：`lsp_hover` / `lsp_definition` / `lsp_references` / `lsp_implementation` / `lsp_symbols`（文件符号或工作区符号搜索）/ `lsp_call_hierarchy`（incoming / outgoing / both），统一使用独立 `lsp` 权限动作。
-- 格式化器发现：prettier、biome、gofmt、rustfmt、ruff（配置文件、package.json 依赖、pyproject `[tool.ruff]`）；写入后自动执行，失败只提示、不影响工具结果。
+- 格式化器发现：内置 26 个格式化器，覆盖 Web（prettier / biome / oxfmt）、Go、Rust、Python（ruff / uv）、Elixir（mix）、Zig、C/C++（clang-format）、Kotlin（ktlint）、Ruby（rubocop / standardrb）、R（air）、Dart、OCaml（ocamlformat）、Terraform、LaTeX（latexindent）、Gleam、Shell（shfmt）、Nix（nixfmt）、PHP（pint）、Haskell（ormolu）、Clojure（cljfmt）、D（dfmt）与 ERB（htmlbeautifier）；通过项目配置或 PATH / `node_modules/.bin` / workspace 相对路径中的可执行文件探测启用（pint 还要求 composer.json 声明 `laravel/pint`）；写入后自动执行，失败只提示、不影响工具结果。
 - 设置页可按扩展名覆盖格式化器（例如 `.ts=biome`），或设为 `none` 关闭该类型的自动格式化。
 - 设置页提供开关与检测状态（可用语言服务器 / 检测到的格式化器）。
 
@@ -234,9 +234,11 @@
 ### 命令
 
 - 发现位置：用户 `agent/commands/*.md`、`agent/commands.json`；项目 `.opencode/command(s)`、`.claude/commands`。
-- 支持 name / description / agent / model frontmatter；model 支持 `provider/model#variant`。
+- 来源：内置（`init` / `review`）、用户、项目、Skill、MCP；同名时内置 < 用户 < 项目逐级覆盖，Skill 命令与已有命令同名时跳过；菜单按名称统一排序并显示来源徽标。内置 `init` 分析仓库并创建 / 更新 `AGENTS.md`，`review` 默认以 subtask 方式在隐藏子会话审查改动。
+- 支持 name / description / agent / model / subtask frontmatter；model 支持 `provider/model#variant`。
 - 模板支持 `$ARGUMENTS`、`$1`–`$9`，无占位符时在末尾追加参数；参数支持单/双引号与反斜杠转义（MCP prompt 参数同样适用）。`!` 包裹的 shell 片段会在工作区执行并把 stdout 注入提示词（最多 5 段、每段 10 秒超时）；发送前会展示确认面板，列出将执行的片段，确认后才运行。
-- 输入框输入 `/` 弹出命令菜单（含 MCP prompts），插入 `/命令 `；发送时识别 `/命令 参数` 并展开为最终提示词，同时应用命令绑定的 Agent 与模型。
+- `subtask: true` 的命令（frontmatter 或 `commands.json`）在隐藏子会话执行并绑定命令指定的 Agent / 模型；父会话只显示后台任务条，完成后以 `<background-result>` 注入并自动续跑；含 shell 片段的 subtask 命令仍需确认，运行需 `subagentDepth ≥ 1`。
+- 输入框输入 `/` 弹出命令菜单（含 Skill 与 MCP prompts），插入 `/命令 `；发送时识别 `/命令 参数` 并展开为最终提示词，同时应用命令绑定的 Agent 与模型。
 
 ### Skills
 
@@ -282,7 +284,7 @@ agent/
 ├── attachments/<session>/
 ├── permissions.json     # 权限规则
 ├── policy.json          # 组织级权限策略（可选）
-├── config.json          # 快照 / LSP / 格式化 / 输出截断等配置与额外指令
+├── config.json          # 快照 / LSP / 格式化 / 输出截断 / 子代理深度等配置与额外指令
 ├── mcp.json             # MCP 服务器配置
 ├── mcp-auth.json        # MCP OAuth token 与客户端注册信息（明文，0600）
 ├── references/          # Git 引用的本地缓存

@@ -31,7 +31,8 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   formatters: true,
   formatterOverrides: {},
   retry: { ...DEFAULT_RETRY_CONFIG },
-  toolOutput: { ...DEFAULT_TOOL_OUTPUT_LIMITS }
+  toolOutput: { ...DEFAULT_TOOL_OUTPUT_LIMITS },
+  subagentDepth: 1
 }
 
 function cloneToolOutputConfig(config: ToolOutputConfig | undefined): ToolOutputConfig {
@@ -64,6 +65,7 @@ function cloneConfig(config: AgentConfig): AgentConfig {
     formatterOverrides: { ...config.formatterOverrides },
     ...(config.retry ? { retry: { ...config.retry } } : {}),
     toolOutput: cloneToolOutputConfig(config.toolOutput),
+    subagentDepth: config.subagentDepth ?? 1,
     ...(config.environment ? { environment: { ...config.environment } } : {}),
     ...(config.systemPrompt ? { systemPrompt: config.systemPrompt } : {}),
     ...(config.references ? { references: config.references.map((ref) => ({ ...ref })) } : {}),
@@ -287,6 +289,7 @@ export class AgentConfigStore {
     if ('formatterOverrides' in patch) next.formatterOverrides = patch.formatterOverrides
     if ('retry' in patch && patch.retry) next.retry = patch.retry
     if ('toolOutput' in patch && patch.toolOutput) next.toolOutput = patch.toolOutput
+    if ('subagentDepth' in patch) next.subagentDepth = patch.subagentDepth
     if ('environment' in patch) next.environment = patch.environment
     if ('systemPrompt' in patch) next.systemPrompt = patch.systemPrompt
     if ('references' in patch) next.references = patch.references
@@ -322,7 +325,8 @@ export class AgentConfigStore {
             ...(command.agent ? { agent: command.agent } : {}),
             ...(command.model
               ? { model: `${command.model.providerId}/${command.model.modelId}` }
-              : {})
+              : {}),
+            ...(command.subtask !== undefined ? { subtask: command.subtask } : {})
           }
         ])
       )

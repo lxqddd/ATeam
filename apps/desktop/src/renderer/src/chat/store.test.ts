@@ -460,6 +460,33 @@ describe('ChatStore send', () => {
   })
 })
 
+describe('ChatStore runCommand', () => {
+  it('starts a subtask command in the selected session and refreshes background tasks', async () => {
+    await store.init()
+
+    await store.runCommand('review', '  HEAD~1  ')
+
+    expect(mock.api.agent.sessions.create).toHaveBeenCalledTimes(1)
+    expect(mock.api.agent.commands.run).toHaveBeenCalledWith({
+      sessionId: 'created-1',
+      name: 'review',
+      args: 'HEAD~1'
+    })
+    await vi.waitFor(() => expect(mock.api.agent.background.list).toHaveBeenCalledWith('created-1'))
+  })
+
+  it('omits empty arguments', async () => {
+    await store.init()
+
+    await store.runCommand('review', '   ')
+
+    expect(mock.api.agent.commands.run).toHaveBeenCalledWith({
+      sessionId: 'created-1',
+      name: 'review'
+    })
+  })
+})
+
 describe('ChatStore messages', () => {
   async function initWithSession(): Promise<void> {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))

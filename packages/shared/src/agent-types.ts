@@ -32,6 +32,8 @@ export interface SubagentInput {
   prompt: string
   agent?: string
   sessionId?: string
+  /** OpenCode-compatible alias for `sessionId`: resume an existing subagent session. */
+  taskId?: string
   description?: string
   background?: boolean
 }
@@ -476,6 +478,8 @@ export interface CommandConfigInput {
   description?: string
   agent?: string
   model?: string
+  /** Run the command in a hidden subtask session instead of the current one. */
+  subtask?: boolean
 }
 
 export type ToolOutputMode = 'head' | 'tail'
@@ -539,6 +543,8 @@ export interface AgentConfigDocument {
   environment?: AgentEnvironmentConfig
   /** Tool output truncation limits for the model-facing view. */
   toolOutput?: ToolOutputConfigInput
+  /** How many subagent generations may run: 0 disables subagents, 1 allows one level. */
+  subagentDepth?: number
   /** Replaces the model-family base prompt; environment and permission sections still apply. */
   systemPrompt?: string
 }
@@ -580,6 +586,8 @@ export interface AgentConfig {
   environment?: AgentEnvironmentConfig
   /** Effective tool output truncation limits; always filled by the config loader. */
   toolOutput?: ToolOutputConfig
+  /** How many subagent generations may run; filled by the config loader, defaults to 1. */
+  subagentDepth?: number
   /** Project or global replacement for the model-family base prompt. */
   systemPrompt?: string
   references?: AgentReference[]
@@ -865,6 +873,8 @@ export interface RuntimeWebSearchConfig {
   apiKey: string
 }
 
+export type CommandSource = 'builtin' | 'user' | 'project' | 'skill' | 'mcp'
+
 export interface CommandDefinition {
   id: string
   name: string
@@ -873,7 +883,9 @@ export interface CommandDefinition {
   agent: string | null
   model: ModelRef | null
   mcp?: { server: string; prompt: string; arguments?: string[] } | null
-  source: 'user' | 'project' | 'mcp'
+  source: CommandSource
+  /** Execute the expanded template in a hidden subtask session. */
+  subtask?: boolean
 }
 
 export interface SkillDefinition {

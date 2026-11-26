@@ -5,11 +5,15 @@ import type { ToolContext } from './types'
 export function createSubagentTool(context: ToolContext): Tool {
   return tool({
     description:
-      'Delegate a focused task to a subagent that works in its own context and returns the result. Use sessionId to continue an earlier subagent session.',
+      'Delegate a focused task to a subagent that works in its own context and returns the result. Use sessionId (or its taskId alias) to continue an earlier subagent session.',
     inputSchema: z.object({
       prompt: z.string().min(1).describe('Task instructions for the subagent'),
       agent: z.string().optional().describe('Subagent name such as explore or general'),
       sessionId: z.string().optional().describe('Continue a previous subagent session'),
+      taskId: z
+        .string()
+        .optional()
+        .describe('Resume a previous subagent task id (alias of sessionId)'),
       description: z.string().optional().describe('Short task summary'),
       background: z
         .boolean()

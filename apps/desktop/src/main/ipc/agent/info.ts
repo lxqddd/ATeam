@@ -11,7 +11,7 @@ import { discoverInstructionFiles, loadOrgPolicy } from '@ateam/agent-core/confi
 import { availableLspServers, discoverFormatters } from '@ateam/agent-core/integrations'
 import { runtimeModelsWithOAuth } from '../../providers/runtime-config'
 import type { AgentIpcContext } from './context'
-import { commandExpandSchema, directoryPayloadSchema } from './schemas'
+import { commandExpandSchema, commandRunSchema, directoryPayloadSchema } from './schemas'
 
 /** Registers host status queries plus agent and command discovery channels. */
 export function registerInfoHandlers(ctx: AgentIpcContext): void {
@@ -92,5 +92,10 @@ export function registerInfoHandlers(ctx: AgentIpcContext): void {
       args,
       workspace: requestedDirectory(directory) ?? workspacePath
     })
+  })
+
+  handle(AGENT_CHANNELS.commandsRun, (payload): Promise<{ taskId: string; sessionId: string }> => {
+    const { sessionId, name, args } = commandRunSchema.parse(payload)
+    return manager.request('commands.run', { sessionId, name, args })
   })
 }

@@ -1,7 +1,7 @@
 # ATeam Agent 对齐 OpenCode TODO List
 
 > 对比基准：OpenCode `master`（2026-11-22 复审）与 ATeam `master` 当前实现；第一轮记录基于 2026-11-21 的 `dev` 文档。
-> 最近更新：2026-11-25（R-P1-5 工具输出截断完成）。
+> 最近更新：2026-11-26（R-P1-9 Formatter / Commands / Subagent 细节完成）。
 > 范围：Agent 核心能力（会话、工具、权限、上下文、扩展、运行时接口），不包含主题、打包等桌面外观；CLI/TUI/IDE 等接口差距在第二轮 P2 单列。
 > 标记：`[x]` 已完成，`[ ]` 待办。优先级：**P0** 必须、**P1** 重要、**P2** 后续。
 
@@ -47,7 +47,7 @@
 | R-P0-6 Shell arity    | 完成 | 引号/转义感知 bash / PowerShell / cmd 解析、控制操作符与重定向、参数级外部路径、动态路径保护、扩展 arity 表与全局选项、危险命令 auto 询问、集成测试                                                                                                                | 无       |
 | R-P0-7 Plan 工作流    | 完成 | `.ateam/plans/<session>.md` 写入权限、plan_exit 确认、自动切换 build agent 并续跑、计划文件查看/复制路径、切换提醒、按模式隐藏 plan_exit、端到端测试                                                                                                               | 无       |
 
-### 当前剩余 TODO（2026-11-25）
+### 当前剩余 TODO（2026-11-26）
 
 > 已完成的 P0 事项保留在下方审计清单中用于追溯；本节只列仍需实现或补测的项。P1/P2 的完整描述见后文。
 
@@ -57,7 +57,7 @@
 
 **P1 / P2**
 
-- [ ] P1：MCP 细节、消息 part 模型、formatter / commands / subagent 细节、VCS 服务（part 级回滚 / unrevert / 会话 diff 已完成，2026-11-25）
+- [ ] P1：消息 part 模型、VCS / Git 服务（MCP 细节 2026-11-25、part 级回滚 / unrevert / 会话 diff 2026-11-25、formatter / commands / subagent 细节 2026-11-26 已完成）
 - [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
@@ -429,20 +429,22 @@
 
 **验收**：消息历史能表达每一步的工具、改动与状态，审查与回滚不再依赖旁路字段。
 
-#### R-P1-9 Formatter / Commands / Subagent 细节
+#### R-P1-9 Formatter / Commands / Subagent 细节（已完成，2026-11-26）
 
-**现状**：formatter 固定 5 个；命令已覆盖用户命令与 MCP prompts，但缺少内置 init/review、skills 作为命令与 subtask 命令；子代理硬性禁止嵌套，后台结果只通知。
+**现状**：内置 formatter 从 5 个扩展到 26 个，新增项通过 workspace 根配置或 PATH / `node_modules/.bin` 二进制探测启用；命令面板统一覆盖内置 / 用户 / 项目 / Skill / MCP 来源，并提供内置 `init` / `review` 命令；命令支持 `subtask` 模式（在隐藏子会话执行）；子代理嵌套深度可配置，`subagent` 工具支持 `taskId` 续接（[formatters.ts](../packages/agent-core/src/integrations/formatters.ts)、[commands.ts](../packages/agent-core/src/commands.ts)、[skills.ts](../packages/agent-core/src/skills.ts)、[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[subagents.ts](../packages/agent-core/src/runtime/subagents.ts)）。
 
 **OpenCode 参考**：formatter 矩阵更广并支持自定义命令；`command/index.ts` 提供内置 `init` / `review`，把 MCP prompts 与 skills 也作为命令；`tool/task.ts` 支持可配置嵌套深度、task_id 与后台结果注入。
 
 **待办**：
 
-- [ ] 扩展 formatter 矩阵与自定义 formatter 命令
-- [ ] 增加内置 `init` / `review` 命令
-- [ ] 让 MCP prompts 与 skills 进入统一命令面板
-- [ ] 支持命令的 subtask 模式
-- [ ] 支持可配置子代理深度与 `task_id` 语义（与 R-P1-4 一起）
-- [ ] 测试命令来源、优先级、subtask 执行与嵌套限制
+- [x] 扩展 formatter 矩阵与自定义 formatter 命令（5 → 26 个内置；pint 走 composer.json + `./vendor/bin/pint`，oxfmt 走 package.json 依赖，clang-format / ocamlformat 需对应配置文件）
+- [x] 增加内置 `init` / `review` 命令（`review` 默认 `subtask: true`；同名用户 / 项目命令可覆盖内置命令）
+- [x] 让 MCP prompts 与 skills 进入统一命令面板（skill 命令以 slug 命名并内联 skill 内容与 base directory；与已有命令同名时跳过；最终按名称统一排序）
+- [x] 支持命令的 subtask 模式（markdown frontmatter / JSON 配置 `subtask: true`；`commands.run` 在隐藏子会话执行，父会话通过后台任务条与 `<background-result>` 获取结果；含 shell 片段的命令仍需确认）
+- [x] 支持可配置子代理深度与 `task_id` 语义（`subagentDepth` 取 0–5、默认 1，可被项目配置覆盖；`subagent` 工具新增 `taskId` 别名，与 `sessionId` 同时给出且不同则报错）
+- [x] 测试命令来源、优先级、subtask 执行与嵌套限制（`commands.test.ts`、`skills.test.ts`、`agent-runtime.test.ts`、`config/*.test.ts`、`formatters.test.ts`、`store.test.ts`、`Composer.test.tsx`）
+
+**边界**：subtask 命令不向父会话写入模板文本（part 展示留给 R-P1-8）；停止父会话不会自动取消命令子任务，需通过后台任务取消；`subagentDepth` 与 formatterServers 暂无设置页控件；formatter 二进制探测只看 workspace 根与 PATH，air / uv 仅做二进制存在性探测，未校验 CLI 帮助输出。
 
 **验收**：命令面板覆盖内置、用户、MCP、Skill 来源；子代理嵌套可按配置放开。
 

@@ -191,7 +191,8 @@ const api: AteamApi = {
     commands: {
       list: (directory?: string | null) =>
         ipcRenderer.invoke(AGENT_CHANNELS.commandsList, { directory }),
-      expand: (input) => ipcRenderer.invoke(AGENT_CHANNELS.commandExpand, input)
+      expand: (input) => ipcRenderer.invoke(AGENT_CHANNELS.commandExpand, input),
+      run: (input) => ipcRenderer.invoke(AGENT_CHANNELS.commandsRun, input)
     }
   },
   models: {

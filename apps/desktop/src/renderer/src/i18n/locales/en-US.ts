@@ -506,6 +506,13 @@ const enUS = {
     commandShellRun: 'Run command',
     commandShellCancel: 'Cancel',
     commands: 'Commands',
+    commandSource: {
+      builtin: 'Built-in',
+      user: 'User',
+      project: 'Project',
+      skill: 'Skill',
+      mcp: 'MCP'
+    },
     todos: 'Tasks',
     question: 'Question',
     questionSubmit: 'Submit',
@@ -584,6 +591,7 @@ const enUS = {
     copied: 'Copied',
     loadingMessages: 'Loading messages…',
     sessionBusy: 'This chat is already running.',
+    subtaskNoAttachments: 'Subtask commands do not accept attachments.',
     emptyAssistant: 'The model returned no content.',
     selectModelFirst: 'Select a model first.',
     noSessions: 'No chats yet',

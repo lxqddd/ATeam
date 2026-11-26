@@ -12,6 +12,8 @@ export interface FormatterDefinition {
   configFiles: readonly string[]
   command: (file: string) => string[]
   environment?: Record<string, string>
+  /** Executables that enable the formatter when no config file matches. */
+  binaries?: readonly string[]
 }
 
 export interface FormatterSpawnChild {
@@ -100,6 +102,153 @@ export const FORMATTERS: readonly FormatterDefinition[] = [
     extensions: ['.py', '.pyi'],
     configFiles: ['ruff.toml', '.ruff.toml'],
     command: (file) => ['ruff', 'format', file]
+  },
+  {
+    id: 'mix',
+    extensions: ['.ex', '.exs', '.eex', '.heex', '.leex', '.neex', '.sface'],
+    configFiles: [],
+    binaries: ['mix'],
+    command: (file) => ['mix', 'format', file]
+  },
+  {
+    id: 'oxfmt',
+    extensions: ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'],
+    configFiles: [],
+    command: (file) => ['oxfmt', file]
+  },
+  {
+    id: 'zig',
+    extensions: ['.zig', '.zon'],
+    configFiles: [],
+    binaries: ['zig'],
+    command: (file) => ['zig', 'fmt', file]
+  },
+  {
+    // Extensions are lowercased because selectFormatter compares lowercased ones.
+    id: 'clang-format',
+    extensions: ['.c', '.cc', '.cpp', '.cxx', '.c++', '.h', '.hh', '.hpp', '.hxx', '.h++', '.ino'],
+    configFiles: ['.clang-format'],
+    binaries: ['clang-format'],
+    command: (file) => ['clang-format', '-i', file]
+  },
+  {
+    id: 'ktlint',
+    extensions: ['.kt', '.kts'],
+    configFiles: [],
+    binaries: ['ktlint'],
+    command: (file) => ['ktlint', '-F', file]
+  },
+  {
+    id: 'uv',
+    extensions: ['.py', '.pyi'],
+    configFiles: [],
+    binaries: ['uv'],
+    command: (file) => ['uv', 'format', '--', file]
+  },
+  {
+    id: 'rubocop',
+    extensions: ['.rb', '.rake', '.gemspec', '.ru'],
+    configFiles: [],
+    binaries: ['rubocop'],
+    command: (file) => ['rubocop', '--autocorrect', file]
+  },
+  {
+    id: 'standardrb',
+    extensions: ['.rb', '.rake', '.gemspec', '.ru'],
+    configFiles: [],
+    binaries: ['standardrb'],
+    command: (file) => ['standardrb', '--fix', file]
+  },
+  {
+    id: 'air',
+    extensions: ['.r'],
+    configFiles: [],
+    binaries: ['air'],
+    command: (file) => ['air', 'format', file]
+  },
+  {
+    id: 'dart',
+    extensions: ['.dart'],
+    configFiles: [],
+    binaries: ['dart'],
+    command: (file) => ['dart', 'format', file]
+  },
+  {
+    id: 'ocamlformat',
+    extensions: ['.ml', '.mli'],
+    configFiles: ['.ocamlformat'],
+    binaries: ['ocamlformat'],
+    command: (file) => ['ocamlformat', '-i', file]
+  },
+  {
+    id: 'terraform',
+    extensions: ['.tf', '.tfvars'],
+    configFiles: [],
+    binaries: ['terraform'],
+    command: (file) => ['terraform', 'fmt', file]
+  },
+  {
+    id: 'latexindent',
+    extensions: ['.tex'],
+    configFiles: [],
+    binaries: ['latexindent'],
+    command: (file) => ['latexindent', '-w', '-s', file]
+  },
+  {
+    id: 'gleam',
+    extensions: ['.gleam'],
+    configFiles: [],
+    binaries: ['gleam'],
+    command: (file) => ['gleam', 'format', file]
+  },
+  {
+    id: 'shfmt',
+    extensions: ['.sh', '.bash'],
+    configFiles: [],
+    binaries: ['shfmt'],
+    command: (file) => ['shfmt', '-w', file]
+  },
+  {
+    id: 'nixfmt',
+    extensions: ['.nix'],
+    configFiles: [],
+    binaries: ['nixfmt'],
+    command: (file) => ['nixfmt', file]
+  },
+  {
+    id: 'pint',
+    extensions: ['.php'],
+    configFiles: [],
+    command: (file) => ['./vendor/bin/pint', file]
+  },
+  {
+    id: 'ormolu',
+    extensions: ['.hs'],
+    configFiles: [],
+    binaries: ['ormolu'],
+    command: (file) => ['ormolu', '-i', file]
+  },
+  {
+    id: 'cljfmt',
+    extensions: ['.clj', '.cljs', '.cljc', '.edn'],
+    configFiles: [],
+    binaries: ['cljfmt'],
+    command: (file) => ['cljfmt', 'fix', '--quiet', file]
+  },
+  {
+    id: 'dfmt',
+    extensions: ['.d'],
+    configFiles: [],
+    binaries: ['dfmt'],
+    command: (file) => ['dfmt', '-i', file]
+  },
+  {
+    // `.html.erb` is listed for documentation only; path.extname only sees `.erb`.
+    id: 'htmlbeautifier',
+    extensions: ['.erb', '.html.erb'],
+    configFiles: [],
+    binaries: ['htmlbeautifier'],
+    command: (file) => ['htmlbeautifier', file]
   }
 ]
 
@@ -121,6 +270,19 @@ function hasDependency(packageJson: Record<string, unknown> | null, name: string
   return false
 }
 
+function hasSectionDependency(
+  document: Record<string, unknown> | null,
+  sections: readonly string[],
+  name: string
+): boolean {
+  if (!document) return false
+  for (const key of sections) {
+    const section = document[key]
+    if (section && typeof section === 'object' && name in section) return true
+  }
+  return false
+}
+
 function commandFromConfig(command: string[]): (file: string) => string[] {
   return (file) => {
     let used = false
@@ -137,7 +299,8 @@ function commandFromConfig(command: string[]): (file: string) => string[] {
 
 export async function discoverFormatters(
   workspace: string,
-  config?: AgentConfig
+  config?: AgentConfig,
+  options: { resolveExecutable?: (bin: string) => Promise<string | null> } = {}
 ): Promise<FormatterDefinition[]> {
   if (config?.formatters === false) return []
   let packageJson: Record<string, unknown> | null = null
@@ -151,6 +314,15 @@ export async function discoverFormatters(
   const pyproject = await fs
     .readFile(path.join(workspace, 'pyproject.toml'), 'utf8')
     .catch(() => '')
+  let composerJson: Record<string, unknown> | null = null
+  try {
+    composerJson = JSON.parse(
+      await fs.readFile(path.join(workspace, 'composer.json'), 'utf8')
+    ) as Record<string, unknown>
+  } catch {
+    composerJson = null
+  }
+  const resolve = options.resolveExecutable ?? ((bin: string) => resolveExecutable(bin, workspace))
 
   const discovered: FormatterDefinition[] = []
   for (const formatter of FORMATTERS) {
@@ -166,11 +338,25 @@ export async function discoverFormatters(
         hasDependency(packageJson, 'prettier') ||
         (packageJson !== null && 'prettier' in packageJson)
     }
+    if (!enabled && formatter.id === 'oxfmt') {
+      enabled = hasDependency(packageJson, 'oxfmt')
+    }
     if (!enabled && formatter.id === 'biome') {
       enabled = hasDependency(packageJson, '@biomejs/biome')
     }
     if (!enabled && formatter.id === 'ruff') {
       enabled = pyproject.includes('[tool.ruff')
+    }
+    if (!enabled && formatter.id === 'pint') {
+      enabled = hasSectionDependency(composerJson, ['require', 'require-dev'], 'laravel/pint')
+    }
+    if (!enabled && formatter.binaries?.length) {
+      for (const binary of formatter.binaries) {
+        if (await resolve(binary)) {
+          enabled = true
+          break
+        }
+      }
     }
     if (enabled) discovered.push(formatter)
   }

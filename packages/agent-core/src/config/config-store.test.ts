@@ -21,6 +21,7 @@ describe('AgentConfigStore', () => {
   it('uses defaults when no config file exists', async () => {
     expect(store.get()).toEqual({
       snapshots: true,
+      subagentDepth: 1,
       instructions: [],
       lsp: true,
       lspInstall: false,
@@ -31,6 +32,7 @@ describe('AgentConfigStore', () => {
     })
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
+      subagentDepth: 1,
       instructions: [],
       lsp: true,
       lspInstall: false,
@@ -39,6 +41,15 @@ describe('AgentConfigStore', () => {
       retry: { maxRetries: 4, maxDelayMs: 60_000, timeoutMs: 0 },
       toolOutput: { maxLines: 2_000, maxBytes: 50 * 1024, mode: 'head' }
     })
+  })
+
+  it('persists the subagent depth', async () => {
+    const updated = await store.update({ subagentDepth: 3 })
+
+    expect(updated.subagentDepth).toBe(3)
+    const reloaded = new AgentConfigStore(directory)
+    await reloaded.init()
+    expect(reloaded.get().subagentDepth).toBe(3)
   })
 
   it('persists snapshots, lsp and formatter switches with normalized instructions', async () => {
@@ -51,6 +62,7 @@ describe('AgentConfigStore', () => {
 
     expect(updated).toEqual({
       snapshots: false,
+      subagentDepth: 1,
       lsp: false,
       lspInstall: false,
       formatters: false,
@@ -214,6 +226,7 @@ describe('AgentConfigStore', () => {
 
     expect(await readAgentConfig(directory)).toEqual({
       snapshots: true,
+      subagentDepth: 1,
       instructions: [],
       lsp: true,
       lspInstall: false,
@@ -233,7 +246,7 @@ it('preserves layered document fields when updating global switches', async () =
     JSON.stringify({
       lsp: { custom: { command: ['custom-lsp'], extensions: ['.ts'] } },
       providers: { 'provider-1': { type: 'openai', models: { 'model-1': {} } } },
-      commands: { review: { template: 'Review' } },
+      commands: { review: { template: 'Review', subtask: true } },
       skills: ['skills']
     })
   )
@@ -247,7 +260,9 @@ it('preserves layered document fields when updating global switches', async () =
   expect(updated.lspServers).toMatchObject({ custom: { command: ['custom-lsp'] } })
   expect(updated.providers).toMatchObject({ 'provider-1': { type: 'openai' } })
   expect(updated.commands).toEqual(
-    expect.arrayContaining([expect.objectContaining({ name: 'review', template: 'Review' })])
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'review', template: 'Review', subtask: true })
+    ])
   )
   expect(updated.skills).toEqual([path.join(directory, 'agent', 'skills')])
   expect(again.get()).toEqual(updated)

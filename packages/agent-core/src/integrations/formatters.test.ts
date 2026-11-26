@@ -28,6 +28,16 @@ afterEach(async () => {
 const PRETTIER = FORMATTERS.find((formatter) => formatter.id === 'prettier') as FormatterDefinition
 const GOFMT = FORMATTERS.find((formatter) => formatter.id === 'gofmt') as FormatterDefinition
 
+const noBinaries = { resolveExecutable: async (): Promise<string | null> => null }
+
+function withBinary(...installed: string[]): {
+  resolveExecutable: (bin: string) => Promise<string | null>
+} {
+  return {
+    resolveExecutable: async (bin) => (installed.includes(bin) ? `/usr/local/bin/${bin}` : null)
+  }
+}
+
 interface FakeChild extends EventEmitter {
   stderr: PassThrough
   killed: boolean
@@ -63,9 +73,13 @@ function hangingChild(): FakeChild {
 }
 
 describe('discoverFormatters', () => {
+  it('ships the extended formatter matrix', () => {
+    expect(FORMATTERS).toHaveLength(26)
+  })
+
   it('finds formatters from config files', async () => {
     await fs.writeFile(path.join(workspace, '.prettierrc'), '{}')
-    await expect(discoverFormatters(workspace)).resolves.toEqual([PRETTIER])
+    await expect(discoverFormatters(workspace, undefined, noBinaries)).resolves.toEqual([PRETTIER])
   })
 
   it('finds prettier when it is a declared dependency', async () => {
@@ -73,25 +87,67 @@ describe('discoverFormatters', () => {
       path.join(workspace, 'package.json'),
       JSON.stringify({ devDependencies: { prettier: '^3.0.0' } })
     )
-    await expect(discoverFormatters(workspace)).resolves.toEqual([PRETTIER])
+    await expect(discoverFormatters(workspace, undefined, noBinaries)).resolves.toEqual([PRETTIER])
   })
 
   it('finds biome and gofmt', async () => {
     await fs.writeFile(path.join(workspace, 'biome.json'), '{}')
     await fs.writeFile(path.join(workspace, 'go.mod'), 'module example.com/app')
-    const found = await discoverFormatters(workspace)
+    const found = await discoverFormatters(workspace, undefined, noBinaries)
     expect(found.map((formatter) => formatter.id)).toEqual(['biome', 'gofmt'])
   })
 
   it('finds ruff from pyproject configuration', async () => {
     await fs.writeFile(path.join(workspace, 'pyproject.toml'), '[tool.ruff]\nline-length = 100\n')
-    const found = await discoverFormatters(workspace)
+    const found = await discoverFormatters(workspace, undefined, noBinaries)
     expect(found.map((formatter) => formatter.id)).toEqual(['ruff'])
   })
 
   it('returns no formatters for a project without configuration', async () => {
     await fs.writeFile(path.join(workspace, 'package.json'), JSON.stringify({ name: 'app' }))
-    await expect(discoverFormatters(workspace)).resolves.toEqual([])
+    await expect(discoverFormatters(workspace, undefined, noBinaries)).resolves.toEqual([])
+  })
+
+  it('finds formatters from installed binaries', async () => {
+    const found = await discoverFormatters(workspace, undefined, withBinary('shfmt'))
+
+    expect(found.map((formatter) => formatter.id)).toEqual(['shfmt'])
+    expect(found[0]?.command('script.sh')).toEqual(['shfmt', '-w', 'script.sh'])
+  })
+
+  it('keeps config-file formatters even without their binary', async () => {
+    await fs.writeFile(path.join(workspace, '.clang-format'), '{}')
+
+    const found = await discoverFormatters(workspace, undefined, noBinaries)
+    expect(found.map((formatter) => formatter.id)).toEqual(['clang-format'])
+  })
+
+  it('finds oxfmt from package.json dependencies', async () => {
+    await fs.writeFile(
+      path.join(workspace, 'package.json'),
+      JSON.stringify({ devDependencies: { oxfmt: '^1.0.0' } })
+    )
+
+    const found = await discoverFormatters(workspace, undefined, noBinaries)
+    expect(found.map((formatter) => formatter.id)).toEqual(['oxfmt'])
+    expect(found[0]?.command('a.ts')).toEqual(['oxfmt', 'a.ts'])
+  })
+
+  it('finds pint from composer.json and runs the vendor binary', async () => {
+    await fs.writeFile(
+      path.join(workspace, 'composer.json'),
+      JSON.stringify({ 'require-dev': { 'laravel/pint': '^1.0' } })
+    )
+
+    const found = await discoverFormatters(workspace, undefined, noBinaries)
+    expect(found.map((formatter) => formatter.id)).toEqual(['pint'])
+    expect(found[0]?.command('a.php')).toEqual(['./vendor/bin/pint', 'a.php'])
+  })
+
+  it('ignores binaries that are not installed', async () => {
+    const found = await discoverFormatters(workspace, undefined, withBinary())
+
+    expect(found).toEqual([])
   })
 })
 
@@ -238,7 +294,7 @@ describe('configured formatters', () => {
 
   it('overrides built-ins and adds custom commands with env', async () => {
     await fs.writeFile(path.join(workspace, '.prettierrc'), '{}')
-    const formatters = await discoverFormatters(workspace, config)
+    const formatters = await discoverFormatters(workspace, config, noBinaries)
     const prettier = formatters.find((formatter) => formatter.id === 'prettier')
     const custom = formatters.find((formatter) => formatter.id === 'custom')
 
@@ -251,8 +307,8 @@ describe('configured formatters', () => {
   })
 
   it('returns no formatters when the feature is disabled', async () => {
-    await expect(discoverFormatters(workspace, { ...config, formatters: false })).resolves.toEqual(
-      []
-    )
+    await expect(
+      discoverFormatters(workspace, { ...config, formatters: false }, noBinaries)
+    ).resolves.toEqual([])
   })
 })

@@ -72,6 +72,7 @@ export const AGENT_CHANNELS = {
   filesSearch: 'ateam:agent:files:search',
   commandsList: 'ateam:agent:commands:list',
   commandExpand: 'ateam:agent:commands:expand',
+  commandsRun: 'ateam:agent:commands:run',
   workspaceOpen: 'ateam:workspace:open',
   workspacePick: 'ateam:workspace:pick',
   openExternal: 'ateam:shell:open-external'

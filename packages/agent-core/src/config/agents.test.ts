@@ -296,22 +296,29 @@ describe('filterToolsForAgent', () => {
 
   it('hides plan_exit outside the plan agent and plan mode', () => {
     const general = BUILTIN_AGENTS.find((agent) => agent.id === 'general') as AgentDefinition
-    expect(Object.keys(filterToolsForAgent(tools, general, 'plan')).sort()).toEqual([
+    expect(Object.keys(filterToolsForAgent(tools, general, 'plan', 1)).sort()).toEqual([
       'mcp_demo_echo',
       'read',
       'write'
     ])
-    expect(Object.keys(filterToolsForAgent(tools, general, 'ask'))).not.toContain('plan_exit')
-    expect(Object.keys(filterToolsForAgent(tools, null, 'plan'))).not.toContain('plan_exit')
+    expect(Object.keys(filterToolsForAgent(tools, general, 'ask', 1))).not.toContain('plan_exit')
+    expect(Object.keys(filterToolsForAgent(tools, null, 'plan', 1))).not.toContain('plan_exit')
   })
 
-  it('drops the subagent tool for subagent runs', () => {
+  it('drops the subagent tool once the depth limit is reached', () => {
     const general = BUILTIN_AGENTS.find((agent) => agent.id === 'general') as AgentDefinition
-    expect(Object.keys(filterToolsForAgent(tools, general))).toEqual([
+    expect(Object.keys(filterToolsForAgent(tools, general, 'ask', 1, 1))).toEqual([
       'read',
       'write',
       'mcp_demo_echo'
     ])
+    expect(Object.keys(filterToolsForAgent(tools, general, 'ask', 0, 1))).toContain('subagent')
+  })
+
+  it('allows the subagent tool below a deeper configured limit', () => {
+    const general = BUILTIN_AGENTS.find((agent) => agent.id === 'general') as AgentDefinition
+    expect(Object.keys(filterToolsForAgent(tools, general, 'ask', 1, 2))).toContain('subagent')
+    expect(Object.keys(filterToolsForAgent(tools, general, 'ask', 2, 2))).not.toContain('subagent')
   })
 
   it('lets read-only agents use LSP queries', () => {

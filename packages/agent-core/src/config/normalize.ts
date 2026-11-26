@@ -695,7 +695,8 @@ function normalizeCommands(
       template: raw.template.trim(),
       ...(typeof raw.description === 'string' ? { description: raw.description.trim() } : {}),
       ...(typeof raw.agent === 'string' && raw.agent.trim() ? { agent: raw.agent.trim() } : {}),
-      ...(typeof raw.model === 'string' && raw.model.trim() ? { model: raw.model.trim() } : {})
+      ...(typeof raw.model === 'string' && raw.model.trim() ? { model: raw.model.trim() } : {}),
+      ...(typeof raw.subtask === 'boolean' ? { subtask: raw.subtask } : {})
     }
   }
   return Object.keys(commands).length > 0 ? commands : undefined
@@ -801,6 +802,20 @@ export function normalizeAgentConfigDocument(
   if (value.toolOutput !== undefined) {
     const toolOutput = normalizeToolOutput(value.toolOutput, source, diagnostics)
     if (toolOutput) document.toolOutput = toolOutput
+  }
+  if (value.subagentDepth !== undefined) {
+    const depth = value.subagentDepth
+    if (typeof depth === 'number' && Number.isInteger(depth) && depth >= 0 && depth <= 5) {
+      document.subagentDepth = depth
+    } else {
+      diagnostic(
+        diagnostics,
+        source,
+        '$.subagentDepth',
+        'subagentDepth must be an integer between 0 and 5',
+        'warning'
+      )
+    }
   }
   if (value.environment !== undefined) {
     const environment = normalizeEnvironment(value.environment, source, diagnostics)

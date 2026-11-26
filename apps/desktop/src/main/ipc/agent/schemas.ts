@@ -25,6 +25,12 @@ export const commandExpandSchema = z.object({
   directory: z.string().max(2_000).nullable().optional()
 })
 
+export const commandRunSchema = z.object({
+  sessionId: idSchema,
+  name: z.string().trim().min(1).max(200),
+  args: z.string().max(10_000).optional()
+})
+
 export const mcpServerInputSchema = z.object({
   name: z.string().trim().min(1).max(50),
   type: z.enum(['local', 'remote']),

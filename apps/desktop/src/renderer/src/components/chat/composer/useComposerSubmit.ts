@@ -93,11 +93,23 @@ export function useComposerSubmit({
     try {
       const expanded = await expandSlashCommand(content)
       if (expanded.shell) {
-        if (running) {
+        if (running && !expanded.subtask) {
           setError(t('chat.sessionBusy'))
           return
         }
         setPendingShell(expanded.shell)
+        return
+      }
+      if (expanded.subtask) {
+        if (attachments.length > 0) {
+          setError(t('chat.subtaskNoAttachments'))
+          return
+        }
+        await chatStore.runCommand(expanded.subtask.name, expanded.subtask.args)
+        setText('')
+        setAttachments([])
+        setMention(null)
+        setCommandQuery(null)
         return
       }
       if (expanded.command) await applyCommandBindings(expanded.command)
@@ -129,13 +141,17 @@ export function useComposerSubmit({
     setSending(true)
     setError(null)
     try {
-      const expanded = await window.api.agent.commands.expand({
-        template: pending.command.template,
-        args: pending.args,
-        directory: session?.directory ?? undefined
-      })
-      await applyCommandBindings(pending.command)
-      await chatStore.send(expanded, attachments)
+      if (pending.subtask) {
+        await chatStore.runCommand(pending.subtask.name, pending.subtask.args)
+      } else {
+        const expanded = await window.api.agent.commands.expand({
+          template: pending.command.template,
+          args: pending.args,
+          directory: session?.directory ?? undefined
+        })
+        await applyCommandBindings(pending.command)
+        await chatStore.send(expanded, attachments)
+      }
       setText('')
       setAttachments([])
       setMention(null)

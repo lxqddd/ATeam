@@ -396,6 +396,34 @@ describe('provider model merging', () => {
   })
 })
 
+describe('subagent depth', () => {
+  it('merges the project subagent depth over the global value', async () => {
+    await fs.writeFile(
+      path.join(userData, 'agent', 'config.json'),
+      JSON.stringify({ subagentDepth: 2 })
+    )
+    await fs.writeFile(
+      path.join(directory, 'repo', 'ateam.json'),
+      JSON.stringify({ subagentDepth: 0 })
+    )
+
+    const config = await readAgentConfig(userData, workspace)
+    expect(config.subagentDepth).toBe(0)
+  })
+
+  it('ignores an invalid subagent depth with a warning', () => {
+    const parsed = parseProjectConfigDocument(
+      JSON.stringify({ subagentDepth: 9 }),
+      '/repo/ateam.json'
+    )
+
+    expect(parsed.document.subagentDepth).toBeUndefined()
+    expect(parsed.diagnostics).toEqual([
+      expect.objectContaining({ path: '$.subagentDepth', severity: 'warning' })
+    ])
+  })
+})
+
 describe('project config file editor', () => {
   it('creates, reads and validates the project config file', async () => {
     const initial = await readProjectConfigFile(workspace)

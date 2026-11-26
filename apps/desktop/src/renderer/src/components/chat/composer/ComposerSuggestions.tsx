@@ -45,6 +45,9 @@ function ComposerSuggestions({
                   /
                 </span>
                 {command.name}
+                <span className="ml-1.5 inline-flex h-[18px] items-center rounded-full border border-border bg-surface px-1.5 align-middle text-[12px] leading-none font-medium text-muted">
+                  {t(`chat.commandSource.${command.source}`)}
+                </span>
               </span>
               {command.description && (
                 <span className="mt-0.5 block truncate text-caption text-muted">

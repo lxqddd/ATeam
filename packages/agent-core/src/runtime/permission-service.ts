@@ -157,10 +157,13 @@ export class PermissionService {
     ) {
       return true
     }
+    // Delegated child runs (subagents, command subtasks) ask on behalf of the
+    // parent session so prompts, rules and "always" decisions land there.
+    const permissionSessionId = run.parentSessionId ?? run.sessionId
     const mode = this.host.store.get(run.sessionId)?.session.permissionMode ?? 'ask'
     const scan = action === 'shell' ? scanShellCommand(resource, run.workspace) : null
     const resources = scan && scan.segments.length > 0 ? scan.segments : [resource]
-    const storedRules = this.host.permissionRules.list(run.sessionId)
+    const storedRules = this.host.permissionRules.list(permissionSessionId)
     const globalRules = storedRules.filter((rule) => rule.sessionId === null)
     const sessionRules = storedRules.filter((rule) => rule.sessionId !== null)
     const agentRules = agentRulesOverride ?? run.agent?.permissions ?? []
@@ -169,7 +172,7 @@ export class PermissionService {
       ...modeRules,
       ...globalRules,
       ...(run.config.permissionRules ?? []).map((rule, index) => ({
-        id: `project-${run.sessionId}-${index}`,
+        id: `project-${permissionSessionId}-${index}`,
         action: rule.action,
         resource: rule.resource,
         effect: rule.effect,
@@ -177,7 +180,7 @@ export class PermissionService {
         createdAt: ''
       })),
       ...agentRules.map((rule, index) => ({
-        id: `agent-${run.sessionId}-${index}`,
+        id: `agent-${permissionSessionId}-${index}`,
         action: rule.action,
         resource: rule.resource,
         effect: rule.effect,
@@ -210,7 +213,7 @@ export class PermissionService {
     let effect = evaluatePermissionRules(rules, {
       action,
       resources,
-      sessionId: run.sessionId
+      sessionId: permissionSessionId
     })
     if (effect === 'deny') return false
     if (scan?.risky && mode === 'auto' && effect === 'allow') {
@@ -218,7 +221,7 @@ export class PermissionService {
       const configured = evaluatePermissionRules(rules.slice(modeRules.length), {
         action,
         resources,
-        sessionId: run.sessionId
+        sessionId: permissionSessionId
       })
       if (configured !== 'allow') effect = 'ask'
     }
@@ -232,7 +235,7 @@ export class PermissionService {
         evaluatePermissionRules(rules, {
           action: 'external_directory',
           resources: externalPaths,
-          sessionId: run.sessionId
+          sessionId: permissionSessionId
         }) ?? 'ask'
       if (externalEffect === 'deny') return false
     }
@@ -257,7 +260,7 @@ export class PermissionService {
 
     const request: PermissionRequest = {
       id: randomUUID(),
-      sessionId: run.sessionId,
+      sessionId: permissionSessionId,
       messageId: run.messageId,
       toolCallId,
       action,
@@ -290,7 +293,7 @@ export class PermissionService {
             action,
             resource: alwaysPermissionResource(action, entry),
             effect: 'allow',
-            sessionId: run.sessionId
+            sessionId: permissionSessionId
           })
           .catch(() => undefined)
       }
@@ -300,7 +303,7 @@ export class PermissionService {
             action: 'external_directory',
             resource: alwaysPermissionResource('external_directory', externalPath),
             effect: 'allow',
-            sessionId: run.sessionId
+            sessionId: permissionSessionId
           })
           .catch(() => undefined)
       }
@@ -314,7 +317,7 @@ export class PermissionService {
     }
     this.host.events.emit({
       type: 'permission.replied',
-      sessionId: run.sessionId,
+      sessionId: permissionSessionId,
       requestId: request.id,
       decision
     })

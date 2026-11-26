@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { loadSkills, parseSkillMarkdown, skillsPrompt } from './skills'
+import { loadSkills, parseSkillMarkdown, skillCommand, skillsPrompt } from './skills'
 
 const SKILL = [
   '---',
@@ -181,6 +181,30 @@ describe('skillsPrompt', () => {
 
   it('returns an empty string without skills', () => {
     expect(skillsPrompt([])).toBe('')
+  })
+})
+
+describe('skillCommand', () => {
+  it('exposes the skill body and base directory as a command', () => {
+    const command = skillCommand({
+      id: 'code-review',
+      name: 'code-review',
+      description: 'Review changes',
+      content: 'Body',
+      path: '/repo/.opencode/skills/code-review/SKILL.md',
+      resources: [],
+      source: 'project'
+    })
+
+    expect(command).toEqual({
+      id: 'skill:code-review',
+      name: 'code-review',
+      description: 'Review changes',
+      template: 'Body\n\nBase directory for this skill: /repo/.opencode/skills/code-review',
+      agent: null,
+      model: null,
+      source: 'skill'
+    })
   })
 })
 

@@ -67,6 +67,7 @@ import {
 import { mergeRuntimeProviders, resolveModelRef } from '../providers'
 import { abortableSleep, isRetryableStreamError, retryDelayMs } from '../retry-fetch'
 import { expandCommandTemplate, loadCommands, runWorkspaceShell } from '../commands'
+import { loadSkills, skillCommand } from '../skills'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
 import { computeMessageCost } from '../cost'
@@ -387,6 +388,19 @@ export class AgentRuntime {
       workspacePath: workspace,
       config: effective.config
     })
+    const names = new Set(commands.map((command) => command.name.toLowerCase()))
+    const skillCommands: CommandDefinition[] = []
+    const skills = await loadSkills({
+      userDataPath: this.options.userDataPath,
+      workspacePath: workspace,
+      config: effective.config
+    }).catch(() => [])
+    for (const skill of skills) {
+      const command = skillCommand(skill)
+      if (names.has(command.name.toLowerCase())) continue
+      names.add(command.name.toLowerCase())
+      skillCommands.push(command)
+    }
     let prompts: Awaited<ReturnType<McpManagerLike['prompts']>> = []
     let timer: NodeJS.Timeout | undefined
     try {
@@ -401,7 +415,6 @@ export class AgentRuntime {
     } finally {
       if (timer) clearTimeout(timer)
     }
-    const names = new Set(commands.map((command) => command.name.toLowerCase()))
     const mcpCommands: CommandDefinition[] = prompts.map((prompt) => {
       let name = prompt.name
       if (names.has(name.toLowerCase())) {
@@ -426,7 +439,9 @@ export class AgentRuntime {
         source: 'mcp'
       }
     })
-    return [...commands, ...mcpCommands]
+    return [...commands, ...skillCommands, ...mcpCommands].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )
   }
 
   async expandCommand(
@@ -451,6 +466,136 @@ export class AgentRuntime {
   ): Promise<string> {
     await this.applyWorkspaceConfig(workspace)
     return this.workspaceServices.mcp(workspace).getPrompt(server, prompt, args)
+  }
+
+  /**
+   * Runs a `subtask` command in a hidden child session and returns the
+   * background task id. The parent conversation receives the result as a
+   * synthetic message and wakes up when it is idle.
+   */
+  async runCommand(
+    sessionId: string,
+    input: { name: string; args?: string }
+  ): Promise<{ taskId: string; sessionId: string }> {
+    const parentRecord = this.record(sessionId)
+    const workspace = this.sessionWorkspace(sessionId)
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const config = effective.config
+    const requested = input.name.trim().replace(/^\/+/, '')
+    if (!requested) throw new Error('Command name is required.')
+    const commands = await this.listCommands(workspace)
+    const command = commands.find(
+      (candidate) => candidate.name.toLowerCase() === requested.toLowerCase()
+    )
+    if (!command) throw new Error(`Unknown command: /${requested}`)
+    if (!command.subtask) {
+      throw new Error(`Command /${command.name} does not run in a subtask.`)
+    }
+    if ((config.subagentDepth ?? 1) < 1) {
+      throw new Error('Subtask commands are disabled because subagentDepth is 0.')
+    }
+
+    const args = input.args?.trim() ?? ''
+    const plugins = await this.workspaceServices.plugins(config, workspace)
+    const expanded = { template: command.template, args }
+    await plugins.transformCommand({ command: command.template, args, sessionId }, expanded)
+    const prompt = await expandCommandTemplate(expanded.template, expanded.args, (snippet) =>
+      runWorkspaceShell(snippet, workspace)
+    )
+
+    const requestedAgent = command.agent?.trim() || 'general'
+    const agent = (await this.sessionService.agents(workspace)).find(
+      (candidate) =>
+        candidate.id === requestedAgent ||
+        candidate.name.toLowerCase() === requestedAgent.toLowerCase()
+    )
+    if (!agent) throw new Error(`Unknown subagent: ${requestedAgent}`)
+
+    const models = await this.modelsForWorkspace(workspace, config)
+    let model = parentRecord.session.model ?? null
+    if (command.model) {
+      resolveModelRef(models, command.model)
+      model = command.model
+    }
+
+    const session = await this.store.create({
+      hidden: true,
+      parentId: sessionId,
+      agent: agent.id,
+      permissionMode: parentRecord.session.permissionMode,
+      directory: parentRecord.session.directory ?? workspace
+    })
+    if (model) await this.store.setModel(session.id, model)
+
+    const abort = new AbortController()
+    const user = makeUserMessage(session.id, prompt)
+    const assistant = makeAssistantMessage(session.id)
+    if (config.snapshots) {
+      assistant.snapshotBefore = await this.createSnapshotId(
+        session.id,
+        workspace,
+        await this.resolveRunReferences(config, workspace)
+      )
+    }
+    await this.store.appendMessage(session.id, user)
+    await this.store.appendMessage(session.id, assistant)
+    await this.store.setStatus(session.id, 'running')
+
+    const childRun: Run = {
+      sessionId: session.id,
+      messageId: assistant.id,
+      workspace,
+      abort,
+      startedAt: Date.now(),
+      steps: 0,
+      config,
+      models,
+      agent: command.model ? { ...agent, model: command.model } : agent,
+      depth: 1,
+      parentSessionId: sessionId
+    }
+    this.runs.set(session.id, childRun)
+
+    const toolCallId = `command:${randomUUID()}`
+    const taskId = backgroundTaskId(sessionId, toolCallId)
+    this.publishBackgroundTask(
+      this.backgroundTasks.start({
+        id: taskId,
+        kind: 'subagent',
+        sessionId,
+        toolCallId,
+        title: `${command.name}${args ? ` ${args}` : ''}`.slice(0, 120),
+        childSessionId: session.id,
+        cancel: () => abort.abort()
+      })
+    )
+    void this.runAgent(childRun)
+      .catch(() => undefined)
+      .finally(() => {
+        const record = this.store.get(session.id)
+        const message = record?.messages.find((entry) => entry.id === assistant.id)
+        const result = (message?.parts ?? [])
+          .filter((part) => part.type === 'text')
+          .map((part) => part.text)
+          .join('\n')
+          .trim()
+        const state =
+          message?.status === 'complete'
+            ? 'completed'
+            : message?.status === 'interrupted'
+              ? 'cancelled'
+              : 'failed'
+        const finished = this.backgroundTasks.complete(taskId, {
+          state,
+          ...(result ? { result } : {}),
+          ...(state === 'failed' ? { error: message?.error ?? 'The command did not finish.' } : {})
+        })
+        if (finished) {
+          this.publishBackgroundTask(finished)
+          this.deliverBackgroundResult(finished)
+        }
+      })
+    return { taskId, sessionId: session.id }
   }
 
   async setSessionAgent(id: string, agentId: string | null): Promise<SessionMeta> {

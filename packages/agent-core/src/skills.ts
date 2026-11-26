@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import type { AgentConfig, SkillDefinition } from '@ateam/shared'
+import type { AgentConfig, CommandDefinition, SkillDefinition } from '@ateam/shared'
 import { findProjectRoot } from './config/project-root'
 
 function slugify(name: string): string {
@@ -163,4 +163,20 @@ export function skillsPrompt(skills: SkillDefinition[]): string {
     'Available skills. When a task matches a skill description, call the skill tool with its name to load the full instructions before proceeding.',
     ...skills.map((skill) => `- ${skill.name}: ${skill.description}`)
   ].join('\n')
+}
+
+/** Expose a skill as a palette command that inlines the full skill instructions. */
+export function skillCommand(skill: SkillDefinition): CommandDefinition {
+  const baseDirectory = skill.path ? path.dirname(skill.path) : ''
+  return {
+    id: `skill:${skill.id}`,
+    name: skill.id,
+    description: skill.description,
+    template: baseDirectory
+      ? `${skill.content}\n\nBase directory for this skill: ${baseDirectory}`
+      : skill.content,
+    agent: null,
+    model: null,
+    source: 'skill'
+  }
 }

@@ -463,6 +463,18 @@ export class ChatStore {
     })
   }
 
+  /** Runs a subtask command in a hidden child session of the selected session. */
+  async runCommand(name: string, args?: string): Promise<void> {
+    const session = await this.ensureSession()
+    const value = args?.trim() ?? ''
+    await window.api.agent.commands.run({
+      sessionId: session.id,
+      name,
+      ...(value ? { args: value } : {})
+    })
+    void this.loadBackgroundTasks(session.id)
+  }
+
   async stop(): Promise<void> {
     const sessionId = this.state.selectedSessionId
     if (!sessionId) return

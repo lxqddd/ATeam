@@ -23,7 +23,8 @@ export interface BackgroundTaskStartInput {
   kind: BackgroundTaskKind
   sessionId: string
   toolCallId: string
-  ownerMessageId: string
+  /** Message the task was started from; omitted for command subtasks with no parent message. */
+  ownerMessageId?: string
   title: string
   outputPath?: string | null
   childSessionId?: string
@@ -39,7 +40,7 @@ export interface BackgroundTaskFinishInput {
 }
 
 export interface BackgroundTaskRecord extends BackgroundTaskInfo {
-  ownerMessageId: string
+  ownerMessageId?: string
   /** True once a tool consumed the result, so no synthetic message is injected. */
   consumed: boolean
   /** True once a user or tool asked to cancel the task. */
@@ -101,7 +102,7 @@ export class BackgroundTaskRegistry {
       startedAt: nowIso(),
       ...(input.outputPath !== undefined ? { outputPath: input.outputPath } : {}),
       ...(input.childSessionId ? { childSessionId: input.childSessionId } : {}),
-      ownerMessageId: input.ownerMessageId,
+      ...(input.ownerMessageId ? { ownerMessageId: input.ownerMessageId } : {}),
       consumed: false,
       cancelRequested: false,
       ...(input.cancel ? { cancel: input.cancel } : {})

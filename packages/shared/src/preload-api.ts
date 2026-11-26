@@ -178,6 +178,11 @@ export interface AgentBridge {
       args: string
       directory?: string | null
     }) => Promise<string>
+    run: (input: {
+      sessionId: string
+      name: string
+      args?: string
+    }) => Promise<{ taskId: string; sessionId: string }>
   }
 }
 

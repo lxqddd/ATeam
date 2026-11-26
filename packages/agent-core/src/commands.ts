@@ -67,6 +67,13 @@ function parseModelField(value: string | undefined): ModelRef | null {
   }
 }
 
+function parseSubtaskField(value: string | undefined): boolean | undefined {
+  const trimmed = value?.trim().toLowerCase()
+  if (trimmed === 'true' || trimmed === 'yes' || trimmed === '1') return true
+  if (trimmed === 'false' || trimmed === 'no' || trimmed === '0') return false
+  return undefined
+}
+
 export function parseCommandMarkdown(
   filePath: string,
   content: string,
@@ -77,6 +84,7 @@ export function parseCommandMarkdown(
   const fallbackName = path.basename(filePath).replace(/\.md$/i, '')
   const name = fields.get('name')?.trim() || fallbackName
   if (!name) return null
+  const subtask = parseSubtaskField(fields.get('subtask'))
   return {
     id: slugify(name),
     name,
@@ -84,7 +92,8 @@ export function parseCommandMarkdown(
     template: body,
     agent: fields.get('agent')?.trim() || null,
     model: parseModelField(fields.get('model')),
-    source
+    source,
+    ...(subtask === undefined ? {} : { subtask })
   }
 }
 
@@ -99,6 +108,7 @@ export function parseCommandJson(
     template?: unknown
     agent?: unknown
     model?: unknown
+    subtask?: unknown
   }
   const name = typeof raw.name === 'string' ? raw.name.trim() : ''
   const template = typeof raw.template === 'string' ? raw.template.trim() : ''
@@ -110,7 +120,8 @@ export function parseCommandJson(
     template,
     agent: typeof raw.agent === 'string' && raw.agent.trim() ? raw.agent.trim() : null,
     model: parseModelField(typeof raw.model === 'string' ? raw.model : undefined),
-    source
+    source,
+    ...(typeof raw.subtask === 'boolean' ? { subtask: raw.subtask } : {})
   }
 }
 
@@ -146,6 +157,52 @@ async function readJsonCommands(userDataPath: string): Promise<CommandDefinition
   return commands
 }
 
+const INIT_TEMPLATE = `Analyze this repository and create or update an \`AGENTS.md\` file at the project root.
+
+1. Inspect the repository structure, build system, package manager, and existing documentation.
+2. Identify the commands for building, testing, linting, formatting, type checking, and running the project locally.
+3. Capture code style, architectural conventions, and repository-specific rules a contributor must follow.
+4. Record required environment setup and how secrets or credentials are handled.
+
+If \`AGENTS.md\` already exists, update it in place and keep unrelated content intact. Prefer concrete commands and facts over generic advice.
+
+Additional instructions: $ARGUMENTS`
+
+const REVIEW_TEMPLATE = `Review the pending changes in this repository and report problems by severity.
+
+Focus on:
+- Correctness bugs, edge cases, and error handling gaps.
+- Security issues such as injection, secret leakage, and unsafe input handling.
+- Regressions in behavior covered by existing tests.
+- Consistency with repository conventions.
+
+Inspect the diff (or the commit, branch, or pull request named below), then report findings grouped by severity: important, minor, and nit. Cite file and line for each finding.
+
+Review target: $ARGUMENTS`
+
+/** Builtin commands, loaded first and overridden by same-named user or project commands. */
+export const BUILTIN_COMMANDS: readonly CommandDefinition[] = [
+  {
+    id: 'init',
+    name: 'init',
+    description: 'Analyze the repository and create or update AGENTS.md.',
+    template: INIT_TEMPLATE,
+    agent: null,
+    model: null,
+    source: 'builtin'
+  },
+  {
+    id: 'review',
+    name: 'review',
+    description: 'Review pending changes by severity in a subtask session.',
+    template: REVIEW_TEMPLATE,
+    agent: null,
+    model: null,
+    source: 'builtin',
+    subtask: true
+  }
+]
+
 export async function loadCommands(input: {
   userDataPath: string
   workspacePath: string
@@ -156,6 +213,7 @@ export async function loadCommands(input: {
     byName.set(command.name.toLowerCase(), command)
   }
 
+  for (const command of BUILTIN_COMMANDS) add(command)
   for (const command of await readMarkdownCommands(
     path.join(input.userDataPath, 'agent', 'commands'),
     'user'

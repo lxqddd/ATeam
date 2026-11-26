@@ -23,6 +23,7 @@ const chatMocks = vi.hoisted(() => ({
   setSessionModel: vi.fn(async () => undefined),
   setSessionSettings: vi.fn(async () => undefined),
   setSessionAgent: vi.fn(async () => undefined),
+  runCommand: vi.fn(async () => undefined),
   clearRevertPrompt: vi.fn()
 }))
 
@@ -139,6 +140,7 @@ beforeEach(() => {
   chatMocks.setSessionModel.mockReset()
   chatMocks.setSessionSettings.mockReset()
   chatMocks.setSessionAgent.mockReset()
+  chatMocks.runCommand.mockClear()
   chatMocks.clearRevertPrompt.mockClear()
 })
 
@@ -723,6 +725,136 @@ describe('Composer', () => {
       providerId: 'p1',
       modelId: 'claude-x'
     })
+  })
+
+  it('shows the command source badge in the menu', async () => {
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), '/')
+
+    const option = await screen.findByRole('option', { name: /^review/ })
+    expect(option).toHaveTextContent('Project')
+  })
+
+  it('runs subtask commands through the store without sending', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review changes',
+        template: 'Review $ARGUMENTS in a hidden session.',
+        agent: null,
+        model: null,
+        source: 'builtin',
+        subtask: true
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/review HEAD~1')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    await waitFor(() => expect(chatMocks.runCommand).toHaveBeenCalledWith('review', 'HEAD~1'))
+    expect(chatMocks.send).not.toHaveBeenCalled()
+    expect(api.api.agent.commands.expand).not.toHaveBeenCalled()
+    expect(textarea).toHaveValue('')
+  })
+
+  it('rejects attachments for subtask commands', async () => {
+    chatMocks.ensureSession.mockResolvedValue(makeSession({ id: 's1' }))
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review changes',
+        template: 'Review $ARGUMENTS',
+        agent: null,
+        model: null,
+        source: 'builtin',
+        subtask: true
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.upload(
+      screen.getByLabelText('Choose files'),
+      new File(['hello'], 'notes.txt', { type: 'text/plain' })
+    )
+    await screen.findByText('notes.txt')
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), '/review')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(
+      await screen.findByText('Subtask commands do not accept attachments.')
+    ).toBeInTheDocument()
+    expect(chatMocks.runCommand).not.toHaveBeenCalled()
+    expect(chatMocks.send).not.toHaveBeenCalled()
+  })
+
+  it('starts subtask commands while the session is running', async () => {
+    const state = baseState() as ChatStoreState
+    state.sessions[0].status = 'running'
+    state.commands = [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review changes',
+        template: 'Review $ARGUMENTS',
+        agent: null,
+        model: null,
+        source: 'builtin',
+        subtask: true
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.type(screen.getByRole('textbox', { name: 'Message ATeam…' }), '/review')
+    await user.click(screen.getByRole('button', { name: 'Queue message' }))
+
+    await waitFor(() => expect(chatMocks.runCommand).toHaveBeenCalledWith('review', ''))
+    expect(chatMocks.steer).not.toHaveBeenCalled()
+  })
+
+  it('confirms shell snippets before running a subtask command', async () => {
+    const state = baseState() as ChatStoreState
+    state.commands = [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review changes',
+        template: 'Review:\n!`git diff --stat`',
+        agent: null,
+        model: null,
+        source: 'builtin',
+        subtask: true
+      }
+    ]
+    storeState.current = state
+    const user = userEvent.setup()
+    renderComposer()
+
+    const textarea = screen.getByRole('textbox', { name: 'Message ATeam…' })
+    await user.type(textarea, '/review HEAD~1')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('git diff --stat')
+    expect(chatMocks.runCommand).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Run command' }))
+
+    await waitFor(() => expect(chatMocks.runCommand).toHaveBeenCalledWith('review', 'HEAD~1'))
+    expect(api.api.agent.commands.expand).not.toHaveBeenCalled()
+    expect(chatMocks.send).not.toHaveBeenCalled()
   })
 
   it('shows an error instead of sending an unexpanded shell snippet', async () => {

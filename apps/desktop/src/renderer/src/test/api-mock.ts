@@ -453,7 +453,8 @@ export function createApiMock(
       },
       commands: {
         list: vi.fn(async () => [] as CommandDefinition[]),
-        expand: vi.fn(async ({ template }: { template: string; args: string }) => template)
+        expand: vi.fn(async ({ template }: { template: string; args: string }) => template),
+        run: vi.fn(async () => ({ taskId: 'command-task', sessionId: 'command-session' }))
       }
     },
     models: {

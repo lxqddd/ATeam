@@ -9,16 +9,24 @@ import type {
 import { commandShellSnippets, expandCommand, splitArguments } from '@ateam/shared'
 import { chatStore } from '../../../chat/store'
 
+/** A subtask command's payload, kept alongside the shell confirmation when needed. */
+export interface CommandSubtask {
+  name: string
+  args: string
+}
+
 export interface PendingShell {
   command: CommandDefinition
   args: string
   snippets: string[]
+  subtask?: CommandSubtask
 }
 
 export interface ExpandedCommand {
   text: string
   command: CommandDefinition | null
   shell?: PendingShell
+  subtask?: CommandSubtask
 }
 
 interface UseCommandMenuOptions {
@@ -113,17 +121,21 @@ export function useCommandMenu({
         command
       }
     }
+    const subtask = command.subtask ? { name: command.name, args } : undefined
     if (command.template.includes('!`')) {
       return {
         text: value,
         command,
+        ...(subtask ? { subtask } : {}),
         shell: {
           command,
           args,
-          snippets: commandShellSnippets(command.template)
+          snippets: commandShellSnippets(command.template),
+          ...(subtask ? { subtask } : {})
         }
       }
     }
+    if (subtask) return { text: value, command, subtask }
     return { text: expandCommand(command.template, args), command }
   }
 

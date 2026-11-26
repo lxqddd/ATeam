@@ -151,7 +151,9 @@ export async function prepareRun(
         targetInfo.applyPatch === true
       ),
       agent,
-      current.session.permissionMode ?? 'ask'
+      current.session.permissionMode ?? 'ask',
+      run.depth,
+      run.config.subagentDepth ?? 1
     ),
     run.sessionId,
     {

@@ -50,7 +50,10 @@ export async function runSubagentTask(
   input: SubagentInput,
   toolCallId: string
 ): Promise<string> {
-  if (parent.depth >= 1) return 'Error: subagents cannot spawn subagents.'
+  const limit = parent.config.subagentDepth ?? 1
+  if (parent.depth >= limit) {
+    return `Error: subagent depth limit reached (${limit}). Increase subagentDepth to allow nested subagents.`
+  }
   const requested = input.agent?.trim() || 'general'
   const agent = (await host.agents(parent.workspace)).find(
     (candidate) =>
@@ -61,7 +64,12 @@ export async function runSubagentTask(
   if (!input.prompt.trim()) return 'Error: the subagent prompt is empty.'
 
   const parentRecord = host.record(parent.sessionId)
-  let sessionId = input.sessionId?.trim() || null
+  const explicitSession = input.sessionId?.trim() || ''
+  const taskId = input.taskId?.trim() || ''
+  if (explicitSession && taskId && explicitSession !== taskId) {
+    return 'Error: pass either sessionId or taskId, not both.'
+  }
+  let sessionId = explicitSession || taskId || null
   let childDirectory = parent.workspace
   if (sessionId) {
     const record = host.store.get(sessionId)

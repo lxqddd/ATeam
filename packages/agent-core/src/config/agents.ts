@@ -405,18 +405,23 @@ export async function loadAgents(input: {
 export function filterToolsForAgent(
   tools: ToolSet,
   agent: AgentDefinition | null,
-  permissionMode?: PermissionMode
+  permissionMode?: PermissionMode,
+  depth = 0,
+  subagentDepth = 1
 ): ToolSet {
+  const subagentAllowed = depth < subagentDepth
   if (!agent) {
     return Object.fromEntries(
-      Object.entries(tools).filter(([name]) => name !== 'plan_exit')
+      Object.entries(tools).filter(
+        ([name]) => name !== 'plan_exit' && (name !== 'subagent' || subagentAllowed)
+      )
     ) as ToolSet
   }
   const allowed = agent.tools ? new Set(agent.tools) : null
   const filtered: ToolSet = {}
   for (const [name, definition] of Object.entries(tools)) {
     if (name === 'plan_exit' && (permissionMode !== 'plan' || agent.id !== 'plan')) continue
-    if (agent.mode === 'subagent' && name === 'subagent') continue
+    if (name === 'subagent' && !subagentAllowed) continue
     if (allowed && !allowed.has(name)) {
       const patchAlias = name === 'patch' && (allowed.has('edit') || allowed.has('write'))
       if (!patchAlias) continue
