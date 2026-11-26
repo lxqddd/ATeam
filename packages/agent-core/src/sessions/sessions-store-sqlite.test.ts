@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SessionsStore } from './sessions-store'
-import { restoreLegacySessionBackups } from './session-storage'
+import { restoreLegacySessionBackups } from './storage'
 import { makeMessage, makeSession, makeTextPart } from '../test/factories'
 
 let directory: string

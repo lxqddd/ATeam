@@ -317,13 +317,13 @@ models/                  # 供应商 / 模型配置
 
 ## 18. 关键文件索引
 
-- 运行时：[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[types.ts](../packages/agent-core/src/runtime/types.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[subagents.ts](../packages/agent-core/src/runtime/subagents.ts)
+- 运行时：[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[types.ts](../packages/agent-core/src/runtime/types.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[subagents.ts](../packages/agent-core/src/runtime/subagents.ts)、[history-service.ts](../packages/agent-core/src/runtime/history-service.ts)、[plan-service.ts](../packages/agent-core/src/runtime/plan-service.ts)、[step-tracker.ts](../packages/agent-core/src/runtime/step-tracker.ts)、[command-service.ts](../packages/agent-core/src/runtime/command-service.ts)
 - 会话：[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[context.ts](../packages/agent-core/src/sessions/context.ts)、[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)
 - 配置：[config-store.ts](../packages/agent-core/src/config/config-store.ts)、[project-config.ts](../packages/agent-core/src/config/project-config.ts)、[instructions.ts](../packages/agent-core/src/config/instructions.ts)、[permissions.ts](../packages/agent-core/src/config/permissions.ts)、[agents.ts](../packages/agent-core/src/config/agents.ts)
 - 集成：[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)、[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)、[formatters.ts](../packages/agent-core/src/integrations/formatters.ts)、[webfetch.ts](../packages/agent-core/src/integrations/webfetch.ts)、[websearch.ts](../packages/agent-core/src/integrations/websearch.ts)
-- 工具与能力：[tools.ts](../packages/agent-core/src/tools.ts)、[worktrees.ts](../packages/agent-core/src/worktrees.ts)、[attachments.ts](../packages/agent-core/src/attachments.ts)、[commands.ts](../packages/agent-core/src/commands.ts)、[skills.ts](../packages/agent-core/src/skills.ts)、[todos.ts](../packages/agent-core/src/todos.ts)、[cost.ts](../packages/agent-core/src/cost.ts)
+- 工具与能力：[tools/index.ts](../packages/agent-core/src/tools/index.ts)、[worktrees.ts](../packages/agent-core/src/worktrees.ts)、[attachments.ts](../packages/agent-core/src/attachments.ts)、[commands.ts](../packages/agent-core/src/commands.ts)、[skills.ts](../packages/agent-core/src/skills.ts)、[todos.ts](../packages/agent-core/src/todos.ts)、[cost.ts](../packages/agent-core/src/cost.ts)
 - 浏览器与控制台：[browser-controller.ts](../apps/desktop/src/main/browser/browser-controller.ts)、[cli/main.ts](../apps/headless/src/cli/main.ts)、[server/main.ts](../apps/headless/src/server/main.ts)、[acp/main.ts](../apps/headless/src/acp/main.ts)、[sdk/client.ts](../packages/client-sdk/src/client.ts)
-- 会话存储：[session-storage.ts](../packages/agent-core/src/sessions/session-storage.ts)
+- 会话存储：[storage/index.ts](../packages/agent-core/src/sessions/storage/index.ts)
 - 主进程存储：[model-config-store.ts](../apps/desktop/src/main/settings/model-config-store.ts)、[websearch-config-store.ts](../apps/desktop/src/main/settings/websearch-config-store.ts)、[catalog.ts](../apps/desktop/src/main/providers/catalog.ts)
 - 配置 UI：[ProjectConfigCard.tsx](../apps/desktop/src/renderer/src/components/settings/ProjectConfigCard.tsx)
 

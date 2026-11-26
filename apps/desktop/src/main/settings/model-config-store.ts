@@ -19,7 +19,7 @@ import type {
   RuntimeModelsConfig,
   RuntimeProvider
 } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core/storage'
+import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core'
 import { ProviderAuthStore } from '../providers/provider-auth-store'
 
 interface StoredProvider {

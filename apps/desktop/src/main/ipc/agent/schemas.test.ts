@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sessionForkSchema, sessionUndoSchema } from './agent/schemas'
+import { sessionForkSchema, sessionUndoSchema } from './schemas'
 
 describe('agent session IPC schemas', () => {
   it('keeps the step index when undoing a step', () => {

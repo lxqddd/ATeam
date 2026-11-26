@@ -23,7 +23,7 @@ import {
   type SessionBackend,
   type SessionRecord,
   type SessionStorage
-} from './session-storage'
+} from './storage'
 
 export type { PreparedCompaction, RedoState, RevertState, SessionRecord }
 

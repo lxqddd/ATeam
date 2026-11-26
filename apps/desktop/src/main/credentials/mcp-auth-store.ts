@@ -3,7 +3,7 @@ import path from 'node:path'
 import { safeStorage } from 'electron'
 import type { McpAuthRecord, McpAuthStatus, McpServerConfig } from '@ateam/shared'
 import type { McpAuthStoreLike } from '@ateam/agent-core/integrations'
-import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core/storage'
+import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core'
 
 const AUTH_FILE_VERSION = 2
 

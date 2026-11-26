@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { ModelCatalogEntry } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core/storage'
+import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core'
 import { fetchModelCatalog } from './catalog'
 
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000

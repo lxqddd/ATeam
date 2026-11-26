@@ -42,7 +42,6 @@ import type {
   SessionSettings,
   SteerStrategy,
   McpAuthRecord,
-  StepStartPart,
   SubagentInput,
   TodoInput,
   TokenUsage,
@@ -51,14 +50,7 @@ import type {
   VcsDiffResult,
   VcsStatus
 } from '@ateam/shared'
-import {
-  DEFAULT_RETRY_CONFIG,
-  messageChangedFiles,
-  messageCheckpoint,
-  messageOpenStep,
-  messageSnapshotBounds,
-  messageSteps
-} from '@ateam/shared'
+import { DEFAULT_RETRY_CONFIG } from '@ateam/shared'
 import { DEFAULT_CONTEXT_WINDOW, messagesAfterCompaction, shouldCompact } from '../sessions/context'
 import { readEffectiveAgentConfig } from '../config/config-store'
 import { loadOrgPolicy } from '../config/org-policy'
@@ -77,12 +69,10 @@ import {
 } from '../attachments'
 import { mergeRuntimeProviders, resolveModelRef } from '../providers'
 import { abortableSleep, isRetryableStreamError, retryDelayMs } from '../retry-fetch'
-import { expandCommandTemplate, loadCommands, runWorkspaceShell } from '../commands'
-import { loadSkills, skillCommand } from '../skills'
+import { expandCommandTemplate, runWorkspaceShell } from '../commands'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
 import { computeMessageCost } from '../cost'
-import type { McpManagerLike } from '../integrations/mcp'
 import { normalizeError } from '../errors'
 import {
   createWorktree,
@@ -93,6 +83,7 @@ import {
   worktreeRootFor
 } from '../worktrees'
 import { CompactionService } from './compaction-service'
+import { CommandService } from './command-service'
 import { CacheMetricsCollector } from './cache-metrics'
 import {
   BackgroundTaskRegistry,
@@ -103,11 +94,12 @@ import {
 } from './background-tasks'
 import { DEFAULT_DEPENDENCIES } from './defaults'
 import { isContextLengthError } from './helpers'
+import { HistoryService } from './history-service'
 import { errorMessage, makeAssistantMessage, makeUserMessage, nowIso, usageFrom } from './messages'
 import { PermissionService } from './permission-service'
+import { PlanService } from './plan-service'
 import { applyProviderAuth } from './provider-auth'
 import {
-  appendPart,
   appendToolOutput,
   emitPart,
   ensureToolPart,
@@ -120,14 +112,8 @@ import { prepareRun, type RunPreparationHost } from './run-preparation'
 import { RuntimeEvents } from './runtime-events'
 import { SessionService } from './session-service'
 import { runSubagentTask } from './subagents'
+import { StepTracker, type TurnStreamState } from './step-tracker'
 import type { ToolContextHost } from './tool-context'
-import {
-  allowedChangePaths,
-  buildSessionChanges,
-  buildTurnChanges,
-  latestSnapshotMessage,
-  type TurnChangesHost
-} from './turn-changes'
 import {
   MAX_STEPS,
   type AgentRuntimeDependencies,
@@ -135,14 +121,6 @@ import {
   type Run
 } from './types'
 import { WorkspaceServices } from './workspace-services'
-
-interface TurnStreamState {
-  textParts: Map<string, number>
-  reasoningParts: Map<string, number>
-  usage?: TokenUsage
-  lastStepUsage?: TokenUsage
-  lastFinishReason?: string
-}
 
 export class AgentRuntime {
   private readonly store: SessionsStore
@@ -168,6 +146,10 @@ export class AgentRuntime {
   private readonly workspaceServices: WorkspaceServices
   private readonly sessionService: SessionService
   private readonly permissionService: PermissionService
+  private readonly historyService: HistoryService
+  private readonly planService: PlanService
+  private readonly stepTracker: StepTracker
+  private readonly commandService: CommandService
   private readonly retryMetrics = new RetryMetricsCollector()
   private readonly cacheMetrics = new CacheMetricsCollector()
 
@@ -233,8 +215,43 @@ export class AgentRuntime {
       permissionRules: this.permissionRules,
       events: this.events,
       assistantFor: (run) => this.assistantFor(run),
-      planFilePath: (run) => this.planFilePath(run),
+      planFilePath: (run) => this.planService.filePathFor(run),
       emitSession: (sessionId) => this.events.emitSession(sessionId)
+    })
+    this.historyService = new HistoryService({
+      store: this.store,
+      snapshots: this.snapshots,
+      emit: (event) => this.events.emit(event),
+      updateContextUsage: (sessionId) => this.compaction.updateContextUsage(sessionId),
+      reserveSession: (sessionId) => this.reserveSession(sessionId),
+      releaseSession: (sessionId) => {
+        this.starting.delete(sessionId)
+      },
+      sessionBusy: (sessionId) => this.sessionBusy(sessionId),
+      sessionWorkspace: (sessionId) => this.sessionWorkspace(sessionId),
+      createRevertSnapshot: (sessionId, workspace) =>
+        this.createRevertSnapshot(sessionId, workspace),
+      vcs: (workspace) => this.deps.createVcs(workspace)
+    })
+    this.planService = new PlanService({
+      store: this.store,
+      sessionWorkspace: (sessionId) => this.sessionWorkspace(sessionId),
+      agents: (workspace) => this.sessionService.agents(workspace),
+      emit: (event) => this.events.emit(event),
+      record: (sessionId) => this.record(sessionId)
+    })
+    this.stepTracker = new StepTracker({
+      store: this.store,
+      snapshots: this.snapshots,
+      events: this.events,
+      recordUsage: (usage) => this.cacheMetrics.record(usage)
+    })
+    this.commandService = new CommandService({
+      userDataPath: this.options.userDataPath,
+      defaultWorkspacePath: this.options.workspacePath,
+      applyConfig: (workspace) => this.applyWorkspaceConfig(workspace),
+      plugins: (config, workspace) => this.workspaceServices.plugins(config, workspace),
+      mcp: (workspace) => this.workspaceServices.mcp(workspace)
     })
   }
 
@@ -395,66 +412,7 @@ export class AgentRuntime {
   }
 
   async listCommands(workspace = this.options.workspacePath): Promise<CommandDefinition[]> {
-    const effective = await this.applyWorkspaceConfig(workspace)
-    const commands = await loadCommands({
-      userDataPath: this.options.userDataPath,
-      workspacePath: workspace,
-      config: effective.config
-    })
-    const names = new Set(commands.map((command) => command.name.toLowerCase()))
-    const skillCommands: CommandDefinition[] = []
-    const skills = await loadSkills({
-      userDataPath: this.options.userDataPath,
-      workspacePath: workspace,
-      config: effective.config
-    }).catch(() => [])
-    for (const skill of skills) {
-      const command = skillCommand(skill)
-      if (names.has(command.name.toLowerCase())) continue
-      names.add(command.name.toLowerCase())
-      skillCommands.push(command)
-    }
-    let prompts: Awaited<ReturnType<McpManagerLike['prompts']>> = []
-    let timer: NodeJS.Timeout | undefined
-    try {
-      prompts = await Promise.race([
-        this.workspaceServices.mcp(workspace).prompts(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('MCP prompt discovery timed out')), 3_000)
-        })
-      ])
-    } catch {
-      /* MCP prompts are best effort */
-    } finally {
-      if (timer) clearTimeout(timer)
-    }
-    const mcpCommands: CommandDefinition[] = prompts.map((prompt) => {
-      let name = prompt.name
-      if (names.has(name.toLowerCase())) {
-        const base = `${prompt.name}-${prompt.server}`
-        name = base
-        let attempt = 2
-        while (names.has(name.toLowerCase())) name = `${base}-${attempt++}`
-      }
-      names.add(name.toLowerCase())
-      return {
-        id: `mcp:${prompt.server}:${prompt.name}`,
-        name,
-        description: `MCP · ${prompt.server}${prompt.description ? ` · ${prompt.description}` : ''}`,
-        template: '',
-        agent: null,
-        model: null,
-        mcp: {
-          server: prompt.server,
-          prompt: prompt.name,
-          arguments: prompt.arguments?.map((arg) => arg.name) ?? []
-        },
-        source: 'mcp'
-      }
-    })
-    return [...commands, ...skillCommands, ...mcpCommands].sort((a, b) =>
-      a.name.localeCompare(b.name)
-    )
+    return this.commandService.listCommands(workspace)
   }
 
   async expandCommand(
@@ -462,13 +420,7 @@ export class AgentRuntime {
     args: string,
     workspace = this.options.workspacePath
   ): Promise<string> {
-    const effective = await this.applyWorkspaceConfig(workspace)
-    const plugins = await this.workspaceServices.plugins(effective.config, workspace)
-    const output = { template, args }
-    await plugins.transformCommand({ command: template, args, sessionId: null }, output)
-    return expandCommandTemplate(output.template, output.args, (command) =>
-      runWorkspaceShell(command, workspace)
-    )
+    return this.commandService.expandCommand(template, args, workspace)
   }
 
   async mcpPrompt(
@@ -477,8 +429,7 @@ export class AgentRuntime {
     args?: Record<string, string>,
     workspace = this.options.workspacePath
   ): Promise<string> {
-    await this.applyWorkspaceConfig(workspace)
-    return this.workspaceServices.mcp(workspace).getPrompt(server, prompt, args)
+    return this.commandService.mcpPrompt(server, prompt, args, workspace)
   }
 
   /**
@@ -671,162 +622,11 @@ export class AgentRuntime {
     messageId?: string,
     stepIndex?: number
   ): Promise<{ session: SessionMeta; prompt: string }> {
-    if (stepIndex !== undefined) return this.rewindAssistantStep(id, messageId, stepIndex)
-    const record = this.store.get(id)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    this.reserveSession(id)
-
-    try {
-      let assistantIndex = -1
-      if (messageId) {
-        assistantIndex = record.messages.findIndex(
-          (message) => message.id === messageId && message.role === 'assistant'
-        )
-      } else {
-        for (let index = record.messages.length - 1; index >= 0; index -= 1) {
-          if (record.messages[index].role === 'assistant') {
-            assistantIndex = index
-            break
-          }
-        }
-      }
-      if (assistantIndex < 0) throw new Error('NOTHING_TO_UNDO')
-
-      let userIndex = assistantIndex - 1
-      while (userIndex >= 0 && record.messages[userIndex].role !== 'user') userIndex -= 1
-      if (userIndex < 0) throw new Error('NOTHING_TO_UNDO')
-
-      const assistant = record.messages[assistantIndex]
-      const removedMessages = record.messages.slice(userIndex)
-      const removedAssistants = removedMessages.filter((item) => item.role === 'assistant')
-      const finalAssistant = removedAssistants[removedAssistants.length - 1]
-      const files = [
-        ...new Set(removedMessages.flatMap((message) => messageChangedFiles(message.parts)))
-      ]
-      const before = messageSnapshotBounds(assistant.parts).before
-      if (before && files.length > 0) {
-        try {
-          await this.snapshots.restorePaths(before, files)
-        } catch {
-          throw new Error('SNAPSHOT_RESTORE_FAILED')
-        }
-      }
-
-      const prompt = record.messages[userIndex].parts
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text)
-        .join('')
-      const staged = await this.store.stageUndo(
-        id,
-        userIndex,
-        finalAssistant ? (messageSnapshotBounds(finalAssistant.parts).after ?? null) : null,
-        prompt,
-        files
-      )
-      if (!staged) throw new Error('NOTHING_TO_UNDO')
-      this.events.emit({ type: 'session.upsert', session: staged.session })
-      await this.compaction.updateContextUsage(id)
-      return { session: this.store.getSession(id) ?? staged.session, prompt }
-    } finally {
-      this.starting.delete(id)
-    }
-  }
-
-  /**
-   * Truncates the latest assistant turn at a recorded step boundary and
-   * restores the workspace files to the snapshot taken when that step ended.
-   * The original message is kept in the redo state so the rewind can be undone.
-   */
-  private async rewindAssistantStep(
-    id: string,
-    messageId: string | undefined,
-    stepIndex: number
-  ): Promise<{ session: SessionMeta; prompt: string }> {
-    if (!Number.isInteger(stepIndex) || stepIndex < 0) throw new Error('INVALID_STEP_INDEX')
-    const record = this.store.get(id)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    this.reserveSession(id)
-
-    try {
-      const assistantIndex = messageId
-        ? record.messages.findIndex(
-            (message) => message.id === messageId && message.role === 'assistant'
-          )
-        : -1
-      if (assistantIndex < 0) throw new Error(messageId ? 'MESSAGE_NOT_FOUND' : 'NOTHING_TO_UNDO')
-      const message = record.messages[assistantIndex]
-      if (message.status === 'streaming') throw new Error('SESSION_BUSY')
-      if (latestSnapshotMessage(record.messages)?.id !== message.id) {
-        throw new Error('TURN_NOT_LATEST')
-      }
-
-      const steps = messageSteps(message.parts)
-      const target = steps.find((step) => step.step === stepIndex)
-      if (!target) throw new Error('INVALID_STEP_INDEX')
-      if (!target.finish?.snapshot) throw new Error('NOTHING_TO_UNDO')
-      // A later step must exist; a trailing run-level snapshot part must not
-      // make the final step look rewindable.
-      if (!steps.some((step) => step.step > target.step)) throw new Error('NOTHING_TO_UNDO')
-
-      const files = messageChangedFiles(message.parts)
-      if (files.length > 0) {
-        try {
-          await this.snapshots.restorePaths(target.finish.snapshot, files)
-        } catch {
-          throw new Error('SNAPSHOT_RESTORE_FAILED')
-        }
-      }
-
-      const original = structuredClone(message)
-      message.parts = message.parts.slice(0, target.endIndex)
-      message.updatedAt = nowIso()
-      const session = await this.store.stageStepUndo(
-        id,
-        assistantIndex,
-        original,
-        messageSnapshotBounds(original.parts).after ?? null,
-        files
-      )
-      if (!session) throw new Error('NOTHING_TO_UNDO')
-      this.events.emit({ type: 'session.upsert', session })
-      this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
-      await this.compaction.updateContextUsage(id)
-      return { session: this.store.getSession(id) ?? session, prompt: '' }
-    } finally {
-      this.starting.delete(id)
-    }
+    return this.historyService.undoSession(id, messageId, stepIndex)
   }
 
   async redoSession(id: string): Promise<SessionMeta> {
-    if (!this.store.get(id)) throw new Error('SESSION_NOT_FOUND')
-    this.reserveSession(id)
-
-    try {
-      const redo = this.store.getRedo(id)
-      if (!redo) throw new Error('NOTHING_TO_REDO')
-
-      if (redo.snapshotAfter && redo.files.length > 0) {
-        try {
-          await this.snapshots.restorePaths(redo.snapshotAfter, redo.files)
-        } catch {
-          throw new Error('SNAPSHOT_RESTORE_FAILED')
-        }
-      }
-
-      const session = await this.store.redo(id)
-      if (!session) throw new Error('NOTHING_TO_REDO')
-      if (redo.target) {
-        const restored = this.store.get(id)?.messages[redo.target.index]
-        if (restored) {
-          this.events.emit({ type: 'message.upsert', message: structuredClone(restored) })
-        }
-      }
-      this.events.emit({ type: 'session.upsert', session })
-      await this.compaction.updateContextUsage(id)
-      return this.store.getSession(id) ?? session
-    } finally {
-      this.starting.delete(id)
-    }
+    return this.historyService.redoSession(id)
   }
 
   async forkSession(id: string, messageId?: string): Promise<SessionMeta> {
@@ -834,29 +634,19 @@ export class AgentRuntime {
   }
 
   async messageChanges(sessionId: string, messageId?: string): Promise<TurnChanges> {
-    const record = this.store.get(sessionId)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    const message = messageId
-      ? record.messages.find((entry) => entry.id === messageId && entry.role === 'assistant')
-      : latestSnapshotMessage(record.messages)
-    if (!message) throw new Error(messageId ? 'MESSAGE_NOT_FOUND' : 'NO_CHANGES')
-    return buildTurnChanges(this.turnChangesHost, record, message, this.store.getRevert(sessionId))
+    return this.historyService.messageChanges(sessionId, messageId)
   }
 
   async sessionChanges(sessionId: string): Promise<SessionChangesSummary> {
-    const record = this.store.get(sessionId)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    return buildSessionChanges(this.turnChangesHost, record)
+    return this.historyService.sessionChanges(sessionId)
   }
 
   async vcsStatus(sessionId: string): Promise<VcsStatus> {
-    if (!this.store.getSession(sessionId)) throw new Error('SESSION_NOT_FOUND')
-    return this.deps.createVcs(this.sessionWorkspace(sessionId)).status()
+    return this.historyService.vcsStatus(sessionId)
   }
 
   async vcsDiff(sessionId: string, options: VcsDiffOptions = {}): Promise<VcsDiffResult> {
-    if (!this.store.getSession(sessionId)) throw new Error('SESSION_NOT_FOUND')
-    return this.deps.createVcs(this.sessionWorkspace(sessionId)).diff(options)
+    return this.historyService.vcsDiff(sessionId, options)
   }
 
   async revertChangedFiles(
@@ -864,90 +654,20 @@ export class AgentRuntime {
     messageId: string,
     paths: string[] = []
   ): Promise<TurnChanges> {
-    const record = this.store.get(sessionId)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    if (this.sessionBusy(sessionId)) throw new Error('SESSION_BUSY')
-    const message = record.messages.find(
-      (entry) => entry.id === messageId && entry.role === 'assistant'
-    )
-    if (!message) throw new Error('MESSAGE_NOT_FOUND')
-    const latest = latestSnapshotMessage(record.messages)
-    if (latest?.id !== message.id) throw new Error('TURN_NOT_LATEST')
-    if (message.status === 'streaming') throw new Error('SESSION_BUSY')
-    const before = messageSnapshotBounds(message.parts).before
-    if (!before) throw new Error('NO_SNAPSHOT')
-
-    const allowed = await allowedChangePaths(this.turnChangesHost, message)
-    const targets = paths.length > 0 ? [...new Set(paths)] : [...allowed]
-    for (const target of targets) {
-      if (!allowed.has(target)) throw new Error('INVALID_CHANGE_PATH')
-    }
-    if (targets.length > 0) {
-      this.reserveSession(sessionId)
-      try {
-        const existing = this.store.getRevert(sessionId)
-        let snapshot = existing?.messageId === message.id ? existing.snapshot : undefined
-        if (!snapshot) {
-          const workspace = this.sessionWorkspace(sessionId)
-          const effective = await this.applyWorkspaceConfig(workspace)
-          const references = (await this.resolveRunReferences(effective.config, workspace)).map(
-            (reference) => ({ alias: reference.alias, root: reference.root })
-          )
-          snapshot = (await this.snapshots.create(workspace, sessionId, references)).id
-        }
-        try {
-          await this.snapshots.restorePaths(before, targets)
-        } catch {
-          throw new Error('SNAPSHOT_RESTORE_FAILED')
-        }
-        const files = [
-          ...new Set([...(existing?.messageId === message.id ? existing.files : []), ...targets])
-        ]
-        await this.store.setRevert(sessionId, { snapshot, messageId: message.id, files })
-      } finally {
-        this.starting.delete(sessionId)
-      }
-    }
-
-    return buildTurnChanges(this.turnChangesHost, record, message, this.store.getRevert(sessionId))
+    return this.historyService.revertChangedFiles(sessionId, messageId, paths)
   }
 
   async unrevertChangedFiles(sessionId: string, paths: string[] = []): Promise<TurnChanges> {
-    const record = this.store.get(sessionId)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    if (this.sessionBusy(sessionId)) throw new Error('SESSION_BUSY')
-    const revert = this.store.getRevert(sessionId)
-    if (!revert) throw new Error('NOTHING_TO_UNREVERT')
-    const message = record.messages.find((entry) => entry.id === revert.messageId)
-    if (!message) throw new Error('MESSAGE_NOT_FOUND')
-    if (message.status === 'streaming') throw new Error('SESSION_BUSY')
-
-    const targets = paths.length > 0 ? [...new Set(paths)] : [...revert.files]
-    if (targets.length === 0) throw new Error('NOTHING_TO_UNREVERT')
-    for (const target of targets) {
-      if (!revert.files.includes(target)) throw new Error('INVALID_CHANGE_PATH')
-    }
-
-    this.reserveSession(sessionId)
-    try {
-      await this.snapshots.restorePaths(revert.snapshot, targets)
-    } catch {
-      throw new Error('SNAPSHOT_RESTORE_FAILED')
-    } finally {
-      this.starting.delete(sessionId)
-    }
-
-    const remaining = revert.files.filter((file) => !targets.includes(file))
-    if (remaining.length === 0) await this.store.clearRevert(sessionId)
-    else await this.store.setRevert(sessionId, { ...revert, files: remaining })
-    return buildTurnChanges(this.turnChangesHost, record, message, this.store.getRevert(sessionId))
+    return this.historyService.unrevertChangedFiles(sessionId, paths)
   }
 
-  private get turnChangesHost(): TurnChangesHost {
-    return {
-      snapshots: this.snapshots,
-      sessionBusy: (sessionId) => this.sessionBusy(sessionId)
-    }
+  /** Snapshot taken before a file-level revert so it can be undone. */
+  private async createRevertSnapshot(sessionId: string, workspace: string): Promise<string> {
+    const effective = await this.applyWorkspaceConfig(workspace)
+    const references = (await this.resolveRunReferences(effective.config, workspace)).map(
+      (reference) => ({ alias: reference.alias, root: reference.root })
+    )
+    return (await this.snapshots.create(workspace, sessionId, references)).id
   }
 
   searchSessions(query: string): SessionSearchResult[] {
@@ -1013,20 +733,7 @@ export class AgentRuntime {
   }
 
   async sessionPlan(sessionId: string): Promise<SessionPlan> {
-    const record = this.store.get(sessionId)
-    if (!record) throw new Error('SESSION_NOT_FOUND')
-    const relative = this.planPathForSession(sessionId)
-    const absolutePath = path.resolve(this.sessionWorkspace(sessionId), relative)
-    try {
-      return {
-        path: relative,
-        absolutePath,
-        exists: true,
-        content: await fs.readFile(absolutePath, 'utf8')
-      }
-    } catch {
-      return { path: relative, absolutePath, exists: false, content: '' }
-    }
+    return this.planService.currentPlan(sessionId)
   }
 
   setModels(models: RuntimeModelsConfig): void {
@@ -1274,7 +981,7 @@ export class AgentRuntime {
       const config = effective.config
       const models = await this.modelsForWorkspace(workspace, config)
       resolveModelRef(models, record.session.model ?? models.defaultModel)
-      const continuationPrompt = await this.planContinuationPrompt(sessionId)
+      const continuationPrompt = await this.planService.continuationPrompt(sessionId)
       const snapshot = config.snapshots
         ? await this.createSnapshotId(
             sessionId,
@@ -1790,14 +1497,6 @@ export class AgentRuntime {
     return message
   }
 
-  private planFilePath(run: Run): string {
-    return this.planPathForSession(run.sessionId)
-  }
-
-  private planPathForSession(sessionId: string): string {
-    return path.posix.join('.ateam', 'plans', `${sessionId}.md`)
-  }
-
   private async isGitRepository(workspace: string): Promise<boolean> {
     let directory = path.resolve(workspace)
     for (;;) {
@@ -1813,53 +1512,6 @@ export class AgentRuntime {
     }
   }
 
-  private async planFileReady(run: Run): Promise<boolean> {
-    try {
-      const content = await fs.readFile(path.resolve(run.workspace, this.planFilePath(run)), 'utf8')
-      return content.trim().length > 0
-    } catch {
-      return false
-    }
-  }
-
-  private async planContinuationPrompt(sessionId: string): Promise<string | undefined> {
-    const record = this.store.get(sessionId)
-    if (!record || record.session.agent !== 'build') return undefined
-    const workspace = this.sessionWorkspace(sessionId)
-    const relative = this.planPathForSession(sessionId)
-    try {
-      const content = await fs.readFile(path.resolve(workspace, relative), 'utf8')
-      if (!content.trim()) return undefined
-      return `The user approved the plan saved at ${relative}. Read it and implement it now.`
-    } catch {
-      return undefined
-    }
-  }
-
-  private async exitPlan(run: Run): Promise<string> {
-    const record = this.record(run.sessionId)
-    if ((record.session.permissionMode ?? 'ask') !== 'plan') {
-      throw new Error('NOT_IN_PLAN_MODE')
-    }
-    if (!(await this.planFileReady(run))) {
-      throw new Error('PLAN_NOT_READY')
-    }
-    const withAgent = await this.store.setAgent(run.sessionId, 'build')
-    if (!withAgent) throw new Error('SESSION_NOT_FOUND')
-    const session = await this.store.setSettings(run.sessionId, {
-      reasoningEffort: withAgent.reasoningEffort,
-      permissionMode: 'ask'
-    })
-    if (!session) throw new Error('SESSION_NOT_FOUND')
-    run.agent =
-      (await this.sessionService.agents(run.workspace)).find(
-        (candidate) => candidate.id === 'build'
-      ) ?? run.agent
-    run.exitedPlan = true
-    this.events.emit({ type: 'session.upsert', session })
-    return `Switched to build agent. The plan is saved at ${this.planFilePath(run)}. Continuing with implementation.`
-  }
-
   private async startBuildContinuation(previous: Run): Promise<void> {
     const sessionId = previous.sessionId
     if (this.sessionBusy(sessionId)) return
@@ -1870,7 +1522,7 @@ export class AgentRuntime {
     const config = effective.config
     const models = await this.modelsForWorkspace(workspace, config)
     resolveModelRef(models, record.session.model ?? models.defaultModel)
-    const continuationPrompt = await this.planContinuationPrompt(sessionId)
+    const continuationPrompt = await this.planService.continuationPrompt(sessionId)
     if (!continuationPrompt || this.sessionBusy(sessionId)) return
     const snapshot = config.snapshots
       ? await this.createSnapshotId(
@@ -2078,11 +1730,11 @@ export class AgentRuntime {
           break
         }
         case 'start-step':
-          this.ensureStepStarted(run, message)
+          this.stepTracker.ensureStepStarted(run, message)
           schedulePersist()
           break
         case 'finish-step':
-          await this.finishStep(run, message, part, state)
+          await this.stepTracker.finishStep(run, message, part, state)
           await this.store.persist(run.sessionId)
           break
         case 'finish':
@@ -2096,24 +1748,6 @@ export class AgentRuntime {
           break
       }
     }
-  }
-
-  private resetAssistantMessage(run: Run, message: ChatMessage, retry?: ChatRetryStatus): void {
-    // Keep the turn's starting snapshot so a retried stream still records its
-    // before/after bounds; everything from the failed attempt is discarded.
-    const head = message.parts[0]
-    message.parts = head?.type === 'snapshot' ? [head] : []
-    message.error = undefined
-    message.usage = undefined
-    message.contextUsage = undefined
-    message.durationMs = undefined
-    delete message.retry
-    delete message.retryFailure
-    if (retry) message.retry = retry
-    message.status = 'streaming'
-    message.updatedAt = nowIso()
-    run.steps = 0
-    this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
   }
 
   private sessionWorkspace(sessionId: string): string {
@@ -2144,135 +1778,6 @@ export class AgentRuntime {
     } catch {
       return undefined
     }
-  }
-
-  /**
-   * Starts the step bookkeeping for the current `run.steps`. A real stream
-   * sends `start-step` before the step's content, so the part precedes it.
-   * Returns whether this call created the part (the fallback path).
-   */
-  private ensureStepStarted(
-    run: Run,
-    message: ChatMessage
-  ): { part: StepStartPart; created: boolean } {
-    const open = messageOpenStep(message.parts)
-    if (open) return { part: open.part, created: false }
-    const checkpoint = messageCheckpoint(message.parts)
-    const part: StepStartPart = {
-      type: 'step-start',
-      step: run.steps,
-      ...(checkpoint ? { snapshot: checkpoint } : {}),
-      startedAt: nowIso()
-    }
-    appendPart(this.events, run, message, part)
-    return { part, created: true }
-  }
-
-  /** Creates a checkpoint and diffs it against `before`; both must succeed. */
-  private async captureStepSnapshot(
-    run: Run,
-    before: string | undefined
-  ): Promise<{ snapshot: string; files: string[] } | undefined> {
-    if (!before) return undefined
-    try {
-      const snapshot = await this.snapshots.create(run.workspace, run.sessionId, run.references)
-      const diff = await this.snapshots.diff(before, snapshot.id)
-      return { snapshot: snapshot.id, files: [...diff.added, ...diff.modified, ...diff.deleted] }
-    } catch {
-      /* snapshots are best effort */
-      return undefined
-    }
-  }
-
-  private async finishStep(
-    run: Run,
-    message: ChatMessage,
-    part: Extract<TextStreamPart<ToolSet>, { type: 'finish-step' }>,
-    state: TurnStreamState
-  ): Promise<void> {
-    const step = run.steps
-    const started = this.ensureStepStarted(run, message)
-    const usage = part.usage ? usageFrom(part.usage) : undefined
-    if (usage) {
-      state.lastStepUsage = usage
-      this.cacheMetrics.record(usage)
-    }
-    state.lastFinishReason = part.finishReason
-
-    // A lazily created start part lands after the step content, so a rewind to
-    // its boundary would keep content the snapshot no longer matches.
-    const captured = started.created
-      ? undefined
-      : await this.captureStepSnapshot(run, started.part.snapshot)
-    appendPart(this.events, run, message, {
-      type: 'step-finish',
-      step,
-      ...(captured ? { snapshot: captured.snapshot } : {}),
-      ...(part.finishReason ? { reason: part.finishReason } : {}),
-      ...(usage ? { usage } : {}),
-      ...(started.part.startedAt ? { startedAt: started.part.startedAt } : {}),
-      finishedAt: nowIso()
-    })
-    if (captured && captured.files.length > 0) {
-      appendPart(this.events, run, message, {
-        type: 'patch',
-        step,
-        snapshot: captured.snapshot,
-        files: captured.files
-      })
-    }
-    run.steps += 1
-  }
-
-  private async recordAfterSnapshot(
-    run: Run,
-    message: ChatMessage,
-    reason = 'stop'
-  ): Promise<void> {
-    const open = messageOpenStep(message.parts)
-    if (open) {
-      const captured = await this.captureStepSnapshot(run, open.part.snapshot)
-      appendPart(this.events, run, message, {
-        type: 'step-finish',
-        step: open.step,
-        ...(captured ? { snapshot: captured.snapshot } : {}),
-        reason,
-        ...(open.part.startedAt ? { startedAt: open.part.startedAt } : {}),
-        finishedAt: nowIso()
-      })
-      if (captured && captured.files.length > 0) {
-        appendPart(this.events, run, message, {
-          type: 'patch',
-          step: open.step,
-          snapshot: captured.snapshot,
-          files: captured.files
-        })
-      }
-      await this.store.persist(run.sessionId)
-      return
-    }
-
-    if (messageSteps(message.parts).length > 0) {
-      await this.store.persist(run.sessionId)
-      return
-    }
-
-    // No steps ran: record the turn as a single before/after snapshot pair.
-    const bounds = messageSnapshotBounds(message.parts)
-    const snapshotParts = message.parts.filter((part) => part.type === 'snapshot')
-    if (!bounds.before || snapshotParts.length > 1) {
-      await this.store.persist(run.sessionId)
-      return
-    }
-    const captured = await this.captureStepSnapshot(run, bounds.before)
-    if (captured) {
-      appendPart(this.events, run, message, {
-        type: 'snapshot',
-        snapshot: captured.snapshot,
-        ...(captured.files.length > 0 ? { files: captured.files } : {})
-      })
-    }
-    await this.store.persist(run.sessionId)
   }
 
   private async browserAction(
@@ -2457,8 +1962,8 @@ export class AgentRuntime {
       readTodos: (run) => this.readTodos(run),
       askQuestion: (run, input, toolCallId) =>
         this.permissionService.askQuestion(run, input, toolCallId),
-      exitPlan: (run) => this.exitPlan(run),
-      planReady: (run) => this.planFileReady(run),
+      exitPlan: (run) => this.planService.exitPlan(run),
+      planReady: (run) => this.planService.isReady(run),
       listMcpPrompts: (server, workspace) =>
         this.workspaceServices.listMcpPrompts(server, workspace),
       getMcpPrompt: (server, prompt, args, workspace) =>
@@ -2521,7 +2026,7 @@ export class AgentRuntime {
       historyMessages: (run, assistantMessageId) => this.historyMessages(run, assistantMessageId),
       attachmentPayloads: (sessionId, messages) => this.attachmentPayloads(sessionId, messages),
       isGitRepository: (workspace) => this.isGitRepository(workspace),
-      planFilePath: (run) => this.planFilePath(run),
+      planFilePath: (run) => this.planService.filePathFor(run),
       applyPluginToolUpdate: (run, messageId, update) =>
         this.applyPluginToolUpdate(run, messageId, update)
     }
@@ -2701,7 +2206,7 @@ export class AgentRuntime {
           state.lastStepUsage = undefined
           state.textParts.clear()
           state.reasoningParts.clear()
-          this.resetAssistantMessage(run, message, retry)
+          this.stepTracker.resetAssistantMessage(run, message, retry)
           await abortableSleep(delayMs, run.abort.signal)
         }
       }
@@ -2716,7 +2221,7 @@ export class AgentRuntime {
       message.costUsd = this.messageCost(runTarget, state.usage, run.models)
       if (retryCount > 0) this.retryMetrics.recordOutcome(true)
       settleTools(message, 'Tool call did not finish')
-      await this.recordAfterSnapshot(run, message, state.lastFinishReason ?? 'stop')
+      await this.stepTracker.recordAfterSnapshot(run, message, state.lastFinishReason ?? 'stop')
       await this.store.persist(run.sessionId)
       this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.compaction.updateContextUsage(run.sessionId)
@@ -2755,7 +2260,7 @@ export class AgentRuntime {
             state.lastFinishReason = undefined
             state.textParts.clear()
             state.reasoningParts.clear()
-            this.resetAssistantMessage(run, message)
+            this.stepTracker.resetAssistantMessage(run, message)
             await this.runAgent(run)
             return
           }
@@ -2784,7 +2289,11 @@ export class AgentRuntime {
       message.contextUsage = state.lastStepUsage
       message.costUsd = this.messageCost(runTarget, state.usage, run.models)
       settleTools(message, interrupted ? 'Interrupted by user' : 'Tool call failed')
-      await this.recordAfterSnapshot(run, message, interrupted ? 'interrupted' : 'error')
+      await this.stepTracker.recordAfterSnapshot(
+        run,
+        message,
+        interrupted ? 'interrupted' : 'error'
+      )
       await this.store.persist(run.sessionId)
       this.events.emit({ type: 'message.upsert', message: structuredClone(message) })
       await this.compaction.updateContextUsage(run.sessionId)

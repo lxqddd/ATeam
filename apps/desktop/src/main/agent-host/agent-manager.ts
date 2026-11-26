@@ -7,9 +7,13 @@ import type {
   RuntimeModelsConfig,
   RuntimeProviderAuth,
   RuntimeWebSearchConfig,
-  WorkerMessage
+  WorkerMessage,
+  WorkerRequest
 } from '@ateam/shared'
 import { normalizeError } from '@ateam/agent-core'
+
+type WorkerMethod = WorkerRequest['method']
+type WorkerParams<M extends WorkerMethod> = Extract<WorkerRequest, { method: M }>['params']
 
 type UtilityProcess = ReturnType<typeof utilityProcess.fork>
 
@@ -185,7 +189,10 @@ export class AgentManager {
     this.providerAuthDirty = false
   }
 
-  async request<T>(method: string, params?: unknown): Promise<T> {
+  async request<T = unknown, M extends WorkerMethod = WorkerMethod>(
+    method: M,
+    params?: WorkerParams<M>
+  ): Promise<T> {
     return (await this.call(method, params)) as T
   }
 
@@ -281,7 +288,7 @@ export class AgentManager {
     }
   }
 
-  private call(method: string, params?: unknown): Promise<unknown> {
+  private call<M extends WorkerMethod>(method: M, params?: WorkerParams<M>): Promise<unknown> {
     const worker = this.worker
     if (!worker) return Promise.reject(new Error('AGENT_NOT_READY'))
 
@@ -292,7 +299,7 @@ export class AgentManager {
         reject(new Error('AGENT_TIMEOUT'))
       }, CALL_TIMEOUT_MS)
       this.pending.set(id, { resolve, reject, timer })
-      worker.postMessage({ id, method, params })
+      worker.postMessage({ id, method, params } as WorkerRequest)
     })
   }
 

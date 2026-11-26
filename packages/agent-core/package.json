@@ -34,9 +34,9 @@
       "default": "./src/integrations/index.ts"
     },
     "./tools": {
-      "types": "./src/tools.ts",
-      "import": "./src/tools.ts",
-      "default": "./src/tools.ts"
+      "types": "./src/tools/index.ts",
+      "import": "./src/tools/index.ts",
+      "default": "./src/tools/index.ts"
     },
     "./attachments": {
       "types": "./src/attachments.ts",
@@ -57,11 +57,6 @@
       "types": "./src/providers.ts",
       "import": "./src/providers.ts",
       "default": "./src/providers.ts"
-    },
-    "./storage": {
-      "types": "./src/atomic-json.ts",
-      "import": "./src/atomic-json.ts",
-      "default": "./src/atomic-json.ts"
     },
     "./testing": {
       "types": "./src/test/index.ts",

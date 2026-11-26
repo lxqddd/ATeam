@@ -7,9 +7,9 @@ import type {
   QuestionRequest,
   RunOutcome
 } from '@ateam/shared'
-import { AgentRuntime } from '@ateam/agent-core'
 import { SessionsStore } from '@ateam/agent-core'
 import { restoreLegacySessionBackups } from '@ateam/agent-core'
+import { createHeadlessRuntime } from '../runtime'
 import { buildCliModels, CLI_HELP, parseCliArgs, type CliOptions } from './args'
 
 async function readStdin(): Promise<string> {
@@ -135,9 +135,9 @@ async function main(): Promise<number> {
     runtime.replyQuestion(request.id, { selected: [], custom: null, cancelled: true })
   }
 
-  const runtime = new AgentRuntime({
-    userDataPath: options.dataDir,
-    workspacePath: options.workspace,
+  const runtime = createHeadlessRuntime({
+    dataDir: options.dataDir,
+    workspace: options.workspace,
     models,
     send: (envelope: AgentEventEnvelope) => {
       if (options.json) {

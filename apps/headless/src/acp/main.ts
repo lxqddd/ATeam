@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { AgentRuntime } from '@ateam/agent-core'
 import { removeAttachment, saveAttachment } from '@ateam/agent-core/attachments'
+import { createHeadlessRuntime } from '../runtime'
 import { buildCliModels, CLI_HELP, parseCliArgs } from '../cli/args'
 import { EventBus } from '../server/event-bus'
 import { AcpServer, type AcpRuntime } from './server'
@@ -45,9 +45,9 @@ async function main(): Promise<number> {
     let runtime = runtimes.get(cacheKey)
     if (!runtime) {
       runtime = (async () => {
-        const instance = new AgentRuntime({
-          userDataPath: options.dataDir,
-          workspacePath: cwd,
+        const instance = createHeadlessRuntime({
+          dataDir: options.dataDir,
+          workspace: cwd,
           models,
           send: bus.publish
         })

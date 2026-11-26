@@ -8,7 +8,7 @@ import type {
   WebSearchProvider,
   WebSearchProviderPublic
 } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core/storage'
+import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core'
 
 const PROVIDERS: readonly WebSearchProvider[] = WEB_SEARCH_PROVIDERS
 const STORAGE_VERSION = 2

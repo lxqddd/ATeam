@@ -477,8 +477,7 @@
 2. **R-P1-3 会话级回滚 / unrevert / diff**（已完成，2026-11-25）——步骤回滚、revert/unrevert 状态与只读会话汇总均已落地。
 3. **R-P1-10 VCS / Git 模块**（已完成，2026-11-26）——VCS 服务、`vcs` 工具、只读 Git IPC 与审查面板“工作区 Git”标签已落地。
 4. **R-P1-8 消息 part 模型**（已完成，2026-11-26）——step / patch / snapshot part、旧消息迁移与 parts 驱动的审查 / 回滚已落地，第二轮 P1 全部完成。
-5. **第二轮 P1 剩余项**（按使用频率取舍）。
-6. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
+5. **第二轮 P2 接口层**（按产品方向取舍）——share/export/stats、API/SDK、TUI/IDE。
 
 ## 第一轮 P0：可靠性、安全与编辑质量（已完成）
 
@@ -765,7 +764,7 @@
 ## 参考
 
 - OpenCode 源码（第二轮基准）：`packages/opencode/src/config/config.ts`、`plugin/index.ts`、`session/retry.ts`、`session/system.ts`、`session/reminders.ts`、`session/revert.ts`、`background/job.ts`、`tool/shell.ts`、`tool/task.ts`、`tool/truncate.ts`、`tool/lsp.ts`、`lsp/server.ts`、`mcp/index.ts`、`session/message-v2.ts`、`project/vcs.ts`。
-- ATeam：[runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[policy.ts](../packages/agent-core/src/runtime/policy.ts)、[message-history.ts](../packages/agent-core/src/message-history.ts)、[config-store.ts](../packages/agent-core/src/config/config-store.ts)、[tools.ts](../packages/agent-core/src/tools.ts)、[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
+- ATeam：[runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[policy.ts](../packages/agent-core/src/runtime/policy.ts)、[message-history.ts](../packages/agent-core/src/message-history.ts)、[config-store.ts](../packages/agent-core/src/config/config-store.ts)、[tools/index.ts](../packages/agent-core/src/tools/index.ts)、[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[model-types.ts](../packages/shared/src/model-types.ts)、[Composer.tsx](../apps/desktop/src/renderer/src/components/chat/Composer.tsx)
 - ATeam 集成：[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)、[formatters.ts](../packages/agent-core/src/integrations/formatters.ts)、[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)、[mcp-auth-store.ts](../apps/desktop/src/main/credentials/mcp-auth-store.ts)、[provider-auth-store.ts](../apps/desktop/src/main/providers/provider-auth-store.ts)、[websearch.ts](../apps/desktop/src/main/settings/websearch-config-store.ts)、[permissions.ts](../packages/agent-core/src/config/permissions.ts)、[tool-output-store.ts](../packages/agent-core/src/sessions/tool-output-store.ts)、[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)、[worktrees.ts](../packages/agent-core/src/worktrees.ts)
 - ATeam 接口：[server/api.ts](../apps/headless/src/server/api.ts)、[sdk/client.ts](../packages/client-sdk/src/client.ts)、[cli/main.ts](../apps/headless/src/cli/main.ts)、[acp/server.ts](../apps/headless/src/acp/server.ts)
 - OpenCode 文档：Tools、Agents、Permissions、Instructions、Compaction、Snapshots、MCP Servers、Skills、Commands、Attachments、Formatters、LSP、Plugins、Server、TUI。

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { AgentRuntime } from '@ateam/agent-core'
+import { createHeadlessRuntime } from '../runtime'
 import { buildCliModels } from '../cli/args'
 import { createApiServer } from './api'
 import { parseServerArgs, SERVER_HELP } from './args'
@@ -27,9 +27,9 @@ async function main(): Promise<number> {
   }
 
   const bus = new EventBus()
-  const runtime = new AgentRuntime({
-    userDataPath: options.cli.dataDir,
-    workspacePath: options.cli.workspace,
+  const runtime = createHeadlessRuntime({
+    dataDir: options.cli.dataDir,
+    workspace: options.cli.workspace,
     models,
     send: bus.publish
   })

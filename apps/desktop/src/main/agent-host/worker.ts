@@ -263,8 +263,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       rejectBrowserRequests('AGENT_STOPPED')
       await runtime?.shutdown()
       return null
-    default:
-      throw new Error(`UNKNOWN_METHOD: ${(request as { method?: string }).method ?? 'unknown'}`)
+    default: {
+      // Exhaustiveness guard: adding a WorkerRequest method without a handler
+      // below fails typecheck instead of failing at runtime.
+      const unhandled: never = request
+      throw new Error(`UNKNOWN_METHOD: ${(unhandled as { method?: string }).method ?? 'unknown'}`)
+    }
   }
 }
 

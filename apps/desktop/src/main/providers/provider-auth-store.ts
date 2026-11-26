@@ -8,7 +8,7 @@ import type {
   ProviderPublic,
   RuntimeProviderAuth
 } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core/storage'
+import { readJsonFile, writeJsonAtomic } from '@ateam/agent-core'
 
 interface ApiEntry {
   type: 'api'
