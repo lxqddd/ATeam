@@ -14,7 +14,6 @@
     "cli": "pnpm --filter @ateam/headless cli",
     "serve": "pnpm --filter @ateam/headless serve",
     "acp": "pnpm --filter @ateam/headless acp",
-    "tui": "pnpm --filter @ateam/headless tui",
     "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r --if-present run typecheck",
     "test": "pnpm -r --if-present run test",
