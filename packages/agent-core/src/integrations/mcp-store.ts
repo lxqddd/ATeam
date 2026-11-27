@@ -19,7 +19,7 @@ const MAX_TIMEOUT_MS = 600_000
 const MIN_TIMEOUT_MS = 100
 const MAX_CWD_LENGTH = 2_000
 
-function mcpFile(userDataPath: string): string {
+export function mcpFilePath(userDataPath: string): string {
   return path.join(userDataPath, 'agent', 'mcp.json')
 }
 
@@ -239,8 +239,8 @@ function normalizeStored(value: unknown): McpServerConfig | null {
   }
 }
 
-export async function readMcpServers(userDataPath: string): Promise<McpServerConfig[]> {
-  const parsed = await readJsonFile<unknown>(mcpFile(userDataPath))
+/** Normalizes the `servers` array of an mcp.json document, dropping invalid entries. */
+export function serversFromDocument(parsed: unknown): McpServerConfig[] {
   const rawServers =
     parsed && typeof parsed === 'object' && Array.isArray((parsed as { servers?: unknown }).servers)
       ? (parsed as { servers: unknown[] }).servers
@@ -258,6 +258,10 @@ export async function readMcpServers(userDataPath: string): Promise<McpServerCon
   return servers
 }
 
+export async function readMcpServers(userDataPath: string): Promise<McpServerConfig[]> {
+  return serversFromDocument(await readJsonFile<unknown>(mcpFilePath(userDataPath)))
+}
+
 export class McpStore {
   private servers: McpServerConfig[] = []
 
@@ -265,6 +269,32 @@ export class McpStore {
 
   async init(): Promise<void> {
     this.servers = await readMcpServers(this.userDataPath)
+  }
+
+  /**
+   * Re-reads the file after an external edit. A missing file clears the
+   * servers; an unreadable or malformed file keeps the current snapshot so a
+   * half-written editor save cannot drop every server at once.
+   */
+  async reload(): Promise<boolean> {
+    let content: string
+    try {
+      content = await fs.readFile(mcpFilePath(this.userDataPath), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.servers = []
+        return true
+      }
+      return false
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      return false
+    }
+    this.servers = serversFromDocument(parsed)
+    return true
   }
 
   list(): McpServerConfig[] {
@@ -333,7 +363,8 @@ export class McpStore {
   }
 
   private async persist(): Promise<void> {
-    await fs.mkdir(path.dirname(mcpFile(this.userDataPath)), { recursive: true })
-    await writeJsonAtomic(mcpFile(this.userDataPath), { servers: this.servers })
+    const file = mcpFilePath(this.userDataPath)
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await writeJsonAtomic(file, { servers: this.servers })
   }
 }

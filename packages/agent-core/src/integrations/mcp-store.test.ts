@@ -239,4 +239,35 @@ describe('McpStore', () => {
     const servers = await readMcpServers(directory)
     expect(servers.map((server) => server.name)).toEqual(['ok'])
   })
+
+  it('re-reads external edits on reload', async () => {
+    const server = await store.add({ name: 'filesystem', type: 'local', command: 'npx' })
+    const file = path.join(directory, 'agent', 'mcp.json')
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        servers: [{ ...server, command: 'node', updatedAt: '2026-01-02T00:00:00.000Z' }]
+      })
+    )
+
+    await expect(store.reload()).resolves.toBe(true)
+    const [reloaded] = store.list()
+    expect(reloaded).toMatchObject({ id: server.id, command: 'node' })
+  })
+
+  it('clears servers on reload when the file is removed', async () => {
+    await store.add({ name: 'docs', type: 'local', command: 'node' })
+    await fs.rm(path.join(directory, 'agent', 'mcp.json'))
+
+    await expect(store.reload()).resolves.toBe(true)
+    expect(store.list()).toEqual([])
+  })
+
+  it('keeps the current snapshot when the file is malformed', async () => {
+    const server = await store.add({ name: 'docs', type: 'local', command: 'node' })
+    await fs.writeFile(path.join(directory, 'agent', 'mcp.json'), '{"servers":[')
+
+    await expect(store.reload()).resolves.toBe(false)
+    expect(store.list().map((entry) => entry.id)).toEqual([server.id])
+  })
 })

@@ -258,6 +258,11 @@ export class AgentRuntime {
   }
 
   async reloadConfig(workspace?: string): Promise<void> {
+    if (!workspace) {
+      // Global `permissions.json` / `mcp.json` may have been edited externally.
+      await this.permissionRules.reload()
+      await this.workspaceServices.reloadUserMcpServers()
+    }
     const targets = new Set<string>()
     if (workspace) targets.add(workspace)
     else {

@@ -422,6 +422,15 @@ export class WorkspaceServices {
     return cached
   }
 
+  /** Re-reads `mcp.json` after an external edit; non-default managers are recreated. */
+  async reloadUserMcpServers(): Promise<void> {
+    for (const [workspace, manager] of this.mcpManagers) {
+      if (path.resolve(workspace) !== path.resolve(this.host.defaultWorkspacePath)) continue
+      await manager.reloadUserServers?.().catch(() => undefined)
+    }
+    await this.resetWorkspaceMcpManagers()
+  }
+
   private async resetWorkspaceMcpManagers(): Promise<void> {
     for (const [workspace, manager] of this.mcpManagers) {
       if (path.resolve(workspace) === path.resolve(this.host.defaultWorkspacePath)) continue

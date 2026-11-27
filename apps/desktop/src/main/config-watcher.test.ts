@@ -25,17 +25,17 @@ async function waitFor(check: () => boolean, timeoutMs = 8_000): Promise<void> {
 async function createWatcher(): Promise<ConfigWatcher> {
   watcher = new ConfigWatcher({
     userDataPath: userData,
-    debounceMs: 40,
+    debounceMs: 150,
     onChange: (change) => changes.push(change)
   })
   // `fs.watch` needs a moment before the platform starts delivering events.
-  await delay(100)
+  await delay(200)
   return watcher
 }
 
 async function track(instance: ConfigWatcher, target: string): Promise<void> {
   await instance.trackWorkspace(target)
-  await delay(100)
+  await delay(200)
 }
 
 beforeEach(async () => {
@@ -81,7 +81,7 @@ describe('ConfigWatcher', () => {
     await fs.writeFile(path.join(workspace, 'ateam.json'), '{}')
 
     await waitFor(() => changes.length > 0)
-    await delay(200)
+    await delay(500)
     expect(
       changes.every((change) => change.files.includes(path.join(workspace, 'ateam.json')))
     ).toBe(true)
@@ -94,7 +94,7 @@ describe('ConfigWatcher', () => {
     await fs.writeFile(file, '{"snapshots":false}')
     instance.noteSelfWrite(file)
 
-    await delay(400)
+    await delay(700)
     expect(changes).toEqual([])
   })
 
@@ -104,7 +104,7 @@ describe('ConfigWatcher', () => {
 
     await fs.writeFile(file, '{"snapshots":false}')
     instance.noteSelfWrite(file)
-    await delay(300)
+    await delay(500)
     changes = []
 
     await fs.writeFile(file, '{"snapshots":true}')
@@ -122,7 +122,7 @@ describe('ConfigWatcher', () => {
     await fs.writeFile(path.join(workspace, 'ateam.json'), '{}')
 
     await waitFor(() => changes.length > 0)
-    await delay(200)
+    await delay(500)
     expect(changes).toHaveLength(1)
   })
 
@@ -132,7 +132,123 @@ describe('ConfigWatcher', () => {
 
     await fs.writeFile(path.join(userData, 'agent', 'config.json'), '{}')
 
-    await delay(300)
+    await delay(500)
     expect(changes).toEqual([])
+  })
+
+  it('reports global permissions and mcp files as global changes', async () => {
+    await createWatcher()
+    const permissions = path.join(userData, 'agent', 'permissions.json')
+    const mcp = path.join(userData, 'agent', 'mcp.json')
+
+    await fs.writeFile(permissions, '{"version":1,"rules":[]}')
+    await waitFor(() => changes.length > 0)
+    expect(changes[0]).toMatchObject({ global: true, workspaces: [], files: [permissions] })
+
+    changes = []
+    await fs.writeFile(mcp, '{"servers":[]}')
+    await waitFor(() => changes.length > 0)
+    expect(changes[0]).toMatchObject({ global: true, workspaces: [], files: [mcp] })
+  })
+
+  it('ignores agent files outside the watched set', async () => {
+    await createWatcher()
+
+    await fs.writeFile(path.join(userData, 'agent', 'policy.json'), '{}')
+
+    await delay(500)
+    expect(changes).toEqual([])
+  })
+
+  it('debounces repeated writes of a global agent file', async () => {
+    await createWatcher()
+    const file = path.join(userData, 'agent', 'permissions.json')
+
+    await fs.writeFile(file, '{"version":1,"rules":[]}')
+    await fs.writeFile(file, '{"version":1,"rules":[{"id":"a"}]}')
+    await fs.writeFile(file, '{"version":1,"rules":[]}')
+
+    await waitFor(() => changes.length > 0)
+    await delay(500)
+    expect(changes).toHaveLength(1)
+    expect(changes[0].files).toEqual([file])
+  })
+
+  it('suppresses self writes of the global permissions and mcp files', async () => {
+    const instance = await createWatcher()
+
+    for (const name of ['permissions.json', 'mcp.json']) {
+      const file = path.join(userData, 'agent', name)
+      await fs.writeFile(file, '{}')
+      instance.noteSelfWrite(file)
+      await delay(500)
+    }
+
+    expect(changes).toEqual([])
+  })
+
+  it('stops reporting global agent files after dispose', async () => {
+    const instance = await createWatcher()
+    instance.dispose()
+
+    await fs.writeFile(path.join(userData, 'agent', 'permissions.json'), '{"version":1,"rules":[]}')
+    await fs.writeFile(path.join(userData, 'agent', 'mcp.json'), '{"servers":[]}')
+
+    await delay(500)
+    expect(changes).toEqual([])
+  })
+
+  it('leases project roots per session and releases them when the session moves', async () => {
+    const instance = await createWatcher()
+    const other = path.join(userData, 'other')
+    await fs.mkdir(path.join(other, '.git'), { recursive: true })
+
+    await instance.setSessionWorkspace('s1', workspace)
+    await delay(200)
+    await fs.writeFile(path.join(workspace, 'ateam.json'), '{}')
+    await waitFor(() => changes.length > 0)
+    expect(changes[0]).toMatchObject({ global: false, workspaces: [workspace] })
+
+    changes = []
+    await instance.setSessionWorkspace('s1', other)
+    await delay(200)
+    await fs.writeFile(path.join(workspace, 'ateam.json'), '{"snapshots":true}')
+    await delay(600)
+    expect(changes).toEqual([])
+
+    await fs.writeFile(path.join(other, 'ateam.json'), '{}')
+    await waitFor(() => changes.length > 0)
+    expect(changes[0]).toMatchObject({ global: false, workspaces: [other] })
+  })
+
+  it('keeps a shared root until the last session releases it', async () => {
+    const instance = await createWatcher()
+    await instance.setSessionWorkspace('s1', workspace)
+    await instance.setSessionWorkspace('s2', workspace)
+    await delay(200)
+
+    await instance.setSessionWorkspace('s1', null)
+    await delay(200)
+    await fs.writeFile(path.join(workspace, 'ateam.json'), '{}')
+    await waitFor(() => changes.length > 0)
+
+    changes = []
+    await instance.setSessionWorkspace('s2', null)
+    await delay(200)
+    await fs.writeFile(path.join(workspace, 'ateam.json'), '{"snapshots":true}')
+    await delay(600)
+    expect(changes).toEqual([])
+  })
+
+  it('keeps roots claimed by trackWorkspace after sessions release', async () => {
+    const instance = await createWatcher()
+    await track(instance, workspace)
+    await instance.setSessionWorkspace('s1', workspace)
+    await instance.setSessionWorkspace('s1', null)
+    await delay(200)
+
+    await fs.writeFile(path.join(workspace, 'ateam.json'), '{}')
+
+    await waitFor(() => changes.length > 0)
   })
 })

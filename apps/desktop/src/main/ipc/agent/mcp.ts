@@ -1,11 +1,11 @@
-import { shell } from 'electron'
+import { app, shell } from 'electron'
 import {
   AGENT_CHANNELS,
   type McpAuthStatus,
   type McpServerConfig,
   type McpServerStatus
 } from '@ateam/shared'
-import { authorizeMcpServer } from '@ateam/agent-core/integrations'
+import { authorizeMcpServer, mcpFilePath } from '@ateam/agent-core/integrations'
 import type { AgentIpcContext } from './context'
 import {
   authPayloadSchema,
@@ -37,9 +37,11 @@ export function registerMcpHandlers(ctx: AgentIpcContext): void {
     })
   })
 
-  handle(AGENT_CHANNELS.mcpAdd, (payload): Promise<McpServerConfig> => {
+  handle(AGENT_CHANNELS.mcpAdd, async (payload): Promise<McpServerConfig> => {
     const input = mcpServerInputSchema.parse(payload)
-    return manager.request('mcp.add', input)
+    const server = await manager.request<McpServerConfig>('mcp.add', input)
+    ctx.configWatcher?.noteSelfWrite(mcpFilePath(app.getPath('userData')))
+    return server
   })
 
   handle(AGENT_CHANNELS.mcpUpdate, async (payload): Promise<McpServerConfig> => {
@@ -47,6 +49,7 @@ export function registerMcpHandlers(ctx: AgentIpcContext): void {
     const { servers } = await manager.request<{ servers: McpServerConfig[] }>('mcp.list')
     const previous = servers.find((server) => server.id === id)
     const updated = await manager.request<McpServerConfig>('mcp.update', { id, input })
+    ctx.configWatcher?.noteSelfWrite(mcpFilePath(app.getPath('userData')))
     const credentialsChanged =
       !previous ||
       previous.url !== updated.url ||
@@ -74,6 +77,7 @@ export function registerMcpHandlers(ctx: AgentIpcContext): void {
     const { id } = idPayloadSchema.parse(payload)
     const removed = await manager.request<boolean>('mcp.remove', { id })
     if (removed) {
+      ctx.configWatcher?.noteSelfWrite(mcpFilePath(app.getPath('userData')))
       await mcpAuthStore.remove(id)
       await manager.setMcpAuth(mcpAuthStore.list())
     }
