@@ -32,6 +32,8 @@ interface ModelFormValues {
   attachment?: boolean
   costInput?: number | null
   costOutput?: number | null
+  costCacheRead?: number | null
+  costCacheWrite?: number | null
   applyPatch?: boolean
   compaction?: boolean
   variants?: Array<{
@@ -125,6 +127,8 @@ function ModelForm({
           attachment: values.attachment ?? false,
           costInput: values.costInput ?? null,
           costOutput: values.costOutput ?? null,
+          costCacheRead: values.costCacheRead ?? null,
+          costCacheWrite: values.costCacheWrite ?? null,
           applyPatch: values.applyPatch ?? false,
           compaction: values.compaction ?? false,
           variants: variantInputs(values)
@@ -141,6 +145,8 @@ function ModelForm({
         if (values.attachment) input.attachment = true
         if (values.costInput != null) input.costInput = values.costInput
         if (values.costOutput != null) input.costOutput = values.costOutput
+        if (values.costCacheRead != null) input.costCacheRead = values.costCacheRead
+        if (values.costCacheWrite != null) input.costCacheWrite = values.costCacheWrite
         if (values.applyPatch) input.applyPatch = true
         if (values.compaction) input.compaction = true
         const variants = variantInputs(values)
@@ -167,7 +173,9 @@ function ModelForm({
       reasoning: entry.reasoning,
       attachment: entry.attachment,
       costInput: entry.costInput ?? undefined,
-      costOutput: entry.costOutput ?? undefined
+      costOutput: entry.costOutput ?? undefined,
+      costCacheRead: entry.costCacheRead ?? undefined,
+      costCacheWrite: entry.costCacheWrite ?? undefined
     })
   }
 
@@ -213,6 +221,8 @@ function ModelForm({
           attachment: model?.attachment ?? false,
           costInput: model?.costInput,
           costOutput: model?.costOutput,
+          costCacheRead: model?.costCacheRead,
+          costCacheWrite: model?.costCacheWrite,
           applyPatch: model?.applyPatch ?? false,
           compaction: model?.compaction ?? false,
           variants: (model?.variants ?? []).map((variant) => ({
@@ -342,6 +352,15 @@ function ModelForm({
           <Form.Item name="costOutput" label={t('settings.costOutput')}>
             <InputNumber min={0} max={1_000} step={0.01} style={{ width: '100%' }} />
           </Form.Item>
+          <Form.Item name="costCacheRead" label={t('settings.costCacheRead')}>
+            <InputNumber min={0} max={1_000} step={0.001} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="costCacheWrite" label={t('settings.costCacheWrite')}>
+            <InputNumber min={0} max={1_000} step={0.001} style={{ width: '100%' }} />
+          </Form.Item>
+          <p className="m-0 text-caption text-subtle sm:col-span-2">
+            {t('settings.costCacheHint')}
+          </p>
         </div>
 
         <Form.List name="variants">

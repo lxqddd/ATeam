@@ -95,6 +95,10 @@ export interface ModelPublic {
   costInput?: number
   /** USD per 1M output tokens. */
   costOutput?: number
+  /** USD per 1M tokens read from the prompt cache. Falls back to costInput. */
+  costCacheRead?: number
+  /** USD per 1M tokens written to the prompt cache. Falls back to costInput. */
+  costCacheWrite?: number
   variants?: ModelVariant[]
   /** Model handles the multi-file patch tool; edit/write are hidden. */
   applyPatch?: boolean
@@ -117,6 +121,8 @@ export interface ModelCatalogEntry {
   attachment: boolean
   costInput: number | null
   costOutput: number | null
+  costCacheRead: number | null
+  costCacheWrite: number | null
 }
 
 /** A model exposed by the provider's own model-listing endpoint. */
@@ -173,6 +179,8 @@ export interface ModelCreateInput {
   attachment?: boolean
   costInput?: number
   costOutput?: number
+  costCacheRead?: number
+  costCacheWrite?: number
   variants?: ModelVariantInput[]
   applyPatch?: boolean
   compaction?: boolean
@@ -187,6 +195,8 @@ export interface ModelUpdateInput {
   attachment?: boolean
   costInput?: number | null
   costOutput?: number | null
+  costCacheRead?: number | null
+  costCacheWrite?: number | null
   variants?: ModelVariantInput[] | null
   applyPatch?: boolean
   compaction?: boolean

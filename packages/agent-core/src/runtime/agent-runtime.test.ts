@@ -357,11 +357,11 @@ function cachedUser(text: string): {
 let runtime: AgentRuntime
 let sessionId: string
 
-function createRuntime(): AgentRuntime {
+function createRuntime(models: RuntimeModelsConfig = MODELS): AgentRuntime {
   return new AgentRuntime({
     userDataPath: directory,
     workspacePath: path.join(directory, 'workspace'),
-    models: MODELS,
+    models,
     send: sink.send,
     browserRequest,
     dependencies: {
@@ -1934,9 +1934,52 @@ describe('AgentRuntime', () => {
       cacheReadTokens: 60,
       cacheWriteTokens: 20,
       hitRate: 0.6,
-      savedTokens: 60
+      savedTokens: 60,
+      savedUsd: 0
     })
     expect(runtime.metricsSnapshot().cache.savedTokens).toBe(60)
+  })
+
+  it('prices cached input segments and reports cache savings', async () => {
+    await runtime.shutdown()
+    runtime = createRuntime({
+      ...MODELS,
+      models: [
+        {
+          ...MODELS.models[0],
+          costInput: 3,
+          costOutput: 15,
+          costCacheRead: 0.3,
+          costCacheWrite: 3.75
+        }
+      ]
+    })
+    await runtime.init()
+    sessionId = (await runtime.createSession()).id
+    scripts.push(usageDetailsScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const [assistant] = assistantMessages()
+    expect(assistant.costUsd).toBe(0.000303)
+    expect(runtime.cacheMetricsSnapshot()).toMatchObject({ savedUsd: 0.000162 })
+  })
+
+  it('falls back to input pricing when cache prices are missing', async () => {
+    await runtime.shutdown()
+    runtime = createRuntime({
+      ...MODELS,
+      models: [{ ...MODELS.models[0], costInput: 3, costOutput: 15 }]
+    })
+    await runtime.init()
+    sessionId = (await runtime.createSession()).id
+    scripts.push(usageDetailsScript())
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const [assistant] = assistantMessages()
+    expect(assistant.costUsd).toBe(0.00045)
+    expect(runtime.cacheMetricsSnapshot()).toMatchObject({ savedUsd: 0 })
   })
 
   it('serializes non-string tool output', async () => {

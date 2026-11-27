@@ -49,7 +49,7 @@ export function parseModelCatalog(payload: unknown): ModelCatalogEntry[] {
         reasoning?: unknown
         attachment?: unknown
         limit?: { context?: unknown; output?: unknown }
-        cost?: { input?: unknown; output?: unknown }
+        cost?: { input?: unknown; output?: unknown; cache_read?: unknown; cache_write?: unknown }
       }
       const modelId = typeof model.id === 'string' && model.id ? model.id : modelKey
       entries.push({
@@ -64,7 +64,9 @@ export function parseModelCatalog(payload: unknown): ModelCatalogEntry[] {
         reasoning: model.reasoning === true,
         attachment: model.attachment === true,
         costInput: costNumber(model.cost?.input),
-        costOutput: costNumber(model.cost?.output)
+        costOutput: costNumber(model.cost?.output),
+        costCacheRead: costNumber(model.cost?.cache_read),
+        costCacheWrite: costNumber(model.cost?.cache_write)
       })
     }
   }

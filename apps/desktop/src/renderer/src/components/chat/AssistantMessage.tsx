@@ -40,6 +40,17 @@ function AssistantMessage({
   const hasParts = message.parts.some((part) => !isMetadataPart(part))
   const changedFiles = messageChangedFiles(message.parts)
   const streaming = message.status === 'streaming'
+  const cacheRead = message.usage?.cacheReadTokens ?? 0
+  const cacheWrite = message.usage?.cacheWriteTokens ?? 0
+  const costTitle =
+    cacheRead > 0 || cacheWrite > 0
+      ? t('chat.costBreakdown', {
+          input: Math.max(0, (message.usage?.inputTokens ?? 0) - cacheRead - cacheWrite),
+          read: cacheRead,
+          write: cacheWrite,
+          output: message.usage?.outputTokens ?? 0
+        })
+      : t('chat.cost')
   const planSwitched = message.parts.some(
     (part) =>
       part.type === 'tool' &&
@@ -262,7 +273,7 @@ function AssistantMessage({
             <span>{t('chat.tokens', { count: message.usage.totalTokens })}</span>
           )}
           {message.costUsd !== undefined && (
-            <span title={t('chat.cost')}>${message.costUsd.toFixed(6)}</span>
+            <span title={costTitle}>${message.costUsd.toFixed(6)}</span>
           )}
           {text && (
             <button

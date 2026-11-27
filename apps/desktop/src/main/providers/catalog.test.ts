@@ -14,7 +14,7 @@ const PAYLOAD = {
         attachment: true,
         reasoning: true,
         limit: { context: 200_000, output: 64_000 },
-        cost: { input: 3, output: 15 }
+        cost: { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 }
       },
       'no-limits': { id: 'no-limits', name: 'No limits' }
     }
@@ -47,7 +47,9 @@ describe('parseModelCatalog', () => {
       reasoning: true,
       attachment: true,
       costInput: 3,
-      costOutput: 15
+      costOutput: 15,
+      costCacheRead: 0.3,
+      costCacheWrite: 3.75
     })
     expect(entries[1]).toMatchObject({
       modelId: 'no-limits',
@@ -56,7 +58,9 @@ describe('parseModelCatalog', () => {
       reasoning: false,
       attachment: false,
       costInput: null,
-      costOutput: null
+      costOutput: null,
+      costCacheRead: null,
+      costCacheWrite: null
     })
     expect(entries[2]).toMatchObject({
       providerId: 'custom',

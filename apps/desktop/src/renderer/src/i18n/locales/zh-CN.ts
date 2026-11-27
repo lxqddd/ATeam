@@ -60,6 +60,12 @@ const zhCN = {
     cacheMetricsEmpty: '当前 Agent 进程还没有缓存使用记录。',
     cacheMetricsSummary:
       '{{requests}} 次请求 · 命中率 {{rate}}% · 读取 {{read}} / 写入 {{write}} tokens',
+    cacheMetricsSavings: '估算节省 ${{amount}}（仅含 cache read 折扣）',
+    costAccounting: '成本与缓存统计口径',
+    costAccountingBody:
+      '仅统计聊天模型请求（按模型步骤汇总）；标题生成、上下文压缩、模型连接测试等非聊天请求不计入。缓存指标可能包含失败与重试尝试已上报的 usage，消息成本只按最终一次尝试计算。命中率 = cache read / 总输入；估算节省按 cache read 与输入单价的差额计算。',
+    costAccountingFallback:
+      '未配置 cache read / write 价格时，缓存 token 按输入单价计费、节省为 0；修改价格只影响新消息。',
     environmentSettings: '环境信息',
     environmentSettingsDescription: '可选的环境信息，会写入 system prompt。',
     toolOutputSettings: '工具输出截断',
@@ -260,6 +266,9 @@ const zhCN = {
     modelAttachment: '支持附件',
     costInput: '输入成本（USD / 百万 tokens）',
     costOutput: '输出成本（USD / 百万 tokens）',
+    costCacheRead: 'cache read 成本（USD / 百万 tokens）',
+    costCacheWrite: 'cache write 成本（USD / 百万 tokens）',
+    costCacheHint: '留空时缓存 token 按输入单价计费。',
     catalog: '从模型目录填充',
     catalogHint: '从 models.dev 加载上下文、能力与价格信息。',
     catalogPlaceholder: '搜索模型…',
@@ -654,6 +663,8 @@ const zhCN = {
     questionCancel: '取消',
     questionCustom: '自定义回答',
     cost: '预估成本',
+    costBreakdown:
+      '普通输入 {{input}} · cache read {{read}} · cache write {{write}} · 输出 {{output}} tokens',
     forkSession: '分叉会话',
     forkFromHere: '从此处分叉',
     searchSessions: '搜索会话',

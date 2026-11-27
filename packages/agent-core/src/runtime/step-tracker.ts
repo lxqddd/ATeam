@@ -1,5 +1,12 @@
 import type { TextStreamPart, ToolSet } from 'ai'
-import type { ChatMessage, ChatRetryStatus, StepStartPart, TokenUsage } from '@ateam/shared'
+import type {
+  ChatMessage,
+  ChatRetryStatus,
+  ModelRef,
+  RuntimeModelsConfig,
+  StepStartPart,
+  TokenUsage
+} from '@ateam/shared'
 import {
   messageCheckpoint,
   messageOpenStep,
@@ -25,7 +32,7 @@ export interface StepTrackerHost {
   readonly store: SessionsStore
   readonly snapshots: SnapshotStore
   readonly events: EventSink
-  recordUsage(usage: TokenUsage): void
+  recordUsage(usage: TokenUsage, model: ModelRef | null, models: RuntimeModelsConfig): void
 }
 
 /**
@@ -86,7 +93,7 @@ export class StepTracker {
     const usage = part.usage ? usageFrom(part.usage) : undefined
     if (usage) {
       state.lastStepUsage = usage
-      this.host.recordUsage(usage)
+      this.host.recordUsage(usage, message.model ?? null, run.models)
     }
     state.lastFinishReason = part.finishReason
 

@@ -46,6 +46,31 @@ describe('model IPC schemas', () => {
     ).toMatchObject({ variants: null, applyPatch: false })
   })
 
+  it('keeps cache pricing and rejects invalid values', () => {
+    expect(
+      modelCreateSchema.parse({
+        providerId: 'p1',
+        modelId: 'model-1',
+        costCacheRead: 0.3,
+        costCacheWrite: 3.75
+      })
+    ).toMatchObject({ costCacheRead: 0.3, costCacheWrite: 3.75 })
+    expect(
+      modelUpdateSchema.parse({
+        id: 'm1',
+        name: 'Model',
+        costCacheRead: null,
+        costCacheWrite: 0.3
+      })
+    ).toMatchObject({ costCacheRead: null, costCacheWrite: 0.3 })
+    expect(() =>
+      modelCreateSchema.parse({ providerId: 'p1', modelId: 'model-1', costCacheRead: 1_001 })
+    ).toThrow()
+    expect(() =>
+      modelUpdateSchema.parse({ id: 'm1', name: 'Model', costCacheWrite: -0.1 })
+    ).toThrow()
+  })
+
   it('rejects invalid variants', () => {
     expect(() =>
       modelCreateSchema.parse({ providerId: 'p1', modelId: 'm1', variants: [{ name: '' }] })

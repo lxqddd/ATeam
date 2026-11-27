@@ -6,12 +6,14 @@ export class CacheMetricsCollector {
   private inputTokens = 0
   private cacheReadTokens = 0
   private cacheWriteTokens = 0
+  private savedUsd = 0
 
-  record(usage: TokenUsage): void {
+  record(usage: TokenUsage, savedUsd = 0): void {
     this.requests += 1
     this.inputTokens += Math.max(0, usage.inputTokens ?? 0)
     this.cacheReadTokens += Math.max(0, usage.cacheReadTokens ?? 0)
     this.cacheWriteTokens += Math.max(0, usage.cacheWriteTokens ?? 0)
+    if (Number.isFinite(savedUsd)) this.savedUsd += Math.max(0, savedUsd)
   }
 
   snapshot(): CacheMetricsSnapshot {
@@ -21,7 +23,8 @@ export class CacheMetricsCollector {
       cacheReadTokens: this.cacheReadTokens,
       cacheWriteTokens: this.cacheWriteTokens,
       hitRate: this.inputTokens > 0 ? this.cacheReadTokens / this.inputTokens : null,
-      savedTokens: this.cacheReadTokens
+      savedTokens: this.cacheReadTokens,
+      savedUsd: Number(this.savedUsd.toFixed(6))
     }
   }
 }

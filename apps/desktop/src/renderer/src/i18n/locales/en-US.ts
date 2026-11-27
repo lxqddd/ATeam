@@ -65,6 +65,12 @@ const enUS = {
     cacheMetricsEmpty: 'No prompt cache usage recorded in this agent process.',
     cacheMetricsSummary:
       '{{requests}} requests · {{rate}}% hit · {{read}} read / {{write}} written tokens',
+    cacheMetricsSavings: 'Estimated savings ${{amount}} (cache-read discount only)',
+    costAccounting: 'Cost and cache accounting',
+    costAccountingBody:
+      'Only chat model requests are counted, aggregated per model step; title generation, context compaction and model connection tests are excluded. Cache metrics may include usage reported by failed or retried attempts, while message cost uses the final attempt only. Hit rate = cache read / total input; estimated savings use the difference between the cache-read and input prices.',
+    costAccountingFallback:
+      'Without cache read/write prices, cached tokens are billed at the input price and savings stay $0; price changes apply to new messages only.',
     environmentSettings: 'Environment',
     environmentSettingsDescription: 'Optional environment details included in the system prompt.',
     toolOutputSettings: 'Tool output truncation',
@@ -274,6 +280,9 @@ const enUS = {
     modelAttachment: 'Supports attachments',
     costInput: 'Input cost (USD / 1M tokens)',
     costOutput: 'Output cost (USD / 1M tokens)',
+    costCacheRead: 'Cache read cost (USD / 1M tokens)',
+    costCacheWrite: 'Cache write cost (USD / 1M tokens)',
+    costCacheHint: 'Leave blank to bill cached tokens at the input price.',
     catalog: 'Fill from model catalog',
     catalogHint: 'Loads limits, capabilities and pricing from models.dev.',
     catalogPlaceholder: 'Search models…',
@@ -689,6 +698,8 @@ const enUS = {
     questionCancel: 'Cancel',
     questionCustom: 'Custom answer',
     cost: 'Estimated cost',
+    costBreakdown:
+      'Uncached input {{input}} · cache read {{read}} · cache write {{write}} · output {{output}} tokens',
     forkSession: 'Fork session',
     forkFromHere: 'Fork from here',
     searchSessions: 'Search sessions',

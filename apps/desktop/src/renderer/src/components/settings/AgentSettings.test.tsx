@@ -229,7 +229,8 @@ describe('AgentSettings', () => {
           cacheReadTokens: 70,
           cacheWriteTokens: 20,
           hitRate: 70 / 150,
-          savedTokens: 70
+          savedTokens: 70,
+          savedUsd: 0.00042
         }
       }
     })
@@ -241,6 +242,11 @@ describe('AgentSettings', () => {
     expect(
       screen.getByText('2 requests · 47% hit · 70 read / 20 written tokens')
     ).toBeInTheDocument()
+    expect(
+      screen.getByText('Estimated savings $0.000420 (cache-read discount only)')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Cost and cache accounting')).toBeInTheDocument()
+    expect(screen.getByText(/Only chat model requests are counted/)).toBeInTheDocument()
   })
 
   it('shows the organization policy and its rules', async () => {

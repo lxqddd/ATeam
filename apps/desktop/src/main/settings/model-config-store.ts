@@ -431,6 +431,10 @@ export class ModelConfigStore {
       if (costInput !== undefined) model.costInput = costInput
       const costOutput = normalizeCost(input.costOutput)
       if (costOutput !== undefined) model.costOutput = costOutput
+      const costCacheRead = normalizeCost(input.costCacheRead)
+      if (costCacheRead !== undefined) model.costCacheRead = costCacheRead
+      const costCacheWrite = normalizeCost(input.costCacheWrite)
+      if (costCacheWrite !== undefined) model.costCacheWrite = costCacheWrite
       const variants = normalizeVariants(input.variants)
       if (variants) model.variants = variants
       if (input.applyPatch !== undefined) model.applyPatch = input.applyPatch
@@ -469,6 +473,16 @@ export class ModelConfigStore {
         const costOutput = normalizeCost(input.costOutput)
         if (costOutput === undefined) delete model.costOutput
         else model.costOutput = costOutput
+      }
+      if (input.costCacheRead !== undefined) {
+        const costCacheRead = normalizeCost(input.costCacheRead)
+        if (costCacheRead === undefined) delete model.costCacheRead
+        else model.costCacheRead = costCacheRead
+      }
+      if (input.costCacheWrite !== undefined) {
+        const costCacheWrite = normalizeCost(input.costCacheWrite)
+        if (costCacheWrite === undefined) delete model.costCacheWrite
+        else model.costCacheWrite = costCacheWrite
       }
       if (input.variants !== undefined) {
         const variants = normalizeVariants(input.variants)
