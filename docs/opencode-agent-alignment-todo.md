@@ -464,7 +464,7 @@
 
 - [ ] Session share / sync / export / import / stats：分享链接、同步、脱敏导出、导入与使用统计
 - [ ] HTTP API / SDK 广度：文件、find、agents、commands、config、providers、MCP、LSP、TUI 等路由与生成式 SDK/client 包
-- [ ] CLI / TUI：完整 TUI、attach、serve、web、mcp、providers、import/export、stats、agent create
+- [x] CLI / TUI：完整 TUI（含 `--attach`、流式渲染、权限 / 提问与安全退出，2026-11-27）、serve、mcp、providers、import/export、stats、agent create 均已落地；`web` 子命令未实现
 - [ ] IDE 集成：VS Code 扩展、IDE 上下文/选区、ACP 之外的编辑器能力
 - [ ] GitHub / Slack：issue/PR 集成、share URL 导入、Slack 集成；现有 Action 仅覆盖基础 CLI 调用
 - [ ] 远程 workspace / control plane：插件 workspace adapter 已提供，远程 target / control-plane 尚未实现

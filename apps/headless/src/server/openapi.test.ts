@@ -32,6 +32,8 @@ const EXPECTED_OPERATIONS = [
   'GET /sessions/{sessionId}/files/grep',
   'GET /sessions/{sessionId}/messages',
   'POST /sessions/{sessionId}/messages',
+  'POST /sessions/{sessionId}/retry',
+  'POST /sessions/{sessionId}/steer',
   'POST /sessions/{sessionId}/stop'
 ].sort()
 

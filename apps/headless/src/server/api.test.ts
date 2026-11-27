@@ -103,6 +103,8 @@ class FakeRuntime implements ApiRuntime {
   sent: Array<{ id: string; text: string; model?: ModelRef | null }> = []
   sendError: Error | null = null
   stopped: string[] = []
+  retried: string[] = []
+  steered: Array<{ id: string; text: string }> = []
   workspace = '.'
   defaultWorkspacePath = '/default/workspace'
   resourceWorkspaces: string[] = []
@@ -222,6 +224,16 @@ class FakeRuntime implements ApiRuntime {
 
   stopChat(id: string): void {
     this.stopped.push(id)
+  }
+
+  async retryChat(id: string): Promise<void> {
+    this.get(id)
+    this.retried.push(id)
+  }
+
+  steerChat(id: string, input: { text: string }): void {
+    this.get(id)
+    this.steered.push({ id, text: input.text })
   }
 
   async deleteSession(id: string): Promise<void> {
@@ -413,6 +425,33 @@ describe('API server', () => {
         })
       ).status
     ).toBe(200)
+  })
+
+  it('retries failed turns and steers running ones', async () => {
+    const { baseUrl, runtime } = await start('secret')
+    const session = await runtime.createSession()
+
+    const retry = await fetch(`${baseUrl}/sessions/${session.id}/retry`, {
+      method: 'POST',
+      headers: auth('secret')
+    })
+    expect(retry.status).toBe(202)
+    expect(runtime.retried).toEqual([session.id])
+
+    const steer = await fetch(`${baseUrl}/sessions/${session.id}/steer`, {
+      method: 'POST',
+      headers: { ...auth('secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'after this step' })
+    })
+    expect(steer.status).toBe(202)
+    expect(runtime.steered).toEqual([{ id: session.id, text: 'after this step' }])
+
+    const empty = await fetch(`${baseUrl}/sessions/${session.id}/steer`, {
+      method: 'POST',
+      headers: { ...auth('secret'), 'content-type': 'application/json' },
+      body: JSON.stringify({ text: '' })
+    })
+    expect(empty.status).toBe(400)
   })
 
   it('lists and replies to permissions and questions', async () => {
