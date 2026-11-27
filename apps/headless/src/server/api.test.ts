@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import type {
   AgentEvent,
   MessagesSnapshot,
@@ -24,6 +27,7 @@ class FakeRuntime implements ApiRuntime {
   sent: Array<{ id: string; text: string; model?: ModelRef | null }> = []
   sendError: Error | null = null
   stopped: string[] = []
+  workspace = '.'
   private seq = 0
 
   constructor(private readonly bus: EventBus) {}
@@ -67,6 +71,11 @@ class FakeRuntime implements ApiRuntime {
   messages(id: string): MessagesSnapshot {
     this.get(id)
     return this.snapshots.get(id) ?? { sessionId: id, seq: 0, messages: [], running: false }
+  }
+
+  sessionWorkspace(id: string): string {
+    this.get(id)
+    return this.workspace
   }
 
   async sendChat(id: string, text: string, model?: ModelRef | null): Promise<void> {
@@ -121,6 +130,17 @@ class FakeRuntime implements ApiRuntime {
 }
 
 let api: ReturnType<typeof createApiServer> | null = null
+const tempDirs: string[] = []
+
+async function makeWorkspace(): Promise<string> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-files-api-'))
+  tempDirs.push(root)
+  await fs.mkdir(path.join(root, 'src'))
+  await fs.writeFile(path.join(root, 'README.md'), '# readme\n')
+  await fs.writeFile(path.join(root, 'src/main.ts'), 'export const value = 1\n')
+  await fs.writeFile(path.join(root, 'src/util.ts'), 'export const helper = 2\n')
+  return root
+}
 
 async function start(token: string | null = null): Promise<{
   baseUrl: string
@@ -137,6 +157,7 @@ async function start(token: string | null = null): Promise<{
 afterEach(async () => {
   await api?.close()
   api = null
+  await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })))
 })
 
 function auth(token: string): Record<string, string> {
@@ -360,5 +381,141 @@ describe('API server', () => {
       body: JSON.stringify({ permissionMode: 'invalid' })
     })
     expect(invalid.status).toBe(400)
+  })
+
+  it('lists, reads, finds and greps files inside the session workspace', async () => {
+    const workspace = await makeWorkspace()
+    const { baseUrl, runtime } = await start('secret')
+    const session = await runtime.createSession()
+    runtime.workspace = workspace
+
+    const listed = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files`, { headers: auth('secret') })
+    ).json()) as {
+      sessionId: string
+      path: string
+      entries: Array<{ path: string; type: string; size: number | null }>
+      truncated: boolean
+    }
+    expect(listed).toMatchObject({ sessionId: session.id, path: '', truncated: false })
+    expect(listed.entries).toEqual(
+      expect.arrayContaining([
+        { path: 'README.md', name: 'README.md', type: 'file', size: expect.any(Number) },
+        { path: 'src', name: 'src', type: 'directory', size: null }
+      ])
+    )
+
+    const nested = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files?path=src&depth=2`, {
+        headers: auth('secret')
+      })
+    ).json()) as { path: string; entries: Array<{ path: string; type: string }> }
+    expect(nested.path).toBe('src')
+    expect(nested.entries).toEqual(
+      expect.arrayContaining([
+        { path: 'src/main.ts', name: 'main.ts', type: 'file', size: expect.any(Number) },
+        { path: 'src/util.ts', name: 'util.ts', type: 'file', size: expect.any(Number) }
+      ])
+    )
+
+    const read = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files/content?path=src/main.ts`, {
+        headers: auth('secret')
+      })
+    ).json()) as { path: string; content: string; truncated: boolean }
+    expect(read).toMatchObject({
+      path: 'src/main.ts',
+      content: 'export const value = 1\n',
+      truncated: false
+    })
+
+    const found = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files/find?pattern=**/*.ts`, {
+        headers: auth('secret')
+      })
+    ).json()) as { sessionId: string; root: string; pattern: string; matches: string[] }
+    expect(found).toMatchObject({ sessionId: session.id, root: '', pattern: '**/*.ts' })
+    expect(found.matches).toEqual(['src/main.ts', 'src/util.ts'])
+
+    const grepped = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files/grep?pattern=helper&include=*.ts`, {
+        headers: auth('secret')
+      })
+    ).json()) as {
+      matches: Array<{ path: string; line: number; text: string }>
+      truncated: boolean
+    }
+    expect(grepped.truncated).toBe(false)
+    expect(grepped.matches).toEqual([
+      { path: 'src/util.ts', line: 1, text: 'export const helper = 2' }
+    ])
+  })
+
+  it('rejects paths that escape the workspace and unreadable files', async () => {
+    const workspace = await makeWorkspace()
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'ateam-files-outside-'))
+    tempDirs.push(outside)
+    await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n')
+    await fs.writeFile(path.join(workspace, 'data.bin'), Buffer.from([0x00, 0x01, 0x02]))
+    await fs.symlink(outside, path.join(workspace, 'escape'))
+
+    const { baseUrl, runtime } = await start('secret')
+    const session = await runtime.createSession()
+    runtime.workspace = workspace
+    const base = `${baseUrl}/sessions/${session.id}/files`
+
+    expect(
+      (
+        await fetch(`${base}/content?path=${encodeURIComponent('../outside.txt')}`, {
+          headers: auth('secret')
+        })
+      ).status
+    ).toBe(403)
+    expect(
+      (
+        await fetch(`${base}/content?path=${encodeURIComponent('escape/secret.txt')}`, {
+          headers: auth('secret')
+        })
+      ).status
+    ).toBe(403)
+    expect(
+      (await fetch(`${base}?path=${encodeURIComponent('escape')}`, { headers: auth('secret') }))
+        .status
+    ).toBe(403)
+    expect(
+      (await fetch(`${base}/content?path=missing.txt`, { headers: auth('secret') })).status
+    ).toBe(404)
+    expect((await fetch(`${base}/content?path=data.bin`, { headers: auth('secret') })).status).toBe(
+      415
+    )
+    expect((await fetch(`${base}/grep?pattern=(`, { headers: auth('secret') })).status).toBe(400)
+    expect((await fetch(`${base}/grep`, { headers: auth('secret') })).status).toBe(400)
+
+    const unknown = await fetch(`${baseUrl}/sessions/does-not-exist/files`, {
+      headers: auth('secret')
+    })
+    expect(unknown.status).toBe(404)
+  })
+
+  it('marks listings and reads that hit their limits', async () => {
+    const workspace = await makeWorkspace()
+    const { baseUrl, runtime } = await start('secret')
+    const session = await runtime.createSession()
+    runtime.workspace = workspace
+    await fs.writeFile(path.join(workspace, 'src/large.ts'), 'x'.repeat(600 * 1024))
+
+    const limited = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files?limit=1`, { headers: auth('secret') })
+    ).json()) as { entries: unknown[]; truncated: boolean }
+    expect(limited.entries).toHaveLength(1)
+    expect(limited.truncated).toBe(true)
+
+    const read = (await (
+      await fetch(`${baseUrl}/sessions/${session.id}/files/content?path=src/large.ts`, {
+        headers: auth('secret')
+      })
+    ).json()) as { size: number; truncated: boolean }
+    expect(read.size).toBe(600 * 1024)
+    expect(read.truncated).toBe(true)
   })
 })

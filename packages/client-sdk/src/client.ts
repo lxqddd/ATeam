@@ -6,7 +6,11 @@ import type {
   PermissionRequest,
   QuestionAnswer,
   QuestionRequest,
-  SessionMeta
+  SessionMeta,
+  WorkspaceFileContent,
+  WorkspaceFileFindResult,
+  WorkspaceFileGrepResult,
+  WorkspaceFileList
 } from '@ateam/shared'
 
 export interface AteamClientOptions {
@@ -37,6 +41,45 @@ export type SendMessageResult =
       error?: string
       messages: MessagesSnapshot
     }
+
+export interface ListFilesOptions {
+  /** Directory relative to the session workspace; defaults to the root. */
+  path?: string
+  /** Recursion depth; the server clamps it to its maximum. */
+  depth?: number
+  /** Entry limit; the server clamps it to its maximum. */
+  limit?: number
+}
+
+export interface FindFilesOptions {
+  /** Directory relative to the session workspace; defaults to the root. */
+  path?: string
+  /** Glob pattern matched against paths below `path`. */
+  pattern: string
+  limit?: number
+}
+
+export interface GrepFilesOptions {
+  /** Directory relative to the session workspace; defaults to the root. */
+  path?: string
+  /** JavaScript regular expression, or literal text when `literal` is set. */
+  pattern: string
+  /** Optional filename filter such as `*.ts`. */
+  include?: string
+  literal?: boolean
+  caseSensitive?: boolean
+  limit?: number
+}
+
+function queryString(params: Record<string, string | number | boolean | undefined | null>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    search.set(key, String(value))
+  }
+  const serialized = search.toString()
+  return serialized ? `?${serialized}` : ''
+}
 
 export class AteamApiError extends Error {
   constructor(
@@ -126,6 +169,50 @@ export class AteamClient {
       method: 'POST',
       body: JSON.stringify({ force })
     })
+  }
+
+  /** List files and directories inside the session workspace. */
+  listFiles(sessionId: string, options: ListFilesOptions = {}): Promise<WorkspaceFileList> {
+    return this.request(
+      `/sessions/${encodeURIComponent(sessionId)}/files${queryString({
+        path: options.path,
+        depth: options.depth,
+        limit: options.limit
+      })}`
+    )
+  }
+
+  /** Read a text file inside the session workspace. */
+  readFile(sessionId: string, path: string): Promise<WorkspaceFileContent> {
+    if (!path) throw new Error('path is required')
+    return this.request(
+      `/sessions/${encodeURIComponent(sessionId)}/files/content${queryString({ path })}`
+    )
+  }
+
+  /** Find files by glob pattern inside the session workspace. */
+  findFiles(sessionId: string, options: FindFilesOptions): Promise<WorkspaceFileFindResult> {
+    return this.request(
+      `/sessions/${encodeURIComponent(sessionId)}/files/find${queryString({
+        path: options.path,
+        pattern: options.pattern,
+        limit: options.limit
+      })}`
+    )
+  }
+
+  /** Search file contents inside the session workspace. */
+  grepFiles(sessionId: string, options: GrepFilesOptions): Promise<WorkspaceFileGrepResult> {
+    return this.request(
+      `/sessions/${encodeURIComponent(sessionId)}/files/grep${queryString({
+        path: options.path,
+        pattern: options.pattern,
+        include: options.include,
+        literal: options.literal,
+        caseSensitive: options.caseSensitive,
+        limit: options.limit
+      })}`
+    )
   }
 
   listPermissions(): Promise<PermissionRequest[]> {

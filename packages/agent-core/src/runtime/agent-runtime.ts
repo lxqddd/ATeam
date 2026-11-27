@@ -1811,7 +1811,8 @@ export class AgentRuntime {
     }
   }
 
-  private sessionWorkspace(sessionId: string): string {
+  /** Workspace a session operates in; defaults to the runtime workspace. */
+  sessionWorkspace(sessionId: string): string {
     return this.store.getSession(sessionId)?.directory ?? this.options.workspacePath
   }
 

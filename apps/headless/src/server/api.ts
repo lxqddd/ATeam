@@ -12,10 +12,17 @@ import type {
   QuestionRequest,
   ReasoningEffort,
   SessionMeta,
-  SessionSettings
+  SessionSettings,
+  WorkspaceFileList
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import type { EventBus } from './event-bus'
+import {
+  findWorkspaceFiles,
+  grepWorkspaceFiles,
+  listWorkspaceFiles,
+  readWorkspaceFile
+} from './workspace-files'
 
 export interface ApiRuntime {
   listSessions(): SessionMeta[]
@@ -25,6 +32,8 @@ export interface ApiRuntime {
   setSessionAgent(id: string, agent: string | null): Promise<SessionMeta>
   setSessionSettings(id: string, settings: SessionSettings): Promise<SessionMeta>
   messages(id: string): MessagesSnapshot
+  /** Absolute workspace directory the session's file routes are confined to. */
+  sessionWorkspace(id: string): string
   sendChat(
     id: string,
     text: string,
@@ -78,6 +87,9 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 function errorStatus(error: unknown): number {
   const message = error instanceof Error ? error.message : String(error)
   if (message.includes('SESSION_NOT_FOUND')) return 404
+  if (message.includes('FILE_NOT_FOUND')) return 404
+  if (message.includes('FILE_PATH_ESCAPES_WORKSPACE')) return 403
+  if (message.includes('FILE_BINARY')) return 415
   if (message.includes('SESSION_BUSY')) return 409
   if (message.includes('AGENT_NOT_READY')) return 503
   if (message.includes('Timed out waiting')) return 504
@@ -158,6 +170,30 @@ function sessionIdFrom(value: string): string {
   const id = decodeURIComponent(value)
   if (!SESSION_ID.test(id)) throw new Error('Invalid session id')
   return id
+}
+
+function intParam(url: URL, name: string): number | undefined {
+  const raw = url.searchParams.get(name)
+  if (raw === null || !raw.trim()) return undefined
+  const value = Number(raw)
+  if (!Number.isFinite(value)) throw new Error(`${name} must be a number`)
+  return value
+}
+
+function boolParam(url: URL, name: string): boolean {
+  const raw = url.searchParams.get(name)
+  return raw === '1' || raw === 'true'
+}
+
+function pathParam(url: URL): string {
+  return url.searchParams.get('path') ?? ''
+}
+
+function patternParam(url: URL): string {
+  const pattern = url.searchParams.get('pattern') ?? ''
+  if (!pattern.trim()) throw new Error('pattern is required')
+  if (pattern.length > 500) throw new Error('pattern is too long')
+  return pattern
 }
 
 export function createApiServer(options: ApiServerOptions): ApiServer {
@@ -280,7 +316,7 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         return
       }
 
-      const sessionMatch = /^\/sessions\/([^/]+)(?:\/([^/]+))?$/.exec(pathname)
+      const sessionMatch = /^\/sessions\/([^/]+)(?:\/(.+))?$/.exec(pathname)
       if (sessionMatch) {
         const id = sessionIdFrom(sessionMatch[1])
         const action = sessionMatch[2]
@@ -292,6 +328,47 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         if (!action && req.method === 'DELETE') {
           await runtime.deleteSession(id)
           json(res, 200, { deleted: true })
+          return
+        }
+        if (action === 'files' && req.method === 'GET') {
+          withSession(id)
+          const result = await listWorkspaceFiles(runtime.sessionWorkspace(id), {
+            path: pathParam(url),
+            depth: intParam(url, 'depth'),
+            limit: intParam(url, 'limit')
+          })
+          json(res, 200, { sessionId: id, ...result } satisfies WorkspaceFileList)
+          return
+        }
+        if (action === 'files/content' && req.method === 'GET') {
+          withSession(id)
+          const result = await readWorkspaceFile(runtime.sessionWorkspace(id), pathParam(url))
+          json(res, 200, { sessionId: id, ...result })
+          return
+        }
+        if (action === 'files/find' && req.method === 'GET') {
+          withSession(id)
+          const pattern = patternParam(url)
+          const result = await findWorkspaceFiles(runtime.sessionWorkspace(id), {
+            path: pathParam(url),
+            pattern,
+            limit: intParam(url, 'limit')
+          })
+          json(res, 200, { sessionId: id, ...result })
+          return
+        }
+        if (action === 'files/grep' && req.method === 'GET') {
+          withSession(id)
+          const pattern = patternParam(url)
+          const result = await grepWorkspaceFiles(runtime.sessionWorkspace(id), {
+            path: pathParam(url),
+            pattern,
+            include: url.searchParams.get('include') ?? undefined,
+            literal: boolParam(url, 'literal'),
+            caseSensitive: boolParam(url, 'caseSensitive'),
+            limit: intParam(url, 'limit')
+          })
+          json(res, 200, { sessionId: id, ...result })
           return
         }
         if (action === 'messages' && req.method === 'GET') {
