@@ -33,6 +33,7 @@ import type {
   SessionMeta,
   SessionExportRequest,
   SessionExportResult,
+  SessionImportResult,
   SessionSearchResult,
   SessionSettings,
   VcsDiffResult,
@@ -198,6 +199,12 @@ export function createApiMock(
           messageCount: options.sessionId
             ? (messages.get(options.sessionId)?.messages.length ?? 0)
             : 0
+        })),
+        import: vi.fn(async (): Promise<SessionImportResult> => ({
+          imported: false,
+          sessions: [],
+          sessionCount: 0,
+          messageCount: 0
         })),
         changes: vi.fn(async (sessionId: string, messageId?: string) => ({
           sessionId,

@@ -70,6 +70,7 @@ const api: AteamApi = {
       fork: (id, messageId) => ipcRenderer.invoke(AGENT_CHANNELS.sessionFork, { id, messageId }),
       search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSearch, { query }),
       export: (options) => ipcRenderer.invoke(AGENT_CHANNELS.sessionExport, options),
+      import: () => ipcRenderer.invoke(AGENT_CHANNELS.sessionImport),
       changes: (sessionId, messageId) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionChanges, { sessionId, messageId }),
       changesSummary: (sessionId) =>

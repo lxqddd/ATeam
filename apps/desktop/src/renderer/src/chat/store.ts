@@ -20,6 +20,7 @@ import type {
   QuestionRequest,
   RunOutcome,
   SessionMeta,
+  SessionImportResult,
   SessionSettings,
   SteerStrategy,
   SubagentResult
@@ -370,6 +371,21 @@ export class ChatStore {
     void this.refreshAgents(session.directory ?? undefined)
     void this.refreshCommands(session.directory ?? undefined)
     return session
+  }
+
+  async importSessions(): Promise<SessionImportResult> {
+    const result = await window.api.agent.sessions.import()
+    if (result.imported && result.sessions.length > 0) {
+      const importedIds = new Set(result.sessions.map((session) => session.id))
+      this.setState({
+        sessions: sortSessions([
+          ...result.sessions,
+          ...this.state.sessions.filter((session) => !importedIds.has(session.id))
+        ])
+      })
+      this.selectSession(result.sessions[0].id)
+    }
+    return result
   }
 
   async ensureSession(): Promise<SessionMeta> {

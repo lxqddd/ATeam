@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs/promises'
 import type { BrowserResultMessage, WorkerMessage, WorkerRequest } from '@ateam/shared'
 import { AgentRuntime } from '@ateam/agent-core'
 import { normalizeError } from '@ateam/agent-core'
@@ -147,6 +148,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
         format: request.params.format,
         redactPaths: request.params.redactPaths
       })
+    case 'sessions.import':
+      return requireRuntime().importSessions(await fs.readFile(request.params.path, 'utf8'))
     case 'sessions.changes':
       return requireRuntime().messageChanges(request.params.sessionId, request.params.messageId)
     case 'sessions.changesSummary':

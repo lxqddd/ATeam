@@ -262,6 +262,14 @@ export class SessionsStore {
     return clone(session)
   }
 
+  /** Inserts a fully remapped record, e.g. one produced by an import. */
+  async importRecord(record: SessionRecord): Promise<SessionMeta> {
+    if (this.records.has(record.session.id)) throw new Error('SESSION_EXISTS')
+    this.records.set(record.session.id, record)
+    await this.persist(record.session.id)
+    return clone(record.session)
+  }
+
   async setAgent(id: string, agent: string | null): Promise<SessionMeta | undefined> {
     const record = this.records.get(id)
     if (!record) return undefined

@@ -39,6 +39,7 @@ import type {
   SessionChangesSummary,
   SessionExportPayload,
   SessionExportRequest,
+  SessionImportResult,
   SessionMeta,
   SessionPlan,
   SessionSearchResult,
@@ -360,6 +361,10 @@ export class AgentRuntime {
 
   exportSessions(options: SessionExportRequest): SessionExportPayload {
     return this.sessionService.exportSessions(options)
+  }
+
+  importSessions(content: string): Promise<SessionImportResult> {
+    return this.sessionService.importSessions(content)
   }
 
   listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {

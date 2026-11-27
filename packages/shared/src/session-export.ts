@@ -80,3 +80,13 @@ export interface SessionExportResult {
   sessionCount: number
   messageCount: number
 }
+
+/** Outcome of importing a session export file. */
+export interface SessionImportResult {
+  /** False when the user cancelled the file picker. */
+  imported: boolean
+  /** Newly created visible sessions. Hidden sub-sessions are counted but not listed. */
+  sessions: SessionMeta[]
+  sessionCount: number
+  messageCount: number
+}
