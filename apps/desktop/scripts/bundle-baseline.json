@@ -1,0 +1,60 @@
+{
+  "note": "First-screen renderer JS budget. Regenerate with: pnpm --filter @ateam/desktop bundle:report -- --write-baseline",
+  "recordedAt": "2026-11-27",
+  "initialJs": {
+    "rawBytes": 2439667,
+    "gzipBytes": 525127,
+    "assets": [
+      {
+        "file": "assets/index-BgP9t_VO.js",
+        "rawBytes": 2324185,
+        "gzipBytes": 496147
+      },
+      {
+        "file": "assets/rolldown-runtime-SbdDWaPq.js",
+        "rawBytes": 1438,
+        "gzipBytes": 662
+      },
+      {
+        "file": "assets/jsx-runtime-mKPh1E9S.js",
+        "rawBytes": 114044,
+        "gzipBytes": 28318
+      }
+    ]
+  },
+  "initialCss": {
+    "rawBytes": 63253,
+    "gzipBytes": 10863,
+    "assets": [
+      {
+        "file": "assets/index-D-PnppXl.css",
+        "rawBytes": 63253,
+        "gzipBytes": 10863
+      }
+    ]
+  },
+  "history": [
+    {
+      "recordedAt": "2026-11-27",
+      "initialJs": {
+        "rawBytes": 2439550,
+        "gzipBytes": 525099
+      },
+      "initialCss": {
+        "rawBytes": 63253,
+        "gzipBytes": 10863
+      }
+    },
+    {
+      "recordedAt": "2026-11-27",
+      "initialJs": {
+        "rawBytes": 3848620,
+        "gzipBytes": 808633
+      },
+      "initialCss": {
+        "rawBytes": 63253,
+        "gzipBytes": 10863
+      }
+    }
+  ]
+}

@@ -5,7 +5,8 @@ type Translation = (typeof import('./zh-CN'))['default']
 const enUS = {
   app: {
     name: APP_NAME,
-    description: 'The Electron + React + TypeScript foundation is ready'
+    description: 'The Electron + React + TypeScript foundation is ready',
+    loading: 'Loading…'
   },
   nav: {
     chat: 'Chat',

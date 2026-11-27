@@ -1,12 +1,16 @@
+import { lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatStore, useChatStore } from '../../chat/store'
 import BackgroundNotices from './BackgroundNotices'
-import ChangesPanel from './ChangesPanel'
 import Composer from './Composer'
 import MessageList from './MessageList'
 import QuestionCard from './QuestionCard'
 import SubagentNotices from './SubagentNotices'
 import TodoPanel from './TodoPanel'
+
+// The changes panel is opened on demand and brings its own diff rendering, so
+// keep it out of the initial chat bundle.
+const ChangesPanel = lazy(() => import('./ChangesPanel'))
 
 function ChatView(): React.JSX.Element {
   const { t } = useTranslation()
@@ -119,14 +123,16 @@ function ChatView(): React.JSX.Element {
 
       <Composer key={`composer-${selectedSessionId ?? 'none'}`} />
       {changesPanel && (
-        <ChangesPanel
-          key={`${changesPanel.sessionId}:${changesPanel.messageId ?? 'summary'}:${changesPanel.tab}`}
-          sessionId={changesPanel.sessionId}
-          messageId={changesPanel.messageId}
-          tab={changesPanel.tab}
-          onTabChange={(tab) => chatStore.setChangesTab(tab)}
-          onClose={() => chatStore.closeChanges()}
-        />
+        <Suspense fallback={null}>
+          <ChangesPanel
+            key={`${changesPanel.sessionId}:${changesPanel.messageId ?? 'summary'}:${changesPanel.tab}`}
+            sessionId={changesPanel.sessionId}
+            messageId={changesPanel.messageId}
+            tab={changesPanel.tab}
+            onTabChange={(tab) => chatStore.setChangesTab(tab)}
+            onClose={() => chatStore.closeChanges()}
+          />
+        </Suspense>
       )}
     </div>
   )

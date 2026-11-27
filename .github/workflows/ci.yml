@@ -57,6 +57,9 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      - name: Check renderer bundle budget
+        run: pnpm --filter @ateam/desktop bundle:check
+
       - name: Check SDK package
         run: pnpm --filter @ateam/client-sdk pack:check
 
