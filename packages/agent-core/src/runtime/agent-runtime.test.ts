@@ -4257,6 +4257,78 @@ describe('session import', () => {
   })
 })
 
+describe('usage statistics', () => {
+  it('aggregates stored messages after a completed run', async () => {
+    scripts.push(textScript('hello'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const stats = runtime.usageStats('all')
+
+    expect(stats.sessionCount).toBe(1)
+    expect(stats.messageCount).toBe(2)
+    expect(stats.assistantMessageCount).toBe(1)
+    expect(stats.tokens).toEqual({
+      inputTokens: 3,
+      outputTokens: 4,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 7
+    })
+    expect(stats.assistantMessagesWithoutUsage).toBe(0)
+    // No prices are configured for the test model, so no cost estimate is stored.
+    expect(stats.costUsd).toBe(0)
+    expect(stats.assistantMessagesWithoutCost).toBe(1)
+    expect(stats.models).toEqual([
+      {
+        providerId: 'provider-1',
+        modelId: 'model-1',
+        messages: 1,
+        inputTokens: 3,
+        outputTokens: 4,
+        costUsd: 0
+      }
+    ])
+  })
+
+  it('counts usage from hidden subagent sessions without listing them as chats', async () => {
+    const baseline = runtime.usageStats('all')
+    const parent = makeSession({ id: 'parent-old', title: 'Parent' })
+    const child = makeSession({
+      id: 'child-old',
+      title: 'Child',
+      parentId: 'parent-old',
+      hidden: true
+    })
+    const childMessage = makeMessage({
+      id: 'child-message',
+      role: 'assistant',
+      usage: { inputTokens: 2, outputTokens: 5, totalTokens: 7 }
+    })
+    const content = JSON.stringify({
+      kind: SESSION_EXPORT_KIND,
+      schemaVersion: SESSION_EXPORT_SCHEMA_VERSION,
+      exportedAt: '2026-11-27T00:00:00.000Z',
+      appVersion: '0.0.0',
+      redactedPaths: true,
+      attachmentsIncluded: false,
+      snapshotsIncluded: false,
+      sessions: [
+        { session: parent, messages: [] },
+        { session: child, messages: [childMessage] }
+      ]
+    })
+
+    const result = await runtime.importSessions(content)
+    const stats = runtime.usageStats('all')
+
+    expect(result.sessions).toHaveLength(1)
+    expect(stats.sessionCount - baseline.sessionCount).toBe(1)
+    expect(stats.messageCount - baseline.messageCount).toBe(1)
+    expect(stats.tokens.totalTokens - baseline.tokens.totalTokens).toBe(7)
+  })
+})
+
 describe('generated session titles', () => {
   it('replaces the derived title after the first exchange', async () => {
     generateTitle.mockResolvedValueOnce('Hangzhou Weather')

@@ -150,6 +150,8 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       })
     case 'sessions.import':
       return requireRuntime().importSessions(await fs.readFile(request.params.path, 'utf8'))
+    case 'sessions.usage':
+      return requireRuntime().usageStats(request.params.range)
     case 'sessions.changes':
       return requireRuntime().messageChanges(request.params.sessionId, request.params.messageId)
     case 'sessions.changesSummary':

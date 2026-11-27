@@ -50,6 +50,7 @@ import type {
   SessionExportResult,
   SessionImportResult
 } from './session-export'
+import type { UsageStats, UsageStatsRange } from './usage-stats'
 import type { VcsDiffOptions, VcsDiffResult, VcsStatus } from './vcs-types'
 import type {
   ModelCatalogEntry,
@@ -88,6 +89,7 @@ export interface AgentBridge {
     search: (query: string) => Promise<SessionSearchResult[]>
     export: (options: SessionExportRequest) => Promise<SessionExportResult>
     import: () => Promise<SessionImportResult>
+    usage: (range: UsageStatsRange) => Promise<UsageStats>
     changes: (sessionId: string, messageId?: string) => Promise<TurnChanges>
     changesSummary: (sessionId: string) => Promise<SessionChangesSummary>
     revertFiles: (sessionId: string, messageId: string, paths?: string[]) => Promise<TurnChanges>

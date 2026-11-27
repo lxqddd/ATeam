@@ -3,6 +3,7 @@ import App from './App'
 import ChatPage from './pages/ChatPage'
 import ModelsPage from './pages/ModelsPage'
 import SettingsPage from './pages/SettingsPage'
+import UsagePage from './pages/UsagePage'
 
 export const router = createHashRouter([
   {
@@ -11,6 +12,7 @@ export const router = createHashRouter([
     children: [
       { index: true, element: <ChatPage /> },
       { path: 'models', element: <ModelsPage /> },
+      { path: 'usage', element: <UsagePage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/" replace /> }
     ]

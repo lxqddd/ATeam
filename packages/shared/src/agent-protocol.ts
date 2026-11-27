@@ -9,6 +9,7 @@ import type {
 } from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType, RuntimeProviderAuth } from './model-types'
 import type { SessionExportFormat } from './session-export'
+import type { UsageStatsRange } from './usage-stats'
 import type { VcsDiffMode } from './vcs-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
@@ -103,6 +104,7 @@ export type WorkerRequest =
       params: { sessionId?: string | null; format: SessionExportFormat; redactPaths?: boolean }
     }
   | { id: string; method: 'sessions.import'; params: { path: string } }
+  | { id: string; method: 'sessions.usage'; params: { range: UsageStatsRange } }
   | { id: string; method: 'plan.get'; params: { sessionId: string } }
   | {
       id: string

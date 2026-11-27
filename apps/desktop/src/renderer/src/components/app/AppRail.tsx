@@ -39,6 +39,24 @@ function ModelsIcon(): React.JSX.Element {
   )
 }
 
+function UsageIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5 20v-8M12 20V4M19 20v-5" />
+    </svg>
+  )
+}
+
 function SettingsIcon(): React.JSX.Element {
   return (
     <svg
@@ -90,6 +108,14 @@ function AppRail(): React.JSX.Element {
         aria-label={t('nav.models')}
       >
         <ModelsIcon />
+      </NavLink>
+      <NavLink
+        to="/usage"
+        className={railLinkClass}
+        title={t('nav.usage')}
+        aria-label={t('nav.usage')}
+      >
+        <UsageIcon />
       </NavLink>
       <span className="flex-1" />
       <NavLink

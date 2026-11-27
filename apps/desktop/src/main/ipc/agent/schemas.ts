@@ -112,6 +112,10 @@ export const sessionExportSchema = z.object({
   redactPaths: z.boolean().optional()
 })
 
+export const usageStatsSchema = z.object({
+  range: z.enum(['all', '7d', '30d'])
+})
+
 export const sessionChangesSchema = z.object({
   sessionId: idSchema,
   messageId: idSchema.optional()

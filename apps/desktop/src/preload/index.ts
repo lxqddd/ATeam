@@ -71,6 +71,7 @@ const api: AteamApi = {
       search: (query) => ipcRenderer.invoke(AGENT_CHANNELS.sessionSearch, { query }),
       export: (options) => ipcRenderer.invoke(AGENT_CHANNELS.sessionExport, options),
       import: () => ipcRenderer.invoke(AGENT_CHANNELS.sessionImport),
+      usage: (range) => ipcRenderer.invoke(AGENT_CHANNELS.sessionUsage, { range }),
       changes: (sessionId, messageId) =>
         ipcRenderer.invoke(AGENT_CHANNELS.sessionChanges, { sessionId, messageId }),
       changesSummary: (sessionId) =>

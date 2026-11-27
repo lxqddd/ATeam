@@ -31,6 +31,7 @@ export const AGENT_CHANNELS = {
   sessionSearch: 'ateam:agent:sessions:search',
   sessionExport: 'ateam:agent:sessions:export',
   sessionImport: 'ateam:agent:sessions:import',
+  sessionUsage: 'ateam:agent:sessions:usage',
   sessionChanges: 'ateam:agent:sessions:changes',
   sessionChangesSummary: 'ateam:agent:sessions:changes-summary',
   sessionRevertFiles: 'ateam:agent:sessions:revert-files',

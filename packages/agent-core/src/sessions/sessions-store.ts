@@ -214,6 +214,11 @@ export class SessionsStore {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
 
+  /** Live records for read-only aggregation such as usage statistics. */
+  allRecords(): SessionRecord[] {
+    return [...this.records.values()]
+  }
+
   get(id: string): SessionRecord | undefined {
     return this.records.get(id)
   }

@@ -9,6 +9,8 @@ export {
 } from './export'
 export type { SessionExportBuildOptions } from './export'
 export { prepareSessionImport } from './import'
+export { computeUsageStats } from './usage'
+export type { ComputeUsageStatsOptions } from './usage'
 export { createSessionStorage, restoreLegacySessionBackups } from './storage'
 export type { SessionBackend, SessionStorage } from './storage'
 export { SnapshotStore } from './snapshots'
