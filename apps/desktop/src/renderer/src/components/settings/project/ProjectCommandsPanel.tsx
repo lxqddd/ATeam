@@ -14,7 +14,7 @@ import {
 } from './ProjectFields'
 import { asRecord, fieldEdits, recordEntries, setBoolean, setString } from './project-editors'
 import type { JsonRecord } from './project-editors'
-import type { ProjectConfigController } from './useProjectConfig'
+import type { ConfigDocumentController, ConfigScope } from '../config-controller'
 
 /** Mirrors CONFIG_KEY in agent-core's config normalizer. */
 const CONFIG_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
@@ -55,12 +55,24 @@ function formFromCommand(name: string, value: JsonRecord): CommandForm {
 
 function ProjectCommandsPanel({
   controller,
-  onOpenRaw
+  onOpenRaw,
+  scope = 'project'
 }: {
-  controller: ProjectConfigController
-  onOpenRaw: () => void
+  controller: ConfigDocumentController
+  onOpenRaw?: () => void
+  scope?: ConfigScope
 }): React.JSX.Element {
   const { t } = useTranslation()
+  const isGlobal = scope === 'global'
+  const text = {
+    hint: t(isGlobal ? 'settings.globalCommandsHint' : 'settings.projectCommandsHint'),
+    arrayHint: t(
+      isGlobal ? 'settings.globalCommandsArrayHint' : 'settings.projectCommandsArrayHint'
+    ),
+    rawTab: t(isGlobal ? 'settings.globalTabRaw' : 'settings.projectTabRaw'),
+    empty: t(isGlobal ? 'settings.globalCommandsEmpty' : 'settings.projectCommandsEmpty'),
+    invalidJson: t(isGlobal ? 'settings.globalInvalidJson' : 'settings.projectInvalidJson')
+  }
   const [form, setForm] = useState<CommandForm | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
@@ -124,7 +136,7 @@ function ProjectCommandsPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <PanelHint>{t('settings.projectCommandsHint')}</PanelHint>
+        <PanelHint>{text.hint}</PanelHint>
         {!commandsArray && !readOnly && !form && (
           <button
             type="button"
@@ -139,18 +151,20 @@ function ProjectCommandsPanel({
         )}
       </div>
 
-      {readOnly && <PanelError tone="warning">{t('settings.projectInvalidJson')}</PanelError>}
+      {readOnly && <PanelError tone="warning">{text.invalidJson}</PanelError>}
       {controller.saveError && <PanelError>{controller.saveError}</PanelError>}
 
       {commandsArray ? (
         <div className="flex flex-col gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2">
-          <p className="m-0 text-caption text-warning">{t('settings.projectCommandsArrayHint')}</p>
-          <button type="button" onClick={onOpenRaw} className={`${textButtonClass} self-start`}>
-            {t('settings.projectTabRaw')}
-          </button>
+          <p className="m-0 text-caption text-warning">{text.arrayHint}</p>
+          {onOpenRaw && (
+            <button type="button" onClick={onOpenRaw} className={`${textButtonClass} self-start`}>
+              {text.rawTab}
+            </button>
+          )}
         </div>
       ) : entries.length === 0 ? (
-        <PanelHint>{t('settings.projectCommandsEmpty')}</PanelHint>
+        <PanelHint>{text.empty}</PanelHint>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {entries.map(([name, value]) => (

@@ -3,6 +3,7 @@ import type {
   AgentDefinition,
   ConfigFileChange,
   EffectiveAgentConfig,
+  GlobalConfigFile,
   PluginAuthAuthorizeInput,
   PluginAuthCompleteInput,
   PluginAuthMethodState,
@@ -10,6 +11,7 @@ import type {
   PluginEntry,
   PluginInstallInput,
   PluginUpdateInput,
+  ProjectConfigEdit,
   ProjectConfigEditInput,
   ProjectConfigFile,
   AgentEventEnvelope,
@@ -134,6 +136,11 @@ export interface AgentBridge {
       get: (directory?: string | null) => Promise<ProjectConfigFile>
       update: (input: { directory?: string | null; content: string }) => Promise<ProjectConfigFile>
       edit: (input: ProjectConfigEditInput) => Promise<ProjectConfigFile>
+    }
+    global: {
+      get: () => Promise<GlobalConfigFile>
+      update: (input: { content: string }) => Promise<GlobalConfigFile>
+      edit: (input: { edits: ProjectConfigEdit[] }) => Promise<GlobalConfigFile>
     }
   }
   plugins: {

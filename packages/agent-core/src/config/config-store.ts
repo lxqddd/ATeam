@@ -9,13 +9,16 @@ import type {
   ConfigFieldSource,
   ConfigProvenance,
   EffectiveAgentConfig,
+  GlobalConfigFile,
+  ProjectConfigEdit,
   RetryConfigInput,
   ToolOutputConfig
 } from '@ateam/shared'
 import { DEFAULT_RETRY_CONFIG, DEFAULT_TOOL_OUTPUT_LIMITS } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from '../atomic-json'
+import { writeTextAtomic } from '../atomic-json'
 import { normalizeAgentConfigDocument } from './normalize'
 import { anchorProjectDocument, mergeAgentConfig, readProjectConfigDetails } from './project-config'
+import { applyGlobalConfigEdits } from './project-config-edit'
 
 export {
   normalizeFormatterOverrides,
@@ -97,14 +100,63 @@ function cloneConfig(config: AgentConfig): AgentConfig {
   }
 }
 
-async function readGlobalDocument(userDataPath: string): Promise<{
+const BOM = String.fromCharCode(0xfeff)
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+type ParsedGlobalContent =
+  { ok: true; value: unknown; hasBom: boolean } | { ok: false; error: string; hasBom: boolean }
+
+/** Strict JSON: strips and records a leading BOM; comments and trailing commas fail. */
+function parseGlobalContent(content: string): ParsedGlobalContent {
+  const hasBom = content.startsWith(BOM)
+  const body = hasBom ? content.slice(BOM.length) : content
+  try {
+    return { ok: true, value: JSON.parse(body) as unknown, hasBom }
+  } catch (error) {
+    return { ok: false, error: errorMessage(error), hasBom }
+  }
+}
+
+interface GlobalState {
+  /** Unanchored raw document; relative skills keep their written form. */
+  raw: Record<string, unknown>
   document: AgentConfigDocument
   diagnostics: ConfigDiagnostic[]
-}> {
+  hasBom: boolean
+}
+
+function emptyGlobalState(hasBom = false): GlobalState {
+  return { raw: {}, document: {}, diagnostics: [], hasBom }
+}
+
+function globalStateFromContent(content: string, file: string): GlobalState {
+  const parsed = parseGlobalContent(content)
+  if (!parsed.ok) return emptyGlobalState(parsed.hasBom)
+  const normalized = normalizeGlobalRaw(parsed.value, file)
+  return {
+    raw: isPlainObject(parsed.value) ? parsed.value : {},
+    document: normalized.document,
+    diagnostics: normalized.diagnostics,
+    hasBom: parsed.hasBom
+  }
+}
+
+async function readGlobalDocument(userDataPath: string): Promise<GlobalState> {
   const file = configFile(userDataPath)
-  const raw = await readJsonFile<unknown>(file)
-  if (!raw) return { document: {}, diagnostics: [] }
-  return normalizeGlobalRaw(raw, file)
+  let content: string
+  try {
+    content = await fs.readFile(file, 'utf8')
+  } catch {
+    return emptyGlobalState()
+  }
+  return globalStateFromContent(content, file)
 }
 
 /**
@@ -112,26 +164,24 @@ async function readGlobalDocument(userDataPath: string): Promise<{
  * temporarily unreadable or not valid JSON (for example mid-save in an external
  * editor): the caller must keep its previous state instead of resetting it.
  */
-async function readGlobalDocumentStrict(
-  userDataPath: string
-): Promise<{ document: AgentConfigDocument; diagnostics: ConfigDiagnostic[] } | null> {
+async function readGlobalDocumentStrict(userDataPath: string): Promise<GlobalState | null> {
   const file = configFile(userDataPath)
   let content: string
   try {
     content = await fs.readFile(file, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { document: {}, diagnostics: [] }
-    }
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return emptyGlobalState()
     return null
   }
-  let raw: unknown
-  try {
-    raw = JSON.parse(content)
-  } catch {
-    return null
+  const parsed = parseGlobalContent(content)
+  if (!parsed.ok) return null
+  const normalized = normalizeGlobalRaw(parsed.value, file)
+  return {
+    raw: isPlainObject(parsed.value) ? parsed.value : {},
+    document: normalized.document,
+    diagnostics: normalized.diagnostics,
+    hasBom: parsed.hasBom
   }
-  return normalizeGlobalRaw(raw, file)
 }
 
 function normalizeGlobalRaw(
@@ -148,6 +198,150 @@ function normalizeGlobalRaw(
     })
   }
   return { document: parsed.document, diagnostics: parsed.diagnostics }
+}
+
+/**
+ * Known top-level document keys, including legacy aliases. Anything else is
+ * preserved verbatim by `mergeKnownIntoRaw`.
+ */
+const KNOWN_DOCUMENT_KEYS = new Set<string>([
+  'snapshots',
+  'instructions',
+  'lspEnabled',
+  'lspInstall',
+  'lsp',
+  'formattersEnabled',
+  'formatters',
+  'formatterOverrides',
+  'references',
+  'permissions',
+  'permissionRules',
+  'mcp',
+  'mcpServers',
+  'agents',
+  'providers',
+  'plugins',
+  'commands',
+  'skills',
+  'retry',
+  'toolOutput',
+  'subagentDepth',
+  'environment',
+  'systemPrompt'
+])
+
+/**
+ * Rewrites known top-level fields of `raw` from `normalized` while keeping
+ * unknown fields in their original order. Built with `Object.fromEntries` so a
+ * literal `__proto__` key stays an own data property.
+ */
+function mergeKnownIntoRaw(
+  raw: Record<string, unknown>,
+  normalized: AgentConfigDocument
+): Record<string, unknown> {
+  const normalizedRecord = normalized as unknown as Record<string, unknown>
+  const entries: Array<[string, unknown]> = []
+  for (const [key, value] of Object.entries(raw)) {
+    if (KNOWN_DOCUMENT_KEYS.has(key)) {
+      if (Object.prototype.hasOwnProperty.call(normalizedRecord, key)) {
+        entries.push([key, normalizedRecord[key]])
+      }
+      continue
+    }
+    entries.push([key, value])
+  }
+  const present = new Set(entries.map(([key]) => key))
+  for (const [key, value] of Object.entries(normalizedRecord)) {
+    if (present.has(key) || value === undefined) continue
+    entries.push([key, value])
+  }
+  return Object.fromEntries(entries)
+}
+
+/**
+ * Snapshot for the global config editors. `content` keeps a leading BOM and
+ * `raw` stays unanchored, so relative skills round-trip unchanged.
+ */
+export async function readGlobalConfigFile(userDataPath: string): Promise<GlobalConfigFile> {
+  const file = configFile(userDataPath)
+  let content: string
+  try {
+    content = await fs.readFile(file, 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { path: file, exists: false, content: '', diagnostics: [], document: {} }
+    }
+    return {
+      path: file,
+      exists: true,
+      content: '',
+      diagnostics: [
+        {
+          source: file,
+          path: '$',
+          severity: 'error',
+          message: `unable to read config: ${errorMessage(error)}`
+        }
+      ],
+      document: {}
+    }
+  }
+  const parsed = parseGlobalContent(content)
+  if (!parsed.ok) {
+    return {
+      path: file,
+      exists: true,
+      content,
+      diagnostics: [
+        {
+          source: file,
+          path: '$',
+          severity: 'error',
+          message: `invalid JSON: ${parsed.error}`
+        }
+      ],
+      document: {}
+    }
+  }
+  if (!isPlainObject(parsed.value)) {
+    return {
+      path: file,
+      exists: true,
+      content,
+      diagnostics: [
+        {
+          source: file,
+          path: '$',
+          severity: 'error',
+          message: 'the config root must be a JSON object'
+        }
+      ],
+      document: {}
+    }
+  }
+  const normalized = normalizeGlobalRaw(parsed.value, file)
+  return {
+    path: file,
+    exists: true,
+    content,
+    diagnostics: normalized.diagnostics,
+    document: normalized.document,
+    raw: parsed.value
+  }
+}
+
+export async function writeGlobalConfigFile(
+  userDataPath: string,
+  content: string
+): Promise<GlobalConfigFile> {
+  const file = configFile(userDataPath)
+  const parsed = parseGlobalContent(content)
+  if (!parsed.ok) throw new Error(`INVALID_GLOBAL_CONFIG: ${parsed.error}`)
+  if (!isPlainObject(parsed.value)) {
+    throw new Error('INVALID_GLOBAL_CONFIG: the config root must be a JSON object')
+  }
+  await writeTextAtomic(file, content, 0o600)
+  return readGlobalConfigFile(userDataPath)
 }
 
 function fieldSource(
@@ -305,7 +499,9 @@ export async function readAgentConfig(
 
 export class AgentConfigStore {
   private config: AgentConfig = { ...DEFAULT_AGENT_CONFIG }
-  private document: AgentConfigDocument = {}
+  /** Unanchored raw document; the write baseline that keeps unknown fields. */
+  private rawDocument: Record<string, unknown> = {}
+  private hasBom = false
   /** Serializes init/reload/update so a hot reload never interleaves with a save. */
   private operation: Promise<unknown> = Promise.resolve()
 
@@ -313,9 +509,7 @@ export class AgentConfigStore {
 
   async init(): Promise<void> {
     await this.serialize(async () => {
-      const global = await readGlobalDocument(this.userDataPath)
-      this.document = global.document
-      this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, global.document, 'user')
+      this.setState(await readGlobalDocument(this.userDataPath))
     })
   }
 
@@ -329,10 +523,57 @@ export class AgentConfigStore {
    */
   async reload(): Promise<void> {
     await this.serialize(async () => {
-      const global = await readGlobalDocumentStrict(this.userDataPath)
-      if (!global) return
-      this.document = global.document
-      this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, global.document, 'user')
+      const state = await readGlobalDocumentStrict(this.userDataPath)
+      if (state) this.setState(state)
+    })
+  }
+
+  /**
+   * Applies path-level edits to the strict-JSON global file. Unknown top-level
+   * fields and untouched siblings are kept; memory refreshes only after the
+   * write succeeds. A missing file is seeded from `{}` and created on first
+   * effective edit.
+   */
+  async edit(edits: ProjectConfigEdit[]): Promise<GlobalConfigFile> {
+    return this.serialize(async () => {
+      const file = configFile(this.userDataPath)
+      let content: string | null = null
+      try {
+        content = await fs.readFile(file, 'utf8')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      if (content !== null) {
+        const parsed = parseGlobalContent(content)
+        if (!parsed.ok) throw new Error(`INVALID_GLOBAL_CONFIG: ${parsed.error}`)
+        if (!isPlainObject(parsed.value)) {
+          throw new Error('INVALID_GLOBAL_CONFIG: the config root must be a JSON object')
+        }
+      }
+      const source = content ?? '{}'
+      const next = applyGlobalConfigEdits(source, edits)
+      if (next !== source) {
+        await writeTextAtomic(file, next, 0o600)
+      }
+      const snapshot = await readGlobalConfigFile(this.userDataPath)
+      this.setState(this.stateFromSnapshot(snapshot))
+      return snapshot
+    })
+  }
+
+  /** Replaces the whole global file (Raw editor); validates before writing. */
+  async writeContent(content: string): Promise<GlobalConfigFile> {
+    return this.serialize(async () => {
+      const file = configFile(this.userDataPath)
+      const parsed = parseGlobalContent(content)
+      if (!parsed.ok) throw new Error(`INVALID_GLOBAL_CONFIG: ${parsed.error}`)
+      if (!isPlainObject(parsed.value)) {
+        throw new Error('INVALID_GLOBAL_CONFIG: the config root must be a JSON object')
+      }
+      await writeTextAtomic(file, content, 0o600)
+      const snapshot = await readGlobalConfigFile(this.userDataPath)
+      this.setState(this.stateFromSnapshot(snapshot))
+      return snapshot
     })
   }
 
@@ -351,10 +592,28 @@ export class AgentConfigStore {
     return run
   }
 
+  private setState(state: GlobalState): void {
+    this.rawDocument = state.raw
+    this.hasBom = state.hasBom
+    this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, state.document, 'user')
+  }
+
+  private stateFromSnapshot(snapshot: GlobalConfigFile): GlobalState {
+    return {
+      raw: isPlainObject(snapshot.raw) ? snapshot.raw : {},
+      document: snapshot.document,
+      diagnostics: snapshot.diagnostics,
+      hasBom: snapshot.content.startsWith(BOM)
+    }
+  }
+
   private async applyUpdate(
     patch: Omit<Partial<AgentConfig>, 'retry'> & { retry?: RetryConfigInput }
   ): Promise<AgentConfig> {
-    const next: AgentConfigDocument = { ...this.document }
+    const file = configFile(this.userDataPath)
+    // Build from the unanchored raw document so relative skills stay relative.
+    const base = normalizeAgentConfigDocument(this.rawDocument, file).document
+    const next: AgentConfigDocument = { ...base }
     if ('snapshots' in patch) next.snapshots = patch.snapshots
     if ('instructions' in patch) next.instructions = patch.instructions
     if ('lsp' in patch) {
@@ -411,11 +670,13 @@ export class AgentConfigStore {
         ])
       )
     }
-    const normalized = normalizeAgentConfigDocument(next, configFile(this.userDataPath)).document
-    this.document = normalized
-    this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, normalized, 'user')
-    await fs.mkdir(path.dirname(configFile(this.userDataPath)), { recursive: true })
-    await writeJsonAtomic(configFile(this.userDataPath), normalized)
+    const normalized = normalizeAgentConfigDocument(next, file).document
+    const merged = mergeKnownIntoRaw(this.rawDocument, normalized)
+    const body = JSON.stringify(merged, null, 2)
+    await writeTextAtomic(file, this.hasBom ? `${BOM}${body}` : body, 0o600)
+    const runtime = normalizeGlobalRaw(merged, file)
+    this.rawDocument = merged
+    this.config = mergeAgentConfig({ ...DEFAULT_AGENT_CONFIG }, runtime.document, 'user')
     return this.get()
   }
 }

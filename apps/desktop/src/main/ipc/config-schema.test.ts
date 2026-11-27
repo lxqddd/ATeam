@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { agentConfigPatchSchema, projectConfigEditSchema } from './config-schema'
+import {
+  agentConfigPatchSchema,
+  globalConfigEditSchema,
+  globalConfigUpdateSchema,
+  projectConfigEditSchema
+} from './config-schema'
 
 describe('agentConfigPatchSchema', () => {
   it('keeps formatter overrides', () => {
@@ -114,6 +119,65 @@ describe('projectConfigEditSchema', () => {
       projectConfigEditSchema.parse({
         edits: [{ path: ['commands', 'review'], value: { template: 'x'.repeat(200_001) } }]
       })
+    ).toThrow()
+  })
+})
+
+describe('globalConfigEditSchema', () => {
+  it('accepts edits to the global form-managed fields', () => {
+    expect(
+      globalConfigEditSchema.parse({
+        edits: [
+          { path: ['lsp'], value: { ts: { command: ['ts-ls'] } } },
+          { path: ['lspEnabled'], value: false },
+          { path: ['formatters'], value: true },
+          { path: ['formattersEnabled'] },
+          { path: ['commands'], value: { review: { template: 'Review' } } },
+          { path: ['skills'], value: ['a'] }
+        ]
+      }).edits
+    ).toHaveLength(6)
+  })
+
+  it('rejects fields the global structured editors do not own', () => {
+    expect(() =>
+      globalConfigEditSchema.parse({ edits: [{ path: ['providers'], value: {} }] })
+    ).toThrow()
+    expect(() =>
+      globalConfigEditSchema.parse({ edits: [{ path: ['lspInstall'], value: true }] })
+    ).toThrow()
+    expect(() => globalConfigEditSchema.parse({ edits: [{ path: ['mcp'], value: {} }] })).toThrow()
+  })
+
+  it('rejects unsafe or oversized paths', () => {
+    expect(() =>
+      globalConfigEditSchema.parse({ edits: [{ path: ['lsp', '__proto__'], value: {} }] })
+    ).toThrow()
+    expect(() =>
+      globalConfigEditSchema.parse({
+        edits: [{ path: ['lsp', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], value: 1 }]
+      })
+    ).toThrow()
+    expect(() => globalConfigEditSchema.parse({ edits: [] })).toThrow()
+  })
+
+  it('rejects payloads over the size limit', () => {
+    expect(() =>
+      globalConfigEditSchema.parse({
+        edits: [{ path: ['commands', 'review'], value: { template: 'x'.repeat(200_001) } }]
+      })
+    ).toThrow()
+  })
+})
+
+describe('globalConfigUpdateSchema', () => {
+  it('accepts file content up to the limit', () => {
+    expect(globalConfigUpdateSchema.parse({ content: '{}' })).toEqual({ content: '{}' })
+  })
+
+  it('rejects content over the limit', () => {
+    expect(() =>
+      globalConfigUpdateSchema.parse({ content: `"${'x'.repeat(1_000_000)}"` })
     ).toThrow()
   })
 })
