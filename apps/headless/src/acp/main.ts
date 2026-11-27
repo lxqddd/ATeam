@@ -76,6 +76,7 @@ async function main(): Promise<number> {
   const server = new AcpServer({
     version,
     bus,
+    models,
     input: process.stdin,
     output: process.stdout,
     createRuntime: (cwd) => runtimeFor(cwd),

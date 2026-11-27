@@ -2,15 +2,22 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { createInterface, type Interface } from 'node:readline'
 import type {
+  AgentDefinition,
   AgentEventEnvelope,
   McpServerInput,
   ChatMessage,
   MessageAttachment,
   MessagesSnapshot,
+  ModelPublic,
+  ModelRef,
   PermissionDecision,
+  QuestionAnswer,
   QuestionInput,
+  ReasoningEffort,
+  RuntimeModelsConfig,
   SessionMeta,
-  SessionSettings
+  SessionSettings,
+  TokenUsage
 } from '@ateam/shared'
 import type { EventBus } from '../server/event-bus'
 
@@ -18,15 +25,17 @@ export interface AcpRuntime {
   createSession(): Promise<SessionMeta>
   listSessions(): SessionMeta[]
   messages(id: string): MessagesSnapshot
+  listAgents?(workspace?: string): Promise<AgentDefinition[]>
   attachImage(sessionId: string, mimeType: string, data: Uint8Array): Promise<MessageAttachment>
   removeAttachment?(sessionId: string, attachmentId: string): Promise<void>
   setTransientMcpServers?(servers: McpServerInput[]): Promise<void>
+  setSessionModel?(id: string, model: ModelRef | null): Promise<SessionMeta>
   setSessionSettings?(id: string, settings: SessionSettings): Promise<SessionMeta>
   setSessionAgent?(id: string, agentId: string | null): Promise<SessionMeta>
   sendChat(id: string, text: string, model?: null, attachments?: MessageAttachment[]): Promise<void>
   stopChat(id: string): void
   replyPermission(id: string, decision: PermissionDecision): void
-  replyQuestion(id: string, answer: import('@ateam/shared').QuestionAnswer): void
+  replyQuestion(id: string, answer: QuestionAnswer): void
   shutdown(): Promise<void>
 }
 
@@ -35,6 +44,8 @@ export interface AcpServerOptions {
   bus: EventBus
   input: NodeJS.ReadableStream
   output: NodeJS.WritableStream
+  /** Models advertised to the client as ACP config options. */
+  models?: RuntimeModelsConfig
   version?: string
   configureSession?: (runtime: AcpRuntime, sessionId: string) => Promise<void>
 }
@@ -52,6 +63,29 @@ interface PendingElicitation {
   question: QuestionInput
 }
 
+interface SessionEntry {
+  runtime: AcpRuntime
+  cwd: string
+  session: SessionMeta
+  agents: AgentDefinition[]
+}
+
+/** ACP `session/new` / `session/load` config select (session-config-options). */
+interface ConfigSelect {
+  id: string
+  name: string
+  description?: string
+  category?: string
+  type: 'select'
+  currentValue: string
+  options: Array<{ value: string; name: string; description?: string }>
+}
+
+interface SessionModeState {
+  currentModeId: string
+  availableModes: Array<{ id: string; name: string; description?: string }>
+}
+
 interface JsonRpcRequest {
   jsonrpc?: string
   id?: number | string | null
@@ -62,6 +96,16 @@ interface JsonRpcRequest {
 }
 
 const PROTOCOL_VERSION = 1
+const DEFAULT_EFFORT = 'default'
+const DEFAULT_VARIANT = 'default'
+const EFFORT_VALUES = ['default', 'minimal', 'low', 'medium', 'high'] as const
+const EFFORT_LABELS: Record<string, string> = {
+  default: 'Default',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High'
+}
 
 function questionInputFrom(question: {
   header: string
@@ -79,17 +123,117 @@ function questionInputFrom(question: {
   }
 }
 
-function questionDescription(question: QuestionInput): string {
-  const options = question.options
-    .map((option) => option.label + (option.description ? ` — ${option.description}` : ''))
-    .join('; ')
-  return [options, question.multiple ? 'Separate multiple choices with commas.' : '']
-    .filter(Boolean)
-    .join(' ')
-}
-
 function questionMessage(question: QuestionInput): string {
   return `${question.header}: ${question.question}`
+}
+
+function enumOption(option: { label: string; description?: string }): Record<string, string> {
+  return {
+    const: option.label,
+    title: option.label,
+    ...(option.description ? { description: option.description } : {})
+  }
+}
+
+/**
+ * Maps a question to an ACP elicitation form schema: options become a single
+ * select (`oneOf`) or a multi-select array, and "other" answers get their own
+ * free-text field so clients never have to invent a synthetic option.
+ */
+function questionSchema(question: QuestionInput): Record<string, unknown> {
+  const base = { title: question.header, description: question.question }
+  const properties: Record<string, unknown> = {}
+  const required: string[] = []
+  const options = question.options
+  const customField = {
+    type: 'string',
+    title: `${question.header} (other)`,
+    description: 'Type your own answer instead of choosing an option.'
+  }
+  if (question.multiple) {
+    properties.answer = {
+      type: 'array',
+      ...base,
+      ...(options.length > 0
+        ? { items: { anyOf: options.map(enumOption) } }
+        : { items: { type: 'string' } })
+    }
+    if (question.allowCustom) properties.answer_custom = customField
+    else required.push('answer')
+  } else if (options.length > 0) {
+    properties.answer = { type: 'string', ...base, oneOf: options.map(enumOption) }
+    if (question.allowCustom) properties.answer_custom = customField
+    else required.push('answer')
+  } else {
+    properties.answer = { type: 'string', ...base }
+    required.push('answer')
+  }
+  return {
+    type: 'object',
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+    additionalProperties: false
+  }
+}
+
+function answerFromElicitation(
+  question: QuestionInput,
+  content: Record<string, unknown>
+): QuestionAnswer {
+  const labels = question.options.map((option) => option.label)
+  const matchLabel = (value: string): string | undefined =>
+    labels.find((label) => label.toLowerCase() === value.trim().toLowerCase())
+  const customText = typeof content.answer_custom === 'string' ? content.answer_custom.trim() : ''
+  const raw = content.answer
+  const values = Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === 'string')
+    : typeof raw === 'string'
+      ? (question.multiple ? raw.split(',') : [raw]).map((item) => item.trim())
+      : []
+  const cleaned = values.map((item) => item.trim()).filter(Boolean)
+  if (question.multiple) {
+    const selected: string[] = []
+    for (const value of cleaned) {
+      selected.push(matchLabel(value) ?? value)
+    }
+    return { selected, custom: customText || null, cancelled: false }
+  }
+  const [value] = cleaned
+  if (!value) return { selected: [], custom: customText || null, cancelled: false }
+  const label = matchLabel(value)
+  if (label) return { selected: [label], custom: customText || null, cancelled: false }
+  return { selected: [], custom: customText || value, cancelled: false }
+}
+
+function modelValue(model: Pick<ModelRef, 'providerId' | 'modelId'>): string {
+  return `${model.providerId}/${model.modelId}`
+}
+
+function findModel(models: ModelPublic[], value: string): ModelPublic | undefined {
+  return models.find((model) => modelValue(model) === value)
+}
+
+function usageFromEvent(usage: TokenUsage | undefined): Record<string, number> | null {
+  if (!usage) return null
+  const inputTokens = usage.inputTokens ?? 0
+  const outputTokens = usage.outputTokens ?? 0
+  const totalTokens = usage.totalTokens ?? inputTokens + outputTokens
+  if (
+    inputTokens === 0 &&
+    outputTokens === 0 &&
+    totalTokens === 0 &&
+    usage.cacheReadTokens == null &&
+    usage.cacheWriteTokens == null
+  ) {
+    return null
+  }
+  return {
+    totalTokens,
+    inputTokens,
+    outputTokens,
+    ...(usage.cacheReadTokens != null ? { cachedReadTokens: usage.cacheReadTokens } : {}),
+    ...(usage.cacheWriteTokens != null ? { cachedWriteTokens: usage.cacheWriteTokens } : {})
+  }
 }
 
 function mcpServersFrom(value: unknown): McpServerInput[] {
@@ -174,7 +318,7 @@ export class AcpServer {
   private readonly pendingElicitations = new Map<number | string, PendingElicitation>()
   private elicitationForm = false
   private readonly promptAborts = new Set<AbortController>()
-  private readonly sessions = new Map<string, { runtime: AcpRuntime; cwd: string }>()
+  private readonly sessions = new Map<string, SessionEntry>()
   private readonly seenTools = new Set<string>()
   private readonly sessionMcp = new Map<string, McpServerInput[]>()
   private readonly lineReader: Interface
@@ -269,6 +413,14 @@ export class AcpServer {
         await this.prompt(message)
         return
       }
+      if (message.method === 'session/set_config_option') {
+        await this.setConfigOption(message)
+        return
+      }
+      if (message.method === 'session/set_mode') {
+        await this.setMode(message)
+        return
+      }
       if (message.method === 'session/cancel') {
         this.cancel(message)
         return
@@ -286,13 +438,19 @@ export class AcpServer {
       return
     }
     const runtime = await this.options.createRuntime(cwd, randomUUID())
-    const session = await runtime.createSession()
+    const created = await runtime.createSession()
     if (this.options.configureSession) {
-      await this.options.configureSession(runtime, session.id)
+      await this.options.configureSession(runtime, created.id)
     }
-    this.sessions.set(session.id, { runtime, cwd })
+    const session = this.refreshMeta(runtime, created.id) ?? created
+    const agents = await this.loadAgents(runtime, cwd)
+    this.sessions.set(session.id, { runtime, cwd, session, agents })
     await this.applyMcpServers(runtime, session.id, message.params?.mcpServers)
-    this.respond(message.id as number, { sessionId: session.id })
+    this.respond(message.id as number, {
+      sessionId: session.id,
+      ...this.sessionOptions(session, agents)
+    })
+    this.emitUsage(runtime, session.id)
   }
 
   private async loadSession(message: JsonRpcRequest): Promise<void> {
@@ -318,10 +476,147 @@ export class AcpServer {
       this.fail(message.id, -32602, 'Session belongs to a different directory')
       return
     }
-    this.sessions.set(sessionId, { runtime, cwd })
+    const agents = await this.loadAgents(runtime, cwd)
+    this.sessions.set(sessionId, { runtime, cwd, session, agents })
     await this.applyMcpServers(runtime, sessionId, message.params?.mcpServers)
     this.replay(runtime.messages(sessionId).messages, sessionId)
-    this.respond(message.id as number, {})
+    this.respond(message.id as number, this.sessionOptions(session, agents))
+    this.emitUsage(runtime, sessionId)
+  }
+
+  private async loadAgents(runtime: AcpRuntime, cwd: string): Promise<AgentDefinition[]> {
+    if (!runtime.listAgents) return []
+    try {
+      return await runtime.listAgents(cwd)
+    } catch {
+      return []
+    }
+  }
+
+  /** Session options advertised on `session/new` / `session/load`. */
+  private sessionOptions(
+    session: SessionMeta,
+    agents: AgentDefinition[]
+  ): { configOptions?: ConfigSelect[]; modes?: SessionModeState } {
+    const configOptions = this.configOptions(session, agents)
+    const modes = this.modeState(session, agents)
+    return {
+      ...(configOptions.length > 0 ? { configOptions } : {}),
+      ...(modes ? { modes } : {})
+    }
+  }
+
+  private refreshMeta(runtime: AcpRuntime, sessionId: string): SessionMeta | undefined {
+    return runtime.listSessions().find((candidate) => candidate.id === sessionId)
+  }
+
+  private primaryAgents(agents: AgentDefinition[]): AgentDefinition[] {
+    return agents.filter((agent) => agent.mode === 'primary' || agent.mode === 'all')
+  }
+
+  private defaultModeId(agents: AgentDefinition[]): string | null {
+    const primary = this.primaryAgents(agents)
+    if (primary.length === 0) return null
+    return primary.find((agent) => agent.id === 'build')?.id ?? primary[0].id
+  }
+
+  private currentModeId(session: SessionMeta, agents: AgentDefinition[]): string | null {
+    const primary = this.primaryAgents(agents)
+    if (primary.length === 0) return null
+    if (session.agent && primary.some((agent) => agent.id === session.agent)) return session.agent
+    return this.defaultModeId(agents)
+  }
+
+  private modeState(session: SessionMeta, agents: AgentDefinition[]): SessionModeState | null {
+    const currentModeId = this.currentModeId(session, agents)
+    if (!currentModeId) return null
+    return {
+      currentModeId,
+      availableModes: this.primaryAgents(agents).map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        ...(agent.description ? { description: agent.description } : {})
+      }))
+    }
+  }
+
+  private currentModel(session: SessionMeta): ModelRef | null {
+    const models = this.options.models
+    return session.model ?? models?.defaultModel ?? null
+  }
+
+  private configOptions(session: SessionMeta, agents: AgentDefinition[]): ConfigSelect[] {
+    const models = this.options.models
+    const options: ConfigSelect[] = []
+    const selected = this.currentModel(session)
+    if (models && models.models.length > 0) {
+      const selectedModel = selected
+        ? models.models.find((model) => modelValue(model) === modelValue(selected))
+        : undefined
+      const currentValue = modelValue(selectedModel ?? models.models[0])
+      options.push({
+        id: 'model',
+        name: 'Model',
+        description: 'Model used for this session',
+        category: 'model',
+        type: 'select',
+        currentValue,
+        options: models.models.map((model) => ({
+          value: modelValue(model),
+          name: model.name,
+          description: `${model.providerId}/${model.modelId}`
+        }))
+      })
+      const variants = selectedModel?.variants ?? []
+      if (variants.length > 0) {
+        const variant = selected?.variant ?? null
+        options.push({
+          id: 'model_variant',
+          name: 'Model Variant',
+          description: 'Preset variant for the selected model',
+          category: 'model_config',
+          type: 'select',
+          currentValue:
+            variant && variants.some((item) => item.id === variant) ? variant : DEFAULT_VARIANT,
+          options: [
+            { value: DEFAULT_VARIANT, name: 'Default' },
+            ...variants.map((item) => ({
+              value: item.id,
+              name: item.name,
+              ...(item.settings.reasoningEffort
+                ? { description: item.settings.reasoningEffort }
+                : {})
+            }))
+          ]
+        })
+      }
+      options.push({
+        id: 'effort',
+        name: 'Reasoning Effort',
+        description: 'Reasoning effort for this session',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: session.reasoningEffort ?? DEFAULT_EFFORT,
+        options: EFFORT_VALUES.map((value) => ({ value, name: EFFORT_LABELS[value] ?? value }))
+      })
+    }
+    const mode = this.currentModeId(session, agents)
+    if (mode) {
+      options.push({
+        id: 'mode',
+        name: 'Session Mode',
+        description: 'Agent mode for this session',
+        category: 'mode',
+        type: 'select',
+        currentValue: mode,
+        options: this.primaryAgents(agents).map((agent) => ({
+          value: agent.id,
+          name: agent.name,
+          ...(agent.description ? { description: agent.description } : {})
+        }))
+      })
+    }
+    return options
   }
 
   private async applyMcpServers(
@@ -471,8 +766,36 @@ export class AcpServer {
       this.promptAborts.delete(abort)
     }
     const event = envelope.event
+    if (event.type === 'run.finished') {
+      entry.session = this.refreshMeta(entry.runtime, sessionId) ?? entry.session
+      this.emitUsage(entry.runtime, sessionId)
+    }
+    const usage = event.type === 'run.finished' ? usageFromEvent(event.usage) : null
     this.respond(message.id as number, {
-      stopReason: event.type === 'run.finished' ? stopReason(event.status) : 'end_turn'
+      stopReason: event.type === 'run.finished' ? stopReason(event.status) : 'end_turn',
+      ...(usage ? { usage } : {})
+    })
+  }
+
+  /** Sends ACP `usage_update` when the runtime reports context usage for a session. */
+  private emitUsage(runtime: AcpRuntime, sessionId: string): void {
+    const session = this.refreshMeta(runtime, sessionId)
+    if (!session || session.contextTokens == null || session.contextWindow == null) return
+    if (session.contextWindow <= 0) return
+    let costUsd = 0
+    for (const message of runtime.messages(sessionId).messages) {
+      if (message.costUsd) costUsd += message.costUsd
+    }
+    this.notify('session/update', {
+      sessionId,
+      update: {
+        sessionUpdate: 'usage_update',
+        used: session.contextTokens,
+        size: session.contextWindow,
+        ...(costUsd > 0
+          ? { cost: { amount: Math.round(costUsd * 1e6) / 1e6, currency: 'USD' } }
+          : {})
+      }
     })
   }
 
@@ -481,6 +804,137 @@ export class AcpServer {
     if (typeof sessionId !== 'string') return
     const entry = this.sessions.get(sessionId)
     entry?.runtime.stopChat(sessionId)
+  }
+
+  private async setConfigOption(message: JsonRpcRequest): Promise<void> {
+    const sessionId = message.params?.sessionId
+    const entry = typeof sessionId === 'string' ? this.sessions.get(sessionId) : undefined
+    if (!entry || typeof sessionId !== 'string') {
+      this.fail(message.id, -32602, 'Unknown session')
+      return
+    }
+    const configId = message.params?.configId
+    const value = message.params?.value
+    if (typeof configId !== 'string' || typeof value !== 'string') {
+      this.fail(message.id, -32602, 'configId and a string value are required')
+      return
+    }
+    const configOptions = this.configOptions(entry.session, entry.agents)
+    const option = configOptions.find((candidate) => candidate.id === configId)
+    if (!option) {
+      this.fail(message.id, -32602, `Unknown config option: ${configId}`)
+      return
+    }
+    if (!option.options.some((candidate) => candidate.value === value)) {
+      this.fail(message.id, -32602, `Invalid value for ${configId}: ${value}`)
+      return
+    }
+    let modeChanged = false
+    try {
+      switch (configId) {
+        case 'model': {
+          const models = this.options.models
+          const model = models ? findModel(models.models, value) : undefined
+          if (!model) throw new Error(`Unknown model: ${value}`)
+          if (!entry.runtime.setSessionModel) throw new Error('Model changes are not supported')
+          const previous = entry.session.model
+          const variant =
+            previous &&
+            previous.providerId === model.providerId &&
+            previous.modelId === model.modelId &&
+            previous.variant &&
+            model.variants?.some((item) => item.id === previous.variant)
+              ? previous.variant
+              : null
+          entry.session = await entry.runtime.setSessionModel(sessionId, {
+            providerId: model.providerId,
+            modelId: model.modelId,
+            variant
+          })
+          break
+        }
+        case 'model_variant': {
+          const current = entry.session.model ?? this.currentModel(entry.session)
+          if (!current) throw new Error('No model selected')
+          if (!entry.runtime.setSessionModel) throw new Error('Model changes are not supported')
+          entry.session = await entry.runtime.setSessionModel(sessionId, {
+            ...current,
+            variant: value === DEFAULT_VARIANT ? null : value
+          })
+          break
+        }
+        case 'effort': {
+          if (!entry.runtime.setSessionSettings) throw new Error('Settings are not supported')
+          entry.session = await entry.runtime.setSessionSettings(sessionId, {
+            reasoningEffort: value === DEFAULT_EFFORT ? null : (value as ReasoningEffort),
+            permissionMode: entry.session.permissionMode
+          })
+          break
+        }
+        case 'mode': {
+          if (!entry.runtime.setSessionAgent) throw new Error('Modes are not supported')
+          entry.session = await entry.runtime.setSessionAgent(sessionId, value)
+          modeChanged = true
+          break
+        }
+        default:
+          throw new Error(`Unknown config option: ${configId}`)
+      }
+    } catch (error) {
+      this.fail(message.id, -32602, error instanceof Error ? error.message : String(error))
+      return
+    }
+    this.respond(message.id as number, {
+      configOptions: this.configOptions(entry.session, entry.agents)
+    })
+    if (modeChanged) this.notifyCurrentMode(sessionId, entry)
+  }
+
+  private async setMode(message: JsonRpcRequest): Promise<void> {
+    const sessionId = message.params?.sessionId
+    const entry = typeof sessionId === 'string' ? this.sessions.get(sessionId) : undefined
+    if (!entry || typeof sessionId !== 'string') {
+      this.fail(message.id, -32602, 'Unknown session')
+      return
+    }
+    const modeId = message.params?.modeId
+    if (typeof modeId !== 'string') {
+      this.fail(message.id, -32602, 'modeId is required')
+      return
+    }
+    const mode = this.modeState(entry.session, entry.agents)
+    if (!mode?.availableModes.some((candidate) => candidate.id === modeId)) {
+      this.fail(message.id, -32602, `Unknown mode: ${modeId}`)
+      return
+    }
+    if (!entry.runtime.setSessionAgent) {
+      this.fail(message.id, -32603, 'Modes are not supported')
+      return
+    }
+    try {
+      entry.session = await entry.runtime.setSessionAgent(sessionId, modeId)
+    } catch (error) {
+      this.fail(message.id, -32602, error instanceof Error ? error.message : String(error))
+      return
+    }
+    this.respond(message.id as number, {})
+    this.notifyCurrentMode(sessionId, entry)
+  }
+
+  private notifyCurrentMode(sessionId: string, entry: SessionEntry): void {
+    const mode = this.modeState(entry.session, entry.agents)
+    if (!mode) return
+    this.notify('session/update', {
+      sessionId,
+      update: { sessionUpdate: 'current_mode_update', currentModeId: mode.currentModeId }
+    })
+    this.notify('session/update', {
+      sessionId,
+      update: {
+        sessionUpdate: 'config_option_update',
+        configOptions: this.configOptions(entry.session, entry.agents)
+      }
+    })
   }
 
   private resolveClientRequest(message: JsonRpcRequest): void {
@@ -514,7 +968,7 @@ export class AcpServer {
     const elicitation = this.pendingElicitations.get(message.id)
     if (!elicitation) return
     this.pendingElicitations.delete(message.id)
-    const result = message.result as { action?: string; content?: { answer?: unknown } } | undefined
+    const result = message.result as { action?: string; content?: unknown } | undefined
     if (message.error || result?.action !== 'accept') {
       try {
         elicitation.runtime.replyQuestion(elicitation.questionId, {
@@ -527,26 +981,15 @@ export class AcpServer {
       }
       return
     }
-    const answer = typeof result.content?.answer === 'string' ? result.content.answer.trim() : ''
-    const labels = elicitation.question.options.map((option) => option.label)
-    let selected = labels.filter((label) => label.toLowerCase() === answer.toLowerCase())
-    if (elicitation.question.multiple && answer) {
-      selected = labels.filter((label) =>
-        answer
-          .split(',')
-          .map((item) => item.trim().toLowerCase())
-          .includes(label.toLowerCase())
-      )
-    }
+    const content =
+      result.content && typeof result.content === 'object'
+        ? (result.content as Record<string, unknown>)
+        : {}
     try {
-      elicitation.runtime.replyQuestion(elicitation.questionId, {
-        selected,
-        custom:
-          answer && !labels.some((label) => label.toLowerCase() === answer.toLowerCase())
-            ? answer
-            : null,
-        cancelled: false
-      })
+      elicitation.runtime.replyQuestion(
+        elicitation.questionId,
+        answerFromElicitation(elicitation.question, content)
+      )
     } catch {
       /* the question may already have timed out */
     }
@@ -700,18 +1143,7 @@ export class AcpServer {
           toolCallId: event.question.toolCallId,
           mode: 'form',
           message: questionMessage(question),
-          requestedSchema: {
-            type: 'object',
-            properties: {
-              answer: {
-                type: 'string',
-                title: question.header,
-                description: questionDescription(question)
-              }
-            },
-            required: ['answer'],
-            additionalProperties: false
-          }
+          requestedSchema: questionSchema(question)
         }
       })
     }
