@@ -16,6 +16,11 @@ const PROVIDER_TYPES: readonly ProviderType[] = [
 const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptEdits', 'auto']
 const REASONING_EFFORTS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
 
+/** Default location of the CLI session store, shared by chat and data commands. */
+export function defaultCliDataDir(): string {
+  return path.join(os.homedir(), '.ateam', 'cli')
+}
+
 export interface CliOptions {
   workspace: string
   prompt: string | null
@@ -72,7 +77,7 @@ export function parseCliArgs(
     permissionMode: 'ask',
     agent: null,
     sessionId: null,
-    dataDir: path.join(os.homedir(), '.ateam', 'cli'),
+    dataDir: defaultCliDataDir(),
     json: false,
     listSessions: false,
     restoreSessions: false,
@@ -224,4 +229,10 @@ Options:
   --restore-sessions       Restore migrated legacy session backups and exit
   --json                   Print agent events as JSON lines
   --help                   Show this help
+
+Data commands (no model or API key required):
+  export [options]         Export sessions as JSON, JSON Lines or Markdown
+  import [file]            Import a desktop/CLI session export (or stdin)
+  stats [options]          Show local usage statistics
+  Run "pnpm cli -- <command> --help" for the command's options.
 `
