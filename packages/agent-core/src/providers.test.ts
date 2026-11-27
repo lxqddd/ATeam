@@ -214,8 +214,13 @@ describe('mergeProjectModelCatalog', () => {
       'provider-1': {
         name: 'Renamed',
         models: {
-          'model-1': { name: 'Project Model', contextWindow: 2000 },
-          'model-2': { reasoning: true }
+          'model-1': {
+            name: 'Project Model',
+            contextWindow: 2000,
+            costCacheRead: 0.3,
+            costCacheWrite: 3.75
+          },
+          'model-2': { reasoning: true, costCacheWrite: 4 }
         }
       }
     }
@@ -248,7 +253,16 @@ describe('mergeProjectModelCatalog', () => {
       id: 'model-1',
       name: 'Project Model',
       contextWindow: 2000,
+      costCacheRead: 0.3,
+      costCacheWrite: 3.75,
       source: 'config'
+    })
+    expect(runtime.models.find((model) => model.modelId === 'model-1')).toMatchObject({
+      costCacheRead: 0.3,
+      costCacheWrite: 3.75
+    })
+    expect(runtime.models.find((model) => model.modelId === 'model-2')).toMatchObject({
+      costCacheWrite: 4
     })
     expect(merged.models.find((model) => model.modelId === 'model-2')).toMatchObject({
       id: runtime.models.find((model) => model.modelId === 'model-2')?.id,

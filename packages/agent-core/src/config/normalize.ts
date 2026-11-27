@@ -554,7 +554,14 @@ function normalizeProviderModel(
   }
   const model: ProviderModelConfigInput = {}
   if (typeof value.name === 'string' && value.name.trim()) model.name = value.name.trim()
-  for (const key of ['contextWindow', 'maxOutputTokens', 'costInput', 'costOutput'] as const) {
+  for (const key of [
+    'contextWindow',
+    'maxOutputTokens',
+    'costInput',
+    'costOutput',
+    'costCacheRead',
+    'costCacheWrite'
+  ] as const) {
     if (value[key] === undefined) continue
     const number = finiteNumber(value[key])
     if (number === undefined || number < 0) {

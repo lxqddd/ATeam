@@ -29,6 +29,33 @@ describe('AssistantMessage', () => {
     )
 
     expect(screen.getByText('$0.000069')).toBeInTheDocument()
+    expect(screen.getByTitle('Estimated cost')).toBeInTheDocument()
+  })
+
+  it('breaks the cost title down by input segment when cache usage exists', () => {
+    render(
+      <AssistantMessage
+        message={makeMessage({
+          parts: [makeTextPart('answer')],
+          usage: {
+            inputTokens: 100,
+            cacheReadTokens: 60,
+            cacheWriteTokens: 20,
+            outputTokens: 10,
+            totalTokens: 110
+          },
+          costUsd: 0.000303
+        })}
+        permissions={[]}
+        isLast
+        sessionRunning={false}
+      />
+    )
+
+    expect(screen.getByText('$0.000303')).toHaveAttribute(
+      'title',
+      'Uncached input 20 · cache read 60 · cache write 20 · output 10 tokens'
+    )
   })
 })
 

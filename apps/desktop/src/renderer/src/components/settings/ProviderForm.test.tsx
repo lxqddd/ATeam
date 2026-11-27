@@ -204,7 +204,9 @@ describe('provider catalog', () => {
         reasoning: true,
         attachment: true,
         costInput: 3,
-        costOutput: 15
+        costOutput: 15,
+        costCacheRead: 0.3,
+        costCacheWrite: 3.75
       }
     ])
     const user = userEvent.setup()

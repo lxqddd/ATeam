@@ -602,17 +602,24 @@ function AgentSettings(): React.JSX.Element {
                   {t('settings.cacheMetricsEmpty')}
                 </p>
               ) : (
-                <p className="m-0 mt-0.5 text-caption text-muted">
-                  {t('settings.cacheMetricsSummary', {
-                    requests: info.cacheMetrics.requests,
-                    rate:
-                      info.cacheMetrics.hitRate === null
-                        ? '—'
-                        : Math.round(info.cacheMetrics.hitRate * 100),
-                    read: info.cacheMetrics.cacheReadTokens,
-                    write: info.cacheMetrics.cacheWriteTokens
-                  })}
-                </p>
+                <>
+                  <p className="m-0 mt-0.5 text-caption text-muted">
+                    {t('settings.cacheMetricsSummary', {
+                      requests: info.cacheMetrics.requests,
+                      rate:
+                        info.cacheMetrics.hitRate === null
+                          ? '—'
+                          : Math.round(info.cacheMetrics.hitRate * 100),
+                      read: info.cacheMetrics.cacheReadTokens,
+                      write: info.cacheMetrics.cacheWriteTokens
+                    })}
+                  </p>
+                  <p className="m-0 text-caption text-muted">
+                    {t('settings.cacheMetricsSavings', {
+                      amount: info.cacheMetrics.savedUsd.toFixed(6)
+                    })}
+                  </p>
+                </>
               )}
             </div>
           )}
@@ -648,6 +655,12 @@ function AgentSettings(): React.JSX.Element {
           </p>
         </div>
       )}
+
+      <div className="rounded-md border border-border-subtle bg-background-subtle px-3 py-2 text-caption text-muted">
+        <p className="m-0 text-label font-medium text-foreground">{t('settings.costAccounting')}</p>
+        <p className="m-0 mt-0.5">{t('settings.costAccountingBody')}</p>
+        <p className="m-0 mt-0.5 text-subtle">{t('settings.costAccountingFallback')}</p>
+      </div>
 
       <div className="flex flex-col gap-2">
         <label htmlFor="formatter-overrides" className="text-label font-medium text-foreground">

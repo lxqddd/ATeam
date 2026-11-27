@@ -41,6 +41,8 @@ function modelFields(
     ...(input.attachment !== undefined ? { attachment: input.attachment } : {}),
     ...(input.costInput !== undefined ? { costInput: input.costInput } : {}),
     ...(input.costOutput !== undefined ? { costOutput: input.costOutput } : {}),
+    ...(input.costCacheRead !== undefined ? { costCacheRead: input.costCacheRead } : {}),
+    ...(input.costCacheWrite !== undefined ? { costCacheWrite: input.costCacheWrite } : {}),
     ...(input.applyPatch !== undefined ? { applyPatch: input.applyPatch } : {}),
     ...(input.compaction !== undefined ? { compaction: input.compaction } : {}),
     ...(variants ? { variants } : {})

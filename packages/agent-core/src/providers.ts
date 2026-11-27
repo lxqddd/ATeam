@@ -86,6 +86,12 @@ export function mergeRuntimeProviders(
           ...(modelInput.attachment !== undefined ? { attachment: modelInput.attachment } : {}),
           ...(modelInput.costInput !== undefined ? { costInput: modelInput.costInput } : {}),
           ...(modelInput.costOutput !== undefined ? { costOutput: modelInput.costOutput } : {}),
+          ...(modelInput.costCacheRead !== undefined
+            ? { costCacheRead: modelInput.costCacheRead }
+            : {}),
+          ...(modelInput.costCacheWrite !== undefined
+            ? { costCacheWrite: modelInput.costCacheWrite }
+            : {}),
           ...(modelInput.applyPatch !== undefined ? { applyPatch: modelInput.applyPatch } : {}),
           ...(modelInput.compaction !== undefined ? { compaction: modelInput.compaction } : {}),
           ...(variants ? { variants } : {})
@@ -108,6 +114,12 @@ export function mergeRuntimeProviders(
         ...(modelInput.attachment !== undefined ? { attachment: modelInput.attachment } : {}),
         ...(modelInput.costInput !== undefined ? { costInput: modelInput.costInput } : {}),
         ...(modelInput.costOutput !== undefined ? { costOutput: modelInput.costOutput } : {}),
+        ...(modelInput.costCacheRead !== undefined
+          ? { costCacheRead: modelInput.costCacheRead }
+          : {}),
+        ...(modelInput.costCacheWrite !== undefined
+          ? { costCacheWrite: modelInput.costCacheWrite }
+          : {}),
         ...(modelInput.applyPatch !== undefined ? { applyPatch: modelInput.applyPatch } : {}),
         ...(modelInput.compaction !== undefined ? { compaction: modelInput.compaction } : {}),
         ...(variants ? { variants } : {})

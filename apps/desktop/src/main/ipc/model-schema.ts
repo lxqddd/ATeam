@@ -34,6 +34,8 @@ export const modelCreateSchema = z.object({
   compaction: z.boolean().optional(),
   costInput: costSchema.optional(),
   costOutput: costSchema.optional(),
+  costCacheRead: costSchema.optional(),
+  costCacheWrite: costSchema.optional(),
   variants: z.array(variantSchema).max(10).optional()
 })
 
@@ -48,5 +50,7 @@ export const modelUpdateSchema = z.object({
   compaction: z.boolean().optional(),
   costInput: costSchema.nullable().optional(),
   costOutput: costSchema.nullable().optional(),
+  costCacheRead: costSchema.nullable().optional(),
+  costCacheWrite: costSchema.nullable().optional(),
   variants: z.array(variantSchema).max(10).nullable().optional()
 })

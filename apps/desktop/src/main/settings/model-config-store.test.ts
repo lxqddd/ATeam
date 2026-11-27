@@ -562,7 +562,9 @@ describe('model capabilities', () => {
       reasoning: true,
       attachment: true,
       costInput: 3,
-      costOutput: 15
+      costOutput: 15,
+      costCacheRead: 0.3,
+      costCacheWrite: 3.75
     })
 
     expect(config.models[0]).toMatchObject({
@@ -571,7 +573,9 @@ describe('model capabilities', () => {
       reasoning: true,
       attachment: true,
       costInput: 3,
-      costOutput: 15
+      costOutput: 15,
+      costCacheRead: 0.3,
+      costCacheWrite: 3.75
     })
 
     const reloaded = new ModelConfigStore(directory)
@@ -581,7 +585,9 @@ describe('model capabilities', () => {
       reasoning: true,
       attachment: true,
       costInput: 3,
-      costOutput: 15
+      costOutput: 15,
+      costCacheRead: 0.3,
+      costCacheWrite: 3.75
     })
   })
 
@@ -592,7 +598,8 @@ describe('model capabilities', () => {
       modelId: 'claude-x',
       maxOutputTokens: 8_192,
       reasoning: true,
-      costInput: 3
+      costInput: 3,
+      costCacheRead: 0.3
     })
     const id = created.models[0].id
 
@@ -602,12 +609,16 @@ describe('model capabilities', () => {
       maxOutputTokens: 4_096,
       reasoning: false,
       costInput: null,
-      costOutput: null
+      costOutput: null,
+      costCacheRead: null,
+      costCacheWrite: null
     })
 
     expect(updated.models[0]).toMatchObject({ maxOutputTokens: 4_096, reasoning: false })
     expect(updated.models[0].costInput).toBeUndefined()
     expect(updated.models[0].costOutput).toBeUndefined()
+    expect(updated.models[0].costCacheRead).toBeUndefined()
+    expect(updated.models[0].costCacheWrite).toBeUndefined()
   })
 
   it('validates capability metadata', async () => {
@@ -618,6 +629,9 @@ describe('model capabilities', () => {
     ).rejects.toThrow('INVALID_MAX_OUTPUT_TOKENS')
     await expect(
       store.addModel({ providerId, modelId: 'bad-cost', costInput: -1 })
+    ).rejects.toThrow('INVALID_COST')
+    await expect(
+      store.addModel({ providerId, modelId: 'bad-cache-cost', costCacheRead: 1_001 })
     ).rejects.toThrow('INVALID_COST')
     await expect(
       store.addModel({ providerId, modelId: 'huge-output', maxOutputTokens: 2_000_000 })

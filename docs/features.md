@@ -19,7 +19,7 @@
 - 支持停止（中断当前运行）、重试最后一条失败 / 中断消息、错误信息持久化。
 - 运行中仍可继续输入：消息进入会话级排队区（输入框上方展示，可编辑回填或取消）。Enter / 发送按钮按“当前步骤后插入”策略排队，当前模型步骤结束后自动发送；Ctrl/Cmd+Enter 或“立即打断”会中止当前运行后立即发送。停止按钮同时清空队列。排队消息随消息快照在重新加载时恢复；agent 重启会丢失内存中的队列，运行中暂不支持排队 shell 片段。
 - 模型请求遇 429、5xx、网络错误或已建立响应后的流中断时自动退避重试；默认 4 次重试（共 5 次尝试），可在设置 → Agent 调整最大重试次数、最大等待与响应超时。聊天中展示重试次数、等待时间与原因，重试耗尽时显示最终失败原因；设置页展示重试次数、成功率与平均等待。
-- 推理模型的 reasoning 与 provider metadata 仅在同一模型下回放（包括仅含 `providerMetadata` 的 redacted thinking），跨模型自动丢弃；Anthropic 在 system 与最新 user / tool 消息上设置 prompt cache 断点，OpenAI 使用会话级 prompt cache key。设置页展示缓存请求数、命中率、缓存读取 / 写入与节省 token；旧消息缺少模型元数据时按启动时的会话模型补齐。
+- 推理模型的 reasoning 与 provider metadata 仅在同一模型下回放（包括仅含 `providerMetadata` 的 redacted thinking），跨模型自动丢弃；Anthropic 在 system 与最新 user / tool 消息上设置 prompt cache 断点，OpenAI 使用会话级 prompt cache key。设置页展示缓存请求数、命中率、缓存读取 / 写入、节省 token 与估算节省金额；缓存指标与节省金额只统计聊天模型请求，标题生成、上下文压缩与模型连接测试不计入。旧消息缺少模型元数据时按启动时的会话模型补齐。
 - system prompt 按 Claude / GPT / Gemini / Kimi / 通用模型选择完整基础提示，可用 `systemPrompt` 整体覆盖；环境块包含模型、工作目录、Git 标记、平台、本地时区日期与可配置备注。MCP server instructions 仅注入当前 agent 可用且未被权限拒绝的服务器，server 名称与正文进行 XML 转义。
 - 每轮最多 25 个模型步骤（Agent 可覆盖）；最后一步禁用工具并要求模型总结已完成工作、未完成事项与建议下一步，run 以 `max-steps` 结束，消息下方提示可继续发送消息。
 
@@ -40,6 +40,8 @@
 ### 1.6 成本与上下文占用
 
 - 每条 assistant 消息在模型配置了价格时记录估算成本（USD，六位小数）。
+- 成本按实际 usage 分为普通输入、cache read、cache write 与输出四段计价；模型可单独配置 cache read / cache write 单价，留空时缓存 token 回退输入单价，四个价格都缺失时不记录成本。
+- 缓存命中率与估算节省金额使用同一批 usage：命中率 = cache read / 总输入；节省金额 = cache read ×（输入单价 − cache read 单价），cache write 不计入节省。
 - 会话头部展示累计成本与上下文占用进度条（上下文 token / 模型窗口）。
 
 ## 2. 模型与供应商
@@ -55,7 +57,7 @@
 
 ### 2.2 模型元数据
 
-- 上下文窗口、最大输出 token、是否支持推理、是否支持附件、输入 / 输出价格（USD / 百万 token）。
+- 上下文窗口、最大输出 token、是否支持推理、是否支持附件、输入 / 输出 / cache read / cache write 价格（USD / 百万 token）。
 - 工具与压缩能力：`applyPatch`（用多文件 patch 替代 edit / write）与 `compaction`（供应商侧压缩，当前支持 Anthropic）。
 - 运行时使用上下文窗口做压缩判断、最大输出限制单次生成；推理与附件控件按能力显隐。
 - 每条消息按实际用量与模型价格计算成本。
@@ -64,7 +66,7 @@
 ### 2.3 模型目录（models.dev）
 
 - 拉取 `https://models.dev/api.json` 并缓存 24 小时；离线或请求失败时回退到缓存。
-- 供应商表单可按名称搜索并填充名称、类型与 Base URL；模型表单可按模型搜索并填充上下文、最大输出、能力与价格。
+- 供应商表单可按名称搜索并填充名称、类型与 Base URL；模型表单可按模型搜索并填充上下文、最大输出、能力与价格（含 cache read / cache write）。
 - 推理强度（minimal / low / medium / high）按会话保存，默认跟随模型。
 
 ## 3. Agent 与子代理
@@ -315,7 +317,7 @@ models/                  # 供应商 / 模型配置
 - 供应商 OAuth 为通用 OAuth 2.0（OpenAI / OpenAI-compatible）；ChatGPT、GitHub Copilot 等供应商使用未公开的专有登录与令牌交换流程，Ateam 内置流程不实现这类非公开认证。插件可以声明 `auth` 方法与提示项，由设置页动态渲染登录表单并调用插件自己的 `authorize` 流程；OAuth 方法还可声明 `refresh` 回调，未提供 token endpoint 的插件凭据会在过期前由主进程自动刷新并写回 `auth.json`。
 - OpenAI 服务端压缩返回的 opaque compaction item 目前无法通过 AI SDK 回传，因此 `compaction` 仅对 Anthropic 生效；OpenAI 等其他供应商使用本地摘要压缩。
 - ripgrep 已随应用打包（按平台可选依赖），缺失时仍回退 JS 遍历；LSP 查询依赖对应语言服务器可执行文件，可在配置中开启 npm 按需安装（见第 10 节）。
-- 缓存成本仍按 input token 统一价格估算，未区分 cache read/write 价格；缓存指标只统计聊天模型请求，标题、压缩与模型测试不计入。
+- 缓存指标与估算节省为 agent 进程内统计，重启清零；只统计聊天模型请求（标题生成、上下文压缩与模型连接测试不计入），且可能包含失败 / 重试尝试已上报的 usage，消息成本只按最终一次尝试计算。成本依赖供应商把 `inputTokens` 归一化为含缓存的总输入；异常上报会被下限保护为 0，可能少算普通输入。
 - 分层配置已完成全局 + 项目 `ateam.json/jsonc`、来源/生效值/诊断展示、结构化 provider/LSP/formatter/commands/skills 管理表单、原始 JSONC 兜底编辑、项目模型进入选择器（带“项目”标识）、权限规则六层来源 UI 与完整配置矩阵 E2E。全局设置新增“全局配置”分区：LSP / Formatters 支持默认、仅开关（已有自定义列表时只写 `lspEnabled` / `formattersEnabled`，不丢列表）与自定义列表三种模式，Commands 编辑模板与元数据，Skills 按行维护路径，另有 Raw JSON 兜底；所有写入走路径级编辑，只改表单托管的顶层 key，未知顶层字段原样保留，保存后内存配置立即刷新。全局文件是严格 JSON：注释、尾随逗号与非对象根会被拒绝，前导 BOM 会被容忍并保留。主进程以目录监听 + 去抖 + mtime 兜底监视全局 `config.json`、`permissions.json`、`mcp.json` 与项目 `ateam.json(c)`，外部修改约 1 秒内刷新设置页与缓存；应用内保存与“始终允许”回复通过内容摘要抑制自写事件；watcher 按会话 workspace 建立 Git 根租约，会话切换或删除时释放旧根（无会话占用的根关闭 watcher 并清理挂起事件，LRU 上限 32，`trackWorkspace` 的持久租约不释放）。全局 reload 同时重读权限规则与用户 MCP 服务器，MCP 只断开配置变化或被删除服务器的连接，未变化连接保持。边界：结构化表单只托管 `providers` / `lsp` / `lspEnabled` / `lspInstall` / `formatters` / `formattersEnabled` / `formatterOverrides` / `commands` / `skills` 顶层 key 的路径级 diff，数组或整对象替换会丢失节点内注释，JSONC 无效时结构化面板只读、需在 Raw 中修复，数组形式的 `commands` 仍需先在 Raw 中转成对象；`config.update` 会把已知顶层字段重写为规范化形式，已知值内部的未知键仍可能被丢弃；`policy.json` 为受管只读文件（界面只展示路径与错误，不承诺热重载），`mcp-auth.json` 不进入监听范围。
 - P2 已全部落地：Code Mode、并行工具编排、worktree / 会话迁移、桌面浏览器自动化、Headless CLI、Server API / SDK、ACP、GitHub Action、References、组织策略与 SQLite 会话存储；后续方向见 `opencode-agent-alignment-todo.md`。
 - 桌面安装包尚未配置代码签名与公证（macOS `notarize: false`）；正式分发前需提供证书、公证凭据并调整 `electron-builder.yml`。

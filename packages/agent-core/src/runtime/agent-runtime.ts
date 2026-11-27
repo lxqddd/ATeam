@@ -74,7 +74,7 @@ import { abortableSleep, isRetryableStreamError, retryDelayMs } from '../retry-f
 import { expandCommandTemplate, runWorkspaceShell } from '../commands'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
 import { formatTodoList, normalizeTodos } from '../todos'
-import { computeMessageCost } from '../cost'
+import { computeCacheSavings, computeMessageCost } from '../cost'
 import { normalizeError } from '../errors'
 import {
   createWorktree,
@@ -246,7 +246,15 @@ export class AgentRuntime {
       store: this.store,
       snapshots: this.snapshots,
       events: this.events,
-      recordUsage: (usage) => this.cacheMetrics.record(usage)
+      recordUsage: (usage, modelRef, models) => {
+        let savedUsd = 0
+        try {
+          savedUsd = computeCacheSavings(usage, resolveModelRef(models, modelRef).model)
+        } catch {
+          /* pricing is best effort; cache counters must still advance */
+        }
+        this.cacheMetrics.record(usage, savedUsd)
+      }
     })
     this.commandService = new CommandService({
       userDataPath: this.options.userDataPath,

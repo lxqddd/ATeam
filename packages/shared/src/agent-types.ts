@@ -465,6 +465,8 @@ export interface CacheMetricsSnapshot {
   hitRate: number | null
   /** Input tokens served from cache instead of being processed again. */
   savedTokens: number
+  /** Estimated USD saved by cache reads versus paying the full input price. */
+  savedUsd: number
 }
 
 export interface AgentMetricsSnapshot {
@@ -524,6 +526,8 @@ export interface ProviderModelConfigInput {
   attachment?: boolean
   costInput?: number
   costOutput?: number
+  costCacheRead?: number
+  costCacheWrite?: number
   applyPatch?: boolean
   compaction?: boolean
   variants?: ModelVariantInput[]

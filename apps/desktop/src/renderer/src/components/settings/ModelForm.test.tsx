@@ -108,6 +108,8 @@ describe('ModelForm', () => {
         attachment: false,
         costInput: null,
         costOutput: null,
+        costCacheRead: null,
+        costCacheWrite: null,
         variants: [],
         applyPatch: false,
         compaction: false
@@ -139,6 +141,8 @@ describe('model capability metadata', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Supports attachments' }))
     await user.type(screen.getByLabelText('Input cost (USD / 1M tokens)'), '3')
     await user.type(screen.getByLabelText('Output cost (USD / 1M tokens)'), '15')
+    await user.type(screen.getByLabelText('Cache read cost (USD / 1M tokens)'), '0.3')
+    await user.type(screen.getByLabelText('Cache write cost (USD / 1M tokens)'), '3.75')
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() =>
@@ -149,7 +153,9 @@ describe('model capability metadata', () => {
           reasoning: true,
           attachment: true,
           costInput: 3,
-          costOutput: 15
+          costOutput: 15,
+          costCacheRead: 0.3,
+          costCacheWrite: 3.75
         })
       )
     )
@@ -244,7 +250,9 @@ describe('model capability metadata', () => {
         reasoning: true,
         attachment: true,
         costInput: 3,
-        costOutput: 15
+        costOutput: 15,
+        costCacheRead: 0.3,
+        costCacheWrite: 3.75
       }
     ])
     const user = userEvent.setup()
@@ -257,5 +265,7 @@ describe('model capability metadata', () => {
     expect(screen.getByLabelText('Display name')).toHaveValue('Claude Sonnet 4')
     expect(screen.getByLabelText('Context window')).toHaveValue('200000')
     expect(screen.getByLabelText('Max output tokens')).toHaveValue('64000')
+    expect(screen.getByLabelText('Cache read cost (USD / 1M tokens)')).toHaveValue('0.300')
+    expect(screen.getByLabelText('Cache write cost (USD / 1M tokens)')).toHaveValue('3.750')
   })
 })
