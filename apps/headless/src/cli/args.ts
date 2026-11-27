@@ -7,14 +7,14 @@ import type {
   RuntimeModelsConfig
 } from '@ateam/shared'
 
-const PROVIDER_TYPES: readonly ProviderType[] = [
+export const PROVIDER_TYPES: readonly ProviderType[] = [
   'anthropic',
   'openai',
   'google',
   'openai-compatible'
 ]
-const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptEdits', 'auto']
-const REASONING_EFFORTS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
+export const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptEdits', 'auto']
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = ['minimal', 'low', 'medium', 'high']
 
 /** Default location of the CLI session store, shared by chat and data commands. */
 export function defaultCliDataDir(): string {
@@ -174,7 +174,18 @@ export function parseCliArgs(
   return options
 }
 
-export function buildCliModels(options: CliOptions): RuntimeModelsConfig {
+/** Model flags shared by the CLI chat, server, and TUI entry points. */
+export interface CliModelOptions {
+  providerType: ProviderType
+  baseURL?: string
+  apiKey?: string
+  model: string
+  contextWindow?: number
+  maxOutputTokens?: number
+  reasoning: ReasoningEffort | null
+}
+
+export function buildCliModels(options: CliModelOptions): RuntimeModelsConfig {
   if (!options.model.trim()) throw new Error('A model is required (--model or ATEAM_MODEL)')
   const apiKey = options.apiKey?.trim()
   if (options.providerType !== 'openai-compatible' && !apiKey) {

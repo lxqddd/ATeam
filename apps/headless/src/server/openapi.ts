@@ -244,6 +244,21 @@ function buildSchemas(): Record<string, unknown> {
       required: ['stopped'],
       properties: { stopped: { type: 'boolean', const: true } }
     },
+    RetryResult: {
+      type: 'object',
+      required: ['retried'],
+      properties: { retried: { type: 'boolean', const: true } }
+    },
+    SteerRequest: {
+      type: 'object',
+      required: ['text'],
+      properties: { text: { type: 'string' } }
+    },
+    SteerResult: {
+      type: 'object',
+      required: ['queued'],
+      properties: { queued: { type: 'boolean', const: true } }
+    },
     OkResult: {
       type: 'object',
       required: ['ok'],
@@ -765,6 +780,38 @@ function buildPaths(): Record<string, unknown> {
         responses: {
           '202': success('Stop requested.', ref('StopResult')),
           '401': unauthorized,
+          default: unexpected
+        }
+      }
+    },
+    '/sessions/{sessionId}/retry': {
+      parameters: [sessionIdPath],
+      post: {
+        tags: ['sessions'],
+        operationId: 'retrySession',
+        summary: 'Retry the last failed or interrupted turn',
+        responses: {
+          '202': success('Retry started.', ref('RetryResult')),
+          '401': unauthorized,
+          '404': responseRef('NotFound'),
+          '409': responseRef('Conflict'),
+          default: unexpected
+        }
+      }
+    },
+    '/sessions/{sessionId}/steer': {
+      parameters: [sessionIdPath],
+      post: {
+        tags: ['sessions'],
+        operationId: 'steerSession',
+        summary: 'Queue a message for the active turn',
+        description: 'The message is delivered after the current step completes.',
+        requestBody: { content: jsonBody(ref('SteerRequest')) },
+        responses: {
+          '202': success('Message queued.', ref('SteerResult')),
+          '400': badRequest,
+          '401': unauthorized,
+          '404': responseRef('NotFound'),
           default: unexpected
         }
       }

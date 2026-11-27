@@ -178,6 +178,19 @@ export class AteamClient {
     return this.request(`/sessions/${encodeURIComponent(id)}/stop`, { method: 'POST' })
   }
 
+  /** Retry the last failed or interrupted turn. */
+  retrySession(id: string): Promise<{ retried: boolean }> {
+    return this.request(`/sessions/${encodeURIComponent(id)}/retry`, { method: 'POST' })
+  }
+
+  /** Queue a message for the active turn, delivered after the current step. */
+  steerSession(id: string, text: string): Promise<{ queued: boolean }> {
+    return this.request(`/sessions/${encodeURIComponent(id)}/steer`, {
+      method: 'POST',
+      body: JSON.stringify({ text })
+    })
+  }
+
   compactSession(id: string, force = false): Promise<SessionMeta> {
     return this.request(`/sessions/${encodeURIComponent(id)}/compact`, {
       method: 'POST',

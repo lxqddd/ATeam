@@ -65,6 +65,8 @@ export interface ApiRuntime {
     attachments?: MessageAttachment[]
   ): Promise<void>
   stopChat(id: string): void
+  retryChat(id: string): Promise<void>
+  steerChat(id: string, input: { text: string }): void
   deleteSession(id: string): Promise<void>
   compactSession(id: string, options?: { force?: boolean }): Promise<SessionMeta>
   permissions(): PermissionRequest[]
@@ -115,6 +117,7 @@ function errorStatus(error: unknown): number {
   if (message.includes('FILE_PATH_ESCAPES_WORKSPACE')) return 403
   if (message.includes('FILE_BINARY')) return 415
   if (message.includes('SESSION_BUSY')) return 409
+  if (message.includes('NOTHING_TO_RETRY')) return 409
   if (message.includes('AGENT_NOT_READY')) return 503
   if (message.includes('Timed out waiting')) return 504
   return 400
@@ -459,6 +462,20 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
         if (action === 'stop' && req.method === 'POST') {
           runtime.stopChat(id)
           json(res, 202, { stopped: true })
+          return
+        }
+        if (action === 'retry' && req.method === 'POST') {
+          withSession(id)
+          await runtime.retryChat(id)
+          json(res, 202, { retried: true })
+          return
+        }
+        if (action === 'steer' && req.method === 'POST') {
+          const body = await readJson(req)
+          const text = stringValue(body.text, 'text')
+          withSession(id)
+          runtime.steerChat(id, { text })
+          json(res, 202, { queued: true })
           return
         }
         if (action === 'compact' && req.method === 'POST') {

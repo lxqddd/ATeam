@@ -75,6 +75,7 @@ pnpm dev
 | `pnpm --filter @ateam/desktop build:unpack`   | 构建当前平台未打包目录       |
 | `pnpm --filter @ateam/desktop smoke:packaged` | 启动打包产物并跑冒烟验收     |
 | `pnpm cli -- ...`                             | 运行 Headless CLI            |
+| `pnpm tui -- ...`                             | 打开终端界面（TUI）          |
 | `pnpm serve -- ...`                           | 启动本地 HTTP API 服务       |
 | `pnpm acp -- ...`                             | 以 ACP 协议供编辑器接入      |
 
@@ -99,6 +100,6 @@ pnpm dev
 
 ## 功能范围
 
-已实现：多会话与工作目录、流式文本/推理/工具调用、Markdown、附件与 `@` 文件引用、权限审批、停止/重试/撤销/重做、上下文压缩、模型供应商与 OAuth、项目规则与自定义 Agent、子代理、MCP、Skills 与自定义命令、LSP 诊断与自动格式化、Web 抓取与搜索、快照与引用、Git worktree、桌面浏览器自动化、SQLite 事件溯源存储，以及 Headless CLI、Server API / SDK、ACP、GitHub Action。分层配置支持全局 + 项目 `ateam.json/jsonc`、配置来源/生效值/诊断展示和项目配置编辑。
+已实现：多会话与工作目录、流式文本/推理/工具调用、Markdown、附件与 `@` 文件引用、权限审批、停止/重试/撤销/重做、上下文压缩、模型供应商与 OAuth、项目规则与自定义 Agent、子代理、MCP、Skills 与自定义命令、LSP 诊断与自动格式化、Web 抓取与搜索、快照与引用、Git worktree、桌面浏览器自动化、SQLite 事件溯源存储，以及 Headless CLI / TUI、Server API / SDK、ACP、GitHub Action。分层配置支持全局 + 项目 `ateam.json/jsonc`、配置来源/生效值/诊断展示和项目配置编辑。
 
 已知限制与后续方向见 [docs/features.md](docs/features.md) 第 17 节。
