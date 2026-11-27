@@ -2,13 +2,19 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type {
+  AgentDefinition,
   AgentEvent,
+  CommandDefinition,
+  EffectiveAgentConfig,
+  McpServerConfig,
+  McpServerStatus,
   MessagesSnapshot,
   ModelRef,
   PermissionDecision,
   PermissionRequest,
   QuestionAnswer,
   QuestionRequest,
+  ResourceProvider,
   SessionMeta,
   SessionSettings
 } from '@ateam/shared'
@@ -16,6 +22,76 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { makeSession } from '@ateam/agent-core/testing'
 import { createApiServer, type ApiRuntime } from './api'
 import { EventBus } from './event-bus'
+import type { LspServerSource } from './resources'
+
+function effectiveConfigFixture(): EffectiveAgentConfig {
+  return {
+    config: {
+      snapshots: true,
+      instructions: [],
+      lsp: true,
+      formatters: true,
+      formatterOverrides: {},
+      systemPrompt: 'Use sk-abcdefghijklmnopqrstuvwxyz for calls',
+      mcpServers: [
+        {
+          name: 'github',
+          type: 'local',
+          command: 'node',
+          args: ['server.js'],
+          env: { GITHUB_TOKEN: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' },
+          headers: { Authorization: 'Bearer header-secret-value' }
+        }
+      ],
+      lspServers: {
+        custom: {
+          command: ['custom-lsp'],
+          extensions: ['.foo'],
+          env: { LSP_TOKEN: 'lsp-secret-value' }
+        }
+      },
+      formatterServers: {
+        custom: {
+          command: ['custom-fmt', '$FILE'],
+          extensions: ['.foo'],
+          environment: { FMT_TOKEN: 'fmt-secret-value' }
+        }
+      },
+      providers: {
+        project: {
+          type: 'openai-compatible',
+          baseURL: 'https://project.example',
+          apiKeyEnv: 'PROJECT_KEY'
+        }
+      }
+    },
+    sources: {
+      globalConfigPath: '/user/agent/config.json',
+      projectConfigPath: '/workspace/ateam.json',
+      projectConfigDir: '/workspace',
+      projectRoot: '/workspace'
+    },
+    diagnostics: [],
+    provenance: {
+      snapshots: 'default',
+      instructions: 'default',
+      lsp: 'project',
+      formatters: 'project',
+      references: 'default',
+      permissions: 'default',
+      mcp: 'project',
+      agents: 'default',
+      providers: 'project',
+      plugins: 'default',
+      commands: 'default',
+      skills: 'default',
+      retry: 'default',
+      environment: 'default',
+      toolOutput: 'default',
+      systemPrompt: 'default'
+    }
+  }
+}
 
 class FakeRuntime implements ApiRuntime {
   sessions = new Map<string, SessionMeta>()
@@ -28,6 +104,15 @@ class FakeRuntime implements ApiRuntime {
   sendError: Error | null = null
   stopped: string[] = []
   workspace = '.'
+  defaultWorkspacePath = '/default/workspace'
+  resourceWorkspaces: string[] = []
+  agents: AgentDefinition[] = []
+  commands: CommandDefinition[] = []
+  config: EffectiveAgentConfig = effectiveConfigFixture()
+  providersList: ResourceProvider[] = []
+  mcpServers: McpServerConfig[] = []
+  mcpStatusList: McpServerStatus[] = []
+  lspServers: LspServerSource[] = []
   private seq = 0
 
   constructor(private readonly bus: EventBus) {}
@@ -76,6 +161,48 @@ class FakeRuntime implements ApiRuntime {
   sessionWorkspace(id: string): string {
     this.get(id)
     return this.workspace
+  }
+
+  defaultWorkspace(): string {
+    return this.defaultWorkspacePath
+  }
+
+  async listAgents(workspace?: string): Promise<AgentDefinition[]> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.agents
+  }
+
+  async listCommands(workspace?: string): Promise<CommandDefinition[]> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.commands
+  }
+
+  async effectiveConfig(workspace?: string): Promise<EffectiveAgentConfig> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.config
+  }
+
+  async listProviders(workspace?: string): Promise<ResourceProvider[]> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.providersList
+  }
+
+  async listMcpServers(workspace?: string): Promise<McpServerConfig[]> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.mcpServers
+  }
+
+  async mcpStatuses(
+    _options?: { probe?: boolean },
+    workspace?: string
+  ): Promise<McpServerStatus[]> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.mcpStatusList
+  }
+
+  async listLspServers(workspace?: string): Promise<LspServerSource[]> {
+    this.resourceWorkspaces.push(workspace ?? '')
+    return this.lspServers
   }
 
   async sendChat(id: string, text: string, model?: ModelRef | null): Promise<void> {
@@ -517,5 +644,187 @@ describe('API server', () => {
     ).json()) as { size: number; truncated: boolean }
     expect(read.size).toBe(600 * 1024)
     expect(read.truncated).toBe(true)
+  })
+
+  it('serves configuration and extension resources without credentials', async () => {
+    const { baseUrl, runtime } = await start('secret')
+    const session = await runtime.createSession()
+    runtime.workspace = '/session/workspace'
+    runtime.agents = [
+      {
+        id: 'reviewer',
+        name: 'Reviewer',
+        description: 'reviews',
+        mode: 'primary',
+        model: null,
+        tools: null,
+        permissions: [],
+        maxSteps: null,
+        temperature: null,
+        prompt: 'Use sk-abcdefghijklmnopqrstuvwxyz',
+        source: 'project'
+      }
+    ]
+    runtime.commands = [
+      {
+        id: 'review',
+        name: 'review',
+        description: 'Review',
+        template: 'curl -H "Authorization: Bearer abcdefghijklmnop"',
+        agent: null,
+        model: null,
+        source: 'project'
+      }
+    ]
+    runtime.providersList = [
+      {
+        id: 'project',
+        name: 'Project',
+        type: 'openai-compatible',
+        baseURL: 'https://user:pass@api.example.com/v1?token=query-secret',
+        hasApiKey: true,
+        source: 'project'
+      }
+    ]
+    runtime.mcpServers = [
+      {
+        id: 'mcp-1',
+        name: 'remote',
+        type: 'remote',
+        command: null,
+        args: [],
+        url: 'https://user:pass@mcp.example.com/sse?token=query-secret',
+        headers: { Authorization: 'Bearer header-secret-value' },
+        env: { GITHUB_TOKEN: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' },
+        enabled: true,
+        timeout: null,
+        cwd: null,
+        oauthClientId: 'client-id',
+        oauthScope: null,
+        oauthRedirectUri: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        source: 'project'
+      }
+    ]
+    runtime.mcpStatusList = [
+      {
+        id: 'mcp-1',
+        name: 'remote',
+        state: 'connected',
+        toolCount: 3,
+        promptCount: 0,
+        resourceCount: 0,
+        error: null,
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      }
+    ]
+    runtime.lspServers = [
+      {
+        id: 'typescript',
+        extensions: ['.ts'],
+        command: ['typescript-language-server', '--stdio', '--token=abc123'],
+        env: { NODE_OPTIONS: '--inspect' },
+        rootMarkers: ['tsconfig.json'],
+        npmPackages: ['typescript']
+      }
+    ]
+    const headers = auth('secret')
+
+    const agents = (await (
+      await fetch(`${baseUrl}/agents?sessionId=${session.id}`, { headers })
+    ).json()) as AgentDefinition[]
+    expect(agents[0].prompt).toBe('Use [REDACTED]')
+    expect(runtime.resourceWorkspaces[0]).toBe('/session/workspace')
+
+    const commands = (await (
+      await fetch(`${baseUrl}/v1/commands`, { headers })
+    ).json()) as CommandDefinition[]
+    expect(commands[0].template).toBe('curl -H "Authorization: [REDACTED]"')
+    expect(runtime.resourceWorkspaces[1]).toBe(runtime.defaultWorkspacePath)
+
+    const config = (await (
+      await fetch(`${baseUrl}/config?sessionId=${session.id}`, { headers })
+    ).json()) as Record<string, unknown> & {
+      workspace: string
+      config: {
+        mcpServers: Array<Record<string, unknown>>
+        lspServers: Record<string, Record<string, unknown>>
+        formatterServers: Record<string, Record<string, unknown>>
+        providers: Record<string, { apiKeyEnv?: string }>
+        systemPrompt?: string
+      }
+    }
+    expect(config.workspace).toBe('/session/workspace')
+    expect(config.config.mcpServers[0]).not.toHaveProperty('env')
+    expect(config.config.mcpServers[0]).not.toHaveProperty('headers')
+    expect(config.config.lspServers.custom).not.toHaveProperty('env')
+    expect(config.config.formatterServers.custom).not.toHaveProperty('environment')
+    expect(config.config.providers.project.apiKeyEnv).toBe('PROJECT_KEY')
+    expect(config.config.systemPrompt).toContain('[REDACTED]')
+
+    const providers = (await (
+      await fetch(`${baseUrl}/v1/providers`, { headers })
+    ).json()) as ResourceProvider[]
+    expect(providers[0]).toMatchObject({
+      id: 'project',
+      baseURL: 'https://api.example.com/v1',
+      hasApiKey: true,
+      source: 'project'
+    })
+
+    const mcp = (await (await fetch(`${baseUrl}/mcp`, { headers })).json()) as Array<
+      Record<string, unknown>
+    >
+    expect(mcp[0]).toMatchObject({
+      id: 'mcp-1',
+      url: 'https://mcp.example.com/sse',
+      headerNames: ['Authorization'],
+      envNames: ['GITHUB_TOKEN'],
+      hasOAuthClientId: true,
+      source: 'project',
+      status: { id: 'mcp-1', state: 'connected' }
+    })
+    expect(JSON.stringify(mcp)).not.toContain('header-secret-value')
+    expect(JSON.stringify(mcp)).not.toContain('ghp_abcdefghijklmnopqrstuvwxyz0123456789')
+
+    const lsp = (await (await fetch(`${baseUrl}/lsp`, { headers })).json()) as Array<
+      Record<string, unknown>
+    >
+    expect(lsp[0]).toEqual({
+      id: 'typescript',
+      extensions: ['.ts'],
+      command: ['typescript-language-server', '--stdio', '--token=[REDACTED]'],
+      envNames: ['NODE_OPTIONS'],
+      rootMarkers: ['tsconfig.json'],
+      npmPackages: ['typescript']
+    })
+
+    const payload = JSON.stringify({ agents, commands, config, providers, mcp, lsp })
+    for (const secret of [
+      'sk-abcdefghijklmnopqrstuvwxyz',
+      'abcdefghijklmnop',
+      'query-secret',
+      'header-secret-value',
+      'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+      'lsp-secret-value',
+      'fmt-secret-value',
+      'abc123'
+    ]) {
+      expect(payload).not.toContain(secret)
+    }
+  })
+
+  it('rejects unknown sessions and malformed ids on resource routes', async () => {
+    const { baseUrl } = await start('secret')
+    const headers = auth('secret')
+
+    expect((await fetch(`${baseUrl}/config?sessionId=missing`, { headers })).status).toBe(404)
+    expect(
+      (await fetch(`${baseUrl}/providers?sessionId=${encodeURIComponent('bad/id')}`, { headers }))
+        .status
+    ).toBe(400)
+    expect((await fetch(`${baseUrl}/providers`)).status).toBe(401)
+    expect((await fetch(`${baseUrl}/v1/providers`, { headers })).status).toBe(200)
   })
 })

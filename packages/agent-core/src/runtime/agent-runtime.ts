@@ -31,6 +31,7 @@ import type {
   QuestionAnswer,
   QuestionRequest,
   QueuedMessage,
+  ResourceProvider,
   RetryMetricsSnapshot,
   RunOutcome,
   RuntimeModelsConfig,
@@ -78,6 +79,7 @@ import { mergeRuntimeProviders, resolveModelRef } from '../providers'
 import { abortableSleep, isRetryableStreamError, retryDelayMs } from '../retry-fetch'
 import { expandCommandTemplate, runWorkspaceShell } from '../commands'
 import { hasProjectReferences, resolveReferences, type ResolvedReference } from '../references'
+import { resolveLspServers, type LspServerDefinition } from '../integrations/lsp'
 import { formatTodoList, normalizeTodos } from '../todos'
 import { computeCacheSavings, computeMessageCost } from '../cost'
 import { normalizeError } from '../errors'
@@ -375,6 +377,42 @@ export class AgentRuntime {
 
   listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {
     return this.sessionService.listAgents(workspace)
+  }
+
+  /** Workspace used when a request does not name a session. */
+  defaultWorkspace(): string {
+    return this.options.workspacePath
+  }
+
+  /** Effective merged configuration for a workspace, read from disk. */
+  async effectiveConfig(workspace = this.options.workspacePath): Promise<EffectiveAgentConfig> {
+    return readEffectiveAgentConfig(this.options.userDataPath, workspace)
+  }
+
+  /**
+   * Providers visible to a workspace. Credential values never leave the
+   * runtime: callers only learn whether a key or OAuth token is available.
+   */
+  async listProviders(workspace = this.options.workspacePath): Promise<ResourceProvider[]> {
+    const effective = await readEffectiveAgentConfig(this.options.userDataPath, workspace)
+    const project = effective.config.providers ?? {}
+    const models = mergeRuntimeProviders(this.models, project, process.env)
+    return models.providers.map((provider) => ({
+      id: provider.id,
+      name: provider.name,
+      type: provider.type,
+      ...(provider.baseURL ? { baseURL: provider.baseURL } : {}),
+      hasApiKey:
+        Boolean(provider.apiKey) ||
+        this.providerAuth.some((auth) => auth.providerId === provider.id),
+      source: Object.prototype.hasOwnProperty.call(project, provider.id) ? 'project' : 'runtime'
+    }))
+  }
+
+  /** LSP servers after built-in and project overrides are merged. */
+  async listLspServers(workspace = this.options.workspacePath): Promise<LspServerDefinition[]> {
+    const effective = await readEffectiveAgentConfig(this.options.userDataPath, workspace)
+    return [...resolveLspServers(effective.config)]
   }
 
   retryMetricsSnapshot(): RetryMetricsSnapshot {

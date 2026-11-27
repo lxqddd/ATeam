@@ -1,11 +1,17 @@
 import type {
+  AgentDefinition,
   AgentEventEnvelope,
+  CommandDefinition,
   MessagesSnapshot,
   ModelRef,
   PermissionDecision,
   PermissionRequest,
   QuestionAnswer,
   QuestionRequest,
+  ResourceConfigSnapshot,
+  ResourceLspServer,
+  ResourceMcpServer,
+  ResourceProvider,
   SessionMeta,
   WorkspaceFileContent,
   WorkspaceFileFindResult,
@@ -69,6 +75,14 @@ export interface GrepFilesOptions {
   literal?: boolean
   caseSensitive?: boolean
   limit?: number
+}
+
+/**
+ * Selects the workspace a resource route reads. With no `sessionId` the server
+ * uses its default workspace.
+ */
+export interface ResourceQuery {
+  sessionId?: string
 }
 
 function queryString(params: Record<string, string | number | boolean | undefined | null>): string {
@@ -213,6 +227,36 @@ export class AteamClient {
         limit: options.limit
       })}`
     )
+  }
+
+  /** List agent definitions visible in the workspace. */
+  listAgents(query: ResourceQuery = {}): Promise<AgentDefinition[]> {
+    return this.request(`/agents${queryString({ sessionId: query.sessionId })}`)
+  }
+
+  /** List slash commands visible in the workspace. */
+  listCommands(query: ResourceQuery = {}): Promise<CommandDefinition[]> {
+    return this.request(`/commands${queryString({ sessionId: query.sessionId })}`)
+  }
+
+  /** Effective merged configuration; credentials are masked or removed. */
+  getConfig(query: ResourceQuery = {}): Promise<ResourceConfigSnapshot> {
+    return this.request(`/config${queryString({ sessionId: query.sessionId })}`)
+  }
+
+  /** Providers with `hasApiKey` instead of the credential itself. */
+  listProviders(query: ResourceQuery = {}): Promise<ResourceProvider[]> {
+    return this.request(`/providers${queryString({ sessionId: query.sessionId })}`)
+  }
+
+  /** MCP servers with credential names only and their last known status. */
+  listMcpServers(query: ResourceQuery = {}): Promise<ResourceMcpServer[]> {
+    return this.request(`/mcp${queryString({ sessionId: query.sessionId })}`)
+  }
+
+  /** LSP servers with environment variable names only. */
+  listLspServers(query: ResourceQuery = {}): Promise<ResourceLspServer[]> {
+    return this.request(`/lsp${queryString({ sessionId: query.sessionId })}`)
   }
 
   listPermissions(): Promise<PermissionRequest[]> {

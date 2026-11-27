@@ -379,8 +379,11 @@ models/                  # 供应商 / 模型配置
   - 路径边界：只允许会话工作区内的路径；词法路径与 `realpath` 双重校验，`..` 越界、工作区外的绝对路径与符号链接逃逸返回 403（`FILE_PATH_ESCAPES_WORKSPACE`），目标不存在返回 404（`FILE_NOT_FOUND`），读取二进制文件返回 415（`FILE_BINARY`）。
   - 上限与截断：列表默认深度 1、最大 8，最多 2,000 条；读取最多 512 KiB；find / grep 最多 500 条，并受 10 秒时间预算约束；grep 跳过大于 1 MB 与二进制文件。所有响应带 `truncated` 标记，`size` 始终为完整文件大小。
   - 范围：`.git`、`node_modules`、`.DS_Store` 不进入列表与搜索，find / grep 额外跳过隐藏项与符号链接；返回的路径统一为相对工作区、以 `/` 分隔，列表响应按名称排序。
+- 配置与扩展资源：`GET /agents`、`GET /commands`、`GET /config`、`GET /providers`、`GET /mcp`、`GET /lsp`。默认读取运行时默认工作区，可用 `?sessionId=` 指定会话工作区（未知会话 404、非法 id 400）。
+  - 凭据：响应绝不含明文凭据。Provider 只返回 `hasApiKey`；MCP / LSP 的 env 与 headers 只返回变量名；URL 去掉 userinfo、查询串与 fragment；`/config` 移除 MCP `env` / `headers`、LSP `env`、formatter `environment`，其余文本按已知密钥形态脱敏，命令行参数中的 `--token=...` / `--api-key ...` 同样脱敏。
+  - `/mcp` 附带 MCP 最近一次连接状态，`?probe=1` 主动探测；`/lsp` 返回合并内置定义与项目覆盖后的服务器列表。
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
-- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、工作区文件（`listFiles` / `readFile` / `findFiles` / `grepFiles` 及对应类型）、权限、提问与 SSE 事件流。
+- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、工作区文件（`listFiles` / `readFile` / `findFiles` / `grepFiles` 及对应类型）、配置与扩展资源（`listAgents` / `listCommands` / `getConfig` / `listProviders` / `listMcpServers` / `listLspServers`，均可传 `{ sessionId }`）、权限、提问与 SSE 事件流。
 - 版本与安全：所有路由同时接受 `/` 与 `/v1` 前缀；绑定非回环地址且未设置 token 时默认拒绝启动（可用 `--allow-unauthenticated-remote` 显式放宽），默认不发送 CORS 头。
 - 构建：`packages/client-sdk` 通过 tsup 生成 ESM + CJS + d.ts，当前仍为 private，尚未发布独立 npm 包。
 

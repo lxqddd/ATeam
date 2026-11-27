@@ -1,7 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type {
+  AgentDefinition,
   AgentEvent,
   AgentEventEnvelope,
+  CommandDefinition,
+  EffectiveAgentConfig,
+  McpServerConfig,
+  McpServerStatus,
   MessageAttachment,
   MessagesSnapshot,
   ModelRef,
@@ -11,6 +16,7 @@ import type {
   QuestionAnswer,
   QuestionRequest,
   ReasoningEffort,
+  ResourceProvider,
   SessionMeta,
   SessionSettings,
   WorkspaceFileList
@@ -23,6 +29,14 @@ import {
   listWorkspaceFiles,
   readWorkspaceFile
 } from './workspace-files'
+import {
+  redactResource,
+  sanitizeConfig,
+  sanitizeLspServers,
+  sanitizeMcpServers,
+  sanitizeProviders,
+  type LspServerSource
+} from './resources'
 
 export interface ApiRuntime {
   listSessions(): SessionMeta[]
@@ -34,6 +48,15 @@ export interface ApiRuntime {
   messages(id: string): MessagesSnapshot
   /** Absolute workspace directory the session's file routes are confined to. */
   sessionWorkspace(id: string): string
+  /** Workspace used by resource routes when no session is named. */
+  defaultWorkspace(): string
+  listAgents(workspace?: string): Promise<AgentDefinition[]>
+  listCommands(workspace?: string): Promise<CommandDefinition[]>
+  effectiveConfig(workspace?: string): Promise<EffectiveAgentConfig>
+  listProviders(workspace?: string): Promise<ResourceProvider[]>
+  listMcpServers(workspace?: string): Promise<McpServerConfig[]>
+  mcpStatuses(options?: { probe?: boolean }, workspace?: string): Promise<McpServerStatus[]>
+  listLspServers(workspace?: string): Promise<LspServerSource[]>
   sendChat(
     id: string,
     text: string,
@@ -221,6 +244,19 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
     const session = runtime.listSessions().find((candidate) => candidate.id === id)
     if (!session) throw new Error('SESSION_NOT_FOUND')
     return session
+  }
+
+  /**
+   * Workspace a resource route reads: the session's workspace when `sessionId`
+   * is given, otherwise the runtime default. Unknown sessions 404 and malformed
+   * ids 400 before any configuration is read.
+   */
+  const resourceWorkspace = (url: URL): string => {
+    const raw = url.searchParams.get('sessionId')
+    if (raw === null || !raw.trim()) return runtime.defaultWorkspace()
+    const id = sessionIdFrom(raw)
+    withSession(id)
+    return runtime.sessionWorkspace(id)
   }
 
   const server = createServer(async (req, res) => {
@@ -425,6 +461,44 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
           json(res, 200, await runtime.compactSession(id, { force: body.force === true }))
           return
         }
+      }
+
+      if (pathname === '/agents' && req.method === 'GET') {
+        const workspace = resourceWorkspace(url)
+        json(res, 200, redactResource(await runtime.listAgents(workspace)))
+        return
+      }
+
+      if (pathname === '/commands' && req.method === 'GET') {
+        const workspace = resourceWorkspace(url)
+        json(res, 200, redactResource(await runtime.listCommands(workspace)))
+        return
+      }
+
+      if (pathname === '/config' && req.method === 'GET') {
+        const workspace = resourceWorkspace(url)
+        json(res, 200, sanitizeConfig(workspace, await runtime.effectiveConfig(workspace)))
+        return
+      }
+
+      if (pathname === '/providers' && req.method === 'GET') {
+        const workspace = resourceWorkspace(url)
+        json(res, 200, sanitizeProviders(await runtime.listProviders(workspace)))
+        return
+      }
+
+      if (pathname === '/mcp' && req.method === 'GET') {
+        const workspace = resourceWorkspace(url)
+        const servers = await runtime.listMcpServers(workspace)
+        const statuses = await runtime.mcpStatuses({ probe: boolParam(url, 'probe') }, workspace)
+        json(res, 200, sanitizeMcpServers(servers, statuses))
+        return
+      }
+
+      if (pathname === '/lsp' && req.method === 'GET') {
+        const workspace = resourceWorkspace(url)
+        json(res, 200, sanitizeLspServers(await runtime.listLspServers(workspace)))
+        return
       }
 
       if (pathname === '/permissions' && req.method === 'GET') {

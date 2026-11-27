@@ -5200,6 +5200,63 @@ describe('project provider and MCP configuration', () => {
     expect(turns[2].system).not.toContain('NEW_PROJECT_RULE')
   })
 
+  it('exposes read-only resources with credential presence instead of keys', async () => {
+    const workspace = path.join(directory, 'workspace')
+    await fs.writeFile(
+      path.join(workspace, 'ateam.json'),
+      JSON.stringify({
+        providers: {
+          'project-provider': {
+            type: 'openai-compatible',
+            baseURL: 'https://project.example',
+            apiKeyEnv: 'ATEAM_TEST_PROJECT_KEY'
+          }
+        },
+        lsp: {
+          'project-lsp': {
+            command: ['project-lsp', '--token=secret-token'],
+            extensions: ['.foo'],
+            env: { PROJECT_LSP_TOKEN: 'secret-token' }
+          }
+        }
+      })
+    )
+    vi.stubEnv('ATEAM_TEST_PROJECT_KEY', 'project-key')
+    await runtime.reloadConfig(workspace)
+
+    expect(runtime.defaultWorkspace()).toBe(workspace)
+
+    const effective = await runtime.effectiveConfig(workspace)
+    expect(effective.sources.projectRoot).toBe(workspace)
+    expect(effective.config.lspServers?.['project-lsp']).toMatchObject({
+      extensions: ['.foo'],
+      env: { PROJECT_LSP_TOKEN: 'secret-token' }
+    })
+
+    const providers = await runtime.listProviders(workspace)
+    expect(providers.find((provider) => provider.id === 'provider-1')).toMatchObject({
+      source: 'runtime',
+      hasApiKey: true
+    })
+    expect(providers.find((provider) => provider.id === 'project-provider')).toMatchObject({
+      type: 'openai-compatible',
+      baseURL: 'https://project.example',
+      hasApiKey: true,
+      source: 'project'
+    })
+    const providerPayload = JSON.stringify(providers)
+    expect(providerPayload).not.toContain('project-key')
+    expect(providerPayload).not.toContain('sk-test')
+
+    const lsp = await runtime.listLspServers(workspace)
+    expect(lsp.find((server) => server.id === 'typescript')).toBeTruthy()
+    expect(lsp.find((server) => server.id === 'project-lsp')).toMatchObject({
+      command: ['project-lsp', '--token=secret-token'],
+      extensions: ['.foo'],
+      env: { PROJECT_LSP_TOKEN: 'secret-token' }
+    })
+  })
+
   it('loads project instructions and commands through the effective config', async () => {
     await fs.mkdir(path.join(directory, 'workspace', 'docs'), { recursive: true })
     await fs.writeFile(path.join(directory, 'workspace', 'docs', 'rules.md'), 'PROJECT_RULE_MARKER')
