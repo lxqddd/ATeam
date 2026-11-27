@@ -2,7 +2,7 @@
 
 ATeam 是一个基于 Electron 的 AI Agent 桌面应用。当前版本包含完整的会话核心：多会话管理、流式回复、Markdown 渲染、工具调用、权限审批、模型供应商配置，以及项目规则、上下文压缩、快照回滚、MCP、子代理、LSP 诊断、自动格式化与 Web 工具。
 
-各功能的详细说明见 [docs/features.md](docs/features.md)。
+各功能的详细说明见 [docs/features.md](docs/features.md)，覆盖率、打包体积、可访问性与截图回归基线见 [docs/quality.md](docs/quality.md)。
 
 ## 技术栈
 
@@ -65,6 +65,8 @@ pnpm dev
 | `pnpm typecheck`                              | 对全部包执行 TypeScript 检查 |
 | `pnpm test`                                   | 运行全部包单元测试           |
 | `pnpm test:coverage`                          | 运行全部包覆盖率             |
+| `pnpm --filter @ateam/desktop bundle:check`   | 检查渲染进程打包体积预算     |
+| `pnpm --filter @ateam/desktop visual:test`    | 比对关键页面截图基线         |
 | `pnpm lint`                                   | 对全部包执行 ESLint          |
 | `pnpm format`                                 | 对全部包执行 Prettier        |
 | `pnpm format:check`                           | 检查全部文件格式             |

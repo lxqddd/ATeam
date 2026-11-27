@@ -7,7 +7,8 @@ import { gzipSync } from 'node:zlib'
 
 // Measures what the renderer loads before the first paint: the entry script
 // plus every modulepreload in out/renderer/index.html. Route chunks and other
-// lazy imports are reported separately and are not part of the budget.
+// lazy imports are reported separately, with their own budget: the total lazy
+// JS size plus the per-route chunks for the key pages.
 //
 // Usage:
 //   node scripts/bundle-report.mjs                  compare with the baseline
@@ -22,6 +23,8 @@ const indexPath = join(rendererDir, 'index.html')
 const baselinePath = join(scriptDir, 'bundle-baseline.json')
 
 const BUDGET_TOLERANCE = 0.02
+const LAZY_BUDGET_TOLERANCE = 0.05
+const KEY_ROUTE_CHUNKS = ['ModelsPage', 'SettingsPage', 'UsagePage']
 
 const args = new Set(process.argv.slice(2))
 const writeBaseline = args.has('--write-baseline')
@@ -77,6 +80,26 @@ function sum(entries) {
   )
 }
 
+// Rolldown emits `<name>-<hash>.js`; the hash changes on every build, so the
+// budget tracks chunks by their stable name prefix.
+function chunkName(file) {
+  const base = file.replace(/^assets\//, '')
+  return base.replace(/-[A-Za-z0-9_-]{8}\.js$/, '').replace(/\.js$/, '')
+}
+
+function groupByChunkName(assets) {
+  const groups = new Map()
+  for (const asset of assets) {
+    const name = chunkName(asset.file)
+    const existing = groups.get(name) ?? { rawBytes: 0, gzipBytes: 0 }
+    groups.set(name, {
+      rawBytes: existing.rawBytes + asset.rawBytes,
+      gzipBytes: existing.gzipBytes + asset.gzipBytes
+    })
+  }
+  return Object.fromEntries([...groups].sort(([a], [b]) => a.localeCompare(b)))
+}
+
 const formatSize = (bytes) => `${(bytes / 1024).toFixed(1)} kB`
 const formatPercent = (value) => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`
 
@@ -101,14 +124,33 @@ function writeBaselineFile(report, existing) {
       initialCss: {
         rawBytes: existing.initialCss.rawBytes,
         gzipBytes: existing.initialCss.gzipBytes
-      }
+      },
+      ...(existing.lazyJs
+        ? {
+            lazyJs: {
+              rawBytes: existing.lazyJs.rawBytes,
+              gzipBytes: existing.lazyJs.gzipBytes
+            }
+          }
+        : {})
     })
   }
   const baseline = {
-    note: 'First-screen renderer JS budget. Regenerate with: pnpm --filter @ateam/desktop bundle:report -- --write-baseline',
+    note: 'Renderer bundle budgets: first-screen JS (entry + modulepreload), total lazy JS, and key route chunks. Regenerate with: pnpm --filter @ateam/desktop bundle:report -- --write-baseline',
     recordedAt: new Date().toISOString().slice(0, 10),
-    initialJs: report.initialJs,
+    initialJs: {
+      rawBytes: report.initialJs.rawBytes,
+      gzipBytes: report.initialJs.gzipBytes,
+      assets: report.initialJs.assets
+    },
     initialCss: report.initialCss,
+    lazyJs: {
+      rawBytes: report.lazyJs.rawBytes,
+      gzipBytes: report.lazyJs.gzipBytes
+    },
+    routeChunks: Object.fromEntries(
+      KEY_ROUTE_CHUNKS.map((name) => [name, report.lazyJs.chunks[name] ?? null])
+    ),
     history: history.slice(0, 10)
   }
   writeFileSync(baselinePath, `${JSON.stringify(baseline, null, 2)}\n`)
@@ -148,12 +190,18 @@ const lazyJs = allJs.filter((asset) => !initialJsFiles.has(resolve(rendererDir, 
 const report = {
   initialJs: { ...sum(initialJs), assets: initialJs },
   initialCss: { ...sum(initialCss), assets: initialCss },
-  lazyJs: { ...sum(lazyJs), assets: lazyJs }
+  lazyJs: { ...sum(lazyJs), assets: lazyJs, chunks: groupByChunkName(lazyJs) }
 }
 
 let baseline = readBaseline()
 
 if (writeBaseline) {
+  const missingRoutes = KEY_ROUTE_CHUNKS.filter((name) => !report.lazyJs.chunks[name])
+  if (missingRoutes.length > 0) {
+    fail(
+      `cannot record the baseline: key route chunk(s) ${missingRoutes.join(', ')} were not emitted; check the lazy route setup and KEY_ROUTE_CHUNKS`
+    )
+  }
   writeBaselineFile(report, baseline)
   baseline = readBaseline()
   if (!asJson) {
@@ -188,6 +236,15 @@ if (lazyJs.length > 0) {
       `  ${asset.file.padEnd(44)} ${formatSize(asset.rawBytes).padStart(10)} raw ${formatSize(asset.gzipBytes).padStart(10)} gzip`
     )
   }
+  console.log(
+    `  ${'lazy total'.padEnd(44)} ${formatSize(report.lazyJs.rawBytes).padStart(10)} raw ${formatSize(report.lazyJs.gzipBytes).padStart(10)} gzip`
+  )
+  for (const name of KEY_ROUTE_CHUNKS) {
+    const chunk = report.lazyJs.chunks[name]
+    console.log(
+      `  key route ${name.padEnd(32)} ${chunk ? `${formatSize(chunk.rawBytes).padStart(10)} raw ${formatSize(chunk.gzipBytes).padStart(10)} gzip` : 'not emitted'}`
+    )
+  }
 }
 
 if (!baseline) {
@@ -197,11 +254,48 @@ if (!baseline) {
   const budget = baseline.initialJs.gzipBytes
   const delta = report.initialJs.gzipBytes - budget
   console.log(
-    `\nBaseline: ${formatSize(budget)} gzip (recorded ${baseline.recordedAt}); current ${formatSize(report.initialJs.gzipBytes)} gzip (${formatPercent(delta / budget)}).`
+    `\nFirst-screen baseline: ${formatSize(budget)} gzip (recorded ${baseline.recordedAt}); current ${formatSize(report.initialJs.gzipBytes)} gzip (${formatPercent(delta / budget)}).`
   )
   if (check && delta > budget * BUDGET_TOLERANCE) {
     fail(
       `first-screen JS exceeds the baseline by more than ${BUDGET_TOLERANCE * 100}% (${formatSize(delta)} over ${formatSize(budget)} gzip)`
     )
+  }
+
+  if (baseline.lazyJs) {
+    const lazyBudget = baseline.lazyJs.gzipBytes
+    const lazyDelta = report.lazyJs.gzipBytes - lazyBudget
+    console.log(
+      `Lazy JS baseline: ${formatSize(lazyBudget)} gzip; current ${formatSize(report.lazyJs.gzipBytes)} gzip (${formatPercent(lazyDelta / lazyBudget)}).`
+    )
+    if (check && lazyDelta > lazyBudget * LAZY_BUDGET_TOLERANCE) {
+      fail(
+        `lazy JS exceeds the baseline by more than ${LAZY_BUDGET_TOLERANCE * 100}% (${formatSize(lazyDelta)} over ${formatSize(lazyBudget)} gzip)`
+      )
+    }
+
+    for (const name of KEY_ROUTE_CHUNKS) {
+      const routeBudget = baseline.routeChunks?.[name]
+      if (!routeBudget) continue
+      const current = report.lazyJs.chunks[name]
+      if (!current) {
+        if (check) fail(`key route chunk ${name} is missing from the build`)
+        continue
+      }
+      const routeDelta = current.gzipBytes - routeBudget.gzipBytes
+      console.log(
+        `Route ${name}: baseline ${formatSize(routeBudget.gzipBytes)} gzip; current ${formatSize(current.gzipBytes)} gzip (${formatPercent(routeDelta / routeBudget.gzipBytes)}).`
+      )
+      if (check && routeDelta > routeBudget.gzipBytes * LAZY_BUDGET_TOLERANCE) {
+        fail(
+          `route chunk ${name} exceeds the baseline by more than ${LAZY_BUDGET_TOLERANCE * 100}% (${formatSize(routeDelta)} over ${formatSize(routeBudget.gzipBytes)} gzip)`
+        )
+      }
+    }
+    if (check && !baseline.routeChunks) {
+      fail('baseline has no key route budgets; re-record it with --write-baseline')
+    }
+  } else if (check) {
+    fail('baseline has no lazy JS budget; re-record it with --write-baseline')
   }
 }

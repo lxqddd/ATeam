@@ -10,6 +10,8 @@ release/
 # Test output
 coverage/
 .vitest/
+test-results/
+playwright-report/
 
 # Cache and logs
 .eslintcache

@@ -130,14 +130,14 @@ pnpm test            # shared/client-sdk/agent-core/headless/desktop
 pnpm build
 ```
 
-当前测试规模：agent-core 57 个测试文件（1038 用例）、desktop 61 个（609 用例）、headless 6 个、client-sdk 若干。跨进程协议、IPC 注册、消息 part 迁移与运行时主循环均有覆盖。
+当前测试规模：agent-core 64 个测试文件（1158 用例）、desktop 62 个（614 用例）、headless 11 个（122 用例）、client-sdk 1 个（6 用例）。跨进程协议、IPC 注册、消息 part 迁移与运行时主循环均有覆盖。覆盖率阈值、打包体积预算、可访问性与截图回归的检查方式见 [quality.md](./quality.md)。
 
 ## 8. 渲染进程打包
 
 - 首屏只保留聊天页（`ChatPage`）。`#/models`、`#/usage`、`#/settings` 使用 `React.lazy` + `Suspense` 按路由加载；加载期间在内容区显示 `app.loading` 占位，应用外壳与侧边导航保持可见。
 - 聊天页内部的按需面板同样懒加载：`ChangesPanel`（diff 视图）与 `ExportDialog`（导出）只在用户打开时拉取。
-- `apps/desktop/scripts/bundle-report.mjs` 从 `out/renderer/index.html` 读取入口脚本与 `modulepreload`，统计首屏 JS 的 raw/gzip 体积。`pnpm --filter @ateam/desktop bundle:report` 查看报告，`bundle:check` 在超出基线 2% 时以非零状态退出；CI 在构建后执行同一检查。
-- 体积基线存放在 `apps/desktop/scripts/bundle-baseline.json`，用 `bundle:report -- --write-baseline` 更新；文件内的 `history` 保留最近几次快照。
+- `apps/desktop/scripts/bundle-report.mjs` 从 `out/renderer/index.html` 读取入口脚本与 `modulepreload`，统计首屏 JS 的 raw/gzip 体积。`pnpm --filter @ateam/desktop bundle:report` 查看报告，`bundle:check` 在首屏 JS 超出基线 2%、按需 JS 总量或关键路由 chunk（ModelsPage / SettingsPage / UsagePage）超出基线 5% 时以非零状态退出；CI 在构建后执行同一检查。
+- 体积基线存放在 `apps/desktop/scripts/bundle-baseline.json`，用 `bundle:report -- --write-baseline` 更新；文件内的 `history` 保留最近几次快照。完整质量基线（覆盖率、打包、a11y、截图）见 [quality.md](./quality.md)。
 - 记录（2026-11-27，issue #20）：拆分前首屏 JS 3848620 B raw / 808633 B gzip；拆分后 2439550 B raw / 525099 B gzip（-36.6% / -35.1%）。各按需 chunk 合计约 297 kB gzip，只在访问对应页面或打开面板时加载。
 
 新增页面时默认走路由级懒加载；只有确认属于首屏交互路径的组件才保留静态导入。
