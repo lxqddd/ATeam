@@ -29,6 +29,7 @@ export const AGENT_CHANNELS = {
   sessionRedo: 'ateam:agent:sessions:redo',
   sessionFork: 'ateam:agent:sessions:fork',
   sessionSearch: 'ateam:agent:sessions:search',
+  sessionExport: 'ateam:agent:sessions:export',
   sessionChanges: 'ateam:agent:sessions:changes',
   sessionChangesSummary: 'ateam:agent:sessions:changes-summary',
   sessionRevertFiles: 'ateam:agent:sessions:revert-files',

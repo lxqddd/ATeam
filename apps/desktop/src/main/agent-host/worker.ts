@@ -141,6 +141,12 @@ async function handle(request: WorkerRequest): Promise<unknown> {
       return requireRuntime().forkSession(request.params.id, request.params.messageId)
     case 'sessions.search':
       return requireRuntime().searchSessions(request.params.query)
+    case 'sessions.export':
+      return requireRuntime().exportSessions({
+        sessionId: request.params.sessionId,
+        format: request.params.format,
+        redactPaths: request.params.redactPaths
+      })
     case 'sessions.changes':
       return requireRuntime().messageChanges(request.params.sessionId, request.params.messageId)
     case 'sessions.changesSummary':

@@ -6,6 +6,8 @@ import type {
   MessagesSnapshot,
   ModelRef,
   RuntimeModelsConfig,
+  SessionExportPayload,
+  SessionExportRequest,
   SessionMeta,
   SessionSearchResult,
   SessionSettings
@@ -13,7 +15,8 @@ import type {
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { loadAgents } from '../config/agents'
 import { resolveModelRef } from '../providers'
-import type { SessionsStore } from '../sessions/sessions-store'
+import { buildSessionExport } from '../sessions/export'
+import type { SessionRecord, SessionsStore } from '../sessions/sessions-store'
 import { nowIso } from './messages'
 import { copyForkAttachments } from './turn-changes'
 
@@ -21,6 +24,7 @@ export interface SessionHost {
   readonly store: SessionsStore
   readonly userDataPath: string
   readonly defaultWorkspacePath: string
+  readonly appVersion: string
   models(): RuntimeModelsConfig
   modelsFor(sessionId: string): RuntimeModelsConfig
   emit(event: AgentEvent): void
@@ -170,6 +174,29 @@ export class SessionService {
       }
     }
     return results.slice(0, 20)
+  }
+
+  /**
+   * Serializes one session or every visible session into an export payload.
+   * Read-only: it never mutates the stored records.
+   */
+  exportSessions(options: SessionExportRequest): SessionExportPayload {
+    const records: SessionRecord[] = []
+    if (options.sessionId) {
+      const record = this.host.store.get(options.sessionId)
+      if (!record) throw new Error('SESSION_NOT_FOUND')
+      records.push(record)
+    } else {
+      for (const session of this.listSessions()) {
+        const record = this.host.store.get(session.id)
+        if (record) records.push(record)
+      }
+    }
+    return buildSessionExport(records, {
+      format: options.format,
+      appVersion: this.host.appVersion,
+      redactPaths: options.redactPaths ?? true
+    })
   }
 
   messages(id: string): MessagesSnapshot {

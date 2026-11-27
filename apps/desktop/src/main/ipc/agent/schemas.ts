@@ -106,6 +106,12 @@ export const sessionIdSchema = z.object({ sessionId: idSchema })
 
 export const sessionSearchSchema = z.object({ query: z.string().max(200) })
 
+export const sessionExportSchema = z.object({
+  sessionId: idSchema.nullable().optional(),
+  format: z.enum(['json', 'jsonl', 'markdown']),
+  redactPaths: z.boolean().optional()
+})
+
 export const sessionChangesSchema = z.object({
   sessionId: idSchema,
   messageId: idSchema.optional()

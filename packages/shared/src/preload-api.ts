@@ -45,6 +45,7 @@ import type {
   WebSearchProviderPublic
 } from './agent-types'
 import type { UpdateDownloadResult, UpdateInfo, UpdateProgress } from './update-types'
+import type { SessionExportRequest, SessionExportResult } from './session-export'
 import type { VcsDiffOptions, VcsDiffResult, VcsStatus } from './vcs-types'
 import type {
   ModelCatalogEntry,
@@ -81,6 +82,7 @@ export interface AgentBridge {
     redo: (id: string) => Promise<SessionMeta>
     fork: (id: string, messageId?: string) => Promise<SessionMeta>
     search: (query: string) => Promise<SessionSearchResult[]>
+    export: (options: SessionExportRequest) => Promise<SessionExportResult>
     changes: (sessionId: string, messageId?: string) => Promise<TurnChanges>
     changesSummary: (sessionId: string) => Promise<SessionChangesSummary>
     revertFiles: (sessionId: string, messageId: string, paths?: string[]) => Promise<TurnChanges>
