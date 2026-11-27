@@ -13,6 +13,7 @@ import { createHeadlessRuntime } from '../runtime'
 import { buildCliModels, CLI_HELP, parseCliArgs, type CliOptions } from './args'
 import { configCommandOf, runConfigCommand } from './config'
 import { dataCommandOf, runDataCommand } from './data'
+import { loadGitHubPrompt, postGitHubComment } from './github'
 
 async function readStdin(): Promise<string> {
   let text = ''
@@ -83,6 +84,7 @@ async function main(): Promise<number> {
   }
 
   let sessionId: string | null = options.sessionId
+  let assistantText = ''
   let outcome: RunOutcome | null = null
   let runError: string | null = null
   let stopRequested = false
@@ -154,6 +156,9 @@ async function main(): Promise<number> {
         if (line) console.error(line)
       }
       const event = envelope.event
+      if (options.githubComment && event.type === 'message.part.delta' && event.kind === 'text') {
+        assistantText += event.delta
+      }
       switch (event.type) {
         case 'message.part.delta':
           if (!options.json && event.kind === 'text') process.stdout.write(event.delta)
@@ -189,7 +194,16 @@ async function main(): Promise<number> {
     }
 
     let prompt = options.prompt
-    if (!prompt) {
+    if (options.githubIssue) {
+      try {
+        const github = await loadGitHubPrompt(options.githubIssue)
+        prompt = prompt?.trim() ? `${github.prompt}\n\n---\n\n${prompt}` : github.prompt
+        console.error(`[github] context: ${github.label}`)
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error))
+        return 2
+      }
+    } else if (!prompt) {
       if (process.stdin.isTTY) {
         console.error('No prompt provided. Pass a prompt or pipe text via stdin.\n')
         process.stderr.write(CLI_HELP)
@@ -197,7 +211,7 @@ async function main(): Promise<number> {
       }
       prompt = await readStdin()
     }
-    if (!prompt.trim()) {
+    if (!prompt?.trim()) {
       console.error('The prompt is empty.')
       return 2
     }
@@ -236,6 +250,23 @@ async function main(): Promise<number> {
       return 1
     }
     if (runError) console.error(`\n${runError}`)
+    if (options.githubComment) {
+      if (outcome !== 'completed') {
+        console.error('[github] run did not complete; comment skipped')
+      } else {
+        try {
+          const comment = await postGitHubComment(options.githubComment, assistantText)
+          const line = `[github] comment posted: ${comment.url}`
+          if (options.json) console.error(line)
+          else console.log(line)
+        } catch (error) {
+          console.error(
+            `[github] failed to post comment: ${error instanceof Error ? error.message : String(error)}`
+          )
+          return 1
+        }
+      }
+    }
     return outcome === 'completed' ? 0 : stopRequested ? 130 : 1
   } finally {
     terminalRef.current?.close()

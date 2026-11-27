@@ -46,6 +46,17 @@ import type {
 } from './agent-types'
 import type { UpdateDownloadResult, UpdateInfo, UpdateProgress } from './update-types'
 import type {
+  GitHubCommentInput,
+  GitHubCommentResult,
+  GitHubContextResult,
+  GitHubCreatePullInput,
+  GitHubCreatePullResult,
+  GitHubItemKind,
+  GitHubItemSummary,
+  GitHubRepoInfo,
+  GitHubTokenStatus
+} from './github-types'
+import type {
   SessionExportRequest,
   SessionExportResult,
   SessionImportResult
@@ -187,6 +198,16 @@ export interface AgentBridge {
   websearch: {
     get: () => Promise<WebSearchProviderPublic>
     update: (input: WebSearchInput) => Promise<WebSearchProviderPublic>
+  }
+  github: {
+    status: () => Promise<GitHubTokenStatus>
+    updateToken: (token: string) => Promise<GitHubTokenStatus>
+    clearToken: () => Promise<GitHubTokenStatus>
+    repo: (directory?: string | null) => Promise<GitHubRepoInfo | null>
+    list: (input: { repo: string; kind?: GitHubItemKind }) => Promise<GitHubItemSummary[]>
+    context: (ref: string) => Promise<GitHubContextResult>
+    comment: (input: GitHubCommentInput) => Promise<GitHubCommentResult>
+    createPull: (input: GitHubCreatePullInput) => Promise<GitHubCreatePullResult>
   }
   attachments: {
     import: (

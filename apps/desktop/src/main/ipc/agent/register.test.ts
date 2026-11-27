@@ -129,6 +129,7 @@ function createOptions(isTrusted = true): AgentIpcOptions {
     } as unknown as AgentIpcOptions['manager'],
     modelsStore: {} as unknown as AgentIpcOptions['modelsStore'],
     webSearchStore: {} as unknown as AgentIpcOptions['webSearchStore'],
+    githubStore: {} as unknown as AgentIpcOptions['githubStore'],
     mcpAuthStore: {} as unknown as AgentIpcOptions['mcpAuthStore'],
     providerAuthStore: {} as unknown as AgentIpcOptions['providerAuthStore'],
     workspacePath: '/tmp/ateam-agent-ipc-workspace',

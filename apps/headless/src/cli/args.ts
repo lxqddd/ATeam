@@ -35,6 +35,8 @@ export interface CliOptions {
   agent: string | null
   sessionId: string | null
   dataDir: string
+  githubIssue: string | null
+  githubComment: string | null
   json: boolean
   listSessions: boolean
   restoreSessions: boolean
@@ -78,6 +80,8 @@ export function parseCliArgs(
     agent: null,
     sessionId: null,
     dataDir: defaultCliDataDir(),
+    githubIssue: null,
+    githubComment: null,
     json: false,
     listSessions: false,
     restoreSessions: false,
@@ -153,6 +157,12 @@ export function parseCliArgs(
       case '--data':
         options.dataDir = path.resolve(cwd, value())
         break
+      case '--github-issue':
+        options.githubIssue = value()
+        break
+      case '--github-comment':
+        options.githubComment = value()
+        break
       case '--json':
         options.json = true
         break
@@ -225,6 +235,8 @@ Options:
   --agent <id>             Agent id (build, plan, or custom)
   --session <id>           Continue an existing CLI session
   --data <dir>             CLI data directory (default: ~/.ateam/cli)
+  --github-issue <ref>     Start from a GitHub issue/PR (URL or owner/repo#n)
+  --github-comment <ref>   Post the final reply as a comment on an issue/PR
   --list-sessions          List stored CLI sessions and exit
   --restore-sessions       Restore migrated legacy session backups and exit
   --json                   Print agent events as JSON lines

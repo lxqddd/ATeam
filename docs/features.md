@@ -304,6 +304,7 @@
 | 权限     | 查看与删除已保存的权限规则                                                                                      |
 | MCP      | 服务器增删改、启停、状态刷新、OAuth 授权 / 退出登录                                                             |
 | 网页搜索 | 服务商选择、API Key（0600 明文）、配置状态                                                                      |
+| GitHub   | 个人访问令牌（0600 明文，独立于 `auth.json`）、环境变量回退、连接状态与清除                                     |
 | Agent    | 快照 / LSP / 自动格式化开关、检测状态、自定义指令文件、外部引用；项目配置摘要入口（路径、诊断数、跳转项目分区） |
 | 全局     | LSP / Formatters 三态（默认 / 仅开关 / 自定义列表 + 启用开关）、Commands 模板、Skills 路径与 Raw JSON 编辑      |
 | 项目     | 概览（来源/生效值/诊断）、Providers、LSP、Formatters、Commands、Skills 结构化表单与 Raw JSONC 编辑              |
@@ -368,6 +369,7 @@ models/                  # 供应商 / 模型配置
 - 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话，`--restore-sessions` 将 `.migrated` 旧会话备份恢复并重新导入数据库后退出。
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
 - 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
+- GitHub：`--github-issue <url|owner/repo#n>` 读取 issue/PR 上下文（PR 含分支、增删与文件列表）并与 `--prompt` 拼接；只给 issue 时上下文即 prompt。`--github-comment <url|owner/repo#n>` 在运行成功后把最后一条 assistant 文本发为评论，`--json` 下回写信息写 stderr 以保持 stdout 纯 JSONL。token 只读 `GITHUB_TOKEN` / `GH_TOKEN`，缺失时退出码 2；评论失败退出码 1。
 - 数据命令（不加载模型，无需 API Key）：`pnpm cli -- export|import|stats`。
   - `export`：`--session <id>` 导出单个会话，`--format json|jsonl|markdown`（默认 `json`，与桌面端默认一致），`--out <path>` 写入文件（缺省或 `-` 写 stdout），`--no-redact-paths` 保留绝对路径（凭据始终脱敏）。
   - `import`：读取位置参数 / `--file` 指定的文件，无文件时从管道 stdin 读取；终端中既无文件也无管道时立即以退出码 2 失败，绝不等待输入。
@@ -414,23 +416,36 @@ models/                  # 供应商 / 模型配置
 - 生效顺序：在模式、全局、Agent 与会话规则之后追加，因此组织策略可覆盖用户配置；仍遵循“后匹配优先”。
 - 设置页 Agent 分区展示策略文件路径、错误信息与规则列表，只读；文件本身的写保护需由部署方通过操作系统权限保证。
 
-## 23. GitHub Action
+## 23. GitHub 集成（桌面 / CLI / Action）
 
-- 根目录 [action.yml](../action.yml) 提供 composite action，安装 ATeam CLI 后在同一 runner 上运行 Headless Agent。
-- 输入：`prompt`、`api-key`、`model`、`provider`、`base-url`、`workspace`（默认 `github.workspace`）、`permission`（默认 `auto`）、`reasoning`、`context-window`、`max-output`、`agent`、`data`、`node-version`、`pnpm-version`。
-- 安装步骤使用 `pnpm install --frozen-lockfile --ignore-scripts`，执行 `pnpm rebuild esbuild` 并构建 `@ateam/headless`；prompt 通过 stdin 传入构建后的 `apps/headless/dist/cli.js`，避免以 `--` 开头的内容被当作参数，并支持多行 prompt。
-- 使用示例：
-  ```yaml
-  - uses: actions/checkout@v4
-  - uses: lxqddd/ATeam@master
-    with:
-      prompt: Review the changes and fix failing tests.
-      provider: openai
-      model: gpt-5
-      api-key: ${{ secrets.OPENAI_API_KEY }}
-      permission: auto
-  ```
-- 注意：`permission: auto` 允许自动改文件与执行命令；在 CI 中应仅用于受信任仓库，API Key 通过 Secrets 传入。Action 每次运行都会安装源码依赖，暂无独立二进制分发；运行器上的 CLI 会话默认不跨 job 保留。
+- 共享客户端：[`packages/agent-core/src/integrations/github.ts`](../packages/agent-core/src/integrations/github.ts) 的 `createGitHubClient` 直接调用 GitHub REST（Bearer、`Accept: application/vnd.github+json`、`X-GitHub-Api-Version: 2022-11-28`，可注入 `fetch`），桌面主进程与 CLI 复用；渲染进程不直接请求 GitHub。失败映射为稳定的 `GITHUB_*` 错误码（未认证 401、权限 403、限流 403/429、未找到 404、422、网络、响应格式等），错误消息不包含 token。
+- 桌面导入：会话栏 GitHub 按钮打开导入对话框；检测当前目录 `origin`（https / ssh），从最近更新的 issue/PR 列表选择或手填 URL、`owner/repo#123`；预览标题、状态、作者、标签、正文，以及 PR 的分支、提交数、增删与文件列表（正文截断 20,000 字符，文件最多 50 条并标记截断）；导入会创建会话、按标题重命名（截断 60）并把上下文预填进输入框，**不自动发送**。未配置 token 时显示提示与设置入口，且不发起列表请求。
+- 桌面回写：会话头 GitHub 菜单提供两项能力。
+  - 评论：预填最后一条 assistant 文本（仅 text part，上限 60,000 字符），可编辑后发布，成功后显示并打开评论链接；最后一轮只有工具调用时提示手填。
+  - 创建 PR：用仓库检测结果预填 `owner/repo`、默认分支与当前分支，可改标题、描述与草稿状态；头分支必须已推送，422 映射为“先 push 分支”，仅支持同仓库分支（fork 不在范围）。
+  - 会话与 issue/PR 的关联只保存在渲染进程内存；重启后回写对话框需手填引用。
+- 凭据：桌面端把 PAT 保存到 `userData/agent/github.json`（版本 1，0600），保存前调用 `/user` 校验，失败不覆盖旧值；读取优先级为已保存 token > `GITHUB_TOKEN` > `GH_TOKEN`。token 不下发给 Agent worker、不写入日志与 prompt；CLI 与 Action 只读环境变量。Classic token 需要 `repo`，fine-grained token 需要 Issues 与 Pull requests 读写权限。
+- Action：根目录 [action.yml](../action.yml) 提供 composite action，安装 ATeam CLI 后在同一 runner 上运行 Headless Agent。
+  - 输入：`prompt`（设置 `github-issue` 时可省略）、`api-key`、`model`、`provider`、`base-url`、`workspace`（默认 `github.workspace`）、`permission`（默认 `auto`）、`reasoning`、`context-window`、`max-output`、`agent`、`data`、`github-token`（默认 `github.token`）、`github-issue`、`github-comment`、`node-version`、`pnpm-version`。
+  - 安装步骤使用 `pnpm install --frozen-lockfile --ignore-scripts`，执行 `pnpm rebuild esbuild` 并构建 `@ateam/headless`；prompt 通过 stdin 传入构建后的 `apps/headless/dist/cli.js`，避免以 `--` 开头的内容被当作参数，并支持多行 prompt。
+  - 使用示例（从 issue 启动并回写评论）：
+    ```yaml
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lxqddd/ATeam@master
+        with:
+          github-issue: ${{ github.event.issue.html_url }}
+          github-comment: ${{ github.event.issue.html_url }}
+          provider: anthropic
+          model: claude-sonnet-5-5
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          permission: auto
+    ```
+  - 注意：`permission: auto` 允许自动改文件与执行命令；在 CI 中应仅用于受信任仓库，API Key 通过 Secrets 传入。fork PR 的 `GITHUB_TOKEN` 默认只读，写评论 / 建 PR 需要工作流显式声明 `issues: write` / `pull-requests: write`。Action 每次运行都会安装源码依赖，暂无独立二进制分发；运行器上的 CLI 会话默认不跨 job 保留。
 
 ## 24. ACP / 编辑器集成
 

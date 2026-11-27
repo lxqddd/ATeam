@@ -16,7 +16,9 @@ const chatMocks = vi.hoisted(() => ({
     sessions: [],
     sessionCount: 0,
     messageCount: 0
-  }))
+  })),
+  setGitHubRef: vi.fn(),
+  setDraftPrompt: vi.fn()
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -66,6 +68,21 @@ describe('SessionPanel', () => {
 
     await waitFor(() => expect(chatMocks.createSession).toHaveBeenCalledTimes(1))
     expect(chatMocks.createSession).toHaveBeenCalledWith()
+  })
+
+  it('opens the GitHub import dialog', async () => {
+    vi.mocked(api.api.agent.github.status).mockResolvedValue({
+      hasToken: true,
+      source: 'store',
+      login: 'octocat',
+      updatedAt: null
+    })
+    const user = userEvent.setup()
+    render(<SessionPanel />)
+
+    await user.click(screen.getByRole('button', { name: 'Import from GitHub' }))
+
+    expect(await screen.findByTestId('github-import-dialog')).toBeInTheDocument()
   })
 
   it('lists sessions and selects one', async () => {

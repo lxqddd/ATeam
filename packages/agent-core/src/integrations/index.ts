@@ -15,3 +15,19 @@ export { McpManager } from './mcp'
 export type { McpManagerLike } from './mcp'
 export { McpStore, mcpFilePath } from './mcp-store'
 export { searchWeb, formatSearchResults } from './websearch'
+export {
+  GitHubError,
+  buildGitHubPrompt,
+  createGitHubClient,
+  loadGitHubContext,
+  parseGitHubItemRef,
+  parseGitHubRemote,
+  parseGitHubRepo
+} from './github'
+export type {
+  GitHubClient,
+  GitHubClientOptions,
+  GitHubErrorCode,
+  GitHubIssue,
+  GitHubPull
+} from './github'

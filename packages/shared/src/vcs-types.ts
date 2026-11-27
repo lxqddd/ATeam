@@ -14,6 +14,8 @@ export interface VcsInfo {
   branch: string | null
   /** Default branch inferred from the remote or local configuration. */
   defaultBranch: string | null
+  /** `remote.origin.url` with userinfo stripped; null when it is not set. */
+  remoteUrl: string | null
 }
 
 export interface VcsStatusFile {

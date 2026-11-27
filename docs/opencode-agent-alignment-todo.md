@@ -58,7 +58,7 @@
 **P1 / P2**
 
 - [x] P1：消息 part 模型、VCS / Git 服务（MCP 细节 2026-11-25、会话回滚 / unrevert / 会话 diff 2026-11-25、formatter / commands / subagent 细节 2026-11-26、VCS / Git 服务 2026-11-26、消息 part 模型 2026-11-26 已完成）
-- [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、GitHub / Slack、远程 workspace / control plane、ACP 细节
+- [ ] P2：Session share / sync / export / stats、HTTP API / SDK 广度、TUI / CLI、IDE 集成、Slack、远程 workspace / control plane、ACP 细节
 
 ### 第二轮 P0 审计遗留（2026-11-23，2026-11-24 更新）
 
@@ -466,7 +466,8 @@
 - [ ] HTTP API / SDK 广度：文件、find、agents、commands、config、providers、MCP、LSP、TUI 等路由与生成式 SDK/client 包
 - [ ] CLI / TUI：完整 TUI、attach、serve、web、mcp、providers、import/export、stats、agent create
 - [ ] IDE 集成：VS Code 扩展、IDE 上下文/选区、ACP 之外的编辑器能力
-- [ ] GitHub / Slack：issue/PR 集成、share URL 导入、Slack 集成；现有 Action 仅覆盖基础 CLI 调用
+- [x] GitHub issue/PR 集成（2026-11-27）：共享 REST 客户端；桌面端从 issue/PR 导入会话（预填草稿）并把结果回写为评论或 PR；CLI `--github-issue` / `--github-comment`；Action 新增 `github-token` / `github-issue` / `github-comment` 并允许无 prompt 运行
+- [ ] Slack 集成与 share URL 导入：Slack 消息 / 频道接入，GitHub 分享链接的会话导入仍待实现
 - [ ] 远程 workspace / control plane：插件 workspace adapter 已提供，远程 target / control-plane 尚未实现
 - [ ] ACP 细节：usage/report、config options/profile、Question 映射
 - [ ] Account / Console / Enterprise：OpenCode 商业生态，建议明确为 ATeam 非目标

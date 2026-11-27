@@ -9,6 +9,12 @@ import type {
   ConfigFileChange,
   EffectiveAgentConfig,
   GlobalConfigFile,
+  GitHubCommentResult,
+  GitHubContextResult,
+  GitHubCreatePullResult,
+  GitHubItemSummary,
+  GitHubRepoInfo,
+  GitHubTokenStatus,
   PluginAuthMethodState,
   PluginAuthResult,
   PluginEntry,
@@ -308,7 +314,13 @@ export function createApiMock(
       },
       vcs: {
         status: vi.fn(async (): Promise<VcsStatus> => ({
-          info: { isRepository: false, root: null, branch: null, defaultBranch: null },
+          info: {
+            isRepository: false,
+            root: null,
+            branch: null,
+            defaultBranch: null,
+            remoteUrl: null
+          },
           files: [],
           truncated: false
         })),
@@ -548,6 +560,60 @@ export function createApiMock(
           provider: input.provider,
           hasApiKey: true,
           updatedAt: new Date().toISOString()
+        }))
+      },
+      github: {
+        status: vi.fn(async (): Promise<GitHubTokenStatus> => ({
+          hasToken: false,
+          source: 'none',
+          login: null,
+          updatedAt: null
+        })),
+        updateToken: vi.fn(async (): Promise<GitHubTokenStatus> => ({
+          hasToken: true,
+          source: 'store',
+          login: 'octocat',
+          updatedAt: new Date().toISOString()
+        })),
+        clearToken: vi.fn(async (): Promise<GitHubTokenStatus> => ({
+          hasToken: false,
+          source: 'none',
+          login: null,
+          updatedAt: null
+        })),
+        repo: vi.fn(async (): Promise<GitHubRepoInfo | null> => ({
+          owner: 'octo',
+          repo: 'repo',
+          remoteUrl: 'https://github.com/octo/repo.git',
+          branch: 'main',
+          defaultBranch: 'main'
+        })),
+        list: vi.fn(async (): Promise<GitHubItemSummary[]> => []),
+        context: vi.fn(async (ref: string): Promise<GitHubContextResult> => ({
+          context: {
+            owner: 'octo',
+            repo: 'repo',
+            kind: 'issue',
+            number: 1,
+            title: 'Example issue',
+            url: 'https://github.com/octo/repo/issues/1',
+            state: 'open',
+            author: 'octocat',
+            labels: [],
+            comments: 0,
+            updatedAt: '',
+            body: 'Issue body',
+            bodyTruncated: false,
+            pull: null
+          },
+          prompt: `GitHub context for ${ref}`
+        })),
+        comment: vi.fn(async (): Promise<GitHubCommentResult> => ({
+          url: 'https://github.com/octo/repo/issues/1#issuecomment-1'
+        })),
+        createPull: vi.fn(async (): Promise<GitHubCreatePullResult> => ({
+          number: 1,
+          url: 'https://github.com/octo/repo/pull/1'
         }))
       },
       attachments: {

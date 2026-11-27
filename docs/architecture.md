@@ -40,13 +40,13 @@ packages/client-sdk ──> HTTP API (apps/headless server)
                                           agent-host/worker.ts（AgentRuntime）
 ```
 
-| 边界              | 机制                                                              | 位置                                                                         |
-| ----------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 渲染进程 → 主进程 | `ipcMain.handle` + `isTrustedSender` 门禁 + zod schema 解析       | `apps/desktop/src/main/ipc/`                                                 |
-| 渲染进程 API      | `contextBridge.exposeInMainWorld('ateam', …)`，窄接口 `AteamApi`  | `apps/desktop/src/preload/index.ts`、`packages/shared/src/preload-api.ts`    |
-| 主进程 → Agent    | `WorkerRequest` / `WorkerMessage` 判别联合，`utilityProcess` 承载 | `packages/shared/src/agent-protocol.ts`、`apps/desktop/src/main/agent-host/` |
-| 浏览器自动化      | worker 发起 `browser` 消息，主进程回 `browser.result`             | `agent-manager.ts`、`worker.ts`                                              |
-| 密钥              | `safeStorage` 加密后落盘，仅主进程解密后随 `init` 注入 worker     | `apps/desktop/src/main/credentials/`、`providers/`                           |
+| 边界              | 机制                                                                                                             | 位置                                                                         |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 渲染进程 → 主进程 | `ipcMain.handle` + `isTrustedSender` 门禁 + zod schema 解析                                                      | `apps/desktop/src/main/ipc/`                                                 |
+| 渲染进程 API      | `contextBridge.exposeInMainWorld('ateam', …)`，窄接口 `AteamApi`                                                 | `apps/desktop/src/preload/index.ts`、`packages/shared/src/preload-api.ts`    |
+| 主进程 → Agent    | `WorkerRequest` / `WorkerMessage` 判别联合，`utilityProcess` 承载                                                | `packages/shared/src/agent-protocol.ts`、`apps/desktop/src/main/agent-host/` |
+| 浏览器自动化      | worker 发起 `browser` 消息，主进程回 `browser.result`                                                            | `agent-manager.ts`、`worker.ts`                                              |
+| 密钥              | `safeStorage` 加密后落盘，仅主进程解密后随 `init` 注入 worker；GitHub PAT 存在独立的 0600 JSON 中且不注入 worker | `apps/desktop/src/main/credentials/`、`providers/`、`github/`                |
 
 安全约定：
 
@@ -94,7 +94,7 @@ packages/client-sdk ──> HTTP API (apps/headless server)
 
 - 测试与源码同目录（`*.test.ts`），不放独立的 `tests/` 目录；纯类型包（`shared`）只在确有逻辑时加测试。
 - `packages/agent-core` 的子路径导出在 `package.json` 的 `exports` 中显式声明；barrel 文件位于目录内（如 `src/tools/index.ts`），不再保留与目录同名的顶层 `xxx.ts`。
-- 桌面端 IPC 按域拆分在 `apps/desktop/src/main/ipc/agent/`（chat、sessions、mcp、plugins、permissions、vcs、workspace、config、websearch、attachments、info），由 `register.ts` 串联。
+- 桌面端 IPC 按域拆分在 `apps/desktop/src/main/ipc/agent/`（chat、sessions、mcp、plugins、permissions、vcs、workspace、config、websearch、github、attachments、info），由 `register.ts` 串联。GitHub 请求全部在主进程完成（`main/github/`），渲染进程只拿已构建好的上下文与 prompt。
 - 渲染进程的状态集中在 `renderer/src/chat/store.ts` 与 `components/`，事件合并以 `partIndex` 为准；元数据 part 不渲染但保持索引对齐。
 
 ## 6. 扩展清单
@@ -130,7 +130,7 @@ pnpm test            # shared/client-sdk/agent-core/headless/desktop
 pnpm build
 ```
 
-当前测试规模：agent-core 64 个测试文件（1158 用例）、desktop 62 个（614 用例）、headless 11 个（122 用例）、client-sdk 1 个（6 用例）。跨进程协议、IPC 注册、消息 part 迁移与运行时主循环均有覆盖。覆盖率阈值、打包体积预算、可访问性与截图回归的检查方式见 [quality.md](./quality.md)。
+当前测试规模：agent-core 65 个测试文件（1171 用例）、desktop 71 个（674 用例）、headless 12 个（131 用例）、client-sdk 1 个（6 用例）。跨进程协议、IPC 注册、消息 part 迁移与运行时主循环均有覆盖。覆盖率阈值、打包体积预算、可访问性与截图回归的检查方式见 [quality.md](./quality.md)。
 
 ## 8. 渲染进程打包
 

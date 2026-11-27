@@ -16,6 +16,8 @@ import {
 } from '../../providers/runtime-config'
 import type { ModelConfigStore } from '../../settings/model-config-store'
 import type { WebSearchConfigStore } from '../../settings/websearch-config-store'
+import type { GitHubTokenStore } from '../../github/token-store'
+import { GitHubService } from '../../github/service'
 import type { TrustedSender } from '../trusted-sender'
 
 /** Dependencies required to register the agent IPC surface. */
@@ -23,10 +25,13 @@ export interface AgentIpcOptions {
   manager: AgentManager
   modelsStore: ModelConfigStore
   webSearchStore: WebSearchConfigStore
+  githubStore: GitHubTokenStore
   mcpAuthStore: McpAuthStore
   providerAuthStore: ProviderAuthStore
   workspacePath: string
   isTrustedSender: TrustedSender
+  /** Injected in tests; defaults to a service backed by `githubStore` and `workspacePath`. */
+  githubService?: GitHubService
   /** Shared global config store; created from `app.getPath('userData')` when omitted. */
   configStore?: AgentConfigStore
   /** Initialization promise for the shared config store. */
@@ -51,6 +56,7 @@ export interface AgentIpcContext extends AgentIpcOptions {
   refreshProviderTokens: () => Promise<void>
   configStore: AgentConfigStore
   pluginStore: PluginStore
+  githubService: GitHubService
   configReady: Promise<void>
   requestedDirectory: (value: unknown) => string | undefined
   searchReferences: (searchRoot: string) => Promise<AgentReferenceRoot[]>
@@ -82,6 +88,9 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
 
   const configStore = options.configStore ?? new AgentConfigStore(app.getPath('userData'))
   const pluginStore = new PluginStore(app.getPath('userData'))
+  const githubService =
+    options.githubService ??
+    new GitHubService({ store: options.githubStore, workspacePath: options.workspacePath })
   const configReady = options.configReady ?? configStore.init()
   let referenceSearchCache: {
     key: string
@@ -141,6 +150,7 @@ export function createAgentIpcContext(options: AgentIpcOptions): AgentIpcContext
     refreshProviderTokens,
     configStore,
     pluginStore,
+    githubService,
     configReady,
     requestedDirectory,
     searchReferences

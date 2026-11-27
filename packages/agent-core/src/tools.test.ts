@@ -118,14 +118,16 @@ beforeEach(async () => {
     isRepository: true,
     root: '/tmp/project',
     branch: 'main',
-    defaultBranch: 'main'
+    defaultBranch: 'main',
+    remoteUrl: null
   }))
   vcsStatus = vi.fn(async () => ({
     info: {
       isRepository: true,
       root: '/tmp/project',
       branch: 'main',
-      defaultBranch: 'main'
+      defaultBranch: 'main',
+      remoteUrl: null
     },
     files: [{ path: 'src/a.ts', status: 'modified' as const }],
     truncated: false
@@ -1681,7 +1683,8 @@ describe('vcs tool', () => {
       isRepository: false,
       root: null,
       branch: null,
-      defaultBranch: null
+      defaultBranch: null,
+      remoteUrl: null
     })
     await expect(execute(tools.vcs, { action: 'info' })).resolves.toBe('Not a Git repository.')
   })

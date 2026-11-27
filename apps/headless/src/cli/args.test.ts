@@ -63,6 +63,25 @@ describe('parseCliArgs', () => {
     })
   })
 
+  it('parses GitHub issue and comment references', () => {
+    const options = parseCliArgs(
+      [
+        '--github-issue',
+        'owner/repo#12',
+        '--github-comment=https://github.com/o/r/pull/3',
+        'fix it'
+      ],
+      {},
+      '/cwd'
+    )
+
+    expect(options).toMatchObject({
+      githubIssue: 'owner/repo#12',
+      githubComment: 'https://github.com/o/r/pull/3',
+      prompt: 'fix it'
+    })
+  })
+
   it('ignores a bare -- separator from package managers', () => {
     const options = parseCliArgs(['--', '--model', 'm', 'hello'], ENV)
 
