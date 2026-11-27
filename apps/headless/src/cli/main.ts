@@ -11,6 +11,7 @@ import { SessionsStore } from '@ateam/agent-core'
 import { restoreLegacySessionBackups } from '@ateam/agent-core'
 import { createHeadlessRuntime } from '../runtime'
 import { buildCliModels, CLI_HELP, parseCliArgs, type CliOptions } from './args'
+import { dataCommandOf, runDataCommand } from './data'
 
 async function readStdin(): Promise<string> {
   let text = ''
@@ -28,9 +29,13 @@ function summarizeEvent(event: AgentEvent): string | null {
 }
 
 async function main(): Promise<number> {
+  const argv = process.argv.slice(2)
+  // Data commands only touch the session store, so they run before any model
+  // configuration or agent runtime setup.
+  if (dataCommandOf(argv)) return runDataCommand(argv)
   let options: CliOptions
   try {
-    options = parseCliArgs(process.argv.slice(2))
+    options = parseCliArgs(argv)
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     return 2

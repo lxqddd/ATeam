@@ -368,6 +368,11 @@ models/                  # 供应商 / 模型配置
 - 会话：默认在 `~/.ateam/cli`（可用 `--data` 修改）创建会话；`--session <id>` 继续已有会话，`--list-sessions` 列出 CLI 会话，`--restore-sessions` 将 `.migrated` 旧会话备份恢复并重新导入数据库后退出。
 - 权限：`--permission plan|ask|acceptEdits|auto`；`ask` 模式在终端询问 y/a/N，非交互环境默认拒绝；Question 工具在终端按编号选择或输入自定义答案。
 - 输出：默认将文本流式写到 stdout，工具调用摘要写到 stderr；`--json` 将完整 Agent 事件按 JSON Lines 输出，便于 CI 集成。
+- 数据命令（不加载模型，无需 API Key）：`pnpm cli -- export|import|stats`。
+  - `export`：`--session <id>` 导出单个会话，`--format json|jsonl|markdown`（默认 `json`，与桌面端默认一致），`--out <path>` 写入文件（缺省或 `-` 写 stdout），`--no-redact-paths` 保留绝对路径（凭据始终脱敏）。
+  - `import`：读取位置参数 / `--file` 指定的文件，无文件时从管道 stdin 读取；终端中既无文件也无管道时立即以退出码 2 失败，绝不等待输入。
+  - `stats`：`--range all|7d|30d`（默认 `7d`）汇总本地会话、消息、token、成本、模型与工具调用。
+  - 三者均支持 `--data <dir>`、`--json` 与 `--help`；命令行解析错误退出码 2，坏文件 / 会话不存在等运行错误 1。导出产物与桌面端格式互通，可双向导入。
 - 限制：凭据通过命令行或环境变量以明文传入；CLI 不读取桌面端 `auth.json`；已有独立 `apps/headless/dist` 构建，但尚未提供单一可执行文件。
 
 ## 20. Server API 与 SDK
