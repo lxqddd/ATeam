@@ -48,6 +48,8 @@ export interface ChatStoreState {
   actionError: string | null
   restarting: boolean
   revertPrompt: string | null
+  /** Imported context waiting to be consumed once by the composer. */
+  draftPrompt: string | null
   changesPanel: { sessionId: string; messageId: string | null; tab: ChangesTab } | null
 }
 
@@ -108,10 +110,13 @@ export class ChatStore {
     actionError: null,
     restarting: false,
     revertPrompt: null,
+    draftPrompt: null,
     changesPanel: null
   }
 
   private listeners = new Set<() => void>()
+  /** Session ↔ GitHub issue/PR association; intentionally in-memory only. */
+  private githubRefs = new Map<string, string>()
   private initialized = false
   private initPromise: Promise<void> | null = null
   private loadingSessions: Promise<void> | null = null
@@ -320,7 +325,7 @@ export class ChatStore {
   }
 
   selectSession(sessionId: string): void {
-    this.setState({ selectedSessionId: sessionId, changesPanel: null })
+    this.setState({ selectedSessionId: sessionId, changesPanel: null, draftPrompt: null })
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
     void this.refreshModels(session?.directory ?? null)
     void this.refreshAgents(session?.directory ?? undefined)
@@ -475,6 +480,23 @@ export class ChatStore {
 
   clearRevertPrompt(): void {
     this.setState({ revertPrompt: null })
+  }
+
+  /** Seeds the composer once; the composer clears it after consuming. */
+  setDraftPrompt(prompt: string): void {
+    this.setState({ draftPrompt: prompt })
+  }
+
+  clearDraftPrompt(): void {
+    this.setState({ draftPrompt: null })
+  }
+
+  setGitHubRef(sessionId: string, ref: string): void {
+    this.githubRefs.set(sessionId, ref)
+  }
+
+  githubRefFor(sessionId: string): string | null {
+    return this.githubRefs.get(sessionId) ?? null
   }
 
   openChanges(sessionId: string, messageId: string): void {
@@ -894,6 +916,7 @@ export class ChatStore {
     delete loadedBySession[sessionId]
     delete queuesBySession[sessionId]
     delete backgroundTasksBySession[sessionId]
+    this.githubRefs.delete(sessionId)
     this.setState({
       sessions,
       selectedSessionId: selected,

@@ -2,6 +2,7 @@ import { registerAttachmentHandlers } from './attachments-files'
 import { registerChatHandlers } from './chat'
 import { registerConfigHandlers } from './config'
 import { createAgentIpcContext, type AgentIpcOptions } from './context'
+import { registerGitHubHandlers } from './github'
 import { registerInfoHandlers } from './info'
 import { registerMcpHandlers } from './mcp'
 import { registerPermissionHandlers } from './permissions'
@@ -34,5 +35,6 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   registerPluginHandlers(ctx)
   registerMcpHandlers(ctx)
   registerWebSearchHandlers(ctx)
+  registerGitHubHandlers(ctx)
   registerWorkspaceHandlers(ctx)
 }

@@ -20,6 +20,7 @@ import { ConfigWatcher } from './config-watcher'
 import { ModelConfigStore } from './settings/model-config-store'
 import { ModelCatalogStore } from './providers/catalog-store'
 import { WebSearchConfigStore } from './settings/websearch-config-store'
+import { GitHubTokenStore } from './github/token-store'
 import { McpAuthStore } from './credentials/mcp-auth-store'
 import { ProviderAuthStore } from './providers/provider-auth-store'
 import { runtimeModelsWithOAuth } from './providers/runtime-config'
@@ -160,6 +161,12 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('[websearch] failed to load the web search configuration', error)
     }
+    const githubStore = new GitHubTokenStore(userDataPath)
+    try {
+      await githubStore.init()
+    } catch (error) {
+      console.error('[github] failed to load the GitHub token', error)
+    }
     const mcpAuthStore = new McpAuthStore(userDataPath)
     try {
       await mcpAuthStore.init()
@@ -265,6 +272,7 @@ if (!hasSingleInstanceLock) {
       manager,
       modelsStore,
       webSearchStore,
+      githubStore,
       mcpAuthStore,
       providerAuthStore,
       workspacePath,

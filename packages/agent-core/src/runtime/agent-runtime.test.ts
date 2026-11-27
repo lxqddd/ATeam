@@ -805,10 +805,17 @@ beforeEach(async () => {
       isRepository: false,
       root: null,
       branch: null,
-      defaultBranch: null
+      defaultBranch: null,
+      remoteUrl: null
     })),
     status: vi.fn<VcsService['status']>(async () => ({
-      info: { isRepository: false, root: null, branch: null, defaultBranch: null },
+      info: {
+        isRepository: false,
+        root: null,
+        branch: null,
+        defaultBranch: null,
+        remoteUrl: null
+      },
       files: [],
       truncated: false
     })),
@@ -2895,7 +2902,13 @@ describe('AgentRuntime', () => {
   it('reads Git status and diffs for the session workspace', async () => {
     const workspace = path.join(directory, 'workspace')
     vcsService.status.mockResolvedValue({
-      info: { isRepository: true, root: workspace, branch: 'main', defaultBranch: 'main' },
+      info: {
+        isRepository: true,
+        root: workspace,
+        branch: 'main',
+        defaultBranch: 'main',
+        remoteUrl: null
+      },
       files: [{ path: 'a.txt', status: 'modified' }],
       truncated: false
     })

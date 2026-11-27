@@ -1,10 +1,21 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionExportResult, SessionPlan } from '@ateam/shared'
+import { lastAssistantText } from '../../chat/github'
 import { chatStore, useChatStore } from '../../chat/store'
 
 // Export is a rarely used action; load its dialog only when it is opened.
 const ExportDialog = lazy(() => import('./ExportDialog'))
+const GitHubCommentDialog = lazy(() => import('./GitHubCommentDialog'))
+const GitHubPullDialog = lazy(() => import('./GitHubPullDialog'))
+
+function GitHubIcon(): React.JSX.Element {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A7.995 7.995 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+    </svg>
+  )
+}
 
 function statusLabel(sessionStatus: string | undefined): string | null {
   if (sessionStatus === 'running') return 'chat.running'
@@ -41,6 +52,8 @@ function ChatHeaderContent(): React.JSX.Element {
   const [headerError, setHeaderError] = useState<string | null>(null)
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false)
   const [workspaceBusy, setWorkspaceBusy] = useState(false)
+  const [githubMenuOpen, setGithubMenuOpen] = useState(false)
+  const [githubDialog, setGithubDialog] = useState<'comment' | 'pull' | null>(null)
   const [plan, setPlan] = useState<SessionPlan | null>(null)
   const [planOpen, setPlanOpen] = useState(false)
   const [planBusy, setPlanBusy] = useState(false)
@@ -50,6 +63,7 @@ function ChatHeaderContent(): React.JSX.Element {
   const [exportNotice, setExportNotice] = useState<string | null>(null)
   const exportNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null)
+  const githubMenuRef = useRef<HTMLDivElement | null>(null)
   const canUndo = !running && messages.some((message) => message.role === 'assistant')
   const canRedo = !running && session?.redoAvailable === true
   const showPlan =
@@ -86,6 +100,22 @@ function ChatHeaderContent(): React.JSX.Element {
       window.removeEventListener('keydown', onKey)
     }
   }, [workspaceMenuOpen])
+
+  useEffect(() => {
+    if (!githubMenuOpen) return undefined
+    const onDown = (event: MouseEvent): void => {
+      if (!githubMenuRef.current?.contains(event.target as Node)) setGithubMenuOpen(false)
+    }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setGithubMenuOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [githubMenuOpen])
 
   useEffect(() => {
     if (!selectedSessionId) return undefined
@@ -468,6 +498,52 @@ function ChatHeaderContent(): React.JSX.Element {
         </svg>
       </button>
 
+      {session && (
+        <div className="relative flex-none" ref={githubMenuRef}>
+          <button
+            type="button"
+            title={t('chat.githubMenu')}
+            aria-label={t('chat.githubMenu')}
+            aria-haspopup="menu"
+            aria-expanded={githubMenuOpen}
+            onClick={() => setGithubMenuOpen((open) => !open)}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground"
+          >
+            <GitHubIcon />
+          </button>
+          {githubMenuOpen && (
+            <div
+              role="menu"
+              aria-label={t('chat.githubMenu')}
+              className="absolute right-0 top-9 z-30 w-56 rounded-md border border-border bg-surface p-1 shadow-lg"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setGithubMenuOpen(false)
+                  setGithubDialog('comment')
+                }}
+                className="flex w-full items-center rounded px-2 py-1.5 text-left text-label text-foreground transition-colors hover:bg-hover"
+              >
+                {t('chat.githubComment')}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setGithubMenuOpen(false)
+                  setGithubDialog('pull')
+                }}
+                className="flex w-full items-center rounded px-2 py-1.5 text-left text-label text-foreground transition-colors hover:bg-hover"
+              >
+                {t('chat.githubPull')}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <button
         type="button"
         title={t('chat.undo')}
@@ -662,6 +738,27 @@ function ChatHeaderContent(): React.JSX.Element {
             sessionId={selectedSessionId}
             onClose={() => setExportOpen(false)}
             onExported={handleExported}
+          />
+        </Suspense>
+      )}
+
+      {githubDialog === 'comment' && (
+        <Suspense fallback={null}>
+          <GitHubCommentDialog
+            defaultRef={selectedSessionId ? chatStore.githubRefFor(selectedSessionId) : null}
+            defaultBody={lastAssistantText(messages)}
+            onClose={() => setGithubDialog(null)}
+          />
+        </Suspense>
+      )}
+
+      {githubDialog === 'pull' && (
+        <Suspense fallback={null}>
+          <GitHubPullDialog
+            directory={currentDirectory}
+            defaultTitle={session?.title ?? ''}
+            defaultBody={lastAssistantText(messages)}
+            onClose={() => setGithubDialog(null)}
           />
         </Suspense>
       )}

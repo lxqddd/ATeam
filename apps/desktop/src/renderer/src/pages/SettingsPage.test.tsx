@@ -23,6 +23,9 @@ vi.mock('../components/settings/McpServers', () => ({
 vi.mock('../components/settings/WebSearchSettings', () => ({
   default: () => <div>websearch-panel</div>
 }))
+vi.mock('../components/settings/GitHubSettings', () => ({
+  default: () => <div>github-panel</div>
+}))
 vi.mock('../components/settings/UpdateSettings', () => ({
   default: () => <div>update-panel</div>
 }))
@@ -98,6 +101,22 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Web search' }))
 
     expect(await screen.findByText('websearch-panel')).toBeInTheDocument()
+  })
+
+  it('shows GitHub settings from the menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('menuitem', { name: 'GitHub' }))
+
+    expect(await screen.findByText('github-panel')).toBeInTheDocument()
+  })
+
+  it('opens the GitHub section from a deep link', async () => {
+    renderPage('/settings?section=github')
+
+    expect(await screen.findByText('github-panel')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'GitHub' })).toHaveClass('ant-menu-item-selected')
   })
 
   it('shows project settings from the menu', async () => {

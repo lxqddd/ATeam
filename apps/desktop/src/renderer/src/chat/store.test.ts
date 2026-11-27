@@ -323,6 +323,25 @@ describe('ChatStore sessions', () => {
     expect(store.getSnapshot().revertPrompt).toBe('older prompt')
   })
 
+  it('seeds a one-shot draft prompt and keeps GitHub refs in memory', async () => {
+    mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
+    await store.init()
+
+    expect(store.getSnapshot().draftPrompt).toBeNull()
+    store.setDraftPrompt('GitHub context')
+    expect(store.getSnapshot().draftPrompt).toBe('GitHub context')
+    store.clearDraftPrompt()
+    expect(store.getSnapshot().draftPrompt).toBeNull()
+
+    store.setGitHubRef('s1', 'octo/repo#3')
+    expect(store.githubRefFor('s1')).toBe('octo/repo#3')
+    expect(store.githubRefFor('missing')).toBeNull()
+
+    store.setDraftPrompt('pending')
+    store.selectSession('s1')
+    expect(store.getSnapshot().draftPrompt).toBeNull()
+  })
+
   it('rewinds an assistant message to a recorded step', async () => {
     mock.sessions.push(makeSession({ id: 's1', updatedAt: '2026-01-02T00:00:00.000Z' }))
     await store.init()

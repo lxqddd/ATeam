@@ -7,8 +7,9 @@ branding:
 
 inputs:
   prompt:
-    description: Prompt or task instructions for the agent.
-    required: true
+    description: Prompt or task instructions for the agent. Optional when github-issue is set.
+    required: false
+    default: ''
   api-key:
     description: Provider API key. Pass a secret; omit for unauthenticated OpenAI-compatible endpoints.
     required: false
@@ -49,6 +50,20 @@ inputs:
     default: ''
   data:
     description: CLI data directory for sessions.
+    required: false
+    default: ''
+  github-token:
+    description: >-
+      Token used to read issues/PRs and post comments. Defaults to the workflow
+      token; grant issues: write and pull-requests: write permissions for writeback.
+    required: false
+    default: ''
+  github-issue:
+    description: Issue or pull request URL (or owner/repo#n) to start the run from.
+    required: false
+    default: ''
+  github-comment:
+    description: Issue or pull request URL (or owner/repo#n) to post the final reply to.
     required: false
     default: ''
   node-version:
@@ -97,6 +112,9 @@ runs:
         INPUT_MAX_OUTPUT: ${{ inputs.max-output }}
         INPUT_AGENT: ${{ inputs.agent }}
         INPUT_DATA: ${{ inputs.data }}
+        INPUT_GITHUB_ISSUE: ${{ inputs.github-issue }}
+        INPUT_GITHUB_COMMENT: ${{ inputs.github-comment }}
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
       run: |
         set -euo pipefail
         args=(--provider "$INPUT_PROVIDER" --model "$INPUT_MODEL" --permission "$INPUT_PERMISSION")
@@ -108,4 +126,6 @@ runs:
         if [ -n "$INPUT_MAX_OUTPUT" ]; then args+=(--max-output "$INPUT_MAX_OUTPUT"); fi
         if [ -n "$INPUT_AGENT" ]; then args+=(--agent "$INPUT_AGENT"); fi
         if [ -n "$INPUT_DATA" ]; then args+=(--data "$INPUT_DATA"); fi
+        if [ -n "$INPUT_GITHUB_ISSUE" ]; then args+=(--github-issue "$INPUT_GITHUB_ISSUE"); fi
+        if [ -n "$INPUT_GITHUB_COMMENT" ]; then args+=(--github-comment "$INPUT_GITHUB_COMMENT"); fi
         printf '%s' "$INPUT_PROMPT" | node "${{ github.action_path }}/apps/headless/dist/cli.js" "${args[@]}"

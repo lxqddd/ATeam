@@ -25,6 +25,7 @@ function Composer(): React.JSX.Element {
     commands,
     status,
     revertPrompt,
+    draftPrompt,
     queuesBySession
   } = useChatStore()
   const session = sessions.find((candidate) => candidate.id === selectedSessionId)
@@ -129,6 +130,15 @@ function Composer(): React.JSX.Element {
     chatStore.clearRevertPrompt()
     textareaRef.current?.focus()
   }, [revertPrompt])
+
+  useEffect(() => {
+    if (draftPrompt === null) return
+    // GitHub import context arrives from the store; seed it once for editing.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setText(draftPrompt)
+    chatStore.clearDraftPrompt()
+    textareaRef.current?.focus()
+  }, [draftPrompt])
 
   const placeholder = !ready
     ? status.status === 'starting'

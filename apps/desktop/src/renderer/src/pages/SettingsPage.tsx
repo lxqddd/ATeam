@@ -2,6 +2,7 @@ import { Menu } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import AgentSettings from '../components/settings/AgentSettings'
+import GitHubSettings from '../components/settings/GitHubSettings'
 import GlobalSettings from '../components/settings/global/GlobalSettings'
 import LanguageSettings from '../components/settings/LanguageSettings'
 import McpServers from '../components/settings/McpServers'
@@ -37,6 +38,11 @@ const SETTINGS_SECTIONS = [
     id: 'web',
     labelKey: 'settings.web',
     descriptionKey: 'settings.webDescription'
+  },
+  {
+    id: 'github',
+    labelKey: 'settings.github',
+    descriptionKey: 'settings.githubDescription'
   },
   {
     id: 'agent',
@@ -137,6 +143,14 @@ function SettingsPage(): React.JSX.Element {
             {section === 'web' && (
               <SettingsGroup title={t('settings.web')} description={t('settings.webDescription')}>
                 <WebSearchSettings />
+              </SettingsGroup>
+            )}
+            {section === 'github' && (
+              <SettingsGroup
+                title={t('settings.github')}
+                description={t('settings.githubDescription')}
+              >
+                <GitHubSettings />
               </SettingsGroup>
             )}
             {section === 'agent' && (

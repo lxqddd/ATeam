@@ -42,6 +42,7 @@ interface FakeOutput {
   branch?: string
   locals?: string
   remotes?: string
+  remote?: string
 }
 
 function fakeExec(output: FakeOutput = {}): VcsExec {
@@ -61,7 +62,7 @@ function fakeExec(output: FakeOutput = {}): VcsExec {
     if (command === 'for-each-ref') {
       return ok(args.includes('refs/remotes') ? '' : (output.locals ?? 'main'))
     }
-    if (command === 'config') return fail()
+    if (command === 'config') return output.remote ? ok(output.remote) : fail()
     if (command === 'status') return ok(output.status ?? '')
     if (command === 'diff' || command === 'show') {
       if (args.includes('--numstat')) return ok(output.numstat ?? '')
@@ -94,10 +95,17 @@ describe('vcs service', () => {
       isRepository: false,
       root: null,
       branch: null,
-      defaultBranch: null
+      defaultBranch: null,
+      remoteUrl: null
     })
     await expect(vcs.status()).resolves.toEqual({
-      info: { isRepository: false, root: null, branch: null, defaultBranch: null },
+      info: {
+        isRepository: false,
+        root: null,
+        branch: null,
+        defaultBranch: null,
+        remoteUrl: null
+      },
       files: [],
       truncated: false
     })
@@ -119,7 +127,8 @@ describe('vcs service', () => {
       isRepository: true,
       root: await fs.realpath(repo),
       branch: 'main',
-      defaultBranch: 'main'
+      defaultBranch: 'main',
+      remoteUrl: null
     })
     await expect(vcs.status()).resolves.toEqual({
       info,
@@ -128,6 +137,20 @@ describe('vcs service', () => {
     })
     const diff = await vcs.diff()
     expect(diff).toMatchObject({ isRepository: true, mode: 'working', base: 'HEAD', files: [] })
+  })
+
+  it('reports the origin remote and strips embedded credentials', async () => {
+    await git(repo, 'remote', 'add', 'origin', 'https://user:secret@github.com/octo/repo.git')
+
+    await expect(createVcs(repo).info()).resolves.toMatchObject({
+      remoteUrl: 'https://github.com/octo/repo.git'
+    })
+
+    const ssh = createVcs('/repo', { exec: fakeExec({ remote: 'git@github.com:octo/repo.git' }) })
+    await expect(ssh.info()).resolves.toMatchObject({ remoteUrl: 'git@github.com:octo/repo.git' })
+
+    const failing = createVcs('/repo', { exec: fakeExec() })
+    await expect(failing.info()).resolves.toMatchObject({ remoteUrl: null })
   })
 
   it('maps status letters for untracked, staged, modified and deleted files', async () => {

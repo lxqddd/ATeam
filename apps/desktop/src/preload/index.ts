@@ -218,6 +218,17 @@ const api: AteamApi = {
       get: () => ipcRenderer.invoke(AGENT_CHANNELS.webSearchGet),
       update: (input) => ipcRenderer.invoke(AGENT_CHANNELS.webSearchUpdate, input)
     },
+    github: {
+      status: () => ipcRenderer.invoke(AGENT_CHANNELS.githubStatus),
+      updateToken: (token) => ipcRenderer.invoke(AGENT_CHANNELS.githubTokenUpdate, { token }),
+      clearToken: () => ipcRenderer.invoke(AGENT_CHANNELS.githubTokenClear),
+      repo: (directory?: string | null) =>
+        ipcRenderer.invoke(AGENT_CHANNELS.githubRepo, { directory }),
+      list: (input) => ipcRenderer.invoke(AGENT_CHANNELS.githubList, input),
+      context: (ref) => ipcRenderer.invoke(AGENT_CHANNELS.githubContext, { ref }),
+      comment: (input) => ipcRenderer.invoke(AGENT_CHANNELS.githubComment, input),
+      createPull: (input) => ipcRenderer.invoke(AGENT_CHANNELS.githubCreatePull, input)
+    },
     attachments: {
       import: (sessionId, input) =>
         ipcRenderer.invoke(AGENT_CHANNELS.attachmentsImport, { sessionId, ...input }),

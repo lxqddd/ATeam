@@ -203,6 +203,23 @@ function firstLine(value: string): string {
   return value.trim().split('\n')[0] ?? ''
 }
 
+/** Drops userinfo from http(s) remotes so embedded tokens never reach the renderer. */
+function sanitizeRemoteUrl(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      url.username = ''
+      url.password = ''
+      return url.toString()
+    }
+  } catch {
+    // scp-like remotes (`git@host:owner/repo.git`) are not URLs and cannot embed a password.
+  }
+  return trimmed
+}
+
 function normalizeFilter(repoRoot: string, value?: string): string | null {
   const trimmed = value?.trim()
   if (!trimmed) return null
@@ -275,12 +292,20 @@ export function createVcs(root: string, options: VcsOptions = {}): VcsService {
     return null
   }
 
+  async function remoteUrl(repoRoot: string): Promise<string | null> {
+    const result = await git(['config', '--get', 'remote.origin.url'], repoRoot)
+    const value = result.stdout.trim()
+    if (result.code !== 0 || !value) return null
+    return sanitizeRemoteUrl(value) || null
+  }
+
   async function infoFor(repoRoot: string): Promise<VcsInfo> {
     return {
       isRepository: true,
       root: repoRoot,
       branch: await currentBranch(repoRoot),
-      defaultBranch: await defaultBranch(repoRoot)
+      defaultBranch: await defaultBranch(repoRoot),
+      remoteUrl: await remoteUrl(repoRoot)
     }
   }
 
@@ -298,7 +323,15 @@ export function createVcs(root: string, options: VcsOptions = {}): VcsService {
   return {
     async info(): Promise<VcsInfo> {
       const repoRoot = await repositoryRoot()
-      if (!repoRoot) return { isRepository: false, root: null, branch: null, defaultBranch: null }
+      if (!repoRoot) {
+        return {
+          isRepository: false,
+          root: null,
+          branch: null,
+          defaultBranch: null,
+          remoteUrl: null
+        }
+      }
       return infoFor(repoRoot)
     },
 
@@ -306,7 +339,13 @@ export function createVcs(root: string, options: VcsOptions = {}): VcsService {
       const repoRoot = await repositoryRoot()
       if (!repoRoot) {
         return {
-          info: { isRepository: false, root: null, branch: null, defaultBranch: null },
+          info: {
+            isRepository: false,
+            root: null,
+            branch: null,
+            defaultBranch: null,
+            remoteUrl: null
+          },
           files: [],
           truncated: false
         }

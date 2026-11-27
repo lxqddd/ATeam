@@ -13,7 +13,8 @@ const chatMocks = vi.hoisted(() => ({
   forkSession: vi.fn(async () => undefined),
   setSessionDirectory: vi.fn(async () => undefined),
   openSessionChanges: vi.fn(),
-  openGitChanges: vi.fn()
+  openGitChanges: vi.fn(),
+  githubRefFor: vi.fn((): string | null => null)
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -77,6 +78,7 @@ function baseState(): ChatStoreState {
     actionError: null,
     restarting: false,
     revertPrompt: null,
+    draftPrompt: null,
     changesPanel: null,
     configRevision: 0
   }
@@ -94,6 +96,8 @@ beforeEach(() => {
   chatMocks.setSessionDirectory.mockResolvedValue(undefined)
   chatMocks.openSessionChanges.mockClear()
   chatMocks.openGitChanges.mockClear()
+  chatMocks.githubRefFor.mockClear()
+  chatMocks.githubRefFor.mockReturnValue(null)
   Object.defineProperty(window, 'api', { value: createApiMock().api, configurable: true })
 })
 
@@ -421,5 +425,48 @@ describe('session experience', () => {
     expect(await screen.findByRole('dialog', { name: 'Plan' })).toBeInTheDocument()
     expect(screen.getByText('.ateam/plans/s1.md')).toBeInTheDocument()
     expect(screen.getByText(/# Plan[\s\S]*Step one\./)).toBeInTheDocument()
+  })
+})
+
+describe('GitHub actions', () => {
+  it('opens the action menu and the comment dialog with the session reference', async () => {
+    chatMocks.githubRefFor.mockReturnValue('octo/repo#5')
+    const state = baseState()
+    state.messagesBySession = {
+      s1: [makeMessage({ role: 'assistant', parts: [makeTextPart('Summary')] })]
+    }
+    storeState.current = state
+    const user = userEvent.setup()
+    const mock = createApiMock()
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'GitHub actions' }))
+
+    expect(screen.getByRole('menu', { name: 'GitHub actions' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Create pull request' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('menuitem', { name: 'Comment on issue/PR' }))
+
+    const dialog = await screen.findByTestId('github-comment-dialog')
+    expect(dialog).toBeInTheDocument()
+    expect(chatMocks.githubRefFor).toHaveBeenCalledWith('s1')
+    expect(screen.getByLabelText('Issue / PR reference')).toHaveValue('octo/repo#5')
+    expect(screen.getByLabelText('Comment')).toHaveValue('Summary')
+  })
+
+  it('opens the pull request dialog with the session title as default', async () => {
+    const user = userEvent.setup()
+    const mock = createApiMock()
+    Object.defineProperty(window, 'api', { value: mock.api, configurable: true })
+
+    render(<ChatHeader />)
+
+    await user.click(screen.getByRole('button', { name: 'GitHub actions' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Create pull request' }))
+
+    expect(await screen.findByTestId('github-pull-dialog')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Title')).toHaveValue('Chat')
   })
 })

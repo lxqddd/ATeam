@@ -106,7 +106,13 @@ function renderPanel(
 
 function makeVcsStatus(overrides: Partial<VcsStatus> = {}): VcsStatus {
   return {
-    info: { isRepository: true, root: '/repo', branch: 'main', defaultBranch: 'master' },
+    info: {
+      isRepository: true,
+      root: '/repo',
+      branch: 'main',
+      defaultBranch: 'master',
+      remoteUrl: null
+    },
     files: [],
     truncated: false,
     ...overrides
@@ -447,7 +453,13 @@ describe('ChangesPanel workspace Git tab', () => {
   it('explains when the workspace is not a Git repository', async () => {
     api.api.agent.vcs.status = vi.fn(async () =>
       makeVcsStatus({
-        info: { isRepository: false, root: null, branch: null, defaultBranch: null }
+        info: {
+          isRepository: false,
+          root: null,
+          branch: null,
+          defaultBranch: null,
+          remoteUrl: null
+        }
       })
     )
     api.api.agent.vcs.diff = vi.fn(async () =>
