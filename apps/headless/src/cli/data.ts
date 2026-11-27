@@ -10,6 +10,7 @@ import {
 } from '@ateam/agent-core/sessions'
 import { version } from '../version'
 import { defaultCliDataDir } from './args'
+import { createCliIo, type CliIo } from './io'
 
 /** Data subcommands handled before the agent runtime starts. */
 export const DATA_COMMANDS = ['export', 'import', 'stats'] as const
@@ -34,13 +35,7 @@ export type DataCommandOptions =
   | (CommonDataOptions & { command: 'stats'; range: UsageStatsRange })
 
 /** Injectable process boundaries so tests (and embeddings) never touch stdio. */
-export interface DataIo {
-  cwd: string
-  stdinIsTTY: boolean
-  stdout(text: string): void
-  stderr(text: string): void
-  readStdin(): Promise<string>
-}
+export type DataIo = CliIo
 
 /** A failure whose exit code is part of the CLI contract. */
 class DataCommandError extends Error {
@@ -364,21 +359,6 @@ function formatStats(stats: UsageStats): string {
   return `${lines.join('\n')}\n`
 }
 
-function createIo(overrides: Partial<DataIo>): DataIo {
-  return {
-    cwd: process.cwd(),
-    stdinIsTTY: Boolean(process.stdin.isTTY),
-    stdout: (text) => process.stdout.write(text),
-    stderr: (text) => process.stderr.write(text),
-    readStdin: async () => {
-      let text = ''
-      for await (const chunk of process.stdin) text += String(chunk)
-      return text
-    },
-    ...overrides
-  }
-}
-
 /**
  * Runs a data subcommand and returns the process exit code: 0 on success,
  * 2 for usage errors, 1 for runtime failures (missing file, invalid export).
@@ -388,7 +368,7 @@ export async function runDataCommand(
   argv: string[],
   overrides: Partial<DataIo> = {}
 ): Promise<number> {
-  const io = createIo(overrides)
+  const io = createCliIo(overrides)
   let options: DataCommandOptions
   try {
     options = parseDataArgs(argv, io.cwd)
