@@ -1,12 +1,14 @@
 import ProjectServersPanel from './ProjectServersPanel'
-import type { ProjectConfigController } from './useProjectConfig'
+import type { ConfigDocumentController, ConfigScope } from '../config-controller'
 
 function ProjectFormattersPanel({
-  controller
+  controller,
+  scope = 'project'
 }: {
-  controller: ProjectConfigController
+  controller: ConfigDocumentController
+  scope?: ConfigScope
 }): React.JSX.Element {
-  return <ProjectServersPanel controller={controller} kind="formatters" />
+  return <ProjectServersPanel controller={controller} kind="formatters" scope={scope} />
 }
 
 export default ProjectFormattersPanel

@@ -20,7 +20,36 @@ vi.mock('@ateam/agent-core/config', () => ({
     init = vi.fn(async () => undefined)
     get = vi.fn(() => ({}))
     update = vi.fn((patch: unknown) => patch)
+    edit = vi.fn(async (edits: unknown) => ({
+      path: '',
+      exists: true,
+      content: '',
+      diagnostics: [],
+      document: {},
+      edits
+    }))
+    writeContent = vi.fn(async (content: string) => ({
+      path: '',
+      exists: true,
+      content,
+      diagnostics: [],
+      document: {}
+    }))
   },
+  readGlobalConfigFile: vi.fn(async () => ({
+    path: '',
+    exists: false,
+    content: '',
+    diagnostics: [],
+    document: {}
+  })),
+  writeGlobalConfigFile: vi.fn(async (_: string, content: string) => ({
+    path: '',
+    exists: true,
+    content,
+    diagnostics: [],
+    document: {}
+  })),
   readProjectConfigFile: vi.fn(async () => ({
     path: '',
     directory: '',

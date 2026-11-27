@@ -4,12 +4,15 @@ import {
   editProjectConfigFile,
   globalAgentConfigPath,
   readEffectiveAgentConfig,
+  readGlobalConfigFile,
   readProjectConfigFile,
   writeProjectConfigFile
 } from '@ateam/agent-core/config'
 import {
   agentConfigPatchSchema,
   agentConfigResolveSchema,
+  globalConfigEditSchema,
+  globalConfigUpdateSchema,
   projectConfigEditSchema,
   projectConfigUpdateSchema
 } from '../config-schema'
@@ -81,5 +84,25 @@ export function registerConfigHandlers(ctx: AgentIpcContext): void {
       await manager.request('config.reload', { workspace }).catch(() => undefined)
       return file
     })
+  })
+
+  handle(AGENT_CHANNELS.agentConfigGlobalGet, () => readGlobalConfigFile(app.getPath('userData')))
+
+  handle(AGENT_CHANNELS.agentConfigGlobalEdit, async (payload) => {
+    const { edits } = globalConfigEditSchema.parse(payload)
+    await configReady
+    const file = await configStore.edit(edits)
+    configWatcher?.noteSelfWrite(globalAgentConfigPath(app.getPath('userData')))
+    await manager.request('config.reload').catch(() => undefined)
+    return file
+  })
+
+  handle(AGENT_CHANNELS.agentConfigGlobalUpdate, async (payload) => {
+    const { content } = globalConfigUpdateSchema.parse(payload)
+    await configReady
+    const file = await configStore.writeContent(content)
+    configWatcher?.noteSelfWrite(globalAgentConfigPath(app.getPath('userData')))
+    await manager.request('config.reload').catch(() => undefined)
+    return file
   })
 }

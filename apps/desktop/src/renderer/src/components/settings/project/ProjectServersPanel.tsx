@@ -25,7 +25,7 @@ import {
   stringArray
 } from './project-editors'
 import type { JsonRecord } from './project-editors'
-import type { ProjectConfigController } from './useProjectConfig'
+import type { ConfigDocumentController, ConfigScope } from '../config-controller'
 
 /** Mirrors CONFIG_KEY in agent-core's config normalizer. */
 const CONFIG_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/
@@ -89,12 +89,15 @@ function formFromServer(id: string, value: JsonRecord, kind: ServerKind): Server
 
 function ProjectServersPanel({
   controller,
-  kind
+  kind,
+  scope = 'project'
 }: {
-  controller: ProjectConfigController
+  controller: ConfigDocumentController
   kind: ServerKind
+  scope?: ConfigScope
 }): React.JSX.Element {
   const { t } = useTranslation()
+  const isGlobal = scope === 'global'
   const serverKey = kind
   const enabledKey = kind === 'lsp' ? 'lspEnabled' : 'formattersEnabled'
   const [modeOverride, setModeOverride] = useState<ServerMode | null>(null)
@@ -134,10 +137,24 @@ function ProjectServersPanel({
   }
 
   async function saveToggle(): Promise<void> {
-    const saved = await controller.saveEdits([
-      ...fieldEdits(rawRecord, enabledKey, enabled),
-      ...fieldEdits(rawRecord, serverKey, undefined)
-    ])
+    let saved: boolean
+    if (isGlobal) {
+      saved =
+        asRecord(serverValue) !== null
+          ? // A custom list exists: keep it and only flip the enabled flag.
+            await controller.saveEdits(
+              fieldEdits(rawRecord, enabledKey, enabled ? undefined : false)
+            )
+          : await controller.saveEdits([
+              ...fieldEdits(rawRecord, serverKey, enabled),
+              ...fieldEdits(rawRecord, enabledKey, undefined)
+            ])
+    } else {
+      saved = await controller.saveEdits([
+        ...fieldEdits(rawRecord, enabledKey, enabled),
+        ...fieldEdits(rawRecord, serverKey, undefined)
+      ])
+    }
     if (saved) {
       setModeOverride(null)
       setToggleOverride(null)
@@ -211,7 +228,8 @@ function ProjectServersPanel({
     next[id] = entry
     const saved = await controller.saveEdits([
       ...fieldEdits(rawRecord, serverKey, Object.keys(next).length > 0 ? next : undefined),
-      ...fieldEdits(rawRecord, enabledKey, undefined)
+      // Global: adding a list keeps the feature in its current on/off state.
+      ...fieldEdits(rawRecord, enabledKey, isGlobal && !enabled ? false : undefined)
     ])
     if (saved) {
       setForm(null)
@@ -224,13 +242,21 @@ function ProjectServersPanel({
   async function removeServer(id: string): Promise<void> {
     const next: JsonRecord = { ...servers }
     delete next[id]
-    const saved = await controller.saveEdits(
-      fieldEdits(rawRecord, serverKey, Object.keys(next).length > 0 ? next : undefined)
-    )
+    const remaining = Object.keys(next).length > 0
+    const edits = fieldEdits(rawRecord, serverKey, remaining ? next : undefined)
+    if (isGlobal && !remaining) {
+      // Removing the last global server returns to the default state.
+      edits.push(...fieldEdits(rawRecord, enabledKey, undefined))
+    }
+    const saved = await controller.saveEdits(edits)
     if (saved) {
       setPendingDelete(null)
       if (form?.originalId === id) setForm(null)
     }
+  }
+
+  async function saveEnabled(nextEnabled: boolean): Promise<void> {
+    await controller.saveEdits(fieldEdits(rawRecord, enabledKey, nextEnabled ? undefined : false))
   }
 
   const labels = {
@@ -238,15 +264,32 @@ function ProjectServersPanel({
       toggle: t('settings.projectLspToggle'),
       add: t('settings.projectAddLspServer'),
       edit: t('settings.projectEditLspServer'),
-      empty: t('settings.projectLspEmpty')
+      empty: t(isGlobal ? 'settings.globalLspEmpty' : 'settings.projectLspEmpty')
     },
     formatters: {
       toggle: t('settings.projectFormattersToggle'),
       add: t('settings.projectAddFormatter'),
       edit: t('settings.projectEditFormatter'),
-      empty: t('settings.projectFormattersEmpty')
+      empty: t(isGlobal ? 'settings.globalFormattersEmpty' : 'settings.projectFormattersEmpty')
     }
   }[kind]
+
+  const text = {
+    modeInherit: t(isGlobal ? 'settings.globalServersDefault' : 'settings.projectServersInherit'),
+    modeToggle: t(isGlobal ? 'settings.globalServersToggle' : 'settings.projectServersToggle'),
+    modeServers: t(isGlobal ? 'settings.globalServersList' : 'settings.projectServersList'),
+    inheritHint: t(
+      isGlobal ? 'settings.globalServersDefaultHint' : 'settings.projectServersInheritHint'
+    ),
+    toggleHint: t(
+      isGlobal ? 'settings.globalServersToggleHint' : 'settings.projectServersToggleHint'
+    ),
+    serversHint: t(isGlobal ? 'settings.globalServersListHint' : 'settings.projectServersListHint'),
+    removeOverride: t(
+      isGlobal ? 'settings.globalRemoveOverride' : 'settings.projectRemoveOverride'
+    ),
+    invalidJson: t(isGlobal ? 'settings.globalInvalidJson' : 'settings.projectInvalidJson')
+  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -254,9 +297,9 @@ function ProjectServersPanel({
         <div role="radiogroup" aria-label={labels.toggle} className="flex flex-wrap gap-1">
           {(
             [
-              ['inherit', t('settings.projectServersInherit')],
-              ['toggle', t('settings.projectServersToggle')],
-              ['servers', t('settings.projectServersList')]
+              ['inherit', text.modeInherit],
+              ['toggle', text.modeToggle],
+              ['servers', text.modeServers]
             ] as const
           ).map(([value, label]) => (
             <button
@@ -278,12 +321,12 @@ function ProjectServersPanel({
         </div>
       </div>
 
-      {readOnly && <PanelError tone="warning">{t('settings.projectInvalidJson')}</PanelError>}
+      {readOnly && <PanelError tone="warning">{text.invalidJson}</PanelError>}
       {controller.saveError && <PanelError>{controller.saveError}</PanelError>}
 
       {mode === 'inherit' && (
         <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
-          <PanelHint>{t('settings.projectServersInheritHint')}</PanelHint>
+          <PanelHint>{text.inheritHint}</PanelHint>
           {derivedMode !== 'inherit' && !readOnly && (
             <button
               type="button"
@@ -291,7 +334,7 @@ function ProjectServersPanel({
               onClick={() => void removeOverride()}
               className={`${subtleButtonClass} self-start`}
             >
-              {t('settings.projectRemoveOverride')}
+              {text.removeOverride}
             </button>
           )}
         </div>
@@ -299,7 +342,7 @@ function ProjectServersPanel({
 
       {mode === 'toggle' && (
         <div className="flex flex-col gap-2 rounded-md border border-border-subtle bg-background-subtle px-3 py-2">
-          <PanelHint>{t('settings.projectServersToggleHint')}</PanelHint>
+          <PanelHint>{text.toggleHint}</PanelHint>
           <label className="flex items-center gap-2 text-label text-foreground">
             <input
               type="checkbox"
@@ -327,7 +370,7 @@ function ProjectServersPanel({
       {mode === 'servers' && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <PanelHint>{t('settings.projectServersListHint')}</PanelHint>
+            <PanelHint>{text.serversHint}</PanelHint>
             {!readOnly && !form && (
               <button
                 type="button"
@@ -342,6 +385,20 @@ function ProjectServersPanel({
               </button>
             )}
           </div>
+
+          {isGlobal && derivedMode === 'servers' && (
+            <label className="flex items-center gap-2 text-label text-foreground">
+              <input
+                type="checkbox"
+                aria-label={t('settings.globalServersEnabled')}
+                checked={enabled}
+                disabled={readOnly || controller.saving}
+                onChange={(event) => void saveEnabled(event.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+              {t('settings.globalServersEnabled')}
+            </label>
+          )}
 
           {entries.length === 0 ? (
             <PanelHint>{labels.empty}</PanelHint>
@@ -422,7 +479,7 @@ function ProjectServersPanel({
             className={`${subtleButtonClass} self-start`}
             hidden={derivedMode === 'inherit'}
           >
-            {t('settings.projectRemoveOverride')}
+            {text.removeOverride}
           </button>
 
           {form && !readOnly && (

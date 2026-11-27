@@ -678,17 +678,26 @@ export interface AgentConfig {
   skills?: string[]
 }
 
-export interface ProjectConfigFile {
+/** Fields shared by the project and global configuration file snapshots. */
+export interface ConfigFileSnapshot {
   path: string
-  directory: string
-  root: string
   exists: boolean
   content: string
   diagnostics: ConfigDiagnostic[]
+  /** Raw JSON value parsed from the file; the form baseline. */
+  raw?: unknown
+}
+
+export interface ProjectConfigFile extends ConfigFileSnapshot {
+  directory: string
+  root: string
   /** Normalized project document; safe defaults applied and paths anchored. */
   document: AgentConfigDocument
-  /** Raw JSON value parsed from the file (no comments); the form baseline. */
-  raw?: unknown
+}
+
+export interface GlobalConfigFile extends ConfigFileSnapshot {
+  /** Normalized global document; skills anchored against the agent data directory. */
+  document: AgentConfigDocument
 }
 
 export interface ProjectConfigEdit {

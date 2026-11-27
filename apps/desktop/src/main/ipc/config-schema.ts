@@ -13,9 +13,17 @@ export const agentConfigResolveSchema = z.object({
   directory: z.string().max(2_000).optional()
 })
 
+const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
+const MAX_PROJECT_EDIT_BYTES = 200_000
+const MAX_CONFIG_CONTENT_BYTES = 1_000_000
+
 export const projectConfigUpdateSchema = z.object({
   directory: z.string().max(2_000).nullable().optional(),
-  content: z.string().max(1_000_000)
+  content: z.string().max(MAX_CONFIG_CONTENT_BYTES)
+})
+
+export const globalConfigUpdateSchema = z.object({
+  content: z.string().max(MAX_CONFIG_CONTENT_BYTES)
 })
 
 /** Top-level project keys the structured editors are allowed to touch. */
@@ -31,8 +39,15 @@ const PROJECT_EDIT_TOP_LEVEL_KEYS = new Set([
   'skills'
 ])
 
-const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype'])
-const MAX_PROJECT_EDIT_BYTES = 200_000
+/** Top-level global keys the structured editors are allowed to touch. */
+const GLOBAL_EDIT_TOP_LEVEL_KEYS = new Set([
+  'lsp',
+  'lspEnabled',
+  'formatters',
+  'formattersEnabled',
+  'commands',
+  'skills'
+])
 
 const projectConfigEditPathSchema = z
   .array(z.union([z.string().min(1).max(200), z.number().int().min(0).max(10_000)]))
@@ -79,6 +94,49 @@ export const projectConfigEditSchema = z
         code: 'custom',
         path: ['edits'],
         message: 'project config edits are too large'
+      })
+    }
+  })
+
+export const globalConfigEditSchema = z
+  .object({
+    edits: z
+      .array(
+        z.object({
+          path: projectConfigEditPathSchema,
+          value: z.unknown().optional()
+        })
+      )
+      .min(1)
+      .max(100)
+  })
+  .superRefine((input, ctx) => {
+    input.edits.forEach((edit, index) => {
+      const [head] = edit.path
+      if (typeof head !== 'string' || !GLOBAL_EDIT_TOP_LEVEL_KEYS.has(head)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edits', index, 'path', 0],
+          message: `unsupported global config field: ${String(head)}`
+        })
+      }
+      if (
+        edit.path.some(
+          (segment) => typeof segment === 'string' && FORBIDDEN_PATH_SEGMENTS.has(segment)
+        )
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edits', index, 'path'],
+          message: 'unsafe path segment'
+        })
+      }
+    })
+    if (JSON.stringify(input.edits).length > MAX_PROJECT_EDIT_BYTES) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['edits'],
+        message: 'global config edits are too large'
       })
     }
   })

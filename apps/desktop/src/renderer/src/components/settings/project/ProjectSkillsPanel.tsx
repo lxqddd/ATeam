@@ -8,14 +8,25 @@ import {
   primaryButtonClass
 } from './ProjectFields'
 import { asRecord, fieldEdits, linesToArray, stringArray } from './project-editors'
-import type { ProjectConfigController } from './useProjectConfig'
+import type { ConfigDocumentController, ConfigScope } from '../config-controller'
 
 function ProjectSkillsPanel({
-  controller
+  controller,
+  scope = 'project'
 }: {
-  controller: ProjectConfigController
+  controller: ConfigDocumentController
+  scope?: ConfigScope
 }): React.JSX.Element {
   const { t } = useTranslation()
+  const isGlobal = scope === 'global'
+  const text = {
+    hint: t(isGlobal ? 'settings.globalSkillsHint' : 'settings.projectSkillsHint'),
+    empty: t(isGlobal ? 'settings.globalSkillsEmpty' : 'settings.projectSkillsEmpty'),
+    replaceHint: t(
+      isGlobal ? 'settings.globalSkillsReplaceHint' : 'settings.projectSkillsReplaceHint'
+    ),
+    invalidJson: t(isGlobal ? 'settings.globalInvalidJson' : 'settings.projectInvalidJson')
+  }
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -36,7 +47,7 @@ function ProjectSkillsPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <PanelHint>{t('settings.projectSkillsHint')}</PanelHint>
+        <PanelHint>{text.hint}</PanelHint>
         {!readOnly && !editing && (
           <button
             type="button"
@@ -51,7 +62,7 @@ function ProjectSkillsPanel({
         )}
       </div>
 
-      {readOnly && <PanelError tone="warning">{t('settings.projectInvalidJson')}</PanelError>}
+      {readOnly && <PanelError tone="warning">{text.invalidJson}</PanelError>}
       {controller.saveError && <PanelError>{controller.saveError}</PanelError>}
 
       {editing && !readOnly ? (
@@ -65,7 +76,7 @@ function ProjectSkillsPanel({
             placeholder={t('settings.projectSkillsPlaceholder')}
             className={monoTextareaClass}
           />
-          <PanelHint>{t('settings.projectSkillsReplaceHint')}</PanelHint>
+          <PanelHint>{text.replaceHint}</PanelHint>
           <FormActions
             saving={controller.saving}
             onSave={() => void save()}
@@ -75,7 +86,7 @@ function ProjectSkillsPanel({
           />
         </div>
       ) : skills.length === 0 ? (
-        <PanelHint>{t('settings.projectSkillsEmpty')}</PanelHint>
+        <PanelHint>{text.empty}</PanelHint>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-1 p-0">
           {skills.map((skill) => (

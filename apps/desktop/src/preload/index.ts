@@ -150,6 +150,17 @@ const api: AteamApi = {
             directory: input.directory ?? undefined,
             edits: input.edits
           })
+      },
+      global: {
+        get: () => ipcRenderer.invoke(AGENT_CHANNELS.agentConfigGlobalGet),
+        update: (input) =>
+          ipcRenderer.invoke(AGENT_CHANNELS.agentConfigGlobalUpdate, {
+            content: input.content
+          }),
+        edit: (input) =>
+          ipcRenderer.invoke(AGENT_CHANNELS.agentConfigGlobalEdit, {
+            edits: input.edits
+          })
       }
     },
     plugins: {

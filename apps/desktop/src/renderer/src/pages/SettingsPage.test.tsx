@@ -29,6 +29,9 @@ vi.mock('../components/settings/UpdateSettings', () => ({
 vi.mock('../components/settings/project/ProjectSettings', () => ({
   default: () => <div>project-panel</div>
 }))
+vi.mock('../components/settings/global/GlobalSettings', () => ({
+  default: () => <div>global-panel</div>
+}))
 
 function renderPage(initialEntry = '/settings'): void {
   render(
@@ -106,6 +109,15 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('project-panel')).toBeInTheDocument()
   })
 
+  it('shows global config from the menu', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('menuitem', { name: 'Global config' }))
+
+    expect(await screen.findByText('global-panel')).toBeInTheDocument()
+  })
+
   it('shows update settings from the menu', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -119,6 +131,12 @@ describe('SettingsPage', () => {
     renderPage('/settings?section=language')
 
     expect(screen.getByText('language-panel')).toBeInTheDocument()
+  })
+
+  it('honours the global section query parameter', () => {
+    renderPage('/settings?section=global')
+
+    expect(screen.getByText('global-panel')).toBeInTheDocument()
   })
 
   it('falls back to appearance for the retired models section', () => {

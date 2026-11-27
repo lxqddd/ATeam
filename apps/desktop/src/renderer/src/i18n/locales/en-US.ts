@@ -403,6 +403,44 @@ const enUS = {
     project: 'Project',
     projectDescription:
       'Edit project-level settings in the workspace ateam.json / ateam.jsonc and inspect the effective result.',
+    global: 'Global config',
+    globalDescription:
+      'Manage LSP servers, formatters, commands and Skills that apply to every workspace.',
+    globalConfigHint:
+      'Applies to every workspace; project config can override or extend these values.',
+    globalConfigMissing: 'Global config file not created yet',
+    globalTabRaw: 'Raw JSON',
+    globalFileExists: 'Created',
+    globalFileMissing: 'Not created',
+    globalInvalidJsonBadge: 'Invalid JSON',
+    globalInvalidJson: 'Invalid JSON. Structured forms are disabled; fix it in Raw JSON.',
+    globalRawHint:
+      'The global config is strict JSON: no comments or trailing commas, and the root must be an object.',
+    globalRawInvalidHint:
+      'The file is not valid JSON. Structured forms are disabled; fix it here and save.',
+    globalRawEditorLabel: 'Global config file content',
+    globalSaveConfig: 'Save global config',
+    globalServersDefault: 'Default',
+    globalServersDefaultHint: 'No global override; built-in defaults apply.',
+    globalServersToggle: 'On/off',
+    globalServersToggleHint:
+      'Turns this feature on or off for every workspace. An existing custom server list is kept and follows the switch.',
+    globalServersList: 'Global servers',
+    globalServersListHint:
+      'Custom servers override built-in servers with the same ID; mark one disabled to hide it. Workspaces can extend or override by ID.',
+    globalServersEnabled: 'Enable these servers',
+    globalRemoveOverride: 'Remove global override',
+    globalLspEmpty: 'No global LSP servers yet.',
+    globalFormattersEmpty: 'No global formatters yet.',
+    globalCommandsHint:
+      'Global commands appear in the / menu for every workspace; project commands override the same name.',
+    globalCommandsArrayHint:
+      'commands is currently an array. The structured editor only handles the object form; convert it in Raw JSON.',
+    globalCommandsEmpty: 'No custom global commands yet.',
+    globalSkillsHint:
+      'Global skills apply to every workspace. Relative paths resolve against the agent data directory.',
+    globalSkillsEmpty: 'No global skills yet.',
+    globalSkillsReplaceHint: 'Saving replaces the whole global skills array.',
     projectTabOverview: 'Overview',
     projectTabProviders: 'Providers',
     projectTabLsp: 'LSP',

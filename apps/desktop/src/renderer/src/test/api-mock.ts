@@ -8,6 +8,7 @@ import type {
   BackgroundTaskInfo,
   ConfigFileChange,
   EffectiveAgentConfig,
+  GlobalConfigFile,
   PluginAuthMethodState,
   PluginAuthResult,
   PluginEntry,
@@ -383,6 +384,32 @@ export function createApiMock(
               document: {}
             })
           )
+        },
+        global: {
+          get: vi.fn(async (): Promise<GlobalConfigFile> => ({
+            path: '/tmp/user-data/agent/config.json',
+            exists: true,
+            content: '{}',
+            diagnostics: [],
+            document: {},
+            raw: {}
+          })),
+          update: vi.fn(async (input: { content: string }): Promise<GlobalConfigFile> => ({
+            path: '/tmp/user-data/agent/config.json',
+            exists: true,
+            content: input.content,
+            diagnostics: [],
+            document: {},
+            raw: {}
+          })),
+          edit: vi.fn(async (input: { edits: ProjectConfigEdit[] }): Promise<GlobalConfigFile> => ({
+            path: '/tmp/user-data/agent/config.json',
+            exists: true,
+            content: JSON.stringify(input.edits),
+            diagnostics: [],
+            document: {},
+            raw: {}
+          }))
         },
         resolve: vi.fn(async (): Promise<EffectiveAgentConfig> => ({
           config: {

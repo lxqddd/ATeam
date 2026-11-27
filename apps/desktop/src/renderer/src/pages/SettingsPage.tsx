@@ -2,6 +2,7 @@ import { Menu } from 'antd'
 import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 import AgentSettings from '../components/settings/AgentSettings'
+import GlobalSettings from '../components/settings/global/GlobalSettings'
 import LanguageSettings from '../components/settings/LanguageSettings'
 import McpServers from '../components/settings/McpServers'
 import PermissionRules from '../components/settings/PermissionRules'
@@ -41,6 +42,11 @@ const SETTINGS_SECTIONS = [
     id: 'agent',
     labelKey: 'settings.agent',
     descriptionKey: 'settings.agentDescription'
+  },
+  {
+    id: 'global',
+    labelKey: 'settings.global',
+    descriptionKey: 'settings.globalDescription'
   },
   {
     id: 'project',
@@ -141,6 +147,7 @@ function SettingsPage(): React.JSX.Element {
                 <AgentSettings />
               </SettingsGroup>
             )}
+            {section === 'global' && <GlobalSettings />}
             {section === 'project' && <ProjectSettings />}
             {section === 'update' && (
               <SettingsGroup
