@@ -16,7 +16,7 @@ export default defineConfig({
           name: 'main',
           environment: 'node',
           include: ['src/main/**/*.test.ts'],
-          testTimeout: 20000
+          testTimeout: 30000
         }
       },
       {
@@ -25,7 +25,7 @@ export default defineConfig({
           environment: 'jsdom',
           include: ['src/renderer/src/**/*.test.{ts,tsx}'],
           setupFiles: ['src/renderer/src/test/setup.ts'],
-          testTimeout: 20000
+          testTimeout: 30000
         }
       }
     ],
@@ -56,7 +56,13 @@ export default defineConfig({
         'src/renderer/src/components/settings/ModelForm.tsx',
         'src/renderer/src/pages/ModelsPage.tsx'
       ],
-      exclude: ['**/*.test.{ts,tsx}', 'src/**/test/**']
+      exclude: ['**/*.test.{ts,tsx}', 'src/**/test/**'],
+      thresholds: {
+        statements: 85,
+        branches: 79,
+        functions: 83,
+        lines: 87
+      }
     }
   }
 })

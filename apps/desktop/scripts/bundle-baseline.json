@@ -1,5 +1,5 @@
 {
-  "note": "First-screen renderer JS budget. Regenerate with: pnpm --filter @ateam/desktop bundle:report -- --write-baseline",
+  "note": "Renderer bundle budgets: first-screen JS (entry + modulepreload), total lazy JS, and key route chunks. Regenerate with: pnpm --filter @ateam/desktop bundle:report -- --write-baseline",
   "recordedAt": "2026-11-27",
   "initialJs": {
     "rawBytes": 2439667,
@@ -32,6 +32,24 @@
         "gzipBytes": 10863
       }
     ]
+  },
+  "lazyJs": {
+    "rawBytes": 1433061,
+    "gzipBytes": 303925
+  },
+  "routeChunks": {
+    "ModelsPage": {
+      "rawBytes": 243915,
+      "gzipBytes": 53874
+    },
+    "SettingsPage": {
+      "rawBytes": 225358,
+      "gzipBytes": 35369
+    },
+    "UsagePage": {
+      "rawBytes": 419494,
+      "gzipBytes": 92784
+    }
   },
   "history": [
     {

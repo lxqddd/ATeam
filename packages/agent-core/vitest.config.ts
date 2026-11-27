@@ -20,7 +20,13 @@ export default defineConfig({
         'src/message-history.ts',
         'src/atomic-json.ts'
       ],
-      exclude: ['**/*.test.ts', 'src/test/**']
+      exclude: ['**/*.test.ts', 'src/test/**'],
+      thresholds: {
+        statements: 82,
+        branches: 74,
+        functions: 80,
+        lines: 87
+      }
     }
   }
 })

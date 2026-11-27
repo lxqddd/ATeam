@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ATeam visual harness</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+      /* Keep screenshots deterministic: no motion, and no scrollbars. */
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0s !important;
+        animation-delay: 0s !important;
+        transition: none !important;
+      }
+      ::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

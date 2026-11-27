@@ -22,7 +22,10 @@
     "build:mac": "pnpm run build && electron-builder --mac",
     "build:linux": "pnpm run build && electron-builder --linux",
     "bundle:report": "node scripts/bundle-report.mjs",
-    "bundle:check": "node scripts/bundle-report.mjs --check"
+    "bundle:check": "node scripts/bundle-report.mjs --check",
+    "visual:serve": "vite --config visual/vite.config.mts --port 4173 --strictPort",
+    "visual:test": "playwright test --config visual/playwright.config.mts",
+    "visual:update": "playwright test --config visual/playwright.config.mts --update-snapshots"
   },
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
@@ -34,8 +37,10 @@
     "unpdf": "^2.2.1"
   },
   "devDependencies": {
+    "@ateam/agent-core": "workspace:*",
     "@ateam/shared": "workspace:*",
     "@electron-toolkit/tsconfig": "^2.0.0",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "^4.3.5",
     "@testing-library/dom": "10.4.2",
     "@testing-library/jest-dom": "8.0.0",
@@ -47,6 +52,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "@vitest/coverage-v8": "5.1.1",
     "antd": "6.7.1",
+    "axe-core": "4.14.1",
     "electron": "^44.7.2",
     "electron-builder": "26.15.3",
     "electron-vite": "^6.0.0",
@@ -62,7 +68,6 @@
     "typescript": "^5.9.3",
     "vite": "^8.3.4",
     "vitest": "5.1.1",
-    "zod": "4.6.7",
-    "@ateam/agent-core": "workspace:*"
+    "zod": "4.6.7"
   }
 }

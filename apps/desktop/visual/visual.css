@@ -1,0 +1,5 @@
+/* Reuse the renderer stylesheet, and scan the renderer sources explicitly:
+   the visual harness root is visual/, so Tailwind's automatic content
+   detection would otherwise miss the application's class names. */
+@import '../src/renderer/src/assets/index.css';
+@source '../src/renderer/src';
