@@ -373,7 +373,12 @@ models/                  # 供应商 / 模型配置
   - `import`：读取位置参数 / `--file` 指定的文件，无文件时从管道 stdin 读取；终端中既无文件也无管道时立即以退出码 2 失败，绝不等待输入。
   - `stats`：`--range all|7d|30d`（默认 `7d`）汇总本地会话、消息、token、成本、模型与工具调用。
   - 三者均支持 `--data <dir>`、`--json` 与 `--help`；命令行解析错误退出码 2，坏文件 / 会话不存在等运行错误 1。导出产物与桌面端格式互通，可双向导入。
-- 限制：凭据通过命令行或环境变量以明文传入；CLI 不读取桌面端 `auth.json`；已有独立 `apps/headless/dist` 构建，但尚未提供单一可执行文件。
+- 配置命令（不加载模型，与桌面端共用同一份用户数据）：
+  - `providers list|add|remove`：读写桌面端同一份 `models/config.json` 与 `auth.json`；`list` 只显示凭据是否存在，`add --api-key` 写入凭据但绝不回显，`remove <id|name>` 同时清理模型与凭据。
+  - `mcp list|enable|disable`：读写 `agent/mcp.json`；输出复用 Server API 的脱敏规则，env / headers 只保留变量名，参数与 URL 中的凭据被移除。
+  - `agent create <name>`：在 `agent/agents/<id>.md` 生成用户级 Agent，可用 `--description`、`--mode`、`--model`、`--tools`、`--permission`、`--steps`、`--temperature`、`--prompt` 配置；写入前用运行时同一解析器校验，已存在时需 `--force`。
+  - 三组命令均支持 `--user-data <dir>`（默认 `ATEAM_USER_DATA`，否则 macOS `~/Library/Application Support/ATeam`、Windows `%APPDATA%/ATeam`、Linux `$XDG_CONFIG_HOME/ATeam` 或 `~/.config/ATeam`）、`--json` 与 `--help`；参数 / 枚举 / 数值校验错误退出码 2，不存在的 provider / MCP server 或已存在的 Agent 文件退出码 1。
+- 限制：聊天命令的 `--api-key` 只用于本次运行的内存配置，不会写入共享凭据库；需要持久化凭据时使用 `providers add`。已有独立 `apps/headless/dist` 构建，但尚未提供单一可执行文件。
 
 ## 20. Server API 与 SDK
 

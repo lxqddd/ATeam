@@ -234,5 +234,10 @@ Data commands (no model or API key required):
   export [options]         Export sessions as JSON, JSON Lines or Markdown
   import [file]            Import a desktop/CLI session export (or stdin)
   stats [options]          Show local usage statistics
+
+Configuration commands (shared with the desktop app):
+  providers [list|add|remove]   List, add or remove model providers
+  mcp [list|enable|disable]     List, enable or disable MCP servers
+  agent create <name>           Create a user-level agent file
   Run "pnpm cli -- <command> --help" for the command's options.
 `
