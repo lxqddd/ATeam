@@ -10,7 +10,7 @@ vi.mock('electron', () => ({
     getPath: vi.fn(() => '/tmp/ateam-agent-ipc-test'),
     getVersion: vi.fn(() => '0.0.0-test')
   },
-  dialog: { showOpenDialog: vi.fn() },
+  dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
   ipcMain: { handle: ipcHandle },
   shell: { openExternal: vi.fn(), openPath: vi.fn() }
 }))

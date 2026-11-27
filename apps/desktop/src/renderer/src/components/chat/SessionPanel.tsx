@@ -1,8 +1,9 @@
 import { errorMessage } from '../../lib/errors'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SessionMeta, SessionSearchResult } from '@ateam/shared'
+import type { SessionExportResult, SessionMeta, SessionSearchResult } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
+import ExportDialog from './ExportDialog'
 
 function PlusIcon(): React.JSX.Element {
   return (
@@ -229,14 +230,45 @@ function SessionRow({ session, active, onError }: SessionRowProps): React.JSX.El
   )
 }
 
+function DownloadIcon(): React.JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 4v11M12 15l4-4M12 15l-4-4M5 19h14"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function SessionPanel(): React.JSX.Element {
   const { t } = useTranslation()
   const { sessions, selectedSessionId } = useChatStore()
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [creating, setCreating] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SessionSearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
+
+  useEffect(
+    () => () => {
+      if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    },
+    []
+  )
+
+  function handleExported(result: SessionExportResult): void {
+    setExportOpen(false)
+    setNotice(t('chat.exportDone', { path: result.path ?? '' }))
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setNotice(null), 6_000)
+  }
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -279,28 +311,45 @@ function SessionPanel(): React.JSX.Element {
     <aside data-testid="session-panel" className="flex w-[260px] flex-none flex-col px-2 pt-2 pb-1">
       <div className="flex h-11 flex-none items-center justify-between gap-2 px-1">
         <span className="text-label font-semibold text-foreground">{t('chat.sessions')}</span>
-        <button
-          type="button"
-          onClick={() => {
-            void newChat()
-          }}
-          disabled={creating}
-          title={t('chat.newChat')}
-          aria-label={t('chat.newChat')}
-          className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
-        >
-          {creating ? (
-            <span
-              aria-hidden
-              className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-            />
-          ) : (
-            <PlusIcon />
-          )}
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            disabled={sessions.length === 0}
+            title={t('chat.exportAllSessions')}
+            aria-label={t('chat.exportAllSessions')}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <DownloadIcon />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void newChat()
+            }}
+            disabled={creating}
+            title={t('chat.newChat')}
+            aria-label={t('chat.newChat')}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+          >
+            {creating ? (
+              <span
+                aria-hidden
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              />
+            ) : (
+              <PlusIcon />
+            )}
+          </button>
+        </div>
       </div>
 
       {error && <p className="px-1 py-1 text-caption text-danger">{error}</p>}
+      {notice && (
+        <p className="truncate px-1 py-1 text-caption text-accent-strong" title={notice}>
+          {notice}
+        </p>
+      )}
 
       <div className="px-1 pb-1">
         <input
@@ -358,6 +407,14 @@ function SessionPanel(): React.JSX.Element {
             ))
           )}
         </div>
+      )}
+      {exportOpen && (
+        <ExportDialog
+          initialScope="all"
+          sessionId={selectedSessionId}
+          onClose={() => setExportOpen(false)}
+          onExported={handleExported}
+        />
       )}
     </aside>
   )

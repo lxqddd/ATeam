@@ -157,6 +157,8 @@ export type MessagePart =
       state: ToolState
       output?: string
       images?: Array<{ mimeType: string; data: string }>
+      /** Number of images omitted from a session export; never set in live traffic. */
+      imagesOmitted?: number
       error?: string
       startedAt?: string
       finishedAt?: string

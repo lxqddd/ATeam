@@ -44,6 +44,15 @@
 - 缓存命中率与估算节省金额使用同一批 usage：命中率 = cache read / 总输入；节省金额 = cache read ×（输入单价 − cache read 单价），cache write 不计入节省。
 - 会话头部展示累计成本与上下文占用进度条（上下文 token / 模型窗口）。
 
+### 1.7 会话导出
+
+- 当前会话（标题栏下载按钮）或全部会话（左侧会话栏）可导出为 JSON、JSONL 与 Markdown 三种格式；导出在 agent 进程中序列化，界面显示进行中状态，不阻塞聊天。
+- 导出文件带 `kind: "ateam-session-export"` 与 `schemaVersion`（当前为 1），经原生保存对话框写入用户选择的位置。JSONL 首行为头部元数据、其后每个会话一行；Markdown 带 YAML front matter 与可读 transcript，并在末尾以 HTML 注释内嵌同一份 JSON，因此三种格式都能被导入流程重新读取。
+- 默认脱敏：不包含 API Key、token、OAuth 凭据等敏感值——敏感字段（`apiKey`、`secret`、`password`、`authorization`、各类 token 等）与自由文本中的常见凭据形态（`sk-`、`ghp_`、`AKIA`、JWT、`Bearer` 等）统一替换为 `[REDACTED]`；绝对路径可选择替换为 `~` / `<PATH>` 占位符（默认开启）。
+- 附件与文件快照默认不打包：附件只保留名称、类型与大小等元数据（本地路径替换为 `<ATTACHMENT>`），工具图片只保留数量，文件快照不写入导出，弹窗内有明确提示。
+- 导出时归一运行状态（会话 running / waiting-permission → idle，消息 streaming → interrupted），保证导入后不会停留在运行中；保存对话框取消时保持弹窗打开，失败显示具体错误。
+- 空会话与空会话列表同样可导出。
+
 ## 2. 模型与供应商
 
 ### 2.1 供应商
@@ -325,7 +334,7 @@ models/                  # 供应商 / 模型配置
 ## 18. 关键文件索引
 
 - 运行时：[agent-runtime.ts](../packages/agent-core/src/runtime/agent-runtime.ts)、[types.ts](../packages/agent-core/src/runtime/types.ts)、[defaults.ts](../packages/agent-core/src/runtime/defaults.ts)、[subagents.ts](../packages/agent-core/src/runtime/subagents.ts)、[history-service.ts](../packages/agent-core/src/runtime/history-service.ts)、[plan-service.ts](../packages/agent-core/src/runtime/plan-service.ts)、[step-tracker.ts](../packages/agent-core/src/runtime/step-tracker.ts)、[command-service.ts](../packages/agent-core/src/runtime/command-service.ts)
-- 会话：[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[context.ts](../packages/agent-core/src/sessions/context.ts)、[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)
+- 会话：[sessions-store.ts](../packages/agent-core/src/sessions/sessions-store.ts)、[context.ts](../packages/agent-core/src/sessions/context.ts)、[snapshots.ts](../packages/agent-core/src/sessions/snapshots.ts)、[export.ts](../packages/agent-core/src/sessions/export.ts)（导出序列化、脱敏与结构校验）
 - 配置：[config-store.ts](../packages/agent-core/src/config/config-store.ts)（含 `readGlobalConfigFile` / `writeGlobalConfigFile` 与 `AgentConfigStore.edit`）、[project-config.ts](../packages/agent-core/src/config/project-config.ts)、[project-config-edit.ts](../packages/agent-core/src/config/project-config-edit.ts)、[instructions.ts](../packages/agent-core/src/config/instructions.ts)、[permissions.ts](../packages/agent-core/src/config/permissions.ts)、[agents.ts](../packages/agent-core/src/config/agents.ts)
 - 集成：[mcp.ts](../packages/agent-core/src/integrations/mcp.ts)、[lsp.ts](../packages/agent-core/src/integrations/lsp.ts)、[formatters.ts](../packages/agent-core/src/integrations/formatters.ts)、[webfetch.ts](../packages/agent-core/src/integrations/webfetch.ts)、[websearch.ts](../packages/agent-core/src/integrations/websearch.ts)
 - 工具与能力：[tools/index.ts](../packages/agent-core/src/tools/index.ts)、[worktrees.ts](../packages/agent-core/src/worktrees.ts)、[attachments.ts](../packages/agent-core/src/attachments.ts)、[commands.ts](../packages/agent-core/src/commands.ts)、[skills.ts](../packages/agent-core/src/skills.ts)、[todos.ts](../packages/agent-core/src/todos.ts)、[cost.ts](../packages/agent-core/src/cost.ts)

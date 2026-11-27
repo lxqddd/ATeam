@@ -31,6 +31,8 @@ import type {
   ProviderOAuthStatus,
   QuestionRequest,
   SessionMeta,
+  SessionExportRequest,
+  SessionExportResult,
   SessionSearchResult,
   SessionSettings,
   VcsDiffResult,
@@ -189,6 +191,14 @@ export function createApiMock(
           return fork
         }),
         search: vi.fn(async () => [] as SessionSearchResult[]),
+        export: vi.fn(async (options: SessionExportRequest): Promise<SessionExportResult> => ({
+          saved: true,
+          path: `/tmp/ateam-export.${options.format}`,
+          sessionCount: options.sessionId ? 1 : sessions.length,
+          messageCount: options.sessionId
+            ? (messages.get(options.sessionId)?.messages.length ?? 0)
+            : 0
+        })),
         changes: vi.fn(async (sessionId: string, messageId?: string) => ({
           sessionId,
           messageId: messageId ?? '',

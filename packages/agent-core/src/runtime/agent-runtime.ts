@@ -37,6 +37,8 @@ import type {
   RuntimeProviderAuth,
   RuntimeWebSearchConfig,
   SessionChangesSummary,
+  SessionExportPayload,
+  SessionExportRequest,
   SessionMeta,
   SessionPlan,
   SessionSearchResult,
@@ -199,6 +201,7 @@ export class AgentRuntime {
       store: this.store,
       userDataPath: options.userDataPath,
       defaultWorkspacePath: options.workspacePath,
+      appVersion: options.appVersion ?? '0.0.0',
       models: () => this.models,
       modelsFor: (sessionId) => this.modelsForSession(sessionId),
       emit: (event) => this.events.emit(event),
@@ -353,6 +356,10 @@ export class AgentRuntime {
 
   listSessions(): SessionMeta[] {
     return this.sessionService.listSessions()
+  }
+
+  exportSessions(options: SessionExportRequest): SessionExportPayload {
+    return this.sessionService.exportSessions(options)
   }
 
   listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {

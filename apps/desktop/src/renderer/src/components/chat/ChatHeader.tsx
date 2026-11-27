@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SessionPlan } from '@ateam/shared'
+import type { SessionExportResult, SessionPlan } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
+import ExportDialog from './ExportDialog'
 
 function statusLabel(sessionStatus: string | undefined): string | null {
   if (sessionStatus === 'running') return 'chat.running'
@@ -43,6 +44,9 @@ function ChatHeaderContent(): React.JSX.Element {
   const [planBusy, setPlanBusy] = useState(false)
   const [planError, setPlanError] = useState<string | null>(null)
   const [planCopied, setPlanCopied] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportNotice, setExportNotice] = useState<string | null>(null)
+  const exportNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const workspaceMenuRef = useRef<HTMLDivElement | null>(null)
   const canUndo = !running && messages.some((message) => message.role === 'assistant')
   const canRedo = !running && session?.redoAvailable === true
@@ -105,6 +109,13 @@ function ChatHeaderContent(): React.JSX.Element {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [planOpen])
+
+  useEffect(
+    () => () => {
+      if (exportNoticeTimer.current) clearTimeout(exportNoticeTimer.current)
+    },
+    []
+  )
 
   async function openPlan(): Promise<void> {
     if (!selectedSessionId) return
@@ -176,6 +187,13 @@ function ChatHeaderContent(): React.JSX.Element {
     } catch (caught) {
       setHeaderError(caught instanceof Error ? caught.message : String(caught))
     }
+  }
+
+  function handleExported(result: SessionExportResult): void {
+    setExportOpen(false)
+    setExportNotice(t('chat.exportDone', { path: result.path ?? '' }))
+    if (exportNoticeTimer.current) clearTimeout(exportNoticeTimer.current)
+    exportNoticeTimer.current = setTimeout(() => setExportNotice(null), 6_000)
   }
 
   async function changeWorkspace(directory: string): Promise<void> {
@@ -325,6 +343,15 @@ function ChatHeaderContent(): React.JSX.Element {
       {headerError && (
         <span className="max-w-[200px] truncate text-caption text-danger" title={headerError}>
           {headerError}
+        </span>
+      )}
+
+      {exportNotice && (
+        <span
+          className="max-w-[200px] truncate text-caption text-accent-strong"
+          title={exportNotice}
+        >
+          {exportNotice}
         </span>
       )}
 
@@ -566,6 +593,30 @@ function ChatHeaderContent(): React.JSX.Element {
         </svg>
       </button>
 
+      <button
+        type="button"
+        title={t('chat.exportSession')}
+        aria-label={t('chat.exportSession')}
+        disabled={!selectedSessionId}
+        onClick={() => setExportOpen(true)}
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:cursor-default disabled:opacity-55 disabled:hover:bg-transparent"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M12 4v11M12 15l4-4M12 15l-4-4" />
+          <path d="M5 19h14" />
+        </svg>
+      </button>
+
       {label && (
         <span className={`flex items-center gap-1.5 text-caption ${statusColor(session?.status)}`}>
           <span
@@ -601,6 +652,15 @@ function ChatHeaderContent(): React.JSX.Element {
           <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h5l2 2h8a1.5 1.5 0 0 1 1.5 1.5V17.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z" />
         </svg>
       </button>
+
+      {exportOpen && (
+        <ExportDialog
+          initialScope="current"
+          sessionId={selectedSessionId}
+          onClose={() => setExportOpen(false)}
+          onExported={handleExported}
+        />
+      )}
 
       {planOpen && session && (
         <div className="fixed inset-0 z-40 flex items-center justify-center p-6">

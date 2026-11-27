@@ -8,6 +8,7 @@ import type {
   SessionSettings
 } from './agent-types'
 import type { ModelPublic, ModelRef, ProviderType, RuntimeProviderAuth } from './model-types'
+import type { SessionExportFormat } from './session-export'
 import type { VcsDiffMode } from './vcs-types'
 
 /** Provider config with the decrypted key; main → agent worker only. */
@@ -96,6 +97,11 @@ export type WorkerRequest =
   | { id: string; method: 'sessions.redo'; params: { id: string } }
   | { id: string; method: 'sessions.fork'; params: { id: string; messageId?: string } }
   | { id: string; method: 'sessions.search'; params: { query: string } }
+  | {
+      id: string
+      method: 'sessions.export'
+      params: { sessionId?: string | null; format: SessionExportFormat; redactPaths?: boolean }
+    }
   | { id: string; method: 'plan.get'; params: { sessionId: string } }
   | {
       id: string
