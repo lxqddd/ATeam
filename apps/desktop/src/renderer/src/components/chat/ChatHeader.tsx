@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionExportResult, SessionPlan } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
-import ExportDialog from './ExportDialog'
+
+// Export is a rarely used action; load its dialog only when it is opened.
+const ExportDialog = lazy(() => import('./ExportDialog'))
 
 function statusLabel(sessionStatus: string | undefined): string | null {
   if (sessionStatus === 'running') return 'chat.running'
@@ -654,12 +656,14 @@ function ChatHeaderContent(): React.JSX.Element {
       </button>
 
       {exportOpen && (
-        <ExportDialog
-          initialScope="current"
-          sessionId={selectedSessionId}
-          onClose={() => setExportOpen(false)}
-          onExported={handleExported}
-        />
+        <Suspense fallback={null}>
+          <ExportDialog
+            initialScope="current"
+            sessionId={selectedSessionId}
+            onClose={() => setExportOpen(false)}
+            onExported={handleExported}
+          />
+        </Suspense>
       )}
 
       {planOpen && session && (

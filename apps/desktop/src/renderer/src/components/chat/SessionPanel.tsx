@@ -1,9 +1,10 @@
 import { errorMessage } from '../../lib/errors'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SessionExportResult, SessionMeta, SessionSearchResult } from '@ateam/shared'
 import { chatStore, useChatStore } from '../../chat/store'
-import ExportDialog from './ExportDialog'
+
+const ExportDialog = lazy(() => import('./ExportDialog'))
 
 function PlusIcon(): React.JSX.Element {
   return (
@@ -475,12 +476,14 @@ function SessionPanel(): React.JSX.Element {
         </div>
       )}
       {exportOpen && (
-        <ExportDialog
-          initialScope="all"
-          sessionId={selectedSessionId}
-          onClose={() => setExportOpen(false)}
-          onExported={handleExported}
-        />
+        <Suspense fallback={null}>
+          <ExportDialog
+            initialScope="all"
+            sessionId={selectedSessionId}
+            onClose={() => setExportOpen(false)}
+            onExported={handleExported}
+          />
+        </Suspense>
       )}
     </aside>
   )

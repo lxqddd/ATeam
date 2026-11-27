@@ -3,7 +3,8 @@ import { APP_NAME } from '@ateam/shared'
 const zhCN = {
   app: {
     name: APP_NAME,
-    description: 'Electron + React + TypeScript 基础框架已就绪'
+    description: 'Electron + React + TypeScript 基础框架已就绪',
+    loading: '加载中…'
   },
   nav: {
     chat: '会话',

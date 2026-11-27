@@ -75,7 +75,7 @@ describe('ChatView', () => {
     error.mockRestore()
   })
 
-  it('renders the changes panel for the stored target', () => {
+  it('renders the changes panel for the stored target', async () => {
     storeState.current = {
       ...state(),
       changesPanel: { sessionId: 's1', messageId: 'm1', tab: 'session' }
@@ -83,10 +83,10 @@ describe('ChatView', () => {
 
     render(<ChatView />)
 
-    expect(screen.getByText('changes-panel s1:m1:session')).toBeInTheDocument()
+    expect(await screen.findByText('changes-panel s1:m1:session')).toBeInTheDocument()
   })
 
-  it('renders the workspace Git tab for the stored target', () => {
+  it('renders the workspace Git tab for the stored target', async () => {
     storeState.current = {
       ...state(),
       changesPanel: { sessionId: 's1', messageId: null, tab: 'git' }
@@ -94,6 +94,6 @@ describe('ChatView', () => {
 
     render(<ChatView />)
 
-    expect(screen.getByText('changes-panel s1:summary:git')).toBeInTheDocument()
+    expect(await screen.findByText('changes-panel s1:summary:git')).toBeInTheDocument()
   })
 })
