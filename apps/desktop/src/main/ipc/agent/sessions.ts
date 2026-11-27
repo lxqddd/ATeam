@@ -5,7 +5,8 @@ import {
   type SessionPlan,
   type SessionSearchResult,
   type SessionUndoResult,
-  type TurnChanges
+  type TurnChanges,
+  type UsageStats
 } from '@ateam/shared'
 import type { AgentIpcContext } from './context'
 import {
@@ -22,7 +23,8 @@ import {
   sessionSetDirectorySchema,
   sessionSetModelSchema,
   sessionSetSettingsSchema,
-  sessionUnrevertFilesSchema
+  sessionUnrevertFilesSchema,
+  usageStatsSchema
 } from './schemas'
 
 /** Registers every session lifecycle and inspection channel. */
@@ -96,6 +98,11 @@ export function registerSessionHandlers(ctx: AgentIpcContext): void {
   handle(AGENT_CHANNELS.sessionSearch, (payload): Promise<SessionSearchResult[]> => {
     const { query } = sessionSearchSchema.parse(payload)
     return manager.request('sessions.search', { query })
+  })
+
+  handle(AGENT_CHANNELS.sessionUsage, (payload): Promise<UsageStats> => {
+    const { range } = usageStatsSchema.parse(payload)
+    return manager.request('sessions.usage', { range })
   })
 
   handle(AGENT_CHANNELS.sessionChanges, (payload): Promise<TurnChanges> => {

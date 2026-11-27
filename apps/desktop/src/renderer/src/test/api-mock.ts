@@ -36,6 +36,8 @@ import type {
   SessionImportResult,
   SessionSearchResult,
   SessionSettings,
+  UsageStats,
+  UsageStatsRange,
   VcsDiffResult,
   VcsStatus,
   WebSearchInput,
@@ -205,6 +207,25 @@ export function createApiMock(
           sessions: [],
           sessionCount: 0,
           messageCount: 0
+        })),
+        usage: vi.fn(async (range: UsageStatsRange): Promise<UsageStats> => ({
+          range,
+          sessionCount: 0,
+          messageCount: 0,
+          assistantMessageCount: 0,
+          toolCallCount: 0,
+          tokens: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 0
+          },
+          costUsd: 0,
+          assistantMessagesWithoutUsage: 0,
+          assistantMessagesWithoutCost: 0,
+          tools: [],
+          models: []
         })),
         changes: vi.fn(async (sessionId: string, messageId?: string) => ({
           sessionId,

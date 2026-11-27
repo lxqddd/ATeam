@@ -11,13 +11,16 @@ import type {
   SessionImportResult,
   SessionMeta,
   SessionSearchResult,
-  SessionSettings
+  SessionSettings,
+  UsageStats,
+  UsageStatsRange
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { loadAgents } from '../config/agents'
 import { resolveModelRef } from '../providers'
 import { buildSessionExport } from '../sessions/export'
 import { prepareSessionImport } from '../sessions/import'
+import { computeUsageStats } from '../sessions/usage'
 import type { SessionRecord, SessionsStore } from '../sessions/sessions-store'
 import { nowIso } from './messages'
 import { copyForkAttachments } from './turn-changes'
@@ -44,6 +47,11 @@ export class SessionService {
 
   listSessions(): SessionMeta[] {
     return this.host.store.list().filter((session) => !session.hidden)
+  }
+
+  /** Local usage aggregates; nothing leaves the machine. */
+  usageStats(range: UsageStatsRange): UsageStats {
+    return computeUsageStats(this.host.store.allRecords(), { range })
   }
 
   listAgents(workspace?: string): Promise<AgentDefinition[]> {

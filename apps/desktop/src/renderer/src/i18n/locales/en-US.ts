@@ -10,6 +10,7 @@ const enUS = {
   nav: {
     chat: 'Chat',
     models: 'Models',
+    usage: 'Usage',
     settings: 'Settings'
   },
   providerTypes: {
@@ -563,6 +564,45 @@ const enUS = {
     defaultChip: 'Default',
     selectModel: 'Select model',
     defaultEndpoint: 'Default endpoint'
+  },
+  usage: {
+    title: 'Usage',
+    description:
+      'Aggregated from local session records. Nothing is uploaded; missing usage is reported instead of treated as zero.',
+    range: 'Time range',
+    rangeAll: 'All time',
+    range7d: 'Last 7 days',
+    range30d: 'Last 30 days',
+    refresh: 'Refresh',
+    loading: 'Loading usage…',
+    loadFailed: 'Failed to load usage',
+    sessions: 'Chats',
+    messages: 'Messages',
+    assistantMessagesHint: '{{count}} assistant replies',
+    toolCalls: 'Tool calls',
+    totalTokens: 'Total tokens',
+    inputTokens: 'Input',
+    outputTokens: 'Output',
+    cacheReadTokens: 'Cache read',
+    estimatedCost: 'Estimated cost',
+    costHint: 'Sum of stored per-message estimates',
+    missingUsage:
+      '{{count}} older assistant messages have no usage record and are excluded from token totals.',
+    missingCost:
+      '{{count}} assistant messages have no cost estimate and are excluded from the cost total.',
+    toolsTitle: 'Tool call distribution',
+    toolsDescription: 'Calls in the selected range, including failed calls.',
+    toolsEmpty: 'No tool calls in this range.',
+    toolName: 'Tool',
+    calls: 'Calls',
+    failures: 'Failed',
+    modelsTitle: 'Model distribution',
+    modelsDescription: 'Assistant messages grouped by the model that produced them.',
+    modelsEmpty: 'No assistant messages in this range.',
+    model: 'Model',
+    modelMessages: 'Replies',
+    empty: 'No usage in this range.',
+    emptyHint: 'Start a chat and its recorded usage will show up here.'
   },
   chat: {
     newChat: 'New chat',

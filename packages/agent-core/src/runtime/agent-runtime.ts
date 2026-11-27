@@ -44,6 +44,8 @@ import type {
   SessionPlan,
   SessionSearchResult,
   SessionSettings,
+  UsageStats,
+  UsageStatsRange,
   SteerStrategy,
   McpAuthRecord,
   SubagentInput,
@@ -365,6 +367,10 @@ export class AgentRuntime {
 
   importSessions(content: string): Promise<SessionImportResult> {
     return this.sessionService.importSessions(content)
+  }
+
+  usageStats(range: UsageStatsRange): UsageStats {
+    return this.sessionService.usageStats(range)
   }
 
   listAgents(workspace = this.options.workspacePath): Promise<AgentDefinition[]> {
