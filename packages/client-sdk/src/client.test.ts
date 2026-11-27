@@ -45,6 +45,68 @@ describe('AteamClient', () => {
     })
   })
 
+  it('exposes workspace file routes with query parameters', async () => {
+    const calls: string[] = []
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes('/files/content')) {
+        return jsonResponse({
+          sessionId: 's1',
+          path: 'src/a.ts',
+          content: 'x',
+          size: 1,
+          truncated: false
+        })
+      }
+      if (url.includes('/files/find')) {
+        return jsonResponse({
+          sessionId: 's1',
+          root: 'src',
+          pattern: '*.ts',
+          matches: ['src/a.ts'],
+          truncated: false
+        })
+      }
+      if (url.includes('/files/grep')) {
+        return jsonResponse({
+          sessionId: 's1',
+          root: '',
+          pattern: 'todo',
+          matches: [],
+          truncated: false
+        })
+      }
+      return jsonResponse({ sessionId: 's1', path: '', entries: [], truncated: false })
+    })
+    const client = new AteamClient({ baseUrl: 'http://api.test', fetch: fetchMock })
+
+    await expect(client.listFiles('s1', { path: 'src', depth: 2 })).resolves.toMatchObject({
+      sessionId: 's1'
+    })
+    await expect(client.readFile('s1', 'src/a.ts')).resolves.toMatchObject({ content: 'x' })
+    await expect(client.findFiles('s1', { pattern: '*.ts' })).resolves.toMatchObject({
+      matches: ['src/a.ts']
+    })
+    await expect(
+      client.grepFiles('s1', {
+        pattern: 'todo',
+        include: '*.ts',
+        literal: true,
+        caseSensitive: true,
+        limit: 5
+      })
+    ).resolves.toMatchObject({ pattern: 'todo' })
+
+    expect(calls[0]).toBe('http://api.test/sessions/s1/files?path=src&depth=2')
+    expect(calls[1]).toBe('http://api.test/sessions/s1/files/content?path=src%2Fa.ts')
+    expect(calls[2]).toBe('http://api.test/sessions/s1/files/find?pattern=*.ts')
+    expect(calls[3]).toBe(
+      'http://api.test/sessions/s1/files/grep?pattern=todo&include=*.ts&literal=true&caseSensitive=true&limit=5'
+    )
+    expect(() => client.readFile('s1', '')).toThrow('path is required')
+  })
+
   it('throws typed errors', async () => {
     const client = new AteamClient({
       baseUrl: 'http://api.test',
