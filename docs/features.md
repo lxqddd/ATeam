@@ -435,8 +435,10 @@ models/                  # 供应商 / 模型配置
 ## 24. ACP / 编辑器集成
 
 - 入口：`pnpm acp -- [model options]`，通过 stdio 提供 Agent Client Protocol v1，供 Zed 等编辑器作为外部 Agent 启动。
-- 支持的方法：`initialize`、`session/new`（按编辑器给出的 `cwd` 创建独立运行时）、`session/prompt`、`session/cancel`；文本以 `agent_message_chunk` 流式回传，工具调用以 `tool_call` / `tool_call_update` 通知更新。
-- 权限：运行时权限请求会转发为 `session/request_permission`，客户端选择 allow once / always / reject；提问工具暂无可对应协议，自动取消并继续。
+- 支持的方法：`initialize`、`session/new`（按编辑器给出的 `cwd` 创建独立运行时）、`session/load`、`session/prompt`、`session/cancel`、`session/set_config_option`、`session/set_mode`；文本以 `agent_message_chunk` 流式回传，工具调用以 `tool_call` / `tool_call_update` 通知更新。
+- 会话配置：`session/new` / `session/load` 返回 `configOptions`（模型、模型变体、推理强度、会话模式）与兼容旧客户端的 `modes`；`session/set_config_option` 修改后返回完整选项，模式变化同时发送 `current_mode_update` 与 `config_option_update`。
+- 用量：一次对话结束后发送 `usage_update`（`used` / `size`，有消息成本时附带 `cost`），`session/prompt` 的响应同时携带本轮 `usage`（输入 / 输出 / 缓存 token）。
+- 权限：运行时权限请求会转发为 `session/request_permission`，客户端选择 allow once / always / reject。
 - 会话：每个工作目录复用独立的 Agent 运行时；模型、数据目录、权限模式等沿用 CLI 参数。
 - Zed 配置示例（路径按实际安装位置替换）：
   ```json
@@ -454,7 +456,7 @@ models/                  # 供应商 / 模型配置
   ```
 - 支持 `session/load` 历史回放与图片 prompt（转为附件）；初始化声明 `loadSession: true`、`promptCapabilities.image/embeddedContext: true`。
 - 客户端在 `session/new` / `session/load` 中提供的 MCP server 会作为该会话的临时 server 接入（不写入用户配置）。
-- 客户端声明 `clientCapabilities.elicitation.form` 时，`question` 工具会映射为 ACP `elicitation/create` 表单；未声明时自动取消。
+- 客户端声明 `clientCapabilities.elicitation.form` 时，`question` 工具会映射为 ACP `elicitation/create` 表单：选项转为单选 `oneOf` 或多选数组，允许自定义回答时附带 `answer_custom` 文本字段；未声明时自动取消。
 
 ## 25. Code Mode（`execute` 工具）
 
