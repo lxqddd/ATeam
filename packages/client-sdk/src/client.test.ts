@@ -107,6 +107,43 @@ describe('AteamClient', () => {
     expect(() => client.readFile('s1', '')).toThrow('path is required')
   })
 
+  it('exposes configuration and extension resource routes', async () => {
+    const calls: string[] = []
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input)
+      calls.push(url)
+      if (url.includes('/config')) {
+        return jsonResponse({
+          workspace: '/w',
+          config: {},
+          sources: {},
+          diagnostics: [],
+          provenance: {}
+        })
+      }
+      return jsonResponse([])
+    })
+    const client = new AteamClient({ baseUrl: 'http://api.test', fetch: fetchMock })
+
+    await expect(client.listAgents({ sessionId: 's1' })).resolves.toEqual([])
+    await expect(client.listCommands()).resolves.toEqual([])
+    await expect(client.getConfig({ sessionId: 's1' })).resolves.toMatchObject({
+      workspace: '/w'
+    })
+    await expect(client.listProviders({ sessionId: 's1' })).resolves.toEqual([])
+    await expect(client.listMcpServers()).resolves.toEqual([])
+    await expect(client.listLspServers({ sessionId: 's1' })).resolves.toEqual([])
+
+    expect(calls).toEqual([
+      'http://api.test/agents?sessionId=s1',
+      'http://api.test/commands',
+      'http://api.test/config?sessionId=s1',
+      'http://api.test/providers?sessionId=s1',
+      'http://api.test/mcp',
+      'http://api.test/lsp?sessionId=s1'
+    ])
+  })
+
   it('throws typed errors', async () => {
     const client = new AteamClient({
       baseUrl: 'http://api.test',

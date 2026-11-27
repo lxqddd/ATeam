@@ -77,6 +77,17 @@ interface RedactionContext {
   homeDir: string | null
 }
 
+/**
+ * Redacts credential-like keys and values in a JSON-like structure.
+ *
+ * Shared by the session export and the Server API resource routes. Values under
+ * a credential-like key are replaced wholesale, and free-form strings lose
+ * known provider token shapes.
+ */
+export function redactSecrets<T>(value: T): T {
+  return deepRedact(value, { redactPaths: false, homeDir: null }) as T
+}
+
 /** Options for {@link buildSessionExport}. */
 export interface SessionExportBuildOptions {
   format: SessionExportFormat

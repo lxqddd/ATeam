@@ -5,6 +5,7 @@ export type {
   FindFilesOptions,
   GrepFilesOptions,
   ListFilesOptions,
+  ResourceQuery,
   SendMessageInput,
   SendMessageResult
 } from './client'

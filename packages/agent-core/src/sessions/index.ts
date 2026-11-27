@@ -3,6 +3,7 @@ export type { PreparedCompaction, RedoState, SessionRecord } from './sessions-st
 export {
   buildSessionExport,
   readSessionExport,
+  redactSecrets,
   SESSION_EXPORT_ATTACHMENT_PLACEHOLDER,
   SESSION_EXPORT_PATH_PLACEHOLDER,
   SESSION_EXPORT_REDACTED
