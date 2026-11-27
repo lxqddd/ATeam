@@ -8,6 +8,7 @@ import type {
   RuntimeModelsConfig,
   SessionExportPayload,
   SessionExportRequest,
+  SessionImportResult,
   SessionMeta,
   SessionSearchResult,
   SessionSettings
@@ -16,6 +17,7 @@ import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import { loadAgents } from '../config/agents'
 import { resolveModelRef } from '../providers'
 import { buildSessionExport } from '../sessions/export'
+import { prepareSessionImport } from '../sessions/import'
 import type { SessionRecord, SessionsStore } from '../sessions/sessions-store'
 import { nowIso } from './messages'
 import { copyForkAttachments } from './turn-changes'
@@ -177,8 +179,9 @@ export class SessionService {
   }
 
   /**
-   * Serializes one session or every visible session into an export payload.
-   * Read-only: it never mutates the stored records.
+   * Serializes one session, or every stored session (including hidden
+   * sub-sessions, so parent/child links survive a re-import), into an export
+   * payload. Read-only: it never mutates the stored records.
    */
   exportSessions(options: SessionExportRequest): SessionExportPayload {
     const records: SessionRecord[] = []
@@ -187,7 +190,7 @@ export class SessionService {
       if (!record) throw new Error('SESSION_NOT_FOUND')
       records.push(record)
     } else {
-      for (const session of this.listSessions()) {
+      for (const session of this.host.store.list()) {
         const record = this.host.store.get(session.id)
         if (record) records.push(record)
       }
@@ -197,6 +200,56 @@ export class SessionService {
       appVersion: this.host.appVersion,
       redactPaths: options.redactPaths ?? true
     })
+  }
+
+  /**
+   * Imports an export file as new sessions. Every id is remapped, so repeated
+   * imports produce independent copies; existing sessions are never touched.
+   */
+  async importSessions(content: string): Promise<SessionImportResult> {
+    const records = prepareSessionImport(content)
+    const imported: SessionMeta[] = []
+    let messageCount = 0
+
+    for (const record of records) {
+      record.session.directory = await this.resolveImportedDirectory(record.session.directory)
+      // A model that is not configured on this machine would block the first
+      // message; fall back to the default model instead.
+      if (record.session.model) {
+        try {
+          resolveModelRef(this.host.modelsFor(record.session.id), record.session.model)
+        } catch {
+          record.session.model = null
+        }
+      }
+      await this.host.store.importRecord(record)
+      messageCount += record.messages.length
+      if (record.session.hidden) continue
+      const session = structuredClone(record.session)
+      imported.push(session)
+      this.host.emit({ type: 'session.upsert', session: structuredClone(record.session) })
+    }
+
+    // Newest first, matching how the session list orders entries.
+    imported.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return {
+      imported: true,
+      sessions: imported,
+      sessionCount: records.length,
+      messageCount
+    }
+  }
+
+  /**
+   * Imported workspaces are only reused when the exported path is absolute and
+   * still exists locally. Redacted placeholders (`~`, `<PATH>`) and paths from
+   * another machine fall back to the runtime workspace.
+   */
+  private async resolveImportedDirectory(directory: string | null): Promise<string | null> {
+    if (!directory || !path.isAbsolute(directory)) return null
+    const stat = await fs.stat(directory).catch(() => null)
+    if (!stat?.isDirectory()) return null
+    return fs.realpath(directory).catch(() => path.resolve(directory))
   }
 
   messages(id: string): MessagesSnapshot {

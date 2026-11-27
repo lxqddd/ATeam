@@ -102,6 +102,7 @@ export type WorkerRequest =
       method: 'sessions.export'
       params: { sessionId?: string | null; format: SessionExportFormat; redactPaths?: boolean }
     }
+  | { id: string; method: 'sessions.import'; params: { path: string } }
   | { id: string; method: 'plan.get'; params: { sessionId: string } }
   | {
       id: string

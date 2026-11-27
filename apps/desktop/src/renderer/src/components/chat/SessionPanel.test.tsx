@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { SessionImportResult } from '@ateam/shared'
 import SessionPanel from './SessionPanel'
 import { createApiMock, type ApiMock } from '../../test/api-mock'
 import { makeSession } from '../../test/factories'
@@ -9,7 +10,13 @@ const chatMocks = vi.hoisted(() => ({
   createSession: vi.fn(async () => undefined),
   selectSession: vi.fn(),
   renameSession: vi.fn(async () => undefined),
-  deleteSession: vi.fn(async () => undefined)
+  deleteSession: vi.fn(async () => undefined),
+  importSessions: vi.fn(async (): Promise<SessionImportResult> => ({
+    imported: false,
+    sessions: [],
+    sessionCount: 0,
+    messageCount: 0
+  }))
 }))
 
 const storeState = vi.hoisted(() => ({ current: {} as unknown }))
@@ -39,6 +46,13 @@ beforeEach(() => {
   chatMocks.renameSession.mockResolvedValue(undefined)
   chatMocks.deleteSession.mockClear()
   chatMocks.deleteSession.mockResolvedValue(undefined)
+  chatMocks.importSessions.mockClear()
+  chatMocks.importSessions.mockResolvedValue({
+    imported: false,
+    sessions: [],
+    sessionCount: 0,
+    messageCount: 0
+  })
   setSessions([], null)
 })
 
@@ -232,6 +246,46 @@ describe('SessionPanel', () => {
     })
 
     await waitFor(() => expect(chatMocks.renameSession).toHaveBeenCalledTimes(1))
+  })
+
+  it('imports sessions from an export file', async () => {
+    chatMocks.importSessions.mockResolvedValueOnce({
+      imported: true,
+      sessions: [makeSession({ id: 'imported-1', title: 'Imported' })],
+      sessionCount: 1,
+      messageCount: 2
+    })
+    const user = userEvent.setup()
+    render(<SessionPanel />)
+
+    await user.click(screen.getByRole('button', { name: 'Import chats' }))
+
+    await waitFor(() => expect(chatMocks.importSessions).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Imported 1 chats')).toBeInTheDocument()
+  })
+
+  it('maps rejected import error codes to a readable message', async () => {
+    chatMocks.importSessions.mockRejectedValueOnce(new Error('EXPORT_INVALID_SCHEMA_VERSION'))
+    const user = userEvent.setup()
+    render(<SessionPanel />)
+
+    await user.click(screen.getByRole('button', { name: 'Import chats' }))
+
+    expect(
+      await screen.findByText('This export was made by an unsupported version of the app.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('EXPORT_INVALID_SCHEMA_VERSION')).not.toBeInTheDocument()
+  })
+
+  it('stays quiet when the import picker is cancelled', async () => {
+    const user = userEvent.setup()
+    render(<SessionPanel />)
+
+    await user.click(screen.getByRole('button', { name: 'Import chats' }))
+
+    await waitFor(() => expect(chatMocks.importSessions).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(/Imported/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/not valid/i)).not.toBeInTheDocument()
   })
 })
 

@@ -8,6 +8,7 @@ export {
   SESSION_EXPORT_REDACTED
 } from './export'
 export type { SessionExportBuildOptions } from './export'
+export { prepareSessionImport } from './import'
 export { createSessionStorage, restoreLegacySessionBackups } from './storage'
 export type { SessionBackend, SessionStorage } from './storage'
 export { SnapshotStore } from './snapshots'

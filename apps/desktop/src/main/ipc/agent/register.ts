@@ -7,6 +7,7 @@ import { registerMcpHandlers } from './mcp'
 import { registerPermissionHandlers } from './permissions'
 import { registerPluginHandlers } from './plugins'
 import { registerSessionExportHandlers } from './session-export'
+import { registerSessionImportHandlers } from './session-import'
 import { registerSessionHandlers } from './sessions'
 import { registerVcsHandlers } from './vcs'
 import { registerWebSearchHandlers } from './websearch'
@@ -24,6 +25,7 @@ export function registerAgentIpc(options: AgentIpcOptions): void {
   registerInfoHandlers(ctx)
   registerSessionHandlers(ctx)
   registerSessionExportHandlers(ctx)
+  registerSessionImportHandlers(ctx)
   registerVcsHandlers(ctx)
   registerChatHandlers(ctx)
   registerAttachmentHandlers(ctx)

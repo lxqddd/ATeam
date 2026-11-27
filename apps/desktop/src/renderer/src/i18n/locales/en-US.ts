@@ -724,6 +724,12 @@ const enUS = {
     exportBusy: 'Exporting…',
     exportFailed: 'Export failed',
     exportDone: 'Exported to {{path}}',
+    importSessions: 'Import chats',
+    importDone: 'Imported {{count}} chats',
+    importErrorEmpty: 'This file contains no chats to import.',
+    importErrorInvalid: 'This file is not a valid ATeam session export.',
+    importErrorVersion: 'This export was made by an unsupported version of the app.',
+    importErrorUnrecognized: 'Unrecognized file format; expected a JSON, JSONL or Markdown export.',
     permissionMode: 'Permission mode',
     permissionPlan: 'Read only',
     permissionPlanHint:

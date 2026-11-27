@@ -19,7 +19,9 @@ import {
   isMetadataPart,
   messageChangedFiles,
   messageSnapshotBounds,
-  messageSteps
+  messageSteps,
+  SESSION_EXPORT_KIND,
+  SESSION_EXPORT_SCHEMA_VERSION
 } from '@ateam/shared'
 import { AgentRuntime, type AgentTurnInput } from './index'
 import { attachmentDirectory, saveAttachment } from '../attachments'
@@ -27,7 +29,7 @@ import type { InstructionFile } from '../config/instructions'
 import type { McpManagerLike } from '../integrations/mcp'
 import { PermissionsStore } from '../config/permissions-store'
 import { SessionsStore } from '../sessions/sessions-store'
-import { makeMessage } from '../test/factories'
+import { makeMessage, makeSession } from '../test/factories'
 import type { ToolContext } from '../tools'
 import type { WebFetchResult } from '../integrations/webfetch'
 import type { WebSearchResult } from '../integrations/websearch'
@@ -4125,6 +4127,133 @@ describe('session search and fork', () => {
     expect(byTitle[0].session.id).toBe(sessionId)
     expect(runtime.searchSessions('nothing-matches')).toEqual([])
     expect(runtime.searchSessions('  ')).toEqual([])
+  })
+})
+
+describe('session import', () => {
+  function exportDocument(entries: unknown[]): string {
+    return JSON.stringify({
+      kind: SESSION_EXPORT_KIND,
+      schemaVersion: SESSION_EXPORT_SCHEMA_VERSION,
+      exportedAt: '2026-11-27T00:00:00.000Z',
+      appVersion: '0.0.0',
+      redactedPaths: true,
+      attachmentsIncluded: false,
+      snapshotsIncluded: false,
+      sessions: entries
+    })
+  }
+
+  it('imports an exported session and keeps chatting in the copy', async () => {
+    scripts.push(textScript('hello'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const payload = runtime.exportSessions({ sessionId, format: 'json' })
+    const result = await runtime.importSessions(payload.content)
+
+    expect(result.imported).toBe(true)
+    expect(result.sessionCount).toBe(1)
+    expect(result.messageCount).toBe(2)
+    const imported = result.sessions[0]
+    expect(imported.id).not.toBe(sessionId)
+    // The session never pinned a model, so the copy falls back to the default model.
+    expect(imported.model).toBeNull()
+    // Exported paths are redacted, so the directory falls back to the default workspace.
+    expect(imported.directory).toBeNull()
+    expect(runtime.messages(imported.id).messages).toHaveLength(2)
+    expect(runtime.listSessions().some((session) => session.id === imported.id)).toBe(true)
+    expect(
+      sink.envelopes.some(
+        (envelope) =>
+          envelope.event.type === 'session.upsert' && envelope.event.session.id === imported.id
+      )
+    ).toBe(true)
+
+    scripts.push(textScript('continued'))
+    await runtime.sendChat(imported.id, 'again')
+    await sink.next('run.finished')
+
+    const messages = runtime.messages(imported.id).messages
+    expect(messages).toHaveLength(4)
+    expect(messages[2]).toMatchObject({ role: 'user' })
+  })
+
+  it('creates independent copies on repeated imports', async () => {
+    scripts.push(textScript('one'))
+    await runtime.sendChat(sessionId, 'hi')
+    await sink.next('run.finished')
+
+    const content = runtime.exportSessions({ sessionId, format: 'jsonl' }).content
+    const first = await runtime.importSessions(content)
+    const second = await runtime.importSessions(content)
+
+    expect(first.sessions[0].id).not.toBe(second.sessions[0].id)
+    expect(runtime.messages(first.sessions[0].id).messages[0].id).not.toBe(
+      runtime.messages(second.sessions[0].id).messages[0].id
+    )
+    expect(runtime.listSessions()).toHaveLength(3)
+  })
+
+  it('rejects a corrupt export without adding sessions', async () => {
+    const before = runtime.listSessions().length
+    await expect(runtime.importSessions('{"kind":"other"}')).rejects.toThrow(
+      'EXPORT_INVALID_DOCUMENT'
+    )
+    expect(runtime.listSessions()).toHaveLength(before)
+  })
+
+  it('imports parent and child sessions and keeps children hidden', async () => {
+    const parent = makeSession({ id: 'parent-old', title: 'Parent' })
+    const child = makeSession({
+      id: 'child-old',
+      title: 'Child',
+      parentId: 'parent-old',
+      hidden: true
+    })
+    const content = exportDocument([
+      { session: parent, messages: [] },
+      { session: child, messages: [] }
+    ])
+
+    const result = await runtime.importSessions(content)
+
+    expect(result.sessionCount).toBe(2)
+    expect(result.sessions).toHaveLength(1)
+    expect(result.sessions[0].title).toBe('Parent')
+    expect(
+      runtime.listSessions().filter((session) => session.id === result.sessions[0].id)
+    ).toHaveLength(1)
+  })
+
+  it('keeps a local model reference and drops one that is not configured', async () => {
+    const content = exportDocument([
+      {
+        session: makeSession({
+          id: 'foreign',
+          title: 'Other machine',
+          model: { providerId: 'missing', modelId: 'nope', variant: null }
+        }),
+        messages: []
+      },
+      {
+        session: makeSession({
+          id: 'local',
+          title: 'Local',
+          model: { providerId: 'provider-1', modelId: 'model-1', variant: null }
+        }),
+        messages: []
+      }
+    ])
+    const result = await runtime.importSessions(content)
+    const byTitle = new Map(result.sessions.map((session) => [session.title, session]))
+
+    expect(byTitle.get('Other machine')?.model).toBeNull()
+    expect(byTitle.get('Local')?.model).toEqual({
+      providerId: 'provider-1',
+      modelId: 'model-1',
+      variant: null
+    })
   })
 })
 

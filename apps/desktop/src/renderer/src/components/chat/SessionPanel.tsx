@@ -244,6 +244,32 @@ function DownloadIcon(): React.JSX.Element {
   )
 }
 
+function UploadIcon(): React.JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 16V5M12 5 8 9M12 5l4 4M5 19h14"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+const IMPORT_ERROR_KEYS: Record<string, string> = {
+  EXPORT_EMPTY: 'chat.importErrorEmpty',
+  EXPORT_INVALID_MARKDOWN: 'chat.importErrorInvalid',
+  EXPORT_INVALID_JSONL: 'chat.importErrorInvalid',
+  EXPORT_INVALID_DOCUMENT: 'chat.importErrorInvalid',
+  EXPORT_INVALID_SESSION: 'chat.importErrorInvalid',
+  EXPORT_INVALID_MESSAGE: 'chat.importErrorInvalid',
+  EXPORT_INVALID_SCHEMA_VERSION: 'chat.importErrorVersion',
+  EXPORT_NEWER_SCHEMA_VERSION: 'chat.importErrorVersion',
+  EXPORT_UNRECOGNIZED_FORMAT: 'chat.importErrorUnrecognized'
+}
+
 function SessionPanel(): React.JSX.Element {
   const { t } = useTranslation()
   const { sessions, selectedSessionId } = useChatStore()
@@ -251,6 +277,7 @@ function SessionPanel(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null)
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SessionSearchResult[] | null>(null)
@@ -263,11 +290,31 @@ function SessionPanel(): React.JSX.Element {
     []
   )
 
-  function handleExported(result: SessionExportResult): void {
-    setExportOpen(false)
-    setNotice(t('chat.exportDone', { path: result.path ?? '' }))
+  function showNotice(text: string): void {
+    setNotice(text)
     if (noticeTimer.current) clearTimeout(noticeTimer.current)
     noticeTimer.current = setTimeout(() => setNotice(null), 6_000)
+  }
+
+  function handleExported(result: SessionExportResult): void {
+    setExportOpen(false)
+    showNotice(t('chat.exportDone', { path: result.path ?? '' }))
+  }
+
+  async function importSessions(): Promise<void> {
+    if (importing) return
+    setImporting(true)
+    setError(null)
+    try {
+      const result = await chatStore.importSessions()
+      if (result.imported) showNotice(t('chat.importDone', { count: result.sessions.length }))
+    } catch (caught) {
+      const raw = errorMessage(caught)
+      const key = IMPORT_ERROR_KEYS[raw]
+      setError(key ? t(key) : raw)
+    } finally {
+      setImporting(false)
+    }
   }
 
   useEffect(() => {
@@ -312,6 +359,25 @@ function SessionPanel(): React.JSX.Element {
       <div className="flex h-11 flex-none items-center justify-between gap-2 px-1">
         <span className="text-label font-semibold text-foreground">{t('chat.sessions')}</span>
         <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              void importSessions()
+            }}
+            disabled={importing}
+            title={t('chat.importSessions')}
+            aria-label={t('chat.importSessions')}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted transition-colors hover:bg-hover hover:text-foreground disabled:opacity-50"
+          >
+            {importing ? (
+              <span
+                aria-hidden
+                className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
+              />
+            ) : (
+              <UploadIcon />
+            )}
+          </button>
           <button
             type="button"
             onClick={() => setExportOpen(true)}
