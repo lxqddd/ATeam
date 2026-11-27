@@ -22,7 +22,8 @@ interface ProjectWatch {
   lastUsed: number
 }
 
-const GLOBAL_CONFIG_NAME = 'config.json'
+/** Global agent files whose external edits are reported as `global` changes. */
+const GLOBAL_WATCHED_FILES = ['config.json', 'permissions.json', 'mcp.json'] as const
 
 function normalizeFilename(filename: string | Buffer | null): string | null {
   if (filename === null) return null
@@ -34,13 +35,15 @@ function contentHash(content: Buffer | string): string {
 }
 
 /**
- * Watches the global `userData/agent/config.json` and project `ateam.json(c)`
- * files for external edits. Directories are watched instead of files because
- * atomic saves replace the file (tmp + rename), which would drop a file watch.
+ * Watches the global `userData/agent/{config,permissions,mcp}.json` and project
+ * `ateam.json(c)` files for external edits. Directories are watched instead of
+ * files because atomic saves replace the file (tmp + rename), which would drop
+ * a file watch. Project roots are leased by sessions, so switching or deleting
+ * a session releases roots no other session or `trackWorkspace` caller needs.
  */
 export class ConfigWatcher {
   private readonly globalDir: string
-  private readonly globalFile: string
+  private readonly globalFiles: Set<string>
   private readonly projects = new Map<string, ProjectWatch>()
   private readonly timers = new Map<string, NodeJS.Timeout>()
   private readonly mtimes = new Map<string, number>()
@@ -48,15 +51,26 @@ export class ConfigWatcher {
     string,
     { hash: Promise<string | null>; expiresAt: number }
   >()
+  /** Session id -> resolved workspace path, to skip repeated root resolution. */
+  private readonly sessionPaths = new Map<string, string>()
+  /** Session id -> project root currently leased. */
+  private readonly sessionRoots = new Map<string, string>()
+  /** Project root -> sessions holding a lease. */
+  private readonly rootSessions = new Map<string, Set<string>>()
+  /** Roots tracked through `trackWorkspace`; sessions never release them. */
+  private readonly persistentRoots = new Set<string>()
   private readonly debounceMs: number
   private readonly selfWriteWindowMs: number
   private readonly maxProjectRoots: number
+  private rootChain: Promise<void> = Promise.resolve()
   private globalWatcher: fs.FSWatcher | null = null
   private disposed = false
 
   constructor(private readonly options: ConfigWatcherOptions) {
     this.globalDir = path.join(options.userDataPath, 'agent')
-    this.globalFile = path.join(this.globalDir, GLOBAL_CONFIG_NAME)
+    this.globalFiles = new Set(
+      GLOBAL_WATCHED_FILES.map((name) => path.resolve(path.join(this.globalDir, name)))
+    )
     this.debounceMs = options.debounceMs ?? 200
     this.selfWriteWindowMs = options.selfWriteWindowMs ?? 5_000
     this.maxProjectRoots = options.maxProjectRoots ?? 32
@@ -75,36 +89,50 @@ export class ConfigWatcher {
   }
 
   /**
-   * Starts watching the project root that owns `workspacePath`. Idempotent:
-   * workspaces under the same root share one watcher.
+   * Starts watching the project root that owns `workspacePath` as a persistent
+   * lease. Idempotent: workspaces under the same root share one watcher.
    */
-  async trackWorkspace(workspacePath: string): Promise<void> {
-    if (this.disposed) return
-    let root: string
-    try {
-      root = await findProjectRoot(workspacePath)
-    } catch {
-      root = path.resolve(workspacePath)
-    }
-    const existing = this.projects.get(root)
-    if (existing) {
-      existing.lastUsed = Date.now()
-      return
-    }
-    let watcher: fs.FSWatcher
-    try {
-      watcher = fs.watch(root, { persistent: false }, (_event, filename) => {
-        this.handleProjectEvent(root, filename)
-      })
-    } catch {
-      return
-    }
-    watcher.on('error', () => {
-      watcher.close()
-      this.projects.delete(root)
+  trackWorkspace(workspacePath: string): Promise<void> {
+    return this.enqueueRootTask(async () => {
+      if (this.disposed) return
+      const root = await this.resolveRoot(workspacePath)
+      this.persistentRoots.add(root)
+      this.ensureProjectWatcher(root)
     })
-    this.projects.set(root, { watcher, lastUsed: Date.now() })
-    this.evictProjects()
+  }
+
+  /**
+   * Leases the project root of a session's workspace. Passing `null` (or moving
+   * to another workspace) releases the previous lease; the root is closed once
+   * no session owns it and `trackWorkspace` did not claim it.
+   */
+  setSessionWorkspace(sessionId: string, workspacePath: string | null): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    const target = workspacePath ? path.resolve(workspacePath) : null
+    if ((this.sessionPaths.get(sessionId) ?? null) === target) {
+      const root = this.sessionRoots.get(sessionId)
+      const entry = root ? this.projects.get(root) : undefined
+      if (entry) entry.lastUsed = Date.now()
+      return Promise.resolve()
+    }
+    return this.enqueueRootTask(async () => {
+      if (this.disposed) return
+      this.releaseSessionRoot(sessionId)
+      if (!target) {
+        this.sessionPaths.delete(sessionId)
+        return
+      }
+      const root = await this.resolveRoot(target)
+      this.sessionPaths.set(sessionId, target)
+      this.sessionRoots.set(sessionId, root)
+      let owners = this.rootSessions.get(root)
+      if (!owners) {
+        owners = new Set()
+        this.rootSessions.set(root, owners)
+      }
+      owners.add(sessionId)
+      this.ensureProjectWatcher(root)
+    })
   }
 
   /**
@@ -128,20 +156,95 @@ export class ConfigWatcher {
     this.timers.clear()
     this.selfWrites.clear()
     this.mtimes.clear()
+    this.sessionPaths.clear()
+    this.sessionRoots.clear()
+    this.rootSessions.clear()
+    this.persistentRoots.clear()
+    this.rootChain = Promise.resolve()
     this.globalWatcher?.close()
     this.globalWatcher = null
     for (const entry of this.projects.values()) entry.watcher.close()
     this.projects.clear()
   }
 
+  private enqueueRootTask(task: () => Promise<void>): Promise<void> {
+    const run = this.rootChain.then(task, task)
+    this.rootChain = run.catch(() => undefined)
+    return run
+  }
+
+  private async resolveRoot(workspacePath: string): Promise<string> {
+    try {
+      return await findProjectRoot(workspacePath)
+    } catch {
+      return path.resolve(workspacePath)
+    }
+  }
+
+  private ensureProjectWatcher(root: string): void {
+    if (this.disposed) return
+    const existing = this.projects.get(root)
+    if (existing) {
+      existing.lastUsed = Date.now()
+      return
+    }
+    let watcher: fs.FSWatcher
+    try {
+      watcher = fs.watch(root, { persistent: false }, (_event, filename) => {
+        this.handleProjectEvent(root, filename)
+      })
+    } catch {
+      return
+    }
+    watcher.on('error', () => {
+      watcher.close()
+      this.projects.delete(root)
+    })
+    this.projects.set(root, { watcher, lastUsed: Date.now() })
+    this.evictProjects()
+  }
+
+  private releaseSessionRoot(sessionId: string): void {
+    const root = this.sessionRoots.get(sessionId)
+    this.sessionRoots.delete(sessionId)
+    if (!root) return
+    const owners = this.rootSessions.get(root)
+    owners?.delete(sessionId)
+    if (!owners || owners.size > 0) return
+    this.rootSessions.delete(root)
+    if (!this.persistentRoots.has(root)) this.closeProjectRoot(root)
+  }
+
+  private closeProjectRoot(root: string): void {
+    const entry = this.projects.get(root)
+    if (entry) {
+      entry.watcher.close()
+      this.projects.delete(root)
+    }
+    this.persistentRoots.delete(root)
+    const prefix = `${root}${path.sep}`
+    for (const [file, timer] of this.timers) {
+      if (!file.startsWith(prefix)) continue
+      clearTimeout(timer)
+      this.timers.delete(file)
+    }
+    for (const file of [...this.mtimes.keys()]) {
+      if (file.startsWith(prefix)) this.mtimes.delete(file)
+    }
+    for (const file of [...this.selfWrites.keys()]) {
+      if (file.startsWith(prefix)) this.selfWrites.delete(file)
+    }
+  }
+
   private handleGlobalEvent(filename: string | Buffer | null): void {
     if (this.disposed) return
     const name = normalizeFilename(filename)
     if (name === null) {
-      void this.scheduleWhenChanged([this.globalFile])
+      void this.scheduleWhenChanged([...this.globalFiles])
       return
     }
-    if (name === GLOBAL_CONFIG_NAME) this.schedule(this.globalFile)
+    const file = path.resolve(path.join(this.globalDir, name))
+    if (this.globalFiles.has(file)) this.schedule(file)
   }
 
   private handleProjectEvent(root: string, filename: string | Buffer | null): void {
@@ -186,7 +289,7 @@ export class ConfigWatcher {
   private async emit(file: string): Promise<void> {
     if (this.disposed) return
     if (await this.isSelfWrite(file)) return
-    const global = path.resolve(file) === path.resolve(this.globalFile)
+    const global = this.globalFiles.has(path.resolve(file))
     const change: ConfigFileChange = global
       ? { global: true, workspaces: [], files: [file] }
       : { global: false, workspaces: [path.dirname(file)], files: [file] }
@@ -218,19 +321,19 @@ export class ConfigWatcher {
       return false
     }
     if (hash !== expected) return false
-    this.selfWrites.delete(key)
+    // Keep the entry for the rest of the window: platforms may deliver several
+    // events for a single write, and every one of them must be dropped.
     return true
   }
 
   private evictProjects(): void {
     if (this.projects.size <= this.maxProjectRoots) return
-    const excess = this.projects.size - this.maxProjectRoots
     const oldest = [...this.projects.entries()]
+      .filter(([root]) => (this.rootSessions.get(root)?.size ?? 0) === 0)
       .sort((left, right) => left[1].lastUsed - right[1].lastUsed)
-      .slice(0, excess)
-    for (const [root, entry] of oldest) {
-      entry.watcher.close()
-      this.projects.delete(root)
+    for (const [root] of oldest) {
+      if (this.projects.size <= this.maxProjectRoots) break
+      this.closeProjectRoot(root)
     }
   }
 }

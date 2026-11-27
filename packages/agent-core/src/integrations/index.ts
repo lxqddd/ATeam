@@ -13,4 +13,5 @@ export {
 export type { OAuthTokenResponse } from './mcp-oauth'
 export { McpManager } from './mcp'
 export type { McpManagerLike } from './mcp'
+export { mcpFilePath } from './mcp-store'
 export { searchWeb, formatSearchResults } from './websearch'

@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, type BrowserWindowConstructorOptions } from 'electron'
 import { mkdir } from 'node:fs/promises'
-import { join } from 'path'
+import { basename, join } from 'path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import {
@@ -10,9 +10,10 @@ import {
   CONFIG_CHANGE_CHANNEL,
   THEME_CHANNEL,
   UPDATE_EVENT_CHANNEL,
-  type AgentEventEnvelope
+  type AgentEventEnvelope,
+  type SessionMeta
 } from '@ateam/shared'
-import { AgentConfigStore } from '@ateam/agent-core/config'
+import { AgentConfigStore, permissionsFilePath } from '@ateam/agent-core/config'
 import { AgentManager } from './agent-host/agent-manager'
 import { BrowserController } from './browser/browser-controller'
 import { ConfigWatcher } from './config-watcher'
@@ -184,7 +185,9 @@ if (!hasSingleInstanceLock) {
           window.webContents.send(CONFIG_CHANGE_CHANNEL, change)
         }
         if (change.global) {
-          void configStore.reload()
+          if (change.files.some((file) => basename(file) === 'config.json')) {
+            void configStore.reload()
+          }
           void agentManager?.request('config.reload').catch(() => undefined)
           return
         }
@@ -216,8 +219,24 @@ if (!hasSingleInstanceLock) {
         if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
           window.webContents.send(AGENT_EVENT_CHANNEL, envelope)
         }
-        if (envelope.event.type === 'session.upsert' && envelope.event.session.directory) {
-          void watcher.trackWorkspace(envelope.event.session.directory)
+        const event = envelope.event
+        if (event.type === 'session.upsert') {
+          void watcher.setSessionWorkspace(event.session.id, event.session.directory ?? null)
+        } else if (event.type === 'session.deleted') {
+          void watcher.setSessionWorkspace(event.sessionId, null)
+        } else if (event.type === 'permission.replied' && event.decision === 'always') {
+          // The worker persists the new rules before emitting this event.
+          watcher.noteSelfWrite(permissionsFilePath(userDataPath))
+        } else if (event.type === 'agent.status' && event.status.status === 'ready') {
+          void agentManager
+            ?.request<SessionMeta[]>('sessions.list')
+            .then((sessions) => {
+              for (const session of sessions) {
+                if (!session.directory) continue
+                void watcher.setSessionWorkspace(session.id, session.directory)
+              }
+            })
+            .catch(() => undefined)
         }
       }
     })

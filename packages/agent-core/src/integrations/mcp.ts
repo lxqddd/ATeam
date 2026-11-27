@@ -58,6 +58,7 @@ export interface McpManagerLike {
   setMcpAuth(auths: import('@ateam/shared').McpAuthRecord[]): Promise<void>
   setTransientServers(servers: McpServerInput[]): Promise<void>
   setProjectServers?(servers: McpServerInput[]): Promise<void>
+  reloadUserServers?(): Promise<void>
   dispose(): Promise<void>
 }
 
@@ -261,6 +262,22 @@ export class McpManager implements McpManagerLike {
       this.statusesById.delete(id)
     }
     this.project = next
+  }
+
+  /** Re-reads `mcp.json` after an external edit and drops connections whose config changed. */
+  async reloadUserServers(): Promise<void> {
+    await this.ready
+    if (this.disposed) return
+    const previous = new Map(this.store.list().map((server) => [server.id, server]))
+    if (!(await this.store.reload())) return
+    const next = new Map(this.store.list().map((server) => [server.id, server]))
+    for (const [id, old] of previous) {
+      const current = next.get(id)
+      if (current && JSON.stringify(current) === JSON.stringify(old)) continue
+      this.preferSse.delete(id)
+      await this.closeConnection(id)
+      this.statusesById.delete(id)
+    }
   }
 
   async statuses(options: { probe?: boolean } = {}): Promise<McpServerStatus[]> {

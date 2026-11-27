@@ -9,6 +9,7 @@ import type {
   AgentEvent,
   AgentEventEnvelope,
   ChatMessage,
+  McpServerConfig,
   ModelRef,
   PermissionAction,
   PermissionRule,
@@ -4798,6 +4799,61 @@ describe('project provider and MCP configuration', () => {
     expect(mcpManagerInput?.projectServers).toEqual([
       { name: 'project-docs', type: 'local', command: 'node' }
     ])
+  })
+
+  it('reloads externally edited permission rules on a global config reload', async () => {
+    const file = path.join(directory, 'agent', 'permissions.json')
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        rules: [
+          {
+            id: 'external',
+            action: 'shell',
+            resource: 'bun test',
+            effect: 'allow',
+            sessionId: null,
+            createdAt: '2026-01-01T00:00:00.000Z'
+          }
+        ]
+      })
+    )
+
+    await runtime.reloadConfig()
+
+    expect(runtime.listPermissionRules().map((rule) => rule.id)).toEqual(['external'])
+  })
+
+  it('reloads externally edited user MCP servers on a global config reload', async () => {
+    await runtime.listMcpServers()
+    const reload = vi.fn(async () => undefined)
+    mcpManager.reloadUserServers = reload
+    const external: McpServerConfig = {
+      id: 'external',
+      name: 'external',
+      type: 'local',
+      command: 'node',
+      args: [],
+      url: null,
+      headers: {},
+      env: {},
+      enabled: true,
+      timeout: null,
+      cwd: null,
+      oauthClientId: null,
+      oauthScope: null,
+      oauthRedirectUri: null,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z'
+    }
+    vi.mocked(mcpManager.servers).mockResolvedValue([external])
+
+    await runtime.reloadConfig()
+
+    expect(reload).toHaveBeenCalledTimes(1)
+    await expect(runtime.listMcpServers()).resolves.toEqual([external])
   })
 
   it('applies the complete layered config matrix and survives a broken project config', async () => {

@@ -78,13 +78,15 @@ vi.mock('@ateam/agent-core/config', () => ({
     provenance: {}
   })),
   loadOrgPolicy: vi.fn(() => ({})),
-  discoverInstructionFiles: vi.fn(async () => [])
+  discoverInstructionFiles: vi.fn(async () => []),
+  permissionsFilePath: vi.fn((userDataPath: string) => `${userDataPath}/agent/permissions.json`)
 }))
 
 vi.mock('@ateam/agent-core/integrations', () => ({
   discoverFormatters: vi.fn(async () => []),
   availableLspServers: vi.fn(async () => []),
-  authorizeMcpServer: vi.fn(async () => undefined)
+  authorizeMcpServer: vi.fn(async () => undefined),
+  mcpFilePath: vi.fn((userDataPath: string) => `${userDataPath}/agent/mcp.json`)
 }))
 
 vi.mock('@ateam/agent-core/attachments', () => ({

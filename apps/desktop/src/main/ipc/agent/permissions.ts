@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import {
   AGENT_CHANNELS,
   type PermissionRequest,
@@ -5,6 +6,7 @@ import {
   type PermissionRulesOverview,
   type QuestionRequest
 } from '@ateam/shared'
+import { permissionsFilePath } from '@ateam/agent-core/config'
 import type { AgentIpcContext } from './context'
 import {
   directoryPayloadSchema,
@@ -49,13 +51,19 @@ export function registerPermissionHandlers(ctx: AgentIpcContext): void {
     })
   })
 
-  handle(AGENT_CHANNELS.permissionRuleAdd, (payload): Promise<PermissionRule> => {
+  handle(AGENT_CHANNELS.permissionRuleAdd, async (payload): Promise<PermissionRule> => {
     const input = permissionRuleInputSchema.parse(payload)
-    return manager.request('permissions.addRule', input)
+    const rule = await manager.request<PermissionRule>('permissions.addRule', input)
+    ctx.configWatcher?.noteSelfWrite(permissionsFilePath(app.getPath('userData')))
+    return rule
   })
 
-  handle(AGENT_CHANNELS.permissionRuleRemove, (payload): Promise<boolean> => {
+  handle(AGENT_CHANNELS.permissionRuleRemove, async (payload): Promise<boolean> => {
     const { id } = idPayloadSchema.parse(payload)
-    return manager.request('permissions.removeRule', { id })
+    const removed = await manager.request<boolean>('permissions.removeRule', { id })
+    if (removed) {
+      ctx.configWatcher?.noteSelfWrite(permissionsFilePath(app.getPath('userData')))
+    }
+    return removed
   })
 }

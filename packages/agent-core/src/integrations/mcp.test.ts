@@ -787,3 +787,56 @@ describe('project MCP servers', () => {
     await manager.dispose()
   })
 })
+
+describe('user MCP server reload', () => {
+  it('reconnects only changed or removed user servers', async () => {
+    const clients: McpClientLike[] = []
+    const manager = createManager(() => {
+      const { client } = makeClient()
+      clients.push(client)
+      return client
+    })
+    await manager.addServer({ name: 'keep', type: 'local', command: 'node' })
+    await manager.addServer({ name: 'change', type: 'local', command: 'node' })
+    await manager.addServer({ name: 'remove', type: 'local', command: 'node' })
+    await manager.statuses({ probe: true })
+    expect(clients).toHaveLength(3)
+
+    const servers = await manager.servers()
+    const keep = servers.find((server) => server.name === 'keep')
+    const change = servers.find((server) => server.name === 'change')
+    await fs.writeFile(
+      path.join(directory, 'agent', 'mcp.json'),
+      JSON.stringify({
+        servers: [
+          { ...keep, source: undefined },
+          { ...change, command: 'deno', source: undefined }
+        ]
+      })
+    )
+
+    await manager.reloadUserServers()
+
+    const reloaded = await manager.servers()
+    expect(reloaded.map((server) => server.name).sort()).toEqual(['change', 'keep'])
+    expect(reloaded.find((server) => server.name === 'change')?.command).toBe('deno')
+    expect(clients[0].close).not.toHaveBeenCalled()
+    expect(clients[1].close).toHaveBeenCalled()
+    expect(clients[2].close).toHaveBeenCalled()
+    await manager.dispose()
+  })
+
+  it('keeps connections when the reloaded file is malformed', async () => {
+    const { client } = makeClient()
+    const manager = createManager(() => client)
+    await manager.addServer({ name: 'demo', type: 'local', command: 'node' })
+    await manager.statuses({ probe: true })
+
+    await fs.writeFile(path.join(directory, 'agent', 'mcp.json'), '{"servers":[')
+    await manager.reloadUserServers()
+
+    expect(client.close).not.toHaveBeenCalled()
+    expect((await manager.servers()).map((server) => server.name)).toEqual(['demo'])
+    await manager.dispose()
+  })
+})

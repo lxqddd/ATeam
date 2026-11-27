@@ -1,9 +1,17 @@
+import { useEffect } from 'react'
 import { Outlet } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import AppRail from './components/app/AppRail'
+import { chatStore } from './chat/store'
 
 function App(): React.JSX.Element {
   const { t } = useTranslation()
+
+  // Settings routes subscribe to config change events through the chat store;
+  // initialize it here so a reload that lands on `#/settings` still refreshes.
+  useEffect(() => {
+    void chatStore.init()
+  }, [])
 
   return (
     <main className="flex h-screen flex-col overflow-hidden bg-background-subtle text-foreground">

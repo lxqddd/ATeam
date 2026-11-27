@@ -2,11 +2,15 @@ import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { PermissionEffect, PermissionRule, PermissionRuleAction } from '@ateam/shared'
-import { readJsonFile, writeJsonAtomic } from '../atomic-json'
+import { writeJsonAtomic } from '../atomic-json'
 
 interface PermissionsFile {
   version: 1
   rules: PermissionRule[]
+}
+
+export function permissionsFilePath(userDataPath: string): string {
+  return path.join(userDataPath, 'agent', 'permissions.json')
 }
 
 const RULE_ACTIONS = new Set<PermissionRuleAction>([
@@ -53,16 +57,51 @@ export class PermissionsStore {
   private chain: Promise<void> = Promise.resolve()
 
   constructor(userDataPath: string) {
-    this.file = path.join(userDataPath, 'agent', 'permissions.json')
+    this.file = permissionsFilePath(userDataPath)
   }
 
   async init(): Promise<void> {
     await fs.mkdir(path.dirname(this.file), { recursive: true })
-    const data = await readJsonFile<PermissionsFile>(this.file)
+    await this.readFromDisk()
+  }
+
+  /**
+   * Re-reads the file after an external edit, serialized with writes. A missing
+   * file clears the rules; an unreadable or malformed file keeps the current
+   * state so a half-written editor save cannot wipe the runtime rules.
+   */
+  reload(): Promise<boolean> {
+    const run = this.chain.catch(() => undefined).then(() => this.readFromDisk())
+    this.chain = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
+  private async readFromDisk(): Promise<boolean> {
+    let content: string
+    try {
+      content = await fs.readFile(this.file, 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.rules = []
+        return true
+      }
+      return false
+    }
+    let data: unknown
+    try {
+      data = JSON.parse(content)
+    } catch {
+      return false
+    }
+    const file = data as Partial<PermissionsFile> | null
     this.rules =
-      data && data.version === 1 && Array.isArray(data.rules)
-        ? data.rules.filter(isRule).map((rule) => structuredClone(rule))
+      file && file.version === 1 && Array.isArray(file.rules)
+        ? file.rules.filter(isRule).map((rule) => structuredClone(rule))
         : []
+    return true
   }
 
   list(sessionId?: string): PermissionRule[] {
