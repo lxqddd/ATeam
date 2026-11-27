@@ -23,6 +23,7 @@ import type {
 } from '@ateam/shared'
 import { PERMISSION_MODES, REASONING_EFFORTS } from '@ateam/shared'
 import type { EventBus } from './event-bus'
+import { openApiDocument } from './openapi'
 import {
   findWorkspaceFiles,
   grepWorkspaceFiles,
@@ -276,6 +277,10 @@ export function createApiServer(options: ApiServerOptions): ApiServer {
 
     if (pathname === '/health') {
       json(res, 200, { ok: true, version })
+      return
+    }
+    if (pathname === '/openapi.json') {
+      json(res, 200, openApiDocument(version))
       return
     }
     if (!authorized(req, pathname, url)) {
