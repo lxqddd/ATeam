@@ -361,7 +361,7 @@ models/                  # 供应商 / 模型配置
 - 主进程存储：[model-config-store.ts](../apps/desktop/src/main/settings/model-config-store.ts)、[websearch-config-store.ts](../apps/desktop/src/main/settings/websearch-config-store.ts)、[catalog.ts](../apps/desktop/src/main/providers/catalog.ts)
 - 配置 UI：[ProjectConfigCard.tsx](../apps/desktop/src/renderer/src/components/settings/ProjectConfigCard.tsx)、[project/ProjectSettings.tsx](../apps/desktop/src/renderer/src/components/settings/project/ProjectSettings.tsx)、[project/useProjectConfig.ts](../apps/desktop/src/renderer/src/components/settings/project/useProjectConfig.ts)、[global/GlobalSettings.tsx](../apps/desktop/src/renderer/src/components/settings/global/GlobalSettings.tsx)、[global/useGlobalConfig.ts](../apps/desktop/src/renderer/src/components/settings/global/useGlobalConfig.ts)、[config-controller.ts](../apps/desktop/src/renderer/src/components/settings/config-controller.ts)、[config-watcher.ts](../apps/desktop/src/main/config-watcher.ts)
 
-## 19. Headless CLI 与 TUI
+## 19. Headless CLI
 
 - 入口：`pnpm cli -- [options] [prompt]`，直接复用 Agent 运行时，无需启动 Electron 窗口；第二个 `--` 之后的参数按字面 prompt 处理。
 - 模型：`--provider anthropic|openai|google|openai-compatible`、`--model`、`--api-key`（或 `ATEAM_API_KEY`）、`--base-url`、`--context-window`、`--max-output`、`--reasoning`。
@@ -378,21 +378,13 @@ models/                  # 供应商 / 模型配置
   - `mcp list|enable|disable`：读写 `agent/mcp.json`；输出复用 Server API 的脱敏规则，env / headers 只保留变量名，参数与 URL 中的凭据被移除。
   - `agent create <name>`：在 `agent/agents/<id>.md` 生成用户级 Agent，可用 `--description`、`--mode`、`--model`、`--tools`、`--permission`、`--steps`、`--temperature`、`--prompt` 配置；写入前用运行时同一解析器校验，已存在时需 `--force`。
   - 三组命令均支持 `--user-data <dir>`（默认 `ATEAM_USER_DATA`，否则 macOS `~/Library/Application Support/ATeam`、Windows `%APPDATA%/ATeam`、Linux `$XDG_CONFIG_HOME/ATeam` 或 `~/.config/ATeam`）、`--json` 与 `--help`；参数 / 枚举 / 数值校验错误退出码 2，不存在的 provider / MCP server 或已存在的 Agent 文件退出码 1。
-- TUI：`pnpm tui -- [options]`（构建后也可用 `ateam-tui`）打开完整终端界面；默认使用当前目录作为工作区、`~/.ateam/cli` 作为数据目录，可用 `--workspace`、`--data`、`--session <id>` 指定。
-  - 连接远端：`--attach <http(s)://host:port>` 先请求 `/health`，再通过 SSE 订阅事件；断线后自动重连并重新拉取会话、权限、提问与消息快照。`--token`（或 `ATEAM_SERVER_TOKEN`）附加 Bearer 鉴权；attach 模式不加载本地模型，也不需要 API Key。
-  - 模型与权限：`--provider`、`--model`、`--api-key`、`--base-url`、`--context-window`、`--max-output`、`--reasoning`、`--permission`、`--agent` 与 CLI 相同；未传模型参数时读取桌面端共享的 `models/config.json`。
-  - 界面：宽终端显示会话列表，右侧渲染流式文本、推理与工具卡片；工具输入、输出与错误按行截断，流式光标、失败与中断状态直接可见，CJK / emoji 按终端实际列宽换行。
-  - 键位：Enter 发送（运行中改为排队 steer），Tab 进入会话列表（↑↓/j/k、Enter 切换、n 新建），Ctrl-T 新建、Ctrl-N/P 切换、Ctrl-R 重试失败消息、↑↓/PgUp/PgDn 滚动、Esc 回到底部、`?` 帮助、Ctrl-D 退出。
-  - 权限与提问：权限确认按 y / a / n（或 ↑↓ + Enter）回复允许一次 / 始终允许 / 拒绝；提问支持数字直选、Space 多选、e 自定义答案、Esc 取消，全部可键盘完成。
-  - 安全停止：Ctrl-C 在运行时调用 stop，不在运行时清空输入，空输入时退出；弹层中同样生效（运行中先停止，否则拒绝权限 / 取消提问）。退出会恢复终端状态并关闭本地运行时或 SSE 连接，不留下子进程或未关闭的连接。
-  - 其他：窗口小于 24×8 时显示调整提示；`NO_COLOR` 或 `--no-color` 关闭 ANSI 颜色。`args`、`controller`、`render` 与 `attach` 均有单元测试，其中 controller 用录制事件流回放验证流式渲染与键盘交互，attach 测试使用本地 HTTP / SSE 服务器验证重连与 409 转 steer。
 - 限制：聊天命令的 `--api-key` 只用于本次运行的内存配置，不会写入共享凭据库；需要持久化凭据时使用 `providers add`。已有独立 `apps/headless/dist` 构建，但尚未提供单一可执行文件。
 
 ## 20. Server API 与 SDK
 
 - 入口：`pnpm serve -- [server options] [model options]`，复用 Agent 运行时并在本机启动 HTTP 服务（默认 `127.0.0.1:4096`）。
 - 安全：默认仅监听回环地址并拒绝在无 token 时绑定非回环地址（`--allow-unauthenticated-remote` 可显式放宽）；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权；`/health` 与 `/openapi.json` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
-- REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact|retry|steer`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
+- REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
 - 工作区文件：`GET /sessions/:id/files`（`path` / `depth` / `limit`）列出目录，`GET /sessions/:id/files/content?path=...` 读取文本文件，`GET /sessions/:id/files/find?pattern=...` 按 glob 查找，`GET /sessions/:id/files/grep?pattern=...`（可选 `include` / `literal` / `caseSensitive`）搜索内容。
   - 路径边界：只允许会话工作区内的路径；词法路径与 `realpath` 双重校验，`..` 越界、工作区外的绝对路径与符号链接逃逸返回 403（`FILE_PATH_ESCAPES_WORKSPACE`），目标不存在返回 404（`FILE_NOT_FOUND`），读取二进制文件返回 415（`FILE_BINARY`）。
   - 上限与截断：列表默认深度 1、最大 8，最多 2,000 条；读取最多 512 KiB；find / grep 最多 500 条，并受 10 秒时间预算约束；grep 跳过大于 1 MB 与二进制文件。所有响应带 `truncated` 标记，`size` 始终为完整文件大小。
@@ -403,7 +395,7 @@ models/                  # 供应商 / 模型配置
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
 - OpenAPI：`GET /openapi.json`（同样支持 `/v1/openapi.json`，无需鉴权）返回 OpenAPI 3.1.0 描述，覆盖全部路由、路径 / 查询参数、请求体、Bearer 鉴权（`/events` 另支持 `?token=`）与 400 / 401 / 403 / 404 / 409 / 415 / 503 / 504 错误响应；`servers` 同时声明 `/` 与 `/v1`。
   - 描述由 `apps/headless/src/server/openapi.ts` 维护；`openapi.test.ts` 用 `@seriousme/openapi-schema-validator` 校验文档，并断言操作清单与 `api.ts` 中实现的路由完全一致。
-- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、重试（`retrySession`）、运行中排队（`steerSession`）、工作区文件（`listFiles` / `readFile` / `findFiles` / `grepFiles` 及对应类型）、配置与扩展资源（`listAgents` / `listCommands` / `getConfig` / `listProviders` / `listMcpServers` / `listLspServers`，均可传 `{ sessionId }`）、权限、提问与 SSE 事件流；包根同时导出全部线协议类型（`SessionMeta`、`MessagesSnapshot`、`AgentEventEnvelope`、`Resource*`、`WorkspaceFile*` 等）。
+- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、工作区文件（`listFiles` / `readFile` / `findFiles` / `grepFiles` 及对应类型）、配置与扩展资源（`listAgents` / `listCommands` / `getConfig` / `listProviders` / `listMcpServers` / `listLspServers`，均可传 `{ sessionId }`）、权限、提问与 SSE 事件流；包根同时导出全部线协议类型（`SessionMeta`、`MessagesSnapshot`、`AgentEventEnvelope`、`Resource*`、`WorkspaceFile*` 等）。
 - 版本与安全：所有路由同时接受 `/` 与 `/v1` 前缀；绑定非回环地址且未设置 token 时默认拒绝启动（可用 `--allow-unauthenticated-remote` 显式放宽），默认不发送 CORS 头。
 - 构建与发布准备：`packages/client-sdk` 通过 tsup 生成 ESM + CJS + d.ts；d.ts 通过 `dts.resolve` 内联 `@ateam/shared` 的类型，自身不引用私有包。包已补齐 `license`（MIT）、`repository` / `homepage` / `bugs`、`keywords`、`engines`、`publishConfig.access`、`files` 与 README / LICENSE；`pack:check` 用 `npm pack --dry-run` 校验发布产物，CI 在 Build 后执行。当前仍为 `private: true`，公开发布前需按 [sdk-release.md](sdk-release.md) 移除并走检查清单。
 

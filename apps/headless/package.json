@@ -10,8 +10,7 @@
   "bin": {
     "ateam": "./dist/cli.js",
     "ateam-server": "./dist/server.js",
-    "ateam-acp": "./dist/acp.js",
-    "ateam-tui": "./dist/tui.js"
+    "ateam-acp": "./dist/acp.js"
   },
   "files": [
     "dist"
@@ -20,7 +19,6 @@
     "cli": "tsx src/cli/main.ts",
     "serve": "tsx src/server/main.ts",
     "acp": "tsx src/acp/main.ts",
-    "tui": "tsx src/tui/main.ts",
     "build": "tsup",
     "prepack": "tsup",
     "smoke": "node scripts/smoke.mjs",

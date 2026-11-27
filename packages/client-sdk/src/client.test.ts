@@ -45,37 +45,6 @@ describe('AteamClient', () => {
     })
   })
 
-  it('retries and steers sessions', async () => {
-    const calls: Array<{ url: string; method: string | undefined; body: string | null }> = []
-    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      calls.push({
-        url: String(input),
-        method: init?.method,
-        body: init?.body === undefined ? null : String(init.body)
-      })
-      return jsonResponse({ retried: true, queued: true }, 202)
-    })
-    const client = new AteamClient({ baseUrl: 'http://api.test', fetch: fetchMock })
-
-    await expect(client.retrySession('s1')).resolves.toEqual({ retried: true, queued: true })
-    await expect(client.steerSession('s1', 'after this step')).resolves.toEqual({
-      retried: true,
-      queued: true
-    })
-    expect(calls).toEqual([
-      {
-        url: 'http://api.test/sessions/s1/retry',
-        method: 'POST',
-        body: null
-      },
-      {
-        url: 'http://api.test/sessions/s1/steer',
-        method: 'POST',
-        body: JSON.stringify({ text: 'after this step' })
-      }
-    ])
-  })
-
   it('exposes workspace file routes with query parameters', async () => {
     const calls: string[] = []
     const fetchMock = vi.fn<typeof fetch>(async (input) => {

@@ -4,8 +4,7 @@ export default defineConfig({
   entry: {
     cli: 'src/cli/main.ts',
     server: 'src/server/main.ts',
-    acp: 'src/acp/main.ts',
-    tui: 'src/tui/main.ts'
+    acp: 'src/acp/main.ts'
   },
   format: ['esm'],
   target: 'node22',
