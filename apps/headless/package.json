@@ -45,6 +45,7 @@
   "devDependencies": {
     "@ateam/agent-core": "workspace:*",
     "@ateam/shared": "workspace:*",
+    "@seriousme/openapi-schema-validator": "^2.12.0",
     "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "5.1.1",
     "esbuild": "^0.28.0",

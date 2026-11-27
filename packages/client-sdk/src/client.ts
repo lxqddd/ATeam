@@ -17,7 +17,7 @@ import type {
   WorkspaceFileFindResult,
   WorkspaceFileGrepResult,
   WorkspaceFileList
-} from '@ateam/shared'
+} from './types'
 
 export interface AteamClientOptions {
   baseUrl: string

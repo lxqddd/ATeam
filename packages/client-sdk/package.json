@@ -2,9 +2,31 @@
   "name": "@ateam/client-sdk",
   "version": "0.1.1",
   "private": true,
-  "description": "ATeam HTTP API client SDK",
+  "description": "TypeScript client for the ATeam headless HTTP API",
+  "license": "MIT",
+  "author": "ATeam contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lxqddd/ATeam.git",
+    "directory": "packages/client-sdk"
+  },
+  "homepage": "https://github.com/lxqddd/ATeam/tree/master/packages/client-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/lxqddd/ATeam/issues"
+  },
+  "keywords": [
+    "ateam",
+    "agent",
+    "api",
+    "client",
+    "sdk",
+    "typescript"
+  ],
   "type": "module",
   "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,11 +38,18 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsup",
+    "prepack": "pnpm build",
+    "pack:check": "pnpm build && node scripts/check-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"

@@ -373,7 +373,7 @@ models/                  # 供应商 / 模型配置
 ## 20. Server API 与 SDK
 
 - 入口：`pnpm serve -- [server options] [model options]`，复用 Agent 运行时并在本机启动 HTTP 服务（默认 `127.0.0.1:4096`）。
-- 安全：默认仅监听回环地址并拒绝在无 token 时绑定非回环地址（`--allow-unauthenticated-remote` 可显式放宽）；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权；`/health` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
+- 安全：默认仅监听回环地址并拒绝在无 token 时绑定非回环地址（`--allow-unauthenticated-remote` 可显式放宽）；`--token`（或 `ATEAM_SERVER_TOKEN`）启用 Bearer 鉴权；`/health` 与 `/openapi.json` 无需鉴权。默认不发送 CORS 响应头，浏览器跨源页面无法读取或修改本机 API；确有需要时可在 `createApiServer` 传入 `corsOrigin`。
 - REST：`GET/POST /sessions`、`GET/DELETE /sessions/:id`、`GET/POST /sessions/:id/messages`（`wait: true` 等待完成）、`POST /sessions/:id/stop|compact`、`GET /permissions`、`POST /permissions/:id`、`GET /questions`、`POST /questions/:id`。
 - 工作区文件：`GET /sessions/:id/files`（`path` / `depth` / `limit`）列出目录，`GET /sessions/:id/files/content?path=...` 读取文本文件，`GET /sessions/:id/files/find?pattern=...` 按 glob 查找，`GET /sessions/:id/files/grep?pattern=...`（可选 `include` / `literal` / `caseSensitive`）搜索内容。
   - 路径边界：只允许会话工作区内的路径；词法路径与 `realpath` 双重校验，`..` 越界、工作区外的绝对路径与符号链接逃逸返回 403（`FILE_PATH_ESCAPES_WORKSPACE`），目标不存在返回 404（`FILE_NOT_FOUND`），读取二进制文件返回 415（`FILE_BINARY`）。
@@ -383,9 +383,11 @@ models/                  # 供应商 / 模型配置
   - 凭据：响应绝不含明文凭据。Provider 只返回 `hasApiKey`；MCP / LSP 的 env 与 headers 只返回变量名；URL 去掉 userinfo、查询串与 fragment；`/config` 移除 MCP `env` / `headers`、LSP `env`、formatter `environment`，其余文本按已知密钥形态脱敏，命令行参数中的 `--token=...` / `--api-key ...` 同样脱敏。
   - `/mcp` 附带 MCP 最近一次连接状态，`?probe=1` 主动探测；`/lsp` 返回合并内置定义与项目覆盖后的服务器列表。
 - 实时事件：`GET /events?sessionId=...` 以 Server-Sent Events 推送完整 Agent 事件；SDK 也支持通过 Authorization 头订阅。
-- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、工作区文件（`listFiles` / `readFile` / `findFiles` / `grepFiles` 及对应类型）、配置与扩展资源（`listAgents` / `listCommands` / `getConfig` / `listProviders` / `listMcpServers` / `listLspServers`，均可传 `{ sessionId }`）、权限、提问与 SSE 事件流。
+- OpenAPI：`GET /openapi.json`（同样支持 `/v1/openapi.json`，无需鉴权）返回 OpenAPI 3.1.0 描述，覆盖全部路由、路径 / 查询参数、请求体、Bearer 鉴权（`/events` 另支持 `?token=`）与 400 / 401 / 403 / 404 / 409 / 415 / 503 / 504 错误响应；`servers` 同时声明 `/` 与 `/v1`。
+  - 描述由 `apps/headless/src/server/openapi.ts` 维护；`openapi.test.ts` 用 `@seriousme/openapi-schema-validator` 校验文档，并断言操作清单与 `api.ts` 中实现的路由完全一致。
+- SDK：`packages/client-sdk/src/client.ts` 提供 `AteamClient`（fetch 实现，支持自定义 fetch 注入），覆盖健康检查、会话、消息、停止、压缩、工作区文件（`listFiles` / `readFile` / `findFiles` / `grepFiles` 及对应类型）、配置与扩展资源（`listAgents` / `listCommands` / `getConfig` / `listProviders` / `listMcpServers` / `listLspServers`，均可传 `{ sessionId }`）、权限、提问与 SSE 事件流；包根同时导出全部线协议类型（`SessionMeta`、`MessagesSnapshot`、`AgentEventEnvelope`、`Resource*`、`WorkspaceFile*` 等）。
 - 版本与安全：所有路由同时接受 `/` 与 `/v1` 前缀；绑定非回环地址且未设置 token 时默认拒绝启动（可用 `--allow-unauthenticated-remote` 显式放宽），默认不发送 CORS 头。
-- 构建：`packages/client-sdk` 通过 tsup 生成 ESM + CJS + d.ts，当前仍为 private，尚未发布独立 npm 包。
+- 构建与发布准备：`packages/client-sdk` 通过 tsup 生成 ESM + CJS + d.ts；d.ts 通过 `dts.resolve` 内联 `@ateam/shared` 的类型，自身不引用私有包。包已补齐 `license`（MIT）、`repository` / `homepage` / `bugs`、`keywords`、`engines`、`publishConfig.access`、`files` 与 README / LICENSE；`pack:check` 用 `npm pack --dry-run` 校验发布产物，CI 在 Build 后执行。当前仍为 `private: true`，公开发布前需按 [sdk-release.md](sdk-release.md) 移除并走检查清单。
 
 ## 21. 外部引用（References）
 
